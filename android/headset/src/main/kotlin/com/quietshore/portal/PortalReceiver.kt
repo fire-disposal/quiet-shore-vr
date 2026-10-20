@@ -14,7 +14,7 @@ class PortalReceiver : BroadcastReceiver() {
             PortalActions.ACTION_ENTER -> PortalActions.enter(
                 context,
                 intent.getStringExtra(PortalActions.EXTRA_SCENE),
-                intent.getBooleanExtra(PortalActions.EXTRA_MINIMAL, true),
+                intent.getBooleanExtra(PortalActions.EXTRA_MINIMAL, false),
                 intent.getBooleanExtra(PortalActions.EXTRA_SKIP_CALIBRATION, false),
                 intent.getStringExtra(PortalActions.EXTRA_QUALITY)
             )

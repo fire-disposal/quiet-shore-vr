@@ -16,7 +16,6 @@ export function readConfig(search: string): AppConfig {
   const quality = params.get('quality');
   const lang = params.get('lang') === 'en' ? 'en' : 'zh';
   const scene = params.get('scene');
-  const fromPortal = params.get('from') === 'portal';
   return {
     highQuality: quality !== 'low',
     aa: quality !== 'low' && params.get('aa') !== '0',
@@ -24,7 +23,7 @@ export function readConfig(search: string): AppConfig {
     showPerf: params.get('hud') === '1' || params.get('debug') === '1',
     lang,
     initialScene: normalizeSceneId(scene),
-    minimal: params.get('minimal') === '1' || fromPortal,
+    minimal: params.get('minimal') === '1',
     spin: params.get('spin') === '1'
   };
 }

@@ -108,7 +108,7 @@ scene|session|calibrating|audioMuted
 - 收到 `CONTROL_BUSY` 后平板主动断开，留在配对页；不会自动重试。
 - 控制者断链或调用 `stop()` 会清空控制者，下一台平板可以直接接管。
 - 服务重启同样清空控制权；平板必须重新连接并 `CLAIM`。
-- 通知标题随之变化：“等待平板连接” → “平板控制中，患者无需操作”。
+- 通知标题随之变化：“等待平板连接” → “平板控制中，按一次确认键开始”。
 
 没有控制码、PIN、配对/绑定或应用层认证。**规则就是先到先得。**
 
@@ -162,7 +162,7 @@ scene|session|calibrating|audioMuted
 | 快捷磁贴“静岸” | 打开控制台，不直接拉起 Firefox |
 | `BootReceiver` | 开机或应用更新后恢复服务与通知，不自动拉起浏览器 |
 
-`PortalActivity` 的“进入训练”通过显式 Intent 打开 `org.mozilla.vrbrowser/.VRBrowserActivity`，URL 为 `http://127.0.0.1:8130/?minimal=1&from=portal&t=<时间戳>`。时间戳避免 Firefox 复用旧文档；拉起前会探测 `:8130` 是否可连接，避免 Firefox 冷启动把请求丢掉。未安装 Firefox Reality 时只做提示，不劫持默认浏览器。控制台另有“全部应用”和“返回桌面”；后者打开系统 HOME 设置，由用户确认。
+`PortalActivity` 的“进入训练”通过显式 Intent 打开 `org.mozilla.vrbrowser/.VRBrowserActivity`，URL 为 `http://127.0.0.1:8130/?from=portal&t=<时间戳>`。时间戳避免 Firefox 复用旧文档；拉起前会探测 `:8130` 是否可连接，避免 Firefox 冷启动把请求丢掉。未安装 Firefox Reality 时只做提示，不劫持默认浏览器。控制台另有“全部应用”和“返回桌面”；后者打开系统 HOME 设置，由用户确认。
 
 `PortalService` 是 `START_STICKY` 前台服务。服务重启后会重新读取 APK 内的 `assets/index.html`，重新广播 BLE，并清空控制者。
 

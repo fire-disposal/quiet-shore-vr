@@ -199,6 +199,10 @@ export class StartScreen {
     button.setAttribute('aria-pressed', 'false');
     button.tabIndex = -1;
 
+    const thumb = document.createElement('span');
+    thumb.className = 'scene-card-thumb';
+    thumb.setAttribute('aria-hidden', 'true');
+
     const body = document.createElement('span');
     body.className = 'scene-card-body';
 
@@ -222,6 +226,7 @@ export class StartScreen {
     head.appendChild(check);
     body.appendChild(head);
     body.appendChild(tagline);
+    button.appendChild(thumb);
     button.appendChild(body);
 
     const id = scene.id as SceneId;

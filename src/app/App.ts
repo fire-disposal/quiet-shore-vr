@@ -194,7 +194,8 @@ export class QuietShoreApp {
         this.menu.update(this.headPose, dt, now);
         this.lab.update(this.headPose, dt, now);
         this.hud.setVisible(
-          this.showPerf && !this.menu.isOpen() && (this.xr.isPresenting || this.previewing)
+          this.showPerf && !this.controlMode && !this.menu.isOpen()
+            && (this.xr.isPresenting || this.previewing)
         );
         this.hud.update(this.headPose, dt, now);
         this.calibration?.update(dt, now, this.headPose);
@@ -652,6 +653,7 @@ export class QuietShoreApp {
     }
     this.controlMode = active;
     document.body.classList.toggle('control-mode', active);
+    this.start.setMinimal(active);
     if (active) {
       this.menu.close();
       if (this.session) {

@@ -61,6 +61,32 @@ html, body {
   font-weight: 600;
   letter-spacing: .02em;
 }
+.brand-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(23, 39, 36, .7);
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.mode-guided { display: none; }
+body.control-mode .mode-standalone { display: none; }
+body.control-mode .mode-guided { display: inline; }
+body.control-mode .mode-chip {
+  color: var(--accent);
+  border-color: rgba(224, 187, 120, .45);
+}
 .status {
   margin: 10px 0 0;
   min-height: 22px;
@@ -89,7 +115,7 @@ html, body {
 
 .scene-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
 }
 
@@ -99,9 +125,9 @@ button.scene-card {
   align-items: stretch;
   gap: 10px;
   min-height: 48px;
-  padding: 10px;
+  padding: 9px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   background: linear-gradient(160deg, var(--surface-2), var(--surface));
   color: var(--text);
   font: inherit;
@@ -130,7 +156,7 @@ summary:focus-visible {
 .scene-card-thumb {
   position: relative;
   display: block;
-  height: 96px;
+  height: 92px;
   border-radius: 11px;
   overflow: hidden;
   background: radial-gradient(90% 120% at 50% 0%, #243b37 0%, #101b19 70%);
@@ -233,7 +259,11 @@ button.scene-card[data-scene="lab"] .scene-card-thumb::after {
   gap: 8px;
 }
 .scene-card-name { font-size: 17px; font-weight: 650; }
-.scene-card-tag { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.scene-card-tag {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .scene-card-check {
   display: none;
   padding: 2px 8px;
@@ -327,6 +357,7 @@ button.small {
   font-weight: 650;
 }
 .is-minimal .actions { order: 2; }
+.is-minimal .enter-hint { order: 5; }
 .is-minimal .perf-toggle { order: 3; }
 .is-minimal .launch-note {
   order: 4;
@@ -424,16 +455,20 @@ button.scene-card {
 .scene-card-desc { display: none; }
 .scene-card-body { padding: 0; gap: 2px; }
 .scene-card-name { font-size: 16px; }
-.scene-card-tag { font-size: 12px; }
+.scene-card-tag {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden; font-size: 12px; }
 
 /* Tablet takeover: the operator chooses scenes and session actions; the
    patient keeps only the one-time headset entry button. */
 body.control-mode .scene-picker,
 body.control-mode .hint,
-body.control-mode #launch-scene,
 body.control-mode #launch-note,
 body.control-mode #preview,
-body.control-mode .perf-toggle {
+body.control-mode .perf-toggle,
+body.control-mode .toolbar {
   display: none;
 }
 

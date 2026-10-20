@@ -22,6 +22,15 @@
 
 平板和头显之间没有控制码、PIN 或蓝牙配对流程。**先连接并发送 `CLAIM` 的平板获得控制权**，第二台平板收到 `CONTROL_BUSY`，只能留在配对页。
 
+### 两种运行模式
+
+| 模式 | 触发 | VR 内部界面 | 场景选择 |
+| --- | --- | --- | --- |
+| 独立使用 | 没有平板持有控制权 | 完整开始页，保留 2D 预览、声音和调试开关 | 患者可在头显内选择 |
+| 引导控制 | 平板 `CLAIM` 成功 | 精简开始页，只显示当前场景、进入按钮和确认键提示 | 平板选择，患者不再操作 |
+
+控制释放或断开后，VR 自动恢复完整开始页，不需要重新打开 Firefox。
+
 ## 架构
 
 ```
@@ -128,7 +137,7 @@ adb shell am start -n com.quietshore.control/.MainActivity
 ## 运行流程
 
 1. **头显启动服务**：打开静岸控制台（应用图标、通知或快捷磁贴）后，控制台会启动 `PortalService`；服务绑定 `127.0.0.1:8130`，并开始以 `QuietShore` 为名广播 GATT 服务。通知显示“等待平板连接”；蓝牙关闭时显示“蓝牙未开启”。
-2. **打开患者页面**：在控制台点“进入训练”。显式 Intent 拉起 Firefox Reality，打开 `http://127.0.0.1:8130/?minimal=1&from=portal&t=<时间戳>`；时间戳避免 Firefox 复用旧文档。loopback 是安全上下文，不需要 HTTPS。
+2. **打开患者页面**：在控制台点“进入训练”。显式 Intent 拉起 Firefox Reality，打开 `http://127.0.0.1:8130/?from=portal&t=<时间戳>`；时间戳避免 Firefox 复用旧文档。loopback 是安全上下文，不需要 HTTPS。
 3. **患者开始一次**：患者按头显右侧确认键，或点按开始页空白处。WebXR 的 `requestSession('immersive-vr')` 必须由可信用户手势触发，这是整个流程中患者唯一必须做的操作。随后进入方向校准，除非 URL 带 `nocal=1`。
 4. **平板接管**：平板端“搜索头显” → 选择 `QuietShore` → 连接。启用通知后平板写入 `CLAIM`；头显把第一台平板记为控制者并回 `CONTROL_OK`。第二台得到 `CONTROL_BUSY`，连接被关闭，停留在配对页。
 5. **训练中**：平板发命令并接收姿态（5 Hz）与状态（1 Hz）。平板 WebView 复用头显的场景模块，显示患者位置、朝向和当前场景。
@@ -176,7 +185,7 @@ adb shell am start -n com.quietshore.control/.MainActivity
 | `?aa=0` | 关闭抗锯齿 |
 | `?scene=landscape\|ward\|bathroom\|lab` | 初始场景 |
 | `?nocal=1` | 跳过方向校准 |
-| `?minimal=1` | 精简开始页；头显入口默认带上 |
+| `?minimal=1` | 显式精简开始页；头显入口不再自动带上，控制模式由连接状态动态切换 |
 | `?from=portal` | 兼容旧入口，等价于精简模式 |
 | `?hud=1` | 测试员性能面板 |
 | `?lang=en` | 英文界面 |
@@ -203,9 +212,9 @@ build.mjs          esbuild 构建：患者页面、standalone、controller
 
 ## 发布下载
 
-- **GitHub Release v0.2.3**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.2.3>
-- 头显 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.2.3/quiet-shore-headset-v0.2.3.apk>
-- 平板 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.2.3/quiet-shore-control-v0.2.3.apk>
+- **GitHub Release v0.2.4**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.2.4>
+- 头显 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.2.4/quiet-shore-headset-v0.2.4.apk>
+- 平板 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.2.4/quiet-shore-control-v0.2.4.apk>
 - 校验：同一 Release 内的 `SHA256SUMS.txt`
 
 若 Release 尚未出现，可在 GitHub Actions 的 `build` 运行里下载 `quiet-shore-apk` 工件，内含 `headset-debug.apk`、`control-debug.apk` 与 `SHA256SUMS.txt`。未配置签名 secrets 时产物是 debug 签名，只用于侧载验收。

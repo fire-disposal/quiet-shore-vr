@@ -64,7 +64,7 @@ internal object PortalActions {
     fun enter(
         context: Context,
         scene: String? = null,
-        minimal: Boolean = true,
+        minimal: Boolean = false,
         skipCalibration: Boolean = false,
         quality: String? = null
     ): Boolean {

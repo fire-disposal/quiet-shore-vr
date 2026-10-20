@@ -10,8 +10,16 @@
 <body>
   <main id="start" class="start">
     <header class="brand">
-      <p class="brand-en">Quiet Shore VR</p>
-      <h1>静岸</h1>
+      <div class="brand-row">
+        <div>
+          <p class="brand-en">Quiet Shore VR</p>
+          <h1>静岸</h1>
+        </div>
+        <span class="mode-chip">
+          <span class="mode-standalone">独立使用</span>
+          <span class="mode-guided">平板控制</span>
+        </span>
+      </div>
       <p id="status" class="status" role="status">检测中…</p>
     </header>
 
@@ -19,7 +27,8 @@
 
     <section id="scene-picker" class="scene-picker" aria-labelledby="scene-picker-title">
       <div class="section-head">
-        <h2 id="scene-picker-title">场景</h2>
+        <h2 id="scene-picker-title">选择场景</h2>
+        <span class="section-hint">注视并确认</span>
       </div>
       <div id="scene-list" class="scene-list" role="group" aria-labelledby="scene-picker-title"></div>
       <p id="scene-note" class="scene-note" aria-live="polite"></p>

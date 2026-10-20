@@ -76,7 +76,7 @@ PICO 应用图标 / 下拉通知栏 / 快捷磁贴
   → PortalService：127.0.0.1:8130 + BLE 外设 "QuietShore"
   → 控制台“进入训练”（3 秒冷却）
   → 显式 Intent: org.mozilla.vrbrowser/.VRBrowserActivity
-  → http://127.0.0.1:8130/?minimal=1&from=portal&t=<时间戳>
+  → http://127.0.0.1:8130/?from=portal&t=<时间戳>
   → APK assets/index.html（构建自 dist/standalone.html）
 ```
 
@@ -110,7 +110,7 @@ adb shell am start -n com.quietshore.control/.MainActivity
 
 ```bash
 adb shell am start -a android.intent.action.VIEW \
-  -d 'http://127.0.0.1:8130/?minimal=1' \
+  -d 'http://127.0.0.1:8130/' \
   -n org.mozilla.vrbrowser/.VRBrowserActivity
 
 npm run dev
@@ -147,7 +147,7 @@ adb shell am start -a android.intent.action.VIEW \
 - 控制台显示服务/蓝牙/接管状态，提供“进入训练 / 全部应用 / 返回桌面”。只有“进入训练”拉起 Firefox Reality，并带 3 秒冷却。
 - `BrandAssets.kt` 用 Canvas 绘制通知图标、磁贴图标与动作图标；没有位图资源。
 - `res/drawable/ic_launcher.xml` 是启动图标；`res/values/styles.xml` 是壳主题，`PortalActivity` 使用 `PortalTheme`。
-- 常驻通知显示“等待平板连接 / 平板控制中，患者无需操作 / 蓝牙未开启 / 蓝牙不可用”，动作是“打开控制台 / 全部应用 / 返回桌面”。
+- 常驻通知显示“等待平板连接 / 平板控制中，按一次确认键开始 / 蓝牙未开启 / 蓝牙不可用”，动作是“打开控制台 / 全部应用 / 返回桌面”。
 - 快捷磁贴标签“静岸”，点击打开控制台，不直接进入训练。
 
 ## 8. 代码侧与实机侧边界

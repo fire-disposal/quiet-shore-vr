@@ -130,7 +130,7 @@ class PortalActivity : Activity() {
         ).apply { topMargin = dp(10) })
 
         val enter = actionButton("进入训练", true) {
-            val launched = PortalActions.enter(this, minimal = true)
+            val launched = PortalActions.enter(this)
             if (launched) {
                 enterButton?.text = "正在打开，请稍候"
                 enterButton?.isEnabled = false
