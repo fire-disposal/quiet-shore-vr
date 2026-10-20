@@ -8,10 +8,13 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.location.LocationManager
+import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
 import android.os.Looper
 import android.os.ParcelUuid
+import android.provider.Settings
 import com.quietshore.control.model.DiscoveredDevice
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
@@ -59,6 +62,12 @@ class BleController(
     private var pendingConnect: ConnectRequest? = null
     private var awaitingControl = false
 
+    private var manualClose = false
+    private var autoScan = false
+    private var reconnectAttempts = 0
+    private var reconnectScheduled = false
+    private var lastAddress: String? = null
+
     private var heartbeatRunning = false
     private var lastPongAt = 0L
     private val heartbeat = object : Runnable {
@@ -78,7 +87,28 @@ class BleController(
         }
     }
 
-    private val scanWindow = Runnable { stopScan() }
+    private val reconnectRunnable = Runnable {
+        reconnectScheduled = false
+        if (manualClose) {
+            return@Runnable
+        }
+        val address = lastAddress
+        if (reconnectAttempts <= 1 && address != null) {
+            connectInternal(address)
+        } else {
+            autoScan = true
+            startScanInternal()
+        }
+    }
+
+    private val scanWindow = Runnable {
+        val wasAuto = autoScan
+        stopScan()
+        if (wasAuto && !manualClose) {
+            autoScan = false
+            scheduleReconnect("未找到头显")
+        }
+    }
     private val claimTimeout = Runnable {
         if (!awaitingControl) {
             return@Runnable
@@ -89,6 +119,14 @@ class BleController(
     }
 
     fun startScan() {
+        manualClose = false
+        reconnectAttempts = 0
+        autoScan = false
+        cancelReconnect()
+        startScanInternal()
+    }
+
+    private fun startScanInternal() {
         if (scanCallback != null) {
             return
         }
@@ -99,6 +137,15 @@ class BleController(
         }
         if (!adapter.isEnabled) {
             listener.onError("蓝牙未开启")
+            setPhase(BlePhase.IDLE)
+            return
+        }
+        // Some OEM stacks (Huawei/EMUI on Android 12 included) suspend the
+        // scan and return zero results while location services are off, even
+        // when BLUETOOTH_SCAN is granted. Fail loudly instead of scanning
+        // silently in that state.
+        if (!locationServicesEnabled()) {
+            listener.onError("请先开启定位服务，部分设备的蓝牙搜索依赖它")
             setPhase(BlePhase.IDLE)
             return
         }
@@ -129,6 +176,11 @@ class BleController(
                 if (!serviceMatch && !nameMatch) {
                     return
                 }
+                if (autoScan) {
+                    autoScan = false
+                    mainHandler.post { connectInternal(address) }
+                    return
+                }
                 val discovered = DiscoveredDevice(address, result.rssi)
                 mainHandler.post {
                     val previous = found[address]
@@ -145,6 +197,10 @@ class BleController(
                     mainHandler.removeCallbacks(scanWindow)
                     setPhase(BlePhase.IDLE)
                     listener.onError("搜索失败，错误码 $errorCode")
+                    if (autoScan && !manualClose) {
+                        autoScan = false
+                        scheduleReconnect("搜索失败")
+                    }
                 }
             }
         }
@@ -169,6 +225,21 @@ class BleController(
         mainHandler.postDelayed(scanWindow, SCAN_WINDOW_MS)
     }
 
+    private fun locationServicesEnabled(): Boolean {
+        val manager = appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            manager.isLocationEnabled
+        } else {
+            @Suppress("DEPRECATION")
+            Settings.Secure.getInt(
+                appContext.contentResolver,
+                Settings.Secure.LOCATION_MODE,
+                Settings.Secure.LOCATION_MODE_OFF
+            ) != Settings.Secure.LOCATION_MODE_OFF
+        }
+    }
+
     fun stopScan() {
         val callback = scanCallback ?: return
         scanCallback = null
@@ -184,6 +255,15 @@ class BleController(
     }
 
     fun connect(address: String) {
+        manualClose = false
+        reconnectAttempts = 0
+        autoScan = false
+        cancelReconnect()
+        connectInternal(address)
+    }
+
+    private fun connectInternal(address: String) {
+        lastAddress = address
         stopScan()
         val adapter = adapter
         if (adapter == null) {
@@ -235,6 +315,9 @@ class BleController(
     }
 
     fun cancelConnect() {
+        manualClose = true
+        autoScan = false
+        cancelReconnect()
         cancelPendingConnect()
         closeManager()
         awaitingControl = false
@@ -244,6 +327,9 @@ class BleController(
 
     /** Releases control on the headset, then closes the link. */
     fun disconnect() {
+        manualClose = true
+        autoScan = false
+        cancelReconnect()
         stopScan()
         cancelClaimTimeout()
         awaitingControl = false
@@ -270,6 +356,9 @@ class BleController(
     }
 
     fun close() {
+        manualClose = true
+        autoScan = false
+        cancelReconnect()
         stopHeartbeat()
         stopScan()
         cancelClaimTimeout()
@@ -277,6 +366,25 @@ class BleController(
         cancelPendingConnect()
         closeManager()
         phase = BlePhase.IDLE
+    }
+
+    private fun cancelReconnect() {
+        reconnectScheduled = false
+        mainHandler.removeCallbacks(reconnectRunnable)
+    }
+
+    private fun scheduleReconnect(reason: String) {
+        if (manualClose || reconnectScheduled) {
+            return
+        }
+        if (reconnectAttempts >= MAX_RECONNECTS) {
+            listener.onError("自动重连失败，请重新搜索")
+            return
+        }
+        reconnectAttempts++
+        reconnectScheduled = true
+        listener.onError("$reason，正在重连（$reconnectAttempts/$MAX_RECONNECTS）")
+        mainHandler.postDelayed(reconnectRunnable, RECONNECT_DELAY_MS)
     }
 
     private fun cancelPendingConnect() {
@@ -355,6 +463,9 @@ class BleController(
         closeManager()
         setPhase(BlePhase.ERROR)
         listener.onError("连接失败，错误码 $code")
+        if (!manualClose) {
+            scheduleReconnect("连接失败")
+        }
     }
 
     private fun scheduleClaimTimeout() {
@@ -374,7 +485,11 @@ class BleController(
         when (raw) {
             ControlProtocol.STATUS_CONTROL_OK -> {
                 cancelClaimTimeout()
+                cancelReconnect()
                 awaitingControl = false
+                manualClose = false
+                autoScan = false
+                reconnectAttempts = 0
                 setPhase(BlePhase.READY)
                 listener.onControlGranted()
             }
@@ -383,17 +498,27 @@ class BleController(
                 cancelClaimTimeout()
                 awaitingControl = false
                 listener.onControlBusy("头显正被另一台平板控制")
-                closeConnection()
+                // Drop this link and retry; the headset frees a stale
+                // controller on disconnect or after its watchdog.
+                closeManager()
+                setPhase(BlePhase.DISCONNECTED)
+                scheduleReconnect("头显仍被占用")
             }
 
             ControlProtocol.STATUS_CONTROL_REQUIRED -> {
                 cancelClaimTimeout()
                 awaitingControl = false
+                manualClose = true
+                autoScan = false
+                cancelReconnect()
                 listener.onControlLost("控制连接已失效，请重新连接")
                 closeConnection()
             }
 
             ControlProtocol.STATUS_CONTROL_RELEASED -> {
+                manualClose = true
+                autoScan = false
+                cancelReconnect()
                 listener.onControlLost("头显已释放控制权")
                 closeConnection()
             }
@@ -408,6 +533,9 @@ class BleController(
         closeManager()
         setPhase(BlePhase.DISCONNECTED)
         listener.onDisconnected()
+        if (!manualClose) {
+            scheduleReconnect("连接中断")
+        }
     }
 
     private inner class ManagerEvents : QuietShoreBleManager.Events {
@@ -520,5 +648,7 @@ class BleController(
         const val CONNECT_TIMEOUT_MS = 15_000L
         const val CLAIM_TIMEOUT_MS = 6_000L
         const val RETRY_DELAY_MS = 250
+        const val MAX_RECONNECTS = 3
+        const val RECONNECT_DELAY_MS = 700L
     }
 }

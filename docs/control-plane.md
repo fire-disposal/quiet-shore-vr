@@ -131,6 +131,7 @@ ASCII 字符串，通知给所有已连接设备：
 | `enter` | 头显服务直接拉起 Firefox Reality 训练页（仍需患者按一次确认键进入 WebXR） |
 | `sus:open` / `sus:close` | 打开/关闭头显端 SUS 量表页 |
 | `sus:next` / `sus:prev` | 控制端覆写 SUS 当前题页 |
+| `sus:answer:<1-5>` | 操作员对头显当前 SUS 题代答；SUS 页未打开时自动打开 |
 | `home` | 头显回到系统桌面 |
 | `allapps` | 打开系统全部应用页 |
 | `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |
@@ -145,7 +146,7 @@ ASCII 字符串，通知给所有已连接设备：
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-`enter`、`home`、`allapps`、`settings:*`、`scene:<id>` 由头显服务执行；其余命令进入页面队列，并通过 `/events` SSE 立即推送。EventSource 不可用时页面退回 100 ms `/control` 轮询。
+`enter`、`home`、`allapps`、`sus:*`、`settings:*`、`scene:<id>` 由头显服务执行；其余命令进入页面队列，并通过 `/events` SSE 立即推送。EventSource 不可用时页面退回 100 ms `/control` 轮询。
 
 非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 

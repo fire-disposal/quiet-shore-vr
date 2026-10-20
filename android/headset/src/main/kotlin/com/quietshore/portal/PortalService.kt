@@ -137,6 +137,9 @@ class PortalService : Service() {
     private var page: ByteArray? = null
 
     @Volatile
+    private var lastState: ControlState = ControlState()
+
+    @Volatile
     private var serverSocket: ServerSocket? = null
 
     @Volatile
@@ -185,6 +188,14 @@ class PortalService : Service() {
                     // 通知订阅者，页面无需轮询也不会重放命令。
                     if (changed) {
                         publishStateEvent()
+                        if (active) {
+                            // Ask the page for a fresh /state snapshot; the
+                            // service just restarted or the tablet may have
+                            // missed the last 1 Hz notification.
+                            pendingControl.set("status")
+                            controlSeq.incrementAndGet()
+                            publishControlEvent()
+                        }
                     }
                     publishStatus()
                 }
@@ -655,6 +666,10 @@ class PortalService : Service() {
             command == "sus:close" -> PortalActions.closeSus(this)
             command == "sus:next" -> PortalActions.susPage(this, 1)
             command == "sus:prev" -> PortalActions.susPage(this, -1)
+            command.startsWith(ControlProtocol.SUS_ANSWER) -> {
+                val value = ControlProtocol.parseSusAnswer(command) ?: return false
+                PortalActions.susAnswer(this, value)
+            }
             command == "enter" -> {
                 if (!PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())) {
                     return false
@@ -803,7 +818,14 @@ class PortalService : Service() {
         body.put("bluetooth", bluetooth?.state ?: "unavailable")
         body.put("control", controlMode)
         body.put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
+        val state = lastState
         body.put("scene", HeadsetSettings.read(this).sceneId)
+        body.put("session", state.session)
+        body.put("calibrating", state.calibrating)
+        body.put("postureProgress", state.postureProgress)
+        body.put("posturePitch", state.posturePitch)
+        body.put("postureRise", state.postureRise)
+        body.put("calibrationConfidence", state.calibrationConfidence)
         body.put("pendingSeq", controlSeq.get())
         return jsonResponse(body)
     }
@@ -849,6 +871,7 @@ class PortalService : Service() {
             cueIntensity = finite("cueIntensity", 1f),
             calibrationConfidence = finite("calibrationConfidence", 0f)
         )
+        lastState = state
         bluetooth?.publishState(state)
         return okResponse()
     }

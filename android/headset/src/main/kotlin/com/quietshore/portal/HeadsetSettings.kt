@@ -31,7 +31,9 @@ internal data class HeadsetSettings(
         private const val KEY_SCENE = "settings.scene"
         private const val KEY_SKIP = "settings.skipCalibration"
         private const val KEY_HUD = "settings.showHud"
-        private const val KEY_EYE_HEIGHT = "settings.eyeHeight"
+        // v2 resets the old 1.60/1.42 leftovers so the new 1.70 default wins
+        // once; the next operator change is persisted under this key.
+        private const val KEY_EYE_HEIGHT = "settings.eyeHeight.v2"
 
         val SCENE_IDS = listOf("landscape", "ward", "bathroom", "lab")
 

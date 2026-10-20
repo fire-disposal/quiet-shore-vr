@@ -47,8 +47,8 @@ fun AngleGauge(
         String.format(
             Locale.US,
             "患者朝向，偏航 %d 度，俯仰 %d 度",
-            current.yaw.roundToInt(),
-            current.pitch.roundToInt()
+            degrees(current.yaw).roundToInt(),
+            degrees(current.pitch).roundToInt()
         )
     } else {
         "患者姿态未更新"
@@ -73,12 +73,12 @@ fun AngleGauge(
                     color = accent
                 )
                 Text(
-                    text = angleLine("偏航", pose?.yaw, fresh),
+                    text = angleLine("偏航", pose?.let { degrees(it.yaw) }, fresh),
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextPrimary
                 )
                 Text(
-                    text = angleLine("俯仰", pose?.pitch, fresh),
+                    text = angleLine("俯仰", pose?.let { degrees(it.pitch) }, fresh),
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextPrimary
                 )
@@ -112,7 +112,8 @@ private fun AngleDial(
             center = center,
             style = Stroke(width = 1.dp.toPx())
         )
-        val levelColor = if (fresh && pose != null && abs(pose.pitch) <= LEVEL_DEGREES) {
+        val pitchDegrees = pose?.let { degrees(it.pitch) } ?: 0f
+        val levelColor = if (fresh && pose != null && abs(pitchDegrees) <= LEVEL_DEGREES) {
             QuietPalette.Success
         } else {
             QuietPalette.TextSecondary.copy(alpha = 0.55f)
@@ -137,7 +138,9 @@ private fun AngleDial(
             return@Canvas
         }
 
-        rotate(degrees = pose.yaw, pivot = center) {
+        // Three.js Y rotation is counter-clockwise seen from above; Canvas
+        // rotate() is clockwise, so negate to match the 3D patient marker.
+        rotate(degrees = -degrees(pose.yaw), pivot = center) {
             val tip = Offset(center.x, center.y - radius * 0.8f)
             drawLine(
                 color = accent,
@@ -149,7 +152,7 @@ private fun AngleDial(
             drawCircle(color = accent, radius = 2.5.dp.toPx(), center = tip)
         }
 
-        val pitchOffset = (pose.pitch / PITCH_FULL_SCALE_DEGREES).coerceIn(-1f, 1f)
+        val pitchOffset = (degrees(pose.pitch) / PITCH_FULL_SCALE_DEGREES).coerceIn(-1f, 1f)
         drawCircle(
             color = QuietPalette.Primary,
             radius = 3.5.dp.toPx(),
@@ -157,6 +160,10 @@ private fun AngleDial(
         )
     }
 }
+
+/** Wire pose is radians; every visible angle is degrees. */
+private fun degrees(radians: Float): Float =
+    Math.toDegrees(radians.toDouble()).toFloat()
 
 private fun angleLine(label: String, value: Float?, fresh: Boolean): String =
     if (!fresh || value == null) {

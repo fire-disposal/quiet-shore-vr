@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN, readConfig, type AppConfig } from './config';
 import { createRenderer, type Quality } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
+import { SitUpPath, type CameraPose } from '../core/xr/situp-path';
 import {
   createComfort,
   POSTURE_LIMITS,
@@ -48,6 +49,10 @@ const MAX_DT = 0.25;
 const VIEW_MAX_SPEED = 0.3; // m/s at full joystick deflection
 const VIEW_MAX_OFFSET = 0.45; // m radial, from the session origin
 const VIEW_TTL_MS = 300; // no intent update → stop within this window
+// Sit-up performance: the confirm key toggles between the supine frame and
+// the standing frame; 12 s spreads the rotation over a tolerable ramp.
+const SITUP_DURATION_MS = 12000;
+const LONG_PRESS_MS = 600;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
 const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
 const VIEW_ARG = /^-?\d+(?:\.\d+)?$/;
@@ -84,6 +89,13 @@ export class QuietShoreApp {
   private comfort: ComfortApi | null = null;
   private calibration: Calibration | null = null;
   private postureCueState: PostureCueApi | null = null;
+  private sitUpPath: SitUpPath | null = null;
+  private sitUpReference: CameraPose | null = null;
+  private sitUpMode = false;
+  private sitUpReady = false;
+  private sitUpT = 0;
+  private sitUpTarget = 0;
+  private sitUpMoving = false;
   private session: XRSession | null = null;
   private previewing = false;
   private savedBackground: THREE.Scene['background'] = null;
@@ -94,6 +106,10 @@ export class QuietShoreApp {
   private selectableOffs: Array<() => void> = [];
   private focusedSelectable: THREE.Object3D | null = null;
   private flashTimers = new Set<number>();
+  private selectStartAt = 0;
+  private selectEndHandled = false;
+  private selectLongHandled = false;
+  private selectLongTimer: number | null = null;
   private selectCount = 0;
   private showPerf: boolean;
   private audioMuted = false;
@@ -196,16 +212,23 @@ export class QuietShoreApp {
         const posture = this.comfort?.getPostureState();
         const cue = this.postureCueState?.getState();
         const remap = this.comfort?.getState().remap;
+        const sitUp = this.sitUpMode && this.sitUpPath
+          ? this.sitUpPath.at(this.sitUpT)
+          : null;
         return {
           scene: this.sceneId,
           session: this.session !== null,
           calibrating: this.calibration?.isActive() ?? false,
           audio: this.audioMuted,
           eyeHeight: this.eyeHeight,
-          posturePitch: posture?.pitchDeg ?? 0,
+          posturePitch: sitUp && this.sitUpPath
+            ? -90 * Math.min(1, this.sitUpT / this.sitUpPath.rotationPortion)
+            : posture?.pitchDeg ?? 0,
           postureRoll: posture?.rollDeg ?? 0,
-          postureRise: posture?.riseM ?? 0,
-          postureProgress: posture?.progress ?? 0,
+          postureRise: sitUp && this.sitUpPath
+            ? Math.min(1.2, Math.max(0, sitUp.position.y - this.sitUpPath.hipHeight))
+            : posture?.riseM ?? 0,
+          postureProgress: this.sitUpMode ? this.sitUpT : posture?.progress ?? 0,
           viewX: this.viewOffsetX,
           viewZ: this.viewOffsetZ,
           cueEnabled: cue?.enabled ?? false,
@@ -254,10 +277,20 @@ export class QuietShoreApp {
       phase: 'render',
       order: 0,
       run: (dt: number, now: number) => {
-        this.comfort?.updatePosture(dt);
+        if (this.sitUpMode) {
+          this.updateSitUp(dt);
+        } else {
+          this.comfort?.updatePosture(dt);
+        }
         if (this.postureCueState) {
-          const progress = this.comfort?.getPostureProgress() ?? 0;
-          this.postureCueState.setMoving(this.comfort?.isPostureMoving() ?? false);
+          const progress = this.sitUpMode
+            ? this.sitUpT
+            : this.comfort?.getPostureProgress() ?? 0;
+          this.postureCueState.setMoving(
+            this.sitUpMode
+              ? this.sitUpMoving
+              : this.comfort?.isPostureMoving() ?? false
+          );
           this.postureCueState.update(dt, progress, this.headPose.position);
         }
         this.input.update(dt, now, this.headPose);
@@ -335,7 +368,7 @@ export class QuietShoreApp {
       } else if (event.key === 'Escape') {
         this.menu.close();
       } else if (event.key === 'Enter' || event.key === ' ') {
-        this.onSelect();
+        this.onSelectShort();
       }
     });
   }
@@ -366,6 +399,13 @@ export class QuietShoreApp {
       theme: DEFAULT_SPATIAL_THEME,
       onResult: (result) => this.onCalibrationResult(result)
     });
+    this.sitUpPath = null;
+    this.sitUpReference = null;
+    this.sitUpMode = false;
+    this.sitUpReady = false;
+    this.sitUpT = 0;
+    this.sitUpTarget = 0;
+    this.sitUpMoving = false;
     this.registerSelectables(handle.selectables);
     this.host.setFloorOffset(this.session ? -this.eyeHeight : 0);
     this.savedBackground = this.scene.background;
@@ -497,7 +537,9 @@ export class QuietShoreApp {
       this.lastFrame = 0;
       this.renderer.setAnimationLoop(this.onFrame);
       next.addEventListener('end', () => this.onSessionEnd());
-      next.addEventListener('select', () => this.onSelect());
+      next.addEventListener('selectstart', () => this.onSelectStart());
+      next.addEventListener('selectend', () => this.onSelectEnd());
+      next.addEventListener('select', () => this.onSelectFallback());
 
       this.start.showStage();
       this.start.setEnterEnabled(false);
@@ -538,6 +580,13 @@ export class QuietShoreApp {
 
   private onSessionEnd(): void {
     this.session = null;
+    this.sitUpMode = false;
+    this.sitUpReady = false;
+    this.sitUpPath = null;
+    this.sitUpReference = null;
+    this.sitUpT = 0;
+    this.sitUpTarget = 0;
+    this.sitUpMoving = false;
     this.stopSceneAudio();
     this.menu.attach(null);
     this.menu.close();
@@ -567,6 +616,14 @@ export class QuietShoreApp {
     if (!this.calibration || !this.handle) {
       return;
     }
+    // Calibration owns the world frame until the patient confirms the sit-up.
+    this.sitUpMode = false;
+    this.sitUpReady = false;
+    this.sitUpPath = null;
+    this.sitUpReference = null;
+    this.sitUpT = 0;
+    this.sitUpTarget = 0;
+    this.sitUpMoving = false;
     // Calibration starts from the session origin: no residual operator offset.
     this.resetViewMovement();
     // A running posture transition must not keep advancing through the
@@ -590,6 +647,22 @@ export class QuietShoreApp {
       this.handle.root.visible = true;
     }
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
+    if (result.ok) {
+      // Hold the world at the supine frame; the world transform is applied by
+      // the sit-up path only after the patient presses the confirm key.
+      this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
+      this.sitUpReference = {
+        position: this.headPose.position.clone(),
+        quaternion: this.headPose.quaternion.clone()
+      };
+      this.sitUpT = 0;
+      this.sitUpTarget = 0;
+      this.sitUpMoving = false;
+      this.sitUpMode = true;
+      this.sitUpReady = true;
+      this.host.setFloorOffset(0);
+      this.applySitUpTransform();
+    }
     this.syncLab();
     if (this.session) {
       this.startSceneAudio();
@@ -739,14 +812,18 @@ export class QuietShoreApp {
           // Calibration already drives posture to neutral; do not freeze it.
           return;
         }
-        this.comfort?.stopPosture();
-        this.start.setStatus('已停止虚拟起身', 'ok');
+        this.stopSitUp();
         return;
       case 'cue:on':
         this.postureCueState?.setEnabled(true);
         return;
       case 'cue:off':
         this.postureCueState?.setEnabled(false);
+        return;
+      case 'status':
+        // Force a fresh /state POST after a new BLE controller claims, so the
+        // tablet is not left with the service's default snapshot.
+        this.telemetry.sendStateNow();
         return;
       case 'start':
         this.start.setStatus(this.strings.remoteStartNeedsGesture, 'ok');
@@ -779,7 +856,11 @@ export class QuietShoreApp {
       this.camera.position.y = next;
     }
     if (this.session) {
-      this.host.setFloorOffset(-next);
+      this.host.setFloorOffset(this.sitUpMode ? 0 : -next);
+    }
+    if (this.sitUpMode && this.sitUpReference) {
+      this.sitUpPath = new SitUpPath({ standEyeHeight: next });
+      this.applySitUpTransform();
     }
     this.start.setStatus(`视点高度 ${next.toFixed(2)} m`, 'ok');
   }
@@ -901,8 +982,10 @@ export class QuietShoreApp {
       }
       this.start.setStatus(this.strings.controlModeOn, 'ok');
     } else {
-      // Losing the tablet must never leave motion latched on.
+      // Losing the tablet must never leave motion latched on: stop both the
+      // operator view nudge and any posture transition (brake, never snap).
       this.haltViewMovement();
+      this.comfort?.stopPosture();
       if (this.session) {
         this.input.setLayers(true, true);
       }
@@ -913,25 +996,55 @@ export class QuietShoreApp {
   }
 
   private setVirtualPosture(rising: boolean): void {
-    if (!this.session || !this.comfort) {
-      this.start.setStatus('虚拟起身仅能在训练中使用', 'error');
+    if (!this.session || !this.sitUpMode || !this.sitUpPath) {
+      this.start.setStatus('虚拟起身仅能在完成校准后的训练中使用', 'error');
       return;
     }
     if (this.calibration?.isActive()) {
       this.start.setStatus('校准中无法调整姿态', 'error');
       return;
     }
-    if (!this.comfort.isCalibrated()) {
-      this.start.setStatus('请先完成方向校准', 'error');
+    this.sitUpTarget = rising ? 1 : 0;
+    this.sitUpMoving = true;
+    this.start.setStatus(rising ? '虚拟起身中，随时可停止' : '正在回到卧床视角', 'ok');
+  }
+
+  private stopSitUp(): void {
+    if (!this.sitUpMode) {
       return;
     }
-    if (rising) {
-      this.comfort.setPosture({ pitchDeg: -8, riseM: 0.45 }, 18000);
-      this.start.setStatus('虚拟起身中，随时可停止', 'ok');
-    } else {
-      this.comfort.setPosture({ pitchDeg: 0, riseM: 0 }, 18000);
-      this.start.setStatus('正在回到卧床视角', 'ok');
+    this.sitUpTarget = this.sitUpT;
+    this.sitUpMoving = false;
+    this.applySitUpTransform();
+    this.start.setStatus('已停止虚拟起身', 'ok');
+  }
+
+  private updateSitUp(dt: number): void {
+    if (!this.sitUpMode || !Number.isFinite(dt) || dt <= 0) {
+      return;
     }
+    const delta = this.sitUpTarget - this.sitUpT;
+    if (Math.abs(delta) < 1e-4) {
+      this.sitUpT = this.sitUpTarget;
+      this.sitUpMoving = false;
+      this.applySitUpTransform();
+      return;
+    }
+    const step = (dt * 1000) / SITUP_DURATION_MS;
+    this.sitUpT = Math.min(1, Math.max(0, this.sitUpT + Math.sign(delta) * step));
+    this.sitUpMoving = true;
+    this.applySitUpTransform();
+  }
+
+  /** Invert the virtual camera path into the world shell. */
+  private applySitUpTransform(): void {
+    if (!this.sitUpMode || !this.sitUpPath || !this.sitUpReference || !this.comfort) {
+      return;
+    }
+    const camera = this.sitUpPath.at(this.sitUpT);
+    const world = this.sitUpPath.worldFor(this.sitUpReference, camera);
+    this.comfort.group.quaternion.copy(world.quaternion);
+    this.comfort.group.position.copy(world.position);
   }
 
   private applyAudioMuted(next: boolean): void {
@@ -960,7 +1073,59 @@ export class QuietShoreApp {
     stopAudio();
   }
 
-  private onSelect(): void {
+  private onSelectStart(): void {
+    this.selectStartAt = performance.now();
+    this.selectEndHandled = false;
+    this.selectLongHandled = false;
+    if (this.selectLongTimer != null) {
+      window.clearTimeout(this.selectLongTimer);
+    }
+    this.selectLongTimer = window.setTimeout(() => {
+      this.selectLongTimer = null;
+      this.selectLongHandled = true;
+      this.onSelectLong();
+    }, LONG_PRESS_MS);
+  }
+
+  private onSelectEnd(): void {
+    if (this.selectEndHandled) {
+      return;
+    }
+    this.selectEndHandled = true;
+    if (this.selectLongTimer != null) {
+      window.clearTimeout(this.selectLongTimer);
+      this.selectLongTimer = null;
+    }
+    if (this.selectLongHandled) {
+      return;
+    }
+    if (performance.now() - this.selectStartAt < LONG_PRESS_MS) {
+      this.onSelectShort();
+    }
+  }
+
+  /** Firefox emits `select` after `selectend`; this is only a fallback. */
+  private onSelectFallback(): void {
+    if (this.selectEndHandled) {
+      return;
+    }
+    this.selectEndHandled = true;
+    if (this.selectLongTimer != null) {
+      window.clearTimeout(this.selectLongTimer);
+      this.selectLongTimer = null;
+    }
+    if (!this.selectLongHandled) {
+      this.onSelectShort();
+    }
+  }
+
+  private onSelectLong(): void {
+    if (this.session || this.previewing) {
+      this.menu.toggle();
+    }
+  }
+
+  private onSelectShort(): void {
     if (this.controlMode) {
       // Safety exception: in guided mode the headset confirm key still ends
       // the session immediately, so the patient is never trapped.
@@ -979,6 +1144,18 @@ export class QuietShoreApp {
     }
     if (this.input.getFocused()) {
       this.input.select();
+      return;
+    }
+    if (
+      !this.controlMode
+      && this.session
+      && this.sitUpReady
+      && !(this.calibration?.isActive() ?? false)
+    ) {
+      // Patient confirm key drives the sit-up: first press plays, next lies back.
+      this.sitUpTarget = this.sitUpTarget >= 0.5 ? 0 : 1;
+      this.sitUpMoving = true;
+      this.start.setStatus(this.sitUpTarget > 0.5 ? '正在坐起' : '正在回躺', 'ok');
       return;
     }
     if (this.session || this.previewing) {

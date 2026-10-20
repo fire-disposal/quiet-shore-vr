@@ -37,6 +37,7 @@ internal object PortalActions {
     const val ACTION_HOME = "com.quietshore.portal.HOME"
     const val ACTION_SUS = "com.quietshore.portal.SUS"
     const val EXTRA_SUS_DELTA = "susDelta"
+    const val EXTRA_SUS_ANSWER = "susAnswer"
 
     /** Launch parameters accepted by the activity, receiver and deep link. */
     const val EXTRA_SCENE = "scene"
@@ -205,6 +206,27 @@ internal object PortalActions {
         }
     }
 
+    /**
+     * Operator answers the current SUS item. Uses an explicit activity intent
+     * instead of the SUS broadcast so it also works while the console is
+     * paused behind Firefox.
+     */
+    fun susAnswer(context: Context, value: Int) {
+        if (value !in 1..5) {
+            return
+        }
+        val intent = Intent(context, PortalActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+            putExtra(EXTRA_PAGE, "sus")
+            putExtra(EXTRA_SUS_ANSWER, value)
+        }
+        launch(applicationContext(context), intent, "无法打开 SUS 页面")
+    }
+
     private fun showPortalPage(context: Context, page: String) {
         val intent = Intent(context, PortalActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -227,6 +249,14 @@ internal object PortalActions {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         launch(context, intent, "未找到可用的桌面")
+    }
+
+    /** 系统设置首页；不修改任何设置，只打开入口。 */
+    fun systemSettings(context: Context) {
+        val intent = Intent(Settings.ACTION_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        launch(applicationContext(context), intent, "未找到系统设置")
     }
 
     private fun applicationContext(context: Context): Context = context.applicationContext ?: context

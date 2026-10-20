@@ -33,7 +33,7 @@ scene
 | XR 相机归属 | `core/xr/renderer.ts:createRenderer`、`core/xr/pose.ts:readHeadPose` | `xr.enabled`、`setReferenceSpaceType('local')`；每帧从 `xr.getCamera()` 读世界位姿到 `headPose` | 相机 | 3DoF，位置近似恒定；`camera.position.set(0, eyeHeight, 3.2)` 只服务 2D 预览 |
 | 世界变换外壳 | `app/App.ts:loadScene`、`core/scene/host.ts` | comfort 包住 `host.content`；`content.y = -eyeHeight` | 世界 | 相机不入场，层级即安全边界 |
 | 校准重映射 | `core/xr/comfort.ts:calibrateTwo/updatePosture` | `remapDurationMs` 200–4000，默认 900；smoothstep；`weight ≤0.85`、旋转 ≤120° | 世界旋转/位移 | 失败保留旧帧 |
-| 姿态过渡 | `comfort.ts:setPosture/updatePosture/stopPosture` | `POSTURE_LIMITS`：pitch ±20°、roll ±10°、rise 0–1.2 m、1–30 s、默认 10 s；`postureEase` 五次平滑（峰值 1.875×平均）；停止减速 320 ms；`getPostureProgress()` 停止后冻结在停止比例 | 世界 | `App.setVirtualPosture`：起身 −8°/0.45 m/14 s，回躺 0/0/12 s |
+| 姿态过渡 | `comfort.ts:setPosture/updatePosture/stopPosture` | `POSTURE_LIMITS` 默认：pitch ±20°、roll ±10°、rise 0–1.2 m、1–30 s、默认 10 s；`setPosture` 可传显式 pitch 上限（≤90°）；`postureEase` 五次平滑（峰值 1.875×平均）；停止减速 320 ms；`getPostureProgress()` 停止后冻结在停止比例 | 世界 | `App.setVirtualPosture`：起身 −90°/0.45 m/30 s，回躺 0/0/30 s（天花板 → 前墙的完整重定向） |
 | 平板视角平移 | `App.ts:startViewMovement/applyViewOffset/updateViewMovement` | `VIEW_TTL_MS 300`、`VIEW_MAX_SPEED 0.3`、`VIEW_MAX_OFFSET 0.45`；径向投影滑动 | `host.content` x/z | 速度**立即生效**：无 0.08 死区、无 500/200 ms 加减速（与 `control-interaction-spec.md §4/§5` 不一致） |
 | 空间 UI | `core/spatial/anchor.ts`、`placement.ts` | 菜单 `summoned`（1.25 m，世界锁定，仅召唤时计算）；HUD `head-locked`（1.5 m，damping 0.06 s）；校准 `head-locked`（0.8 m，damping 0） | UI | 头锁只用于短时面板 |
 | 场景环境循环 | `scenes/*/…js:update` | landscape：水面/天空/风/泡沫 `uTime`，云/雾/鸟 `InstancedMesh`；ward：心电纹理 0.09/s、屏幕 2.6 s 切换、秒针；bathroom：叶片 ±0.028 rad、水面 ±0.0012 m；lab：0.35 rad/s | 世界内容 | 全部 `dt ≤0.1` |
@@ -197,12 +197,12 @@ render  10    renderer.render(scene, camera)
 8. **A8 稳定**：粒子数固定；`positions` 数组引用与长度在 `update` 前后不变（零分配）。
 9. **A9 重生连续**：长跑 1500 帧，任一帧 `|Δx|, |Δz| < 0.005 m`；`y` wrap 时 x/z 不跳变。
 10. **A10 关闭**：`intensity=0` 或 `flow=0` 且淡出结束后两层 `visible=false`。
-11. **A11 缓动峰值**：按 `POSTURE_EASE_PEAK` 采样 App 的两个预设（0.45 m/14 s 起身、0.45 m/12 s 回躺），峰值 rise ≤0.05 m/s、pitch ≤2°/s；不满足时拉长预设，不改 comfort 曲线。
+11. **A11 缓动峰值**：按 `POSTURE_EASE_PEAK` 采样 App 的两个预设（0.45 m/30 s、90°/30 s）。rise 峰值约 0.028 m/s，满足 ≤0.05 m/s；pitch 峰值约 5.6°/s，属于完整起身重定向，已超出小角度微调的 2°/s 指南，必须在 PICO 上单独验证耐受，不能按微调预算宣称合规。
 12. **A12 停止不靠 progress**：`progress` 冻结在 0.4 时，`flow=0` 仍能让两层在 0.8 s 内归零。
 
 实机（PICO + Firefox Reality，记录到 `docs/performance-evidence.md` 的方式）：
 
-13. 起身 14 s 全程无恶心、无“被推走”感；出现即降 intensity 或关闭。
+13. 起身 30 s 全程无恶心、无“被推走”感；90° 重定向出现不适即延长时长或回退到小角度预设。
 14. `posture:stop` 后近场在 ≤1 s 内静止并淡出；回躺无反向流。
 15. 粒子不遮挡菜单/HUD 文本，不穿过栈桥与地面，`spread` 拉满时仍不进入背景山体。
 16. 帧率与关闭粒子时无差异（HUD p95 不上升）。

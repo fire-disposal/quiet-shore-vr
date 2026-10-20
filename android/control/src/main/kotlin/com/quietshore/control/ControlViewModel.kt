@@ -300,8 +300,9 @@ class ControlViewModel(application: Application) :
         sendCommand("scene:$sceneId")
     }
 
-    fun startSession() {
-        sendCommand("start")
+    /** Launches the headset page; the Firefox door gesture stays with the patient. */
+    fun enterTraining() {
+        sendCommand(ControlProtocol.ENTER)
     }
 
     fun endSession() {
@@ -332,42 +333,10 @@ class ControlViewModel(application: Application) :
         sendCommand("sus:next")
     }
 
-    /**
-     * Bedside aid preset: lakeside scene with sound on and the patient view.
-     * Never starts a session from the tablet, so the stop key stays with the
-     * patient and the headset keeps its own start flow.
-     */
-    fun prepareBedsideVoiding() {
-        val state = _uiState.value
-        if (state.phase != BlePhase.READY) {
-            _uiState.update { it.copy(error = "头显未连接") }
-            return
-        }
-        // A running session owns its scene, so only preselect it when idle.
-        val sceneHeld = state.control.session && state.control.scene != CARE_SCENE
-        val sceneChanged = !state.control.session && state.control.scene != CARE_SCENE
-        stopView()
-        viewSuppressedUntil = SystemClock.elapsedRealtime() + VIEW_SUPPRESS_MS
-        if (sceneChanged) {
-            ble.sendCommand("scene:$CARE_SCENE")
-        }
-        if (state.control.audioMuted) {
-            ble.sendCommand("audio:on")
-        }
-        _uiState.update { current ->
-            current.copy(
-                viewMode = ViewMode.PATIENT,
-                control = current.control.copy(
-                    scene = if (sceneHeld) current.control.scene else CARE_SCENE,
-                    audioMuted = false
-                ),
-                error = null,
-                notice = if (sceneHeld) {
-                    "护理辅助已准备，场景将在训练结束后切换"
-                } else {
-                    "护理辅助已准备"
-                }
-            )
+    /** Operator answers the headset's current SUS item when the patient cannot. */
+    fun susAnswer(value: Int) {
+        if (value in 1..5) {
+            sendCommand(ControlProtocol.SUS_ANSWER + value)
         }
     }
 
@@ -520,6 +489,10 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onStatus(raw: String) {
+        // High-frequency joystick writes must not churn the notice state.
+        if (raw.startsWith(OK_PREFIX + ControlProtocol.VIEW_MOVE)) {
+            return
+        }
         if (raw.startsWith(OK_PREFIX + ControlProtocol.SETTINGS_EYE_HEIGHT)) {
             val confirmedValue = ControlProtocol.parseEyeHeight(raw.removePrefix(OK_PREFIX))
             _uiState.update { state ->
@@ -533,7 +506,7 @@ class ControlViewModel(application: Application) :
             return
         }
         when {
-            raw.startsWith(OK_PREFIX) -> _uiState.update { it.copy(notice = "命令已生效") }
+            raw.startsWith(OK_PREFIX) -> _uiState.update { it.copy(notice = "头显已接收指令") }
             raw == ControlProtocol.STATUS_CONTROL_RELEASED ->
                 _uiState.update { it.copy(notice = "已释放控制") }
             else -> Unit
@@ -568,8 +541,6 @@ class ControlViewModel(application: Application) :
         const val TICK_MS = 500L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
-        const val CARE_SCENE = "landscape"
-
         /** ~10 Hz; the page expires movement 300 ms after the last update. */
         const val VIEW_REPEAT_MS = 100L
         const val VIEW_DEAD_ZONE = 0.08f

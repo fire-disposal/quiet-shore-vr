@@ -1,6 +1,7 @@
 package com.quietshore.control.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.ControlRail
 import com.quietshore.control.ui.components.JoystickPad
 import com.quietshore.control.ui.components.SignalBars
+import com.quietshore.control.ui.components.StatusPanel
 import com.quietshore.control.ui.components.ViewModeToggle
 import com.quietshore.control.ui.components.phaseColor
 import com.quietshore.control.ui.components.phaseLabel
@@ -78,6 +80,7 @@ fun ControlScreen(
     ) {
         val compact = maxWidth < 1000.dp
         var controlsOpen by rememberSaveable { mutableStateOf(!compact) }
+        var infoOpen by rememberSaveable { mutableStateOf(false) }
         val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
 
         Box(Modifier.fillMaxSize()) {
@@ -87,9 +90,24 @@ fun ControlScreen(
                 state = state,
                 compact = compact,
                 controlsOpen = controlsOpen,
+                infoOpen = infoOpen,
                 onToggleControls = { controlsOpen = !controlsOpen },
+                onToggleInfo = { infoOpen = !infoOpen },
                 onDisconnect = actions.onDisconnect
             )
+
+            if (infoOpen) {
+                StatusPanel(
+                    state = state,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(
+                            start = if (compact) 10.dp else 16.dp,
+                            top = if (compact) 62.dp else 72.dp
+                        )
+                        .width(if (compact) 300.dp else 360.dp)
+                )
+            }
 
             if (offline) {
                 DisconnectedBanner(
@@ -210,7 +228,9 @@ private fun ControlTopBar(
     state: ControlUiState,
     compact: Boolean,
     controlsOpen: Boolean,
+    infoOpen: Boolean,
     onToggleControls: () -> Unit,
+    onToggleInfo: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     Row(
@@ -220,6 +240,7 @@ private fun ControlTopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
+            modifier = Modifier.clickable { onToggleInfo() },
             shape = RoundedCornerShape(4.dp),
             color = QuietPalette.Background.copy(alpha = 0.82f),
             contentColor = QuietPalette.TextPrimary
@@ -251,6 +272,12 @@ private fun ControlTopBar(
                 SignalBars(rssi = state.rssi)
                 Spacer(Modifier.width(8.dp))
                 ConnectionChip(phase = state.phase)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (infoOpen) "▾" else "▸",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
             }
         }
         Spacer(Modifier.weight(1f))

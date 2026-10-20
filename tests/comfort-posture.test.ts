@@ -155,6 +155,19 @@ describe('comfort posture layer', () => {
     expect(state.riseM).toBeCloseTo(POSTURE_LIMITS.maxRiseM / 2, 10);
   });
 
+  it('allows an explicit near-90 degree rise while the default clamp stays 20', () => {
+    const comfort = makeComfort();
+    comfort.setPosture({ pitchDeg: -90, riseM: 0.45 }, 2000, 90);
+    comfort.updatePosture(2);
+    const state = comfort.getPostureState();
+    expect(state.pitchDeg).toBeCloseTo(-90, 6);
+    expect(state.riseM).toBeCloseTo(0.45, 6);
+
+    comfort.setPosture({ pitchDeg: -90, riseM: 0 }, 2000);
+    comfort.updatePosture(2);
+    expect(comfort.getPostureState().pitchDeg).toBeCloseTo(-20, 6);
+  });
+
   it('clamps long durations and defaults non-finite ones', () => {
     const long = makeComfort();
     long.setPosture({ pitchDeg: 0, riseM: 1 }, 1_000_000);

@@ -8,7 +8,7 @@ interface Bootstrap {
   eyeHeight?: number | string | null;
 }
 
-export const EYE_HEIGHT_DEFAULT = 1.6;
+export const EYE_HEIGHT_DEFAULT = 1.7;
 export const EYE_HEIGHT_MIN = 1.2;
 export const EYE_HEIGHT_MAX = 1.9;
 

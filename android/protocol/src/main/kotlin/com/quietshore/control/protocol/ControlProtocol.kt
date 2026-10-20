@@ -36,6 +36,9 @@ object ControlProtocol {
     const val ENTER: String = "enter"
     const val HOME: String = "home"
     const val ALL_APPS: String = "allapps"
+
+    /** Operator answers the current SUS item when the patient cannot. */
+    const val SUS_ANSWER: String = "sus:answer:"
     const val SETTINGS_SKIP_CALIBRATION: String = "settings:skipcalibration:"
     const val SETTINGS_HUD: String = "settings:hud:"
 
@@ -46,7 +49,7 @@ object ControlProtocol {
     const val SETTINGS_EYE_HEIGHT: String = "settings:eyeheight:"
     const val EYE_HEIGHT_MIN: Float = 1.2f
     const val EYE_HEIGHT_MAX: Float = 1.9f
-    const val EYE_HEIGHT_DEFAULT: Float = 1.6f
+    const val EYE_HEIGHT_DEFAULT: Float = 1.7f
 
     /**
      * Virtual viewpoint movement. [VIEW_MOVE] carries normalized x/z in
@@ -63,6 +66,7 @@ object ControlProtocol {
         "scene:<id>", "posture:rise", "posture:lower", "posture:stop",
         "cue:on", "cue:off", "cue:intensity:0-1",
         "home", "allapps", "sus:open", "sus:close", "sus:next", "sus:prev",
+        "sus:answer:1-5",
         "settings:skipcalibration:on|off", "settings:hud:on|off",
         "settings:eyeheight:1.2-1.9",
         "view:move:<x>,<z>", "view:stop"
@@ -95,6 +99,19 @@ object ControlProtocol {
 
     /** Plain decimal axis; "NaN", "Infinity" and exponents never match. */
     private val NORMALIZED_AXIS = Regex("""-?(?:\d+(?:\.\d*)?|\.\d+)""")
+
+    /** Parses `sus:answer:<1-5>`; anything else is rejected whole. */
+    fun parseSusAnswer(command: String): Int? {
+        if (!command.startsWith(SUS_ANSWER)) {
+            return null
+        }
+        val raw = command.substring(SUS_ANSWER.length)
+        if (raw.length != 1) {
+            return null
+        }
+        val value = raw.toIntOrNull() ?: return null
+        return value.takeIf { it in 1..5 }
+    }
 
     /**
      * Parses `settings:eyeheight:<meters>` and returns the value only when it
@@ -161,6 +178,7 @@ object ControlProtocol {
             normalized == "sus:close" ||
             normalized == "sus:next" ||
             normalized == "sus:prev" ||
+            parseSusAnswer(normalized) != null ||
             normalized == "settings:skipcalibration:on" ||
             normalized == "settings:skipcalibration:off" ||
             normalized == "settings:hud:on" ||

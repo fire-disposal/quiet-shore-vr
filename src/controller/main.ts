@@ -16,6 +16,7 @@ interface Pose {
 interface ControllerApi {
   onTelemetry(x: number, y: number, z: number, yaw: number, pitch: number): void;
   onState(scene: string, session: boolean, calibrating: boolean, audioMuted: boolean): void;
+  onPosture(pitchDeg: number, rollDeg: number, riseM: number, progress: number): void;
   onBleState(state: string): void;
   onAuth(ok: boolean): void;
   setViewMode(mode: ViewMode): void;
@@ -42,13 +43,17 @@ const host = new SceneHost(scene);
 const camera = new THREE.PerspectiveCamera(64, 1, 0.04, 400);
 camera.rotation.order = 'YXZ';
 
-const pose: Pose = { x: 0, y: 1.6, z: 0.4, yaw: 0, pitch: 0 };
+const pose: Pose = { x: 0, y: 1.7, z: 0.4, yaw: 0, pitch: 0 };
 let sceneId = 'landscape';
 let viewMode: ViewMode = 'global';
 let session = false;
 let calibrating = false;
 let audioMuted = false;
 let auth = false;
+let posturePitchDeg = 0;
+let postureRollDeg = 0;
+let postureRiseM = 0;
+let postureProgress = 0;
 
 const orbit = {
   yaw: Math.PI * 0.22,
@@ -75,8 +80,9 @@ function createPatientMarker(): THREE.Group {
   body.position.y = 0.9;
   group.add(body);
 
+  // The headset is a box, not a head: show the device's actual orientation.
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.17, 20, 16),
+    new THREE.BoxGeometry(0.34, 0.22, 0.28),
     new THREE.MeshStandardMaterial({
       color: 0xf1dcc0,
       emissive: 0x3b2d22,
@@ -84,8 +90,21 @@ function createPatientMarker(): THREE.Group {
       roughness: 0.7
     })
   );
+  head.name = 'headset-head';
   head.position.y = 1.54;
   group.add(head);
+
+  const visor = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.1, 0.02),
+    new THREE.MeshStandardMaterial({
+      color: 0x14201e,
+      emissive: 0x0b1211,
+      emissiveIntensity: 0.2,
+      roughness: 0.35
+    })
+  );
+  visor.position.set(0, 0, -0.145);
+  head.add(visor);
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.36, 0.46, 40),
@@ -108,7 +127,19 @@ function createPatientMarker(): THREE.Group {
     0.24,
     0.12
   );
+  arrow.name = 'gaze-arrow';
   group.add(arrow);
+
+  const virtualArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 1.64, 0),
+    0.95,
+    0x7fc8b8,
+    0.24,
+    0.12
+  );
+  virtualArrow.name = 'virtual-gaze-arrow';
+  group.add(virtualArrow);
 
   const glow = new THREE.PointLight(0x7fc8b8, 0.55, 2.6, 1.8);
   glow.position.set(0, 1.2, 0);
@@ -120,7 +151,25 @@ function createPatientMarker(): THREE.Group {
 function updateMarker(): void {
   marker.position.set(pose.x, 0, pose.z);
   marker.rotation.y = pose.yaw;
-  marker.visible = viewMode === 'global';
+  // Yaw is the marker body; pitch must show on the gaze arrow, otherwise the
+  // global view looks level while the patient is looking up or down.
+  const head = marker.getObjectByName('headset-head');
+  if (head) {
+    head.rotation.x = pose.pitch;
+  }
+  const arrow = marker.getObjectByName('gaze-arrow');
+  if (arrow) {
+    arrow.rotation.x = pose.pitch;
+  }
+  const virtualArrow = marker.getObjectByName('virtual-gaze-arrow');
+  if (virtualArrow) {
+    // The comfort layer rotates the world by posturePitchDeg; the patient's
+    // perceived view relative to that world is the head pitch minus it.
+    virtualArrow.rotation.x =
+      pose.pitch - THREE.MathUtils.degToRad(posturePitchDeg);
+    virtualArrow.position.y = 1.64 + postureRiseM;
+  }
+  marker.visible = viewMode === 'global' && session;
 }
 
 function updateCamera(): void {
@@ -150,10 +199,10 @@ function loadScene(nextId: string): void {
     return;
   }
   sceneId = definition.id;
-  host.load(definition, { quality: 'high', eyeHeight: 1.6 });
+  host.load(definition, { quality: 'high', eyeHeight: 1.7 });
   host.setFloorOffset(0);
   scene.add(marker);
-  marker.visible = viewMode === 'global';
+  marker.visible = viewMode === 'global' && session;
   label.textContent = `患者场景 ${definition.name.zh}`;
 }
 
@@ -175,8 +224,23 @@ window.qsControl = {
     calibrating = nextCalibrating;
     audioMuted = nextAudioMuted;
     loadScene(nextScene);
+    updateMarker();
+    const legend = document.getElementById('view-legend');
+    if (legend) {
+      legend.hidden = !session;
+    }
     const phase = calibrating ? '校准中' : session ? '训练中' : '待机';
     setStatus(`${phase}，${audioMuted ? '声音关' : '声音开'}`);
+  },
+  onPosture(pitchDeg, rollDeg, riseM, progress) {
+    if (![pitchDeg, rollDeg, riseM, progress].every(Number.isFinite)) {
+      return;
+    }
+    posturePitchDeg = pitchDeg;
+    postureRollDeg = rollDeg;
+    postureRiseM = riseM;
+    postureProgress = progress;
+    updateMarker();
   },
   onBleState(state) {
     if (state === 'ready') {
@@ -326,7 +390,7 @@ window.setTimeout(() => {
     demo += 0.016;
     window.qsControl.onTelemetry(
       Math.sin(demo * 0.36) * 0.35,
-      1.6,
+      1.7,
       0.4 + Math.cos(demo * 0.28) * 0.2,
       Math.sin(demo * 0.5) * 0.55,
       Math.sin(demo * 0.23) * 0.06

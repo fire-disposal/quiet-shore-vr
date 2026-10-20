@@ -88,7 +88,7 @@ fault/paused-stopped ──重新接管且患者重新进入──▶ claimed/ac
 | 场景 | `scene:<id>` | `landscape / ward / bathroom / lab` | 立即切换，无过渡 | 会话中拒绝并回显原场景 | 记录 id |
 | 声音 | `audio:on / off / toggle` | 二值 | 立即 | 断开保持最后值 | 记录目标值 |
 | 眼高 | `settings:eyeheight:<m>` | 1.20–1.90 m，0.05 m 步进，两位小数 | 会话中应用时 500 ms 缓动；`calibrating` 禁用 | 越界值整条命令拒绝，保留旧值 | 记录请求值与是否持久化 |
-| 姿态预设 | `posture:rise / lower / stop` | 起身：pitch −8°、rise 0.45 m、14 s；回躺：0°/0 m、12 s | 缓入缓出，匀速上限见 §5 | `stop` 冻结在当前值（不回弹） | 记录命令与完成进度 |
+| 姿态预设 | `posture:rise / lower / stop` | 起身：pitch −90°、rise 0.45 m、30 s；回躺：0°/0 m、30 s | 缓入缓出；完整起身重定向，显式 90° 上限，不受默认 ±20° 限制 | `stop` 冻结在当前值（不回弹） | 记录命令与完成进度 |
 | 姿态自定义 | 高级模式，映射到同一 `comfort.setPosture` | pitch ±20°、roll ±10°、rise 0–1.2 m、duration 1–30 s | 由 duration 与限速推导最小合法时长 | 同上 | 记录全部四项 |
 | 校准 | `calibrate / recalibrate` | 两姿态：天花板、脚尖 | 采集稳定后倒计时；隐藏场景；开始时偏移清零、姿态重定向 neutral（≤1 s） | 失败**保留旧校准**；姿态保持 neutral | 记录结果、角度、置信度 |
 | 视角平移 | `view:move:<x>,<z>`、`view:stop` | x,z ∈ [−1,1]，死区 0.08，输出最大 0.3 m/s | 500 ms 加速、200 ms 减速；偏移总量 ≤0.45 m | 300 ms 无更新、松开、断链、失控、患者停止 → 速度归零并冻结偏移 | 只记录流开始/结束、峰值速度与偏移 |
@@ -137,9 +137,9 @@ v0.8 只做内存环形缓冲（≥256 条）+ `Log.i`（TAG `QuietShorePortal`�
 | `VIEW_DEADZONE` | 0.08 | 归一化输入死区 |
 | `VIEW_RAMP_IN / OUT` | 500 / 200 ms | 加减速时间 |
 | `VIEW_TRANSPORT` | `GET /events`（SSE）优先；`GET /control` 轮询 100 ms 兜底 | `/events` 推送与 `/control` 同形的 control JSON；轮询只在 EventSource 不可用或断开时启用 |
-| `EYE_HEIGHT` | 1.20–1.90 m，默认 1.60，步进 0.05 | 虚拟眼高 |
-| `POSTURE` | pitch ±20°、roll ±10°、rise 0–1.2 m、1–30 s | 沿用 `POSTURE_LIMITS` |
-| `POSTURE_RATE` | pitch/roll ≤ 2°/s，rise ≤ 0.05 m/s | 由时长下限强制 |
+| `EYE_HEIGHT` | 1.20–1.90 m，默认 1.70，步进 0.05 | 虚拟眼高 |
+| `POSTURE` | 默认 pitch ±20°、roll ±10°、rise 0–1.2 m、1–30 s；起身预设显式传 90° | 沿用 `POSTURE_LIMITS`；90° 仅用于天花板→前墙的完整重定向 |
+| `POSTURE_RATE` | 小角度微调 pitch/roll ≤ 2°/s、rise ≤ 0.05 m/s；完整起身 90°/30 s 峰值约 5.6°/s | 90° 预设不受微调速率限制，需实机耐受验证；小角度仍按 2°/s |
 | `REMAP` | 夹角 15–165°、`confidence ≥ 0.35`、`weight ≤ 0.85`、旋转 ≤ 120° | 两姿态重映射的硬门限 |
 
 不动式约束：
@@ -186,11 +186,11 @@ Compose 实现要点：
 ### 7.1 眼高：bootstrap 注入，不改状态帧
 
 ```
-HeadsetSettings.eyeHeight  (SharedPreferences "settings.eyeHeight", 1.20–1.90, 默认 1.60)
+HeadsetSettings.eyeHeight  (SharedPreferences "settings.eyeHeight", 1.20–1.90, 默认 1.70)
   → LaunchOptions.eyeHeight
   → PortalSession.toJson() 增加 "eyeHeight": 1.35
   → PortalService 注入 window.__QS_BOOTSTRAP__
-  → src/app/config.ts readConfig: bootstrap.eyeHeight，clamp 1.2–1.9，默认 1.6
+  → src/app/config.ts readConfig: bootstrap.eyeHeight，clamp 1.2–1.9，默认 1.7
   → src/app/App.ts: 替换常量 EYE_HEIGHT，用于相机初始高度、SceneBuildContext.eyeHeight、setFloorOffset(-eyeHeight)
 ```
 
@@ -236,7 +236,7 @@ data: {"seq":42,"command":"view:move:0.4,-0.2","control":true}
 - **`ControlState` 线格式不变**：仍是 `scene|session|calibrating|audioMuted`。眼高、偏移、姿态进度都**不**进状态帧。
 - `telemetry` 仍是 20 字节 `x,y,z,yaw,pitch`；因此平板**无法**显示 roll，也不显示重映射置信度——这两个数字只在头显页面状态行与校准结果里出现。
 - `status` 语义不变：`OK:<cmd>` 只表示“头显服务已接收”，`view:move` 免回执。
-- 已知缺口：平板无法回读持久化眼高，重连后 `EyeHeightStepper` 只能显示进程内最后确认值或默认 1.60（标注“未确认”）。回读需要新增特性或状态字段，列入 P4。
+- 已知缺口：平板无法回读持久化眼高，重连后 `EyeHeightStepper` 只能显示进程内最后确认值或默认 1.70（标注“未确认”）。回读需要新增特性或状态字段，列入 P4。
 - `ControlProtocol.stateMaxBytes = 20` 的假设不变；新增字段留到 P4，届时需一并解决 ATT 负载与场景名截断。
 
 ## 8. 验收用例

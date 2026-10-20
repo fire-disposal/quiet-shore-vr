@@ -1,7 +1,10 @@
 package com.quietshore.control.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,7 +25,6 @@ import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -33,19 +35,26 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.Scenes
-import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.ui.ControlActions
 import com.quietshore.control.ui.theme.QuietPalette
-import java.util.Locale
+
+private enum class RailTab(val label: String) {
+    TRAIN("训练"),
+    SCENE("场景"),
+    TOOLS("工具")
+}
 
 @Composable
 fun ControlRail(
@@ -54,32 +63,24 @@ fun ControlRail(
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
+    var tab by rememberSaveable { mutableStateOf(RailTab.TRAIN) }
     Surface(modifier = modifier, shape = RoundedCornerShape(24.dp), color = QuietPalette.Surface) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp)
-        ) {
-            RailSection("护理辅助") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RailAction(
-                        label = "准备湖岸与水声",
-                        icon = Icons.Rounded.Waves,
-                        onClick = actions.onPrepareCare,
-                        enabled = connected,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = "患者侧无需选场景，右侧确认键保留停止",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
-                    )
-                }
-            }
+        Column(Modifier.fillMaxSize()) {
+            RailTabs(
+                selected = tab,
+                onSelect = { tab = it },
+                modifier = Modifier.padding(start = 22.dp, top = 18.dp, end = 22.dp, bottom = 8.dp)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 22.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp)
+            ) {
 
-            RailSection("SUS 量表") {
+
+            RailSection("SUS 量表", visible = tab == RailTab.TOOLS) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         RailAction(
@@ -110,6 +111,30 @@ fun ControlRail(
                         ) { Text("下一题") }
                     }
                     Text(
+                        text = "患者不便时，操作员为当前题代答",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (value in 1..5) {
+                            FilledTonalButton(
+                                onClick = { actions.onSusAnswer(value) },
+                                enabled = connected,
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                contentPadding = PaddingValues(0.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = QuietPalette.SurfaceRaised,
+                                    contentColor = QuietPalette.TextPrimary
+                                )
+                            ) {
+                                Text(
+                                    text = value.toString(),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                        }
+                    }
+                    Text(
                         text = "头显端 10 题 SUS；也可用顶栏页码翻页",
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextSecondary
@@ -117,7 +142,7 @@ fun ControlRail(
                 }
             }
 
-            RailSection("场景") {
+            RailSection("场景", visible = tab == RailTab.SCENE) {
                 SceneCards(
                     selectedId = state.control.scene,
                     enabled = connected,
@@ -125,7 +150,7 @@ fun ControlRail(
                 )
             }
 
-            RailSection("视点高度") {
+            RailSection("视点高度", visible = tab == RailTab.SCENE) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     EyeHeightStepper(
                         meters = state.eyeHeightRequested,
@@ -149,7 +174,7 @@ fun ControlRail(
                 }
             }
 
-            RailSection("控制") {
+            RailSection("控制", visible = tab == RailTab.TRAIN) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         RailAction(
@@ -160,65 +185,97 @@ fun ControlRail(
                             modifier = Modifier.weight(1f)
                         )
                         RailAction(
-                            label = if (state.control.audioMuted) "打开声音" else "关闭声音",
-                            icon = if (state.control.audioMuted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
-                            onClick = actions.onToggleAudio,
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        RailAction(
                             label = "预览",
                             icon = Icons.Rounded.Visibility,
                             onClick = actions.onPreview,
                             enabled = connected,
                             modifier = Modifier.weight(1f)
                         )
-                        SessionAction(
-                            session = state.control.session,
-                            onStart = actions.onStart,
-                            onEnd = actions.onEnd,
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        )
                     }
-                }
-            }
-
-            RailSection("虚拟起身") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        RailAction(
-                            label = "缓慢起身",
-                            icon = Icons.Rounded.ArrowUpward,
-                            onClick = actions.onPostureRise,
-                            enabled = connected && state.control.session,
-                            modifier = Modifier.weight(1f)
-                        )
-                        RailAction(
-                            label = "回躺",
-                            icon = Icons.Rounded.ArrowDownward,
-                            onClick = actions.onPostureLower,
-                            enabled = connected && state.control.session,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    TextButton(
-                        onClick = actions.onPostureStop,
-                        enabled = connected && state.control.session
-                    ) {
-                        Text("停止并保持", color = QuietPalette.TextPrimary)
-                    }
+                    SessionAction(
+                        session = state.control.session,
+                        onEnter = actions.onEnterTraining,
+                        onEnd = actions.onEnd,
+                        enabled = connected,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     Text(
-                        text = "仅训练中可用。患者确认键仍可立即停止。",
+                        text = "进入练习会打开 Firefox；门扉页仍需患者确认一次",
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextSecondary
                     )
                 }
             }
 
-            RailSection("治疗师模式") {
+            RailSection("水声", visible = tab == RailTab.TRAIN) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RailAction(
+                        label = if (state.control.audioMuted) "开始水声" else "暂停水声",
+                        icon = if (state.control.audioMuted) {
+                            Icons.Rounded.VolumeUp
+                        } else {
+                            Icons.Rounded.VolumeOff
+                        },
+                        onClick = actions.onToggleAudio,
+                        enabled = connected,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = if (state.control.audioMuted) "水声已暂停" else "水声播放中",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+            }
+
+            RailSection("虚拟起身", visible = tab == RailTab.TRAIN) {
+                val postureReady = connected &&
+                    state.control.session &&
+                    !state.control.calibrating &&
+                    state.control.calibrationConfidence > 0f
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        RailAction(
+                            label = "缓慢起身",
+                            icon = Icons.Rounded.ArrowUpward,
+                            onClick = actions.onPostureRise,
+                            enabled = postureReady,
+                            modifier = Modifier.weight(1f)
+                        )
+                        RailAction(
+                            label = "回躺",
+                            icon = Icons.Rounded.ArrowDownward,
+                            onClick = actions.onPostureLower,
+                            enabled = postureReady,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    TextButton(
+                        onClick = actions.onPostureStop,
+                        enabled = postureReady
+                    ) {
+                        Text("停止并保持", color = QuietPalette.TextPrimary)
+                    }
+                    Text(
+                        text = when {
+                            !connected -> "头显未连接"
+                            !state.control.session -> "训练开始后可用"
+                            state.control.calibrating -> "校准中暂停"
+                            state.control.calibrationConfidence <= 0f ->
+                                "请先在头显完成方向校准"
+                            else -> "仅训练中可用。患者确认键仍可立即停止。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (postureReady) {
+                            QuietPalette.TextSecondary
+                        } else {
+                            QuietPalette.Warning
+                        }
+                    )
+                }
+            }
+
+            RailSection("治疗师模式", visible = tab == RailTab.TOOLS) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -281,36 +338,45 @@ fun ControlRail(
                 }
             }
 
-            RailSection("状态") {
-                StatusSummary(state)
-                state.error?.let { message ->
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.Danger
-                    )
+            RailSection("提示", visible = tab == RailTab.TOOLS) {
+                Text(
+                    text = "平板可代为发起进入练习",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextSecondary
+                )
+                Text(
+                    text = "只有 Firefox 门扉页需要患者确认一次",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailTabs(
+    selected: RailTab,
+    onSelect: (RailTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        RailTab.values().forEach { tab ->
+            val active = tab == selected
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onSelect(tab) },
+                color = if (active) QuietPalette.Primary else QuietPalette.SurfaceRaised,
+                contentColor = if (active) QuietPalette.OnPrimary else QuietPalette.TextSecondary
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(tab.label, style = MaterialTheme.typography.titleSmall)
                 }
-            }
-
-            RailSection("提示") {
-                Text(
-                    text = "请在头显内启动一次，之后由平板控制",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.TextSecondary
-                )
-                Text(
-                    text = "患者无需操作",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.TextSecondary
-                )
-            }
-
-            state.notice?.let { notice ->
-                Text(
-                    text = notice,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
             }
         }
     }
@@ -319,8 +385,12 @@ fun ControlRail(
 @Composable
 private fun RailSection(
     title: String,
+    visible: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    if (!visible) {
+        return
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = title,
@@ -360,7 +430,7 @@ private fun RailAction(
 @Composable
 private fun SessionAction(
     session: Boolean,
-    onStart: () -> Unit,
+    onEnter: () -> Unit,
     onEnd: () -> Unit,
     enabled: Boolean,
     modifier: Modifier = Modifier
@@ -382,76 +452,16 @@ private fun SessionAction(
         }
     } else {
         Button(
-            onClick = onStart,
+            onClick = onEnter,
             modifier = modifier.height(56.dp),
-            enabled = false,
+            enabled = enabled,
             shape = RoundedCornerShape(14.dp)
         ) {
             Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("请在头显内启动", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Text("进入练习", style = MaterialTheme.typography.titleSmall, maxLines = 1)
         }
     }
 }
 
-@Composable
-private fun StatusSummary(state: ControlUiState) {
-    val pose = state.pose
-    val fresh = pose != null && !state.poseStale
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SummaryRow("患者场景", Scenes.label(state.control.scene))
-        SummaryRow(
-            label = "训练状态",
-            value = when {
-                state.control.calibrating -> "校准中"
-                state.control.session -> "训练中"
-                else -> "待机"
-            }
-        )
-        SummaryRow("声音", if (state.control.audioMuted) "关" else "开")
-        SummaryRow(
-            label = "视点高度",
-            value = String.format(Locale.US, "%.2f 米", state.eyeHeightRequested)
-        )
-        SummaryRow("患者姿态", if (fresh) "实时" else "姿态未更新")
-        if (fresh) {
-            Text(
-                text = "位置 ${position(pose)} 米",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
-            Text(
-                text = "朝向 ${orientation(pose)} 度",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
-        }
-    }
-}
 
-@Composable
-private fun SummaryRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextPrimary,
-            textAlign = TextAlign.End
-        )
-    }
-}
-
-private fun position(pose: TelemetryPose): String =
-    String.format(Locale.US, "%.2f %.2f %.2f", pose.x, pose.y, pose.z)
-
-private fun orientation(pose: TelemetryPose): String =
-    String.format(Locale.US, "%.0f %.0f", pose.yaw, pose.pitch)

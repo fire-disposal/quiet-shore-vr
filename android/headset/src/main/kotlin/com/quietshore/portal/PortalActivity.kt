@@ -133,13 +133,32 @@ class PortalActivity : Activity() {
         }
         setContentView(buildShell())
         showPage(pageFromIntent(intent) ?: Page.HOME)
+        val answer = intent?.getIntExtra(PortalActions.EXTRA_SUS_ANSWER, 0) ?: 0
+        if (answer in 1..5) {
+            applySusAnswer(answer)
+        }
         window.decorView.post { warnIfFirefoxMissing() }
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pageFromIntent(intent)?.let { showPage(it) }
+        val answer = intent?.getIntExtra(PortalActions.EXTRA_SUS_ANSWER, 0) ?: 0
+        if (answer in 1..5) {
+            applySusAnswer(answer)
+        } else {
+            pageFromIntent(intent)?.let { showPage(it) }
+        }
+    }
+
+    /** Operator answer for the currently shown SUS item. */
+    private fun applySusAnswer(value: Int) {
+        if (currentPage != Page.SUS) {
+            showPage(Page.SUS)
+        }
+        val index = internalIndex.coerceIn(0, SUS_STATEMENTS.size - 1)
+        susAnswers[index] = value
+        renderPage()
     }
 
     private fun pageFromIntent(intent: Intent?): Page? = when (intent?.getStringExtra(PortalActions.EXTRA_PAGE)) {
@@ -512,10 +531,14 @@ class PortalActivity : Activity() {
         }
 
     private fun buildSettingsPage(): View {
-        val page = pageColumn()
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Three action columns + a full-width about strip. The previous
+        // two-column split stacked four cards in one column and pushed the
+        // last system button below the content frame.
+        val page = pageColumn().apply { setPadding(dp(24), dp(10), dp(24), dp(12)) }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
 
         val usage = sectionCard()
         usage.addView(sectionLabel("使用"))
@@ -527,10 +550,10 @@ class PortalActivity : Activity() {
             settings = settings.copy(showHud = it)
             HeadsetSettings.save(this, settings)
         })
-        left.addView(usage, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        top.addView(usage, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = dp(7)
+        })
+
         val system = sectionCard()
         system.addView(sectionLabel("系统"))
         system.addView(actionButton("SUS 量表", false) {
@@ -539,59 +562,67 @@ class PortalActivity : Activity() {
         system.addView(actionButton("全部应用", false) {
             PortalActions.allApps(this)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
-        system.addView(actionButton("离开静岸", false) {
-            showExitDialog()
-        }.apply { setTextColor(DANGER) }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(46)
-        ).apply { topMargin = dp(6) })
-        left.addView(system, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(12) })
+        system.addView(actionButton("系统设置", false) {
+            PortalActions.systemSettings(this)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
+        top.addView(system, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(7)
+            marginEnd = dp(7)
+        })
 
         val connection = sectionCard()
         connection.addView(sectionLabel("连接"))
         connection.addView(
             label("平板接管后场景、声音和校准由平板控制", 13f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(8), 0, dp(8))
+                setPadding(0, dp(8), 0, dp(10))
             }
         )
         connection.addView(actionButton("打开蓝牙设置", false) {
             startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
-        right.addView(connection, LinearLayout.LayoutParams(
+        top.addView(connection, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(7)
+        })
+
+        page.addView(top, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
         val about = sectionCard()
         about.addView(sectionLabel("关于"))
-        about.addView(infoRow("版本", versionName()))
-        about.addView(infoRow("浏览器", if (PortalActions.isFirefoxAvailable(this)) {
+        val aboutRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(4), 0, 0)
+        }
+        aboutRow.addView(aboutCell("版本", versionName()))
+        aboutRow.addView(aboutCell("浏览器", if (PortalActions.isFirefoxAvailable(this)) {
             "Firefox Reality 10"
         } else {
             "Firefox Reality 未安装"
         }))
-        about.addView(infoRow("本机服务", "127.0.0.1:8130"))
-        about.addView(infoRow("控制方式", "平板先到先得"))
-        right.addView(about, LinearLayout.LayoutParams(
+        aboutRow.addView(aboutCell("本机服务", "127.0.0.1:8130"))
+        aboutRow.addView(aboutCell("控制方式", "平板先到先得"))
+        about.addView(aboutRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
-
-        row.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginEnd = dp(7)
-        })
-        row.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginStart = dp(7)
-        })
-        page.addView(row, LinearLayout.LayoutParams(
+        page.addView(about, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        ).apply { topMargin = dp(12) })
         return page
     }
+
+    private fun aboutCell(title: String, value: String): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, dp(10), 0)
+            addView(label(title, 11f, MUTED, Typeface.BOLD, 0.08f))
+            addView(label(value, 13f, TEXT, Typeface.NORMAL, 0f).apply {
+                setPadding(0, dp(5), 0, 0)
+            })
+        }
 
     private fun buildSusPage(): View {
         val page = pageColumn()

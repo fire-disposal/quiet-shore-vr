@@ -169,7 +169,7 @@ export function createWorld(THREE, options) {
     textures: textures,
     quality: quality
   };
-  world.userData.eyeHeight = options && options.eyeHeight ? options.eyeHeight : 1.6;
+  world.userData.eyeHeight = options && options.eyeHeight ? options.eyeHeight : 1.7;
 
   function dispose() {
     world.traverse(function (object) {

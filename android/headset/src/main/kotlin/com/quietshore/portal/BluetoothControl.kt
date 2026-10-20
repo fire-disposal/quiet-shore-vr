@@ -89,7 +89,14 @@ internal class BluetoothControl(
                     }
                 }
                 listener.onControlMode(false)
-                notifyStatus(ControlProtocol.STATUS_CONTROL_RELEASED)
+                // Tell the timed-out controller, not every connected tablet.
+                remoteDevice(active)?.let { device ->
+                    notifyValueTo(
+                        device,
+                        statusCharacteristic,
+                        ControlProtocol.STATUS_CONTROL_RELEASED.toByteArray(StandardCharsets.UTF_8)
+                    )
+                }
                 return
             }
             watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
@@ -255,20 +262,12 @@ internal class BluetoothControl(
     }
 
     fun publishTelemetry(pose: TelemetryPose) {
-        notifyValue(
-            telemetryCharacteristic,
-            ControlProtocol.encodeTelemetry(pose),
-            controllerOnly = true
-        )
+        notifyValue(telemetryCharacteristic, ControlProtocol.encodeTelemetry(pose))
     }
 
     fun publishState(state: ControlState) {
         lastState = state
-        notifyValue(
-            stateCharacteristic,
-            ControlProtocol.encodeState(state),
-            controllerOnly = true
-        )
+        notifyValue(stateCharacteristic, ControlProtocol.encodeState(state))
     }
 
     private fun setState(value: String) {
@@ -276,36 +275,35 @@ internal class BluetoothControl(
         listener.onStateChanged(value)
     }
 
-    private fun notifyStatus(value: String) {
-        notifyValue(
-            statusCharacteristic,
-            value.toByteArray(StandardCharsets.UTF_8),
-            controllerOnly = false
-        )
-    }
-
+    /** Telemetry and state go only to the current controller. */
     private fun notifyValue(
         characteristic: BluetoothGattCharacteristic?,
-        value: ByteArray,
-        controllerOnly: Boolean
+        value: ByteArray
+    ) {
+        val target = characteristic ?: return
+        val address = synchronized(controlLock) { controller } ?: return
+        val device = remoteDevice(address) ?: return
+        notifyValueTo(device, target, value)
+    }
+
+    /** Notify exactly one client; command replies must never reach siblings. */
+    private fun notifyValueTo(
+        device: BluetoothDevice,
+        characteristic: BluetoothGattCharacteristic?,
+        value: ByteArray
     ) {
         val target = characteristic ?: return
         val gatt = server ?: return
         target.value = value
-        val addresses: Collection<String> =
-            if (controllerOnly) listOfNotNull(controller) else connected
-        for (address in addresses) {
-            val device = remoteDevice(address) ?: continue
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    gatt.notifyCharacteristicChanged(device, target, false, value)
-                } else {
-                    @Suppress("DEPRECATION")
-                    gatt.notifyCharacteristicChanged(device, target, false)
-                }
-            } catch (ignored: RuntimeException) {
-                // client went away
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.notifyCharacteristicChanged(device, target, false, value)
+            } else {
+                @Suppress("DEPRECATION")
+                gatt.notifyCharacteristicChanged(device, target, false)
             }
+        } catch (ignored: RuntimeException) {
+            // client went away
         }
     }
 
@@ -326,11 +324,14 @@ internal class BluetoothControl(
         val address = addressOf(device) ?: return ControlProtocol.STATUS_CONTROL_REQUIRED
         val changed = synchronized(controlLock) {
             val current = controller
-            if (current == null) {
+            if (current == null || current == address) {
+                controller = address
+                current == null
+            } else if (current !in connected) {
+                // The old controller is no longer on any live GATT link
+                // (BLE random address rotated or the pad process restarted).
                 controller = address
                 true
-            } else if (current == address) {
-                false
             } else {
                 return ControlProtocol.STATUS_CONTROL_BUSY
             }
@@ -340,12 +341,10 @@ internal class BluetoothControl(
             watchdogHandler.removeCallbacks(controllerWatchdog)
             watchdogHandler.postDelayed(controllerWatchdog, WATCHDOG_INTERVAL_MS)
             listener.onControlMode(true)
-            notifyValue(
-                stateCharacteristic,
-                ControlProtocol.encodeState(lastState),
-                controllerOnly = true
-            )
         }
+        // Always replay the snapshot: a reconnecting tablet may have missed
+        // the 1 Hz state while notifications were being enabled.
+        notifyValue(stateCharacteristic, ControlProtocol.encodeState(lastState))
         return ControlProtocol.STATUS_CONTROL_OK
     }
 
@@ -386,13 +385,24 @@ internal class BluetoothControl(
                     command == null || !isController(device) -> ControlProtocol.STATUS_CONTROL_REQUIRED
                     !ControlProtocol.isAllowedCommand(command) -> ControlProtocol.STATUS_COMMAND_REJECTED
                     else -> {
-                        if (isController(device)) {
-                            touchController()
-                        }
-                        if (listener.onCommand(command)) {
-                            "OK:$command"
-                        } else {
+                        touchController()
+                        if (!listener.onCommand(command)) {
                             ControlProtocol.STATUS_COMMAND_REJECTED
+                        } else if (command.startsWith(ControlProtocol.VIEW_MOVE)) {
+                            // 10 Hz stream: keep the GATT write response but
+                            // spend no status notification per sample.
+                            if (requestId != 0) {
+                                sendResponse(
+                                    device,
+                                    requestId,
+                                    BluetoothGatt.GATT_SUCCESS,
+                                    0,
+                                    ByteArray(0)
+                                )
+                            }
+                            return
+                        } else {
+                            "OK:$command"
                         }
                     }
                 }
@@ -402,7 +412,14 @@ internal class BluetoothControl(
     }
 
     private fun replyWrite(device: BluetoothDevice, requestId: Int, reply: String) {
-        notifyStatus(reply)
+        // Replies are per-request. Broadcasting CONTROL_BUSY / CONTROL_REQUIRED
+        // made the current controller tear down its own link when a second
+        // tablet tried to claim or wrote while unprivileged.
+        notifyValueTo(
+            device,
+            statusCharacteristic,
+            reply.toByteArray(StandardCharsets.UTF_8)
+        )
         if (requestId != 0) {
             sendResponse(
                 device,
@@ -446,7 +463,11 @@ internal class BluetoothControl(
             val address = addressOf(device) ?: return
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 connected.add(address)
-                notifyStatus(ControlProtocol.STATUS_CONNECTED)
+                notifyValueTo(
+                    device,
+                    statusCharacteristic,
+                    ControlProtocol.STATUS_CONNECTED.toByteArray(StandardCharsets.UTF_8)
+                )
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 connected.remove(address)
                 val released = synchronized(controlLock) {

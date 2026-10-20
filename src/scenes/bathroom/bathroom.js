@@ -462,7 +462,7 @@ function createWorld(THREE, opts) {
   }
   opts = opts || {};
   var quality = opts.quality === 'low' ? 'low' : 'high';
-  var eyeHeight = isNum(opts.eyeHeight) ? opts.eyeHeight : 1.6;
+  var eyeHeight = isNum(opts.eyeHeight) ? opts.eyeHeight : 1.7;
   var high = quality === 'high';
   var ringSeg = high ? 20 : 12;
   var tubeSeg = high ? 18 : 10;

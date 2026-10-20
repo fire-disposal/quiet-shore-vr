@@ -181,7 +181,7 @@ export interface ComfortApi {
    * A new target while a transition runs starts from the current values with
    * zero speed, superseding any deceleration in progress.
    */
-  setPosture(target: VirtualPosture, durationMs: number): void;
+  setPosture(target: VirtualPosture, durationMs: number, maxPitchDeg?: number): void;
   /** Advance the posture, deceleration and remap transitions; `dt` is seconds. */
   updatePosture(dt: number): void;
   /**
@@ -445,11 +445,21 @@ export function createComfort(options: {
     brakeVelocity.riseM = 0;
   }
 
-  function setPosture(target: VirtualPosture, durationMs: number): void {
+  function setPosture(
+    target: VirtualPosture,
+    durationMs: number,
+    maxPitchDeg: number = POSTURE_LIMITS.maxPitchDeg
+  ): void {
     // Without calibration there is no pivot to move around: stay neutral.
     if (!calibrated) {
       return;
     }
+    const pitchLimit = clampNumber(
+      maxPitchDeg,
+      POSTURE_LIMITS.maxPitchDeg,
+      0,
+      90
+    );
     // A fresh target supersedes any deceleration in progress.
     braking = false;
     brakeElapsedMs = 0;
@@ -460,8 +470,8 @@ export function createComfort(options: {
     postureTarget.pitchDeg = clampNumber(
       target?.pitchDeg,
       0,
-      -POSTURE_LIMITS.maxPitchDeg,
-      POSTURE_LIMITS.maxPitchDeg
+      -pitchLimit,
+      pitchLimit
     );
     postureTarget.rollDeg = clampNumber(
       target?.rollDeg,

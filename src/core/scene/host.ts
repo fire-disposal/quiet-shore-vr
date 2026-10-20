@@ -44,7 +44,7 @@ export class SceneHost {
     this.baselineBackground = this.scene.background;
     this.baselineFog = this.scene.fog;
     this.defaultQuality = options.quality ?? 'high';
-    this.defaultEyeHeight = options.eyeHeight ?? 1.6;
+    this.defaultEyeHeight = options.eyeHeight ?? 1.7;
   }
 
   get definition(): SceneDefinition | null {

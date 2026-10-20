@@ -108,7 +108,7 @@ function createWorld(THREE, opts) {
   }
   opts = opts || {};
   var quality = opts.quality === 'low' ? 'low' : 'high';
-  var eyeHeight = typeof opts.eyeHeight === 'number' ? opts.eyeHeight : 1.6;
+  var eyeHeight = typeof opts.eyeHeight === 'number' ? opts.eyeHeight : 1.7;
   var low = quality === 'low';
   var rnd = seeded(0x57a1c3);
 
