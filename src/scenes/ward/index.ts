@@ -12,12 +12,12 @@ export const wardScene: SceneDefinition = {
   id: 'ward',
   name: { zh: '训练病区', en: 'Training Ward' },
   tagline: {
-    zh: '在安静的病房里，跟着提示熟悉每一个动作。',
-    en: 'Get to know each step, one calm instruction at a time.'
+    zh: '百叶窗筛下的柔光里，一步一步熟悉病房。',
+    en: 'Learn the room one calm step at a time, in the soft light by the blinds.'
   },
   description: {
-    zh: '按真实尺寸布置的病房：病床、监护仪、床旁柜、输液架与窗边冷光，外加三个可注视的目标点。用于熟悉病房环境、适应注视选择与操作流程。',
-    en: 'A real-scale patient room with bed, monitor, bedside cabinet, IV stand and cool window light, plus three gaze targets. Rehearse the ward environment and gaze-based selection before going live.'
+    zh: '按真实尺寸布置的训练病房：铺着褶皱床品的病床、带滚动心电波形的监护仪、床旁柜与输液架，窗外百叶与布帘投下柔和日光，另有三处可注视的目标点。用于熟悉病房环境、适应注视选择与操作流程。',
+    en: 'A real-scale training ward: a made bed with layered linen, a monitor with a scrolling ECG trace, bedside cabinet and IV stand, soft daylight through blinds and curtains, plus three gaze targets. Rehearse the ward and gaze-based selection before going live.'
   },
   audio: 'rain',
   build: function (ctx: SceneBuildContext): SceneHandle {
