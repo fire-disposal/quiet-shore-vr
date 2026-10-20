@@ -51,8 +51,8 @@ object ControlProtocol {
     const val VIEW_STOP: String = "view:stop"
 
     val CAPABILITIES: List<String> = listOf(
-        "start", "enter", "preview", "exit", "stop", "pause", "resume",
-        "calibrate", "recalibrate", "status", "menu",
+        "start", "enter", "preview", "exit", "stop",
+        "calibrate", "recalibrate", "status",
         "audio:on", "audio:off", "audio:toggle",
         "scene:<id>", "posture:rise", "posture:lower", "posture:stop",
         "cue:on", "cue:off", "cue:intensity:0-1",
@@ -133,16 +133,12 @@ object ControlProtocol {
         val normalized = normalize(command) ?: return false
         return normalized == "start" ||
             normalized == "enter" ||
-            normalized == "launch" ||
             normalized == "preview" ||
             normalized == "exit" ||
             normalized == "stop" ||
-            normalized == "pause" ||
-            normalized == "resume" ||
             normalized == "calibrate" ||
             normalized == "recalibrate" ||
             normalized == "status" ||
-            normalized == "menu" ||
             normalized == "audio:on" ||
             normalized == "audio:off" ||
             normalized == "audio:toggle" ||

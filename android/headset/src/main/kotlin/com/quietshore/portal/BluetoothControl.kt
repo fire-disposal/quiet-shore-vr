@@ -47,7 +47,8 @@ internal class BluetoothControl(
     private val listener: Listener
 ) {
     interface Listener {
-        fun onCommand(command: String)
+        /** Returns true only when the command passed semantic routing. */
+        fun onCommand(command: String): Boolean
 
         fun onControlMode(active: Boolean)
 
@@ -341,8 +342,11 @@ internal class BluetoothControl(
                     command == null || !isController(device) -> ControlProtocol.STATUS_CONTROL_REQUIRED
                     !ControlProtocol.isAllowedCommand(command) -> ControlProtocol.STATUS_COMMAND_REJECTED
                     else -> {
-                        listener.onCommand(command)
-                        "OK:$command"
+                        if (listener.onCommand(command)) {
+                            "OK:$command"
+                        } else {
+                            ControlProtocol.STATUS_COMMAND_REJECTED
+                        }
                     }
                 }
             }

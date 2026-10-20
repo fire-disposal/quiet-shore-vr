@@ -199,27 +199,6 @@ internal object PortalActions {
         launch(context, intent, "未找到可用的桌面")
     }
 
-    /**
-     * Opens the system HOME chooser. Android does not allow an ordinary app
-     * to change the default home silently; the user confirms the target once.
-     */
-    fun chooseHome(context: Context) {
-        val settings = Intent(Settings.ACTION_HOME_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        try {
-            context.startActivity(settings)
-            return
-        } catch (ignored: RuntimeException) {
-            // Some vendor builds omit the Home settings screen; fall back to
-            // the system selector. Neither path can change HOME silently.
-        }
-        val selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_HOME).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        launch(context, selector, "未找到桌面选择器")
-    }
-
     private fun applicationContext(context: Context): Context = context.applicationContext ?: context
 
     private fun launch(context: Context, intent: Intent, failureMessage: String) {
@@ -267,17 +246,5 @@ internal object PortalStatus {
     /** BLE address of the controlling pad; null while nobody owns the console. */
     fun controllerAddress(): String? = controllerMac
 
-    /** One-line state for any UI surface that shows peripheral status. */
-    fun description(): String {
-        val state = bluetoothState
-        return when {
-            state == "advertising" && controlActive -> "平板控制中，按一次确认键开始"
-            state == "advertising" -> "等待平板连接"
-            state == "bluetooth-off" -> "蓝牙未开启"
-            state == "starting" -> "蓝牙正在启动"
-            state == "stopped" || state == "unavailable" -> "服务未运行"
-            else -> "蓝牙不可用"
-        }
-    }
 }
 

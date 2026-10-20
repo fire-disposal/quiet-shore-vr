@@ -176,9 +176,7 @@ class PortalService : Service() {
         bluetooth = BluetoothControl(
             this,
             object : BluetoothControl.Listener {
-                override fun onCommand(command: String) {
-                    dispatchControl(command)
-                }
+                override fun onCommand(command: String): Boolean = dispatchControl(command)
 
                 override fun onControlMode(active: Boolean) {
                     val changed = controlMode != active
@@ -653,8 +651,10 @@ class PortalService : Service() {
         when {
             command == "home" -> PortalActions.home(this)
             command == "allapps" -> PortalActions.allApps(this)
-            command == "enter" || command == "launch" -> {
-                PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())
+            command == "enter" -> {
+                if (!PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())) {
+                    return false
+                }
             }
             command.startsWith(ControlProtocol.SETTINGS_SKIP_CALIBRATION) -> {
                 val enabled = command.endsWith(":on")
@@ -700,6 +700,21 @@ class PortalService : Service() {
                 pendingControl.set(command)
                 queued = true
                 broadcastStatus = false
+            }
+            command.startsWith("cue:") -> {
+                if (HeadsetSettings.read(this).sceneId != "landscape") {
+                    Log.w(TAG, "rejected cue outside landscape: $command")
+                    return false
+                }
+                if (command.startsWith("cue:intensity:")) {
+                    val intensity = command.substringAfter("cue:intensity:").toFloatOrNull()
+                    if (intensity == null || !intensity.isFinite() || intensity < 0f || intensity > 1f) {
+                        Log.w(TAG, "rejected cue intensity: $command")
+                        return false
+                    }
+                }
+                pendingControl.set(command)
+                queued = true
             }
             command.startsWith("scene:") -> {
                 val scene = command.substringAfter("scene:").trim()
