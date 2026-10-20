@@ -86,8 +86,11 @@ internal object PortalActions {
             Handler(Looper.getMainLooper()).postDelayed({
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                 intent.setClassName(FIREFOX_PACKAGE, FIREFOX_ACTIVITY)
-                // 复用 Firefox 的 task 但清空回退栈，冷/热启动都会重新加载 URL。
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                // Do not CLEAR_TASK: Firefox Reality crashes in
+                // TelemetryWrapper when its activity is recreated while a
+                // telemetry session is already active. NEW_TASK + a fresh URL
+                // key reuses the warm task and navigates it.
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 launch(app, intent, "未找到 Firefox Reality，可用全部应用手动打开")
             }, LAUNCH_DELAY_MS)
         }, "quietshore-launch").start()
