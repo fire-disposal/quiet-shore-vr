@@ -192,13 +192,27 @@ export class QuietShoreApp {
           pitch: this.headEuler.x
         };
       },
-      () => ({
-        scene: this.sceneId,
-        session: this.session !== null,
-        calibrating: this.calibration?.isActive() ?? false,
-        audio: this.audioMuted,
-        eyeHeight: this.eyeHeight
-      })
+      () => {
+        const posture = this.comfort?.getPostureState();
+        const cue = this.postureCueState?.getState();
+        const remap = this.comfort?.getState().remap;
+        return {
+          scene: this.sceneId,
+          session: this.session !== null,
+          calibrating: this.calibration?.isActive() ?? false,
+          audio: this.audioMuted,
+          eyeHeight: this.eyeHeight,
+          posturePitch: posture?.pitchDeg ?? 0,
+          postureRoll: posture?.rollDeg ?? 0,
+          postureRise: posture?.riseM ?? 0,
+          postureProgress: posture?.progress ?? 0,
+          viewX: this.viewOffsetX,
+          viewZ: this.viewOffsetZ,
+          cueEnabled: cue?.enabled ?? false,
+          cueIntensity: cue?.intensity ?? 0,
+          calibrationConfidence: remap?.confidence ?? 0
+        };
+      }
     );
 
     this.pipeline.add({

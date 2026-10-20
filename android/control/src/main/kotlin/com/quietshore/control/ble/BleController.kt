@@ -9,6 +9,7 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Handler
+import android.os.SystemClock
 import android.os.Looper
 import android.os.ParcelUuid
 import com.quietshore.control.model.DiscoveredDevice
@@ -57,6 +58,25 @@ class BleController(
     private var manager: QuietShoreBleManager? = null
     private var pendingConnect: ConnectRequest? = null
     private var awaitingControl = false
+
+    private var heartbeatRunning = false
+    private var lastPongAt = 0L
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            if (phase != BlePhase.READY) {
+                heartbeatRunning = false
+                return
+            }
+            if (SystemClock.elapsedRealtime() - lastPongAt > HEARTBEAT_TIMEOUT_MS) {
+                heartbeatRunning = false
+                listener.onControlLost("蓝牙心跳超时，请重新连接")
+                closeConnection()
+                return
+            }
+            manager?.writeCommand(ControlProtocol.PING)
+            mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+        }
+    }
 
     private val scanWindow = Runnable { stopScan() }
     private val claimTimeout = Runnable {
@@ -237,6 +257,7 @@ class BleController(
     }
 
     fun close() {
+        stopHeartbeat()
         stopScan()
         cancelClaimTimeout()
         awaitingControl = false
@@ -267,6 +288,7 @@ class BleController(
 
     /** Drops the link without claiming or releasing control. */
     private fun closeConnection() {
+        stopHeartbeat()
         val current = manager
         if (current == null) {
             setPhase(BlePhase.DISCONNECTED)
@@ -287,7 +309,26 @@ class BleController(
             return
         }
         phase = next
+        if (next == BlePhase.READY) {
+            startHeartbeat()
+        } else {
+            stopHeartbeat()
+        }
         listener.onPhase(next)
+    }
+
+    private fun startHeartbeat() {
+        stopHeartbeat()
+        heartbeatRunning = true
+        lastPongAt = SystemClock.elapsedRealtime()
+        mainHandler.postDelayed(heartbeat, HEARTBEAT_INTERVAL_MS)
+    }
+
+    private fun stopHeartbeat() {
+        if (heartbeatRunning) {
+            heartbeatRunning = false
+            mainHandler.removeCallbacks(heartbeat)
+        }
     }
 
     private fun onConnectFailed(code: Int) {
@@ -313,6 +354,10 @@ class BleController(
     }
 
     private fun handleStatus(raw: String) {
+        if (raw == ControlProtocol.PONG) {
+            lastPongAt = SystemClock.elapsedRealtime()
+            return
+        }
         when (raw) {
             ControlProtocol.STATUS_CONTROL_OK -> {
                 cancelClaimTimeout()
@@ -335,7 +380,10 @@ class BleController(
                 closeConnection()
             }
 
-            ControlProtocol.STATUS_CONTROL_RELEASED -> listener.onStatus(raw)
+            ControlProtocol.STATUS_CONTROL_RELEASED -> {
+                listener.onControlLost("头显已释放控制权")
+                closeConnection()
+            }
             ControlProtocol.STATUS_CONNECTED -> listener.onStatus(raw)
             else -> listener.onStatus(raw)
         }
@@ -453,6 +501,8 @@ class BleController(
         }
 
     private companion object {
+        const val HEARTBEAT_INTERVAL_MS = 5_000L
+        const val HEARTBEAT_TIMEOUT_MS = 15_000L
         const val SCAN_WINDOW_MS = 12_000L
         const val CONNECT_TIMEOUT_MS = 15_000L
         const val CLAIM_TIMEOUT_MS = 6_000L

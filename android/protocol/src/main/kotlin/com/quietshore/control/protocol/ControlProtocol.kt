@@ -1,9 +1,9 @@
 package com.quietshore.control.protocol
 
 import java.nio.ByteBuffer
+import kotlin.math.roundToInt
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 import java.util.UUID
 
 /**
@@ -21,11 +21,16 @@ object ControlProtocol {
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
-    const val stateMaxBytes: Int = 32
+    const val stateMaxBytes: Int = 12
+    const val stateVersion: Int = 3
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
     const val RELEASE: String = "RELEASE"
+
+    /** Internal application-level liveness probe; never routed to the page. */
+    const val PING: String = "ping"
+    const val PONG: String = "PONG"
 
     /** Host-level commands are executed by the headset service, not the page. */
     const val ENTER: String = "enter"
@@ -182,42 +187,64 @@ object ControlProtocol {
         )
     }
 
+    private val SCENE_IDS = listOf("landscape", "ward", "bathroom", "lab")
+
     fun encodeState(state: ControlState): ByteArray {
-        val scene = state.scene.replace('|', '_').take(16)
-        val eyeHeight = state.eyeHeight.coerceIn(EYE_HEIGHT_MIN, EYE_HEIGHT_MAX)
-        val raw = buildString {
-            append(scene)
-            append('|')
-            append(if (state.session) '1' else '0')
-            append('|')
-            append(if (state.calibrating) '1' else '0')
-            append('|')
-            append(if (state.audioMuted) '1' else '0')
-            append('|')
-            append(String.format(Locale.US, "%.2f", eyeHeight))
-        }
-        return raw.toByteArray(StandardCharsets.UTF_8)
+        val sceneIndex = SCENE_IDS.indexOf(state.scene).let { if (it < 0) 255 else it }
+        var flags = 0
+        if (state.session) flags = flags or 1
+        if (state.calibrating) flags = flags or 2
+        if (state.audioMuted) flags = flags or 4
+        if (state.cueEnabled) flags = flags or 8
+        val buffer = ByteBuffer.allocate(stateMaxBytes).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.put(stateVersion.toByte())
+        buffer.put(sceneIndex.toByte())
+        buffer.put(flags.toByte())
+        buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(120, 190).toByte())
+        buffer.put(((state.posturePitch + 20f).roundToInt()).coerceIn(0, 40).toByte())
+        buffer.put(((state.postureRoll + 10f).roundToInt()).coerceIn(0, 20).toByte())
+        buffer.put((state.postureRise * 100f).roundToInt().coerceIn(0, 120).toByte())
+        buffer.put((state.postureProgress * 100f).roundToInt().coerceIn(0, 100).toByte())
+        buffer.put(((state.viewX * 100f).roundToInt() + 45).coerceIn(0, 90).toByte())
+        buffer.put(((state.viewZ * 100f).roundToInt() + 45).coerceIn(0, 90).toByte())
+        buffer.put((state.cueIntensity * 100f).roundToInt().coerceIn(0, 100).toByte())
+        buffer.put((state.calibrationConfidence * 100f).roundToInt().coerceIn(0, 100).toByte())
+        return buffer.array()
     }
 
-    fun decodeState(raw: String): ControlState? {
-        val parts = raw.trim().split('|')
-        if (parts.size !in 4..5 || parts[0].isEmpty()) return null
-        val eyeHeight = if (parts.size == 5) {
-            val value = parts[4].toFloatOrNull() ?: return null
-            if (!value.isFinite() || value < EYE_HEIGHT_MIN || value > EYE_HEIGHT_MAX) return null
-            value
-        } else {
-            EYE_HEIGHT_DEFAULT
-        }
+    fun decodeState(bytes: ByteArray): ControlState? {
+        if (bytes.size != stateMaxBytes) return null
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        if ((buffer.get().toInt() and 0xFF) != stateVersion) return null
+        val sceneIndex = buffer.get().toInt() and 0xFF
+        val flags = buffer.get().toInt() and 0xFF
+        val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val posturePitch = (buffer.get().toInt() and 0xFF).toFloat() - 20f
+        val postureRoll = (buffer.get().toInt() and 0xFF).toFloat() - 10f
+        val postureRise = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val postureProgress = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val viewX = ((buffer.get().toInt() and 0xFF) - 45).toFloat() / 100f
+        val viewZ = ((buffer.get().toInt() and 0xFF) - 45).toFloat() / 100f
+        val cueIntensity = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val confidence = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
         return ControlState(
-            scene = parts[0],
-            session = parts[1] == "1",
-            calibrating = parts[2] == "1",
-            audioMuted = parts[3] == "1",
-            eyeHeight = eyeHeight
+            scene = if (sceneIndex < SCENE_IDS.size) SCENE_IDS[sceneIndex] else SCENE_IDS[0],
+            session = flags and 1 != 0,
+            calibrating = flags and 2 != 0,
+            audioMuted = flags and 4 != 0,
+            cueEnabled = flags and 8 != 0,
+            eyeHeight = eyeHeight,
+            posturePitch = posturePitch,
+            postureRoll = postureRoll,
+            postureRise = postureRise,
+            postureProgress = postureProgress,
+            viewX = viewX,
+            viewZ = viewZ,
+            cueIntensity = cueIntensity,
+            calibrationConfidence = confidence
         )
     }
-
 }
 
 data class TelemetryPose(
@@ -239,6 +266,14 @@ data class ControlState(
     val session: Boolean = false,
     val calibrating: Boolean = false,
     val audioMuted: Boolean = false,
-    /** Effective eye height reported by the page; appended to state v2. */
-    val eyeHeight: Float = ControlProtocol.EYE_HEIGHT_DEFAULT
+    val cueEnabled: Boolean = true,
+    val eyeHeight: Float = ControlProtocol.EYE_HEIGHT_DEFAULT,
+    val posturePitch: Float = 0f,
+    val postureRoll: Float = 0f,
+    val postureRise: Float = 0f,
+    val postureProgress: Float = 0f,
+    val viewX: Float = 0f,
+    val viewZ: Float = 0f,
+    val cueIntensity: Float = 1f,
+    val calibrationConfidence: Float = 0f
 )

@@ -12,6 +12,15 @@ export interface StateSnapshot {
   calibrating: boolean;
   audio: boolean;
   eyeHeight: number;
+  posturePitch: number;
+  postureRoll: number;
+  postureRise: number;
+  postureProgress: number;
+  viewX: number;
+  viewZ: number;
+  cueEnabled: boolean;
+  cueIntensity: number;
+  calibrationConfidence: number;
 }
 
 const POSE_MS = 200;

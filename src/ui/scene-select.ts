@@ -2,7 +2,6 @@ export type SceneId = 'landscape' | 'ward' | 'bathroom' | 'lab';
 
 export const DEFAULT_SCENE: SceneId = 'landscape';
 export const SCENE_STORAGE_KEY = 'quietshore.scene.v1';
-export const LEGACY_SCENE_STORAGE_KEY = 'stillwater.scene.v1';
 
 export function normalizeSceneId(value: string | null | undefined): SceneId | null {
   return value === 'landscape'
@@ -13,19 +12,9 @@ export function normalizeSceneId(value: string | null | undefined): SceneId | nu
     : null;
 }
 
-/** New key wins; a legacy draft key is migrated once and then ignored. */
 export function readStoredScene(): SceneId | null {
   try {
-    const current = normalizeSceneId(window.localStorage.getItem(SCENE_STORAGE_KEY));
-    if (current) {
-      return current;
-    }
-    const legacy = normalizeSceneId(window.localStorage.getItem(LEGACY_SCENE_STORAGE_KEY));
-    if (legacy) {
-      window.localStorage.setItem(SCENE_STORAGE_KEY, legacy);
-      return legacy;
-    }
-    return null;
+    return normalizeSceneId(window.localStorage.getItem(SCENE_STORAGE_KEY));
   } catch {
     return null;
   }

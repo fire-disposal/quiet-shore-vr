@@ -9,6 +9,8 @@ import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattServerCallback
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
+import android.os.Handler
+import android.os.Looper
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
@@ -60,6 +62,8 @@ internal class BluetoothControl(
         const val TAG = "QuietShoreBle"
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val STATE_ADVERTISING = "advertising"
+        const val WATCHDOG_INTERVAL_MS = 5_000L
+        const val CONTROLLER_TIMEOUT_MS = 20_000L
     }
 
     private val appContext: Context = context.applicationContext ?: context
@@ -68,6 +72,29 @@ internal class BluetoothControl(
 
     @Volatile
     private var controller: String? = null
+
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    @Volatile
+    private var lastControllerActivity = 0L
+    private val controllerWatchdog = object : Runnable {
+        override fun run() {
+            val active = synchronized(controlLock) { controller }
+            if (active == null) {
+                return
+            }
+            if (android.os.SystemClock.elapsedRealtime() - lastControllerActivity > CONTROLLER_TIMEOUT_MS) {
+                synchronized(controlLock) {
+                    if (controller == active) {
+                        controller = null
+                    }
+                }
+                listener.onControlMode(false)
+                notifyStatus(ControlProtocol.STATUS_CONTROL_RELEASED)
+                return
+            }
+            watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+        }
+    }
 
     private var adapter: BluetoothAdapter? = null
     private var server: BluetoothGattServer? = null
@@ -203,6 +230,7 @@ internal class BluetoothControl(
 
     @Synchronized
     fun stop() {
+        watchdogHandler.removeCallbacks(controllerWatchdog)
         if (!started) {
             return
         }
@@ -284,6 +312,10 @@ internal class BluetoothControl(
     /** BLE address of the pad that currently owns the console, if any. */
     fun controllerAddress(): String? = synchronized(controlLock) { controller }
 
+    private fun touchController() {
+        lastControllerActivity = android.os.SystemClock.elapsedRealtime()
+    }
+
     private fun isController(device: BluetoothDevice): Boolean {
         val address = addressOf(device) ?: return false
         return synchronized(controlLock) { controller == address }
@@ -304,6 +336,9 @@ internal class BluetoothControl(
             }
         }
         if (changed) {
+            touchController()
+            watchdogHandler.removeCallbacks(controllerWatchdog)
+            watchdogHandler.postDelayed(controllerWatchdog, WATCHDOG_INTERVAL_MS)
             listener.onControlMode(true)
             notifyValue(
                 stateCharacteristic,
@@ -327,6 +362,7 @@ internal class BluetoothControl(
         if (!released) {
             return ControlProtocol.STATUS_CONTROL_REQUIRED
         }
+        watchdogHandler.removeCallbacks(controllerWatchdog)
         listener.onControlMode(false)
         return ControlProtocol.STATUS_CONTROL_RELEASED
     }
@@ -336,12 +372,23 @@ internal class BluetoothControl(
         val reply = when (raw) {
             ControlProtocol.CLAIM -> handleClaim(device)
             ControlProtocol.RELEASE -> handleRelease(device)
+            ControlProtocol.PING -> {
+                if (!isController(device)) {
+                    ControlProtocol.STATUS_CONTROL_REQUIRED
+                } else {
+                    touchController()
+                    ControlProtocol.PONG
+                }
+            }
             else -> {
                 val command = ControlProtocol.parseCommand(raw)
                 when {
                     command == null || !isController(device) -> ControlProtocol.STATUS_CONTROL_REQUIRED
                     !ControlProtocol.isAllowedCommand(command) -> ControlProtocol.STATUS_COMMAND_REJECTED
                     else -> {
+                        if (isController(device)) {
+                            touchController()
+                        }
                         if (listener.onCommand(command)) {
                             "OK:$command"
                         } else {
@@ -411,6 +458,7 @@ internal class BluetoothControl(
                     }
                 }
                 if (released) {
+                    watchdogHandler.removeCallbacks(controllerWatchdog)
                     // A dropped controller frees the console for the next pad.
                     listener.onControlMode(false)
                 }

@@ -825,17 +825,25 @@ class PortalService : Service() {
     private fun handleState(headers: Map<String, String>, input: InputStream): Response {
         val json = readJson(headers, input)
         val scene = json.optString("scene", ControlState().scene).trim()
+        fun finite(name: String, fallback: Float): Float =
+            json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
         val state = ControlState(
             scene = if (scene.isEmpty()) ControlState().scene else scene,
             session = json.optBoolean("session", false),
             calibrating = json.optBoolean("calibrating", false),
             audioMuted = json.optBoolean("audio", false),
-            eyeHeight = json.optDouble("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT.toDouble())
-                .toFloat()
-                .takeIf {
-                    it.isFinite() && it >= ControlProtocol.EYE_HEIGHT_MIN &&
-                        it <= ControlProtocol.EYE_HEIGHT_MAX
-                } ?: ControlProtocol.EYE_HEIGHT_DEFAULT
+            cueEnabled = json.optBoolean("cueEnabled", true),
+            eyeHeight = finite("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT)
+                .takeIf { it >= ControlProtocol.EYE_HEIGHT_MIN && it <= ControlProtocol.EYE_HEIGHT_MAX }
+                ?: ControlProtocol.EYE_HEIGHT_DEFAULT,
+            posturePitch = finite("posturePitch", 0f),
+            postureRoll = finite("postureRoll", 0f),
+            postureRise = finite("postureRise", 0f),
+            postureProgress = finite("postureProgress", 0f),
+            viewX = finite("viewX", 0f),
+            viewZ = finite("viewZ", 0f),
+            cueIntensity = finite("cueIntensity", 1f),
+            calibrationConfidence = finite("calibrationConfidence", 0f)
         )
         bluetooth?.publishState(state)
         return okResponse()

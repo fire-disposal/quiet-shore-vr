@@ -74,8 +74,7 @@ class QuietShoreBleManager(
             }
             setNotificationCallback(state).with { _, data ->
                 data.value?.let { bytes ->
-                    ControlProtocol.decodeState(String(bytes, StandardCharsets.UTF_8))
-                        ?.let(events::onControlState)
+                    ControlProtocol.decodeState(bytes)?.let(events::onControlState)
                 }
             }
 

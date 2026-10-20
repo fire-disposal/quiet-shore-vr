@@ -60,7 +60,7 @@ ASCII 字符串，通知给所有已连接设备：
 | `OK:<cmd>` | 控制者的命令已转交患者页面 |
 | `ready` | 服务启动后的初始值 |
 
-`status` 不包含姿态或状态数据，只表示连接与接管结果。`OK:<cmd>` 只会在头显语义路由接受命令后返回；白名单外或语义失败返回 `COMMAND_REJECTED`。
+`status` 不包含姿态或状态数据，只表示连接与接管结果。`PING` 是内部存活探测，头显响应 `PONG`，不进入页面命令队列。`OK:<cmd>` 只会在头显语义路由接受命令后返回；白名单外或语义失败返回 `COMMAND_REJECTED`。
 
 ### 2.3 telemetry
 
@@ -78,19 +78,26 @@ ASCII 字符串，通知给所有已连接设备：
 
 ### 2.4 state
 
-UTF-8 文本，四段用 `|` 分隔：
+固定 12 字节二进制，小端；第一字节是版本号 `3`：
 
-```
-scene|session|calibrating|audioMuted|eyeHeight
-```
+| 偏移 | 字段 | 编码 |
+| --- | --- | --- |
+| 0 | version | `3` |
+| 1 | scene | `0` landscape / `1` ward / `2` bathroom / `3` lab / `255` unknown |
+| 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
+| 3 | eyeHeight | 厘米，120–190 |
+| 4 | posturePitch | 度，字节值减 20 |
+| 5 | postureRoll | 度，字节值减 10 |
+| 6 | postureRise | 厘米，0–120 |
+| 7 | postureProgress | 0–100 |
+| 8 | viewX | 厘米偏移 +45，范围 −0.45–0.45 m |
+| 9 | viewZ | 同上 |
+| 10 | cueIntensity | 0–100 |
+| 11 | calibrationConfidence | 0–100 |
 
-- 布尔值用 `1` / `0`。
-- `eyeHeight` 为两位小数米（如 `1.35`）；旧四段 payload 仍可解码，缺省 1.60。
-- `scene` 中的 `|` 替换为 `_`，并截断到 16 字符。
-- 例：`landscape|1|0|0` 表示湖畔场景、训练中、未校准、声音开。
-- 五段 payload 可能超过默认 ATT 负载；接收端按字符串解析，不依赖固定长度；`stateMaxBytes` 已放宽到 32。
-
-`state` 只在控制者存在时发送；平板用它同步场景选择、训练阶段、校准和声音图标。
+- 页面通过 `/state` JSON 提供这些字段；头显编码后通知控制者。
+- 旧文本四/五段格式已删除；版本不匹配或长度不为 12 的 state 直接丢弃。
+- 12 字节落在默认 ATT 负载内，不需要 MTU 协商。
 
 ## 3. 第一台接管
 
