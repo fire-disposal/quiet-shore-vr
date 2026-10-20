@@ -203,12 +203,12 @@ build.mjs          esbuild 构建：患者页面、standalone、controller
 
 ## 发布下载
 
-<!-- 发布后在此填写：版本号、GitHub Releases 链接、两个 APK 的 sha256 与签名证书指纹。 -->
+- **GitHub Release v0.2.0**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.2.0>
+- 头显 APK：`quiet-shore-headset-v0.2.0.apk`
+- 平板 APK：`quiet-shore-control-v0.2.0.apk`
+- 校验：同一 Release 内的 `SHA256SUMS.txt`
 
-正式发布前没有稳定下载地址。可以先用：
-
-- **CI 构建**：每次成功构建在 GitHub Actions 的 run 中上传 `quiet-shore-apk`，内含 `headset-debug.apk`、`control-debug.apk` 与 `SHA256SUMS.txt`。
-- **Release**：推送 `v*` tag 触发 `.github/workflows/release.yml`，发布 `quiet-shore-headset-<tag>.apk`、`quiet-shore-control-<tag>.apk` 与 `SHA256SUMS.txt`。未配置签名 secrets 时产物是 debug 签名，只用于侧载验收。
+若 Release 尚未出现，可在 GitHub Actions 的 `build` 运行里下载 `quiet-shore-apk` 工件，内含 `headset-debug.apk`、`control-debug.apk` 与 `SHA256SUMS.txt`。未配置签名 secrets 时产物是 debug 签名，只用于侧载验收。
 
 发布时在本节补充：
 
