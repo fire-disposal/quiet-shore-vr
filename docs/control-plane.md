@@ -40,7 +40,9 @@ UTF-8 字符串，去掉首尾空白后解释：
 | --- | --- |
 | `CLAIM` | 申请控制权 |
 | `RELEASE` | 释放控制权 |
-| 其他非空字符串 | 视为控制命令，仅当前控制者可发 |
+| 其他白名单字符串 | 视为控制命令，仅当前控制者可发；不在白名单内直接拒绝 |
+
+命令白名单由 `ControlProtocol.isAllowedCommand` 与 `CAPABILITIES` 共同维护，可通过 `GET /capabilities` 读取。
 
 头显对每次写入回复 `status` 通知；需要响应时同时通过 GATT write response 返回同样的字符串。
 
@@ -114,19 +116,29 @@ scene|session|calibrating|audioMuted
 
 ## 4. 控制命令
 
-平板发送前用 `ControlProtocol.isAllowedCommand` 校验，头显只检查非空并把命令转给患者页面。页面按小写解释：
+平板发送前用 `ControlProtocol.isAllowedCommand` 校验，头显再次校验白名单；宿主命令在服务内执行，其余进入页面队列。页面按小写解释：
 
 | 命令 | 页面行为 |
 | --- | --- |
-| `scene:<id>` | 切换场景；仅在没有活动 WebXR 会话时生效，否则提示先结束会话 |
+| `enter` / `launch` | 头显服务直接拉起 Firefox Reality 训练页（仍需患者按一次确认键进入 WebXR） |
+| `home` | 头显回到系统桌面 |
+| `allapps` | 打开系统全部应用页 |
+| `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |
+| `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
+| `scene:<id>` | 持久化场景；页面在线时同步切换（会话中仍拒绝） |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
-| `calibrate` | 重新校准；训练中可用 |
+| `calibrate` / `recalibrate` | 重新校准；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 设置/切换静音 |
 | `exit` / `stop` | 结束训练、退出会话 |
+| `pause` / `resume` | 预留给页面级暂停 |
+| `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止 |
+| `menu` | 预留给头显内菜单 |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-未知命令由患者页面忽略并显示“未知蓝牙命令”。
+`enter`、`home`、`allapps`、`settings:*`、`scene:<id>` 由头显服务执行；其余命令进入页面命令队列，由患者页面每 400 ms 轮询 `/control` 后执行。
+
+非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 
 ## 5. 本地回环 HTTP
 
@@ -135,8 +147,10 @@ scene|session|calibrating|audioMuted
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
 | GET / HEAD | `/`、`/index.html` | — | `text/html`，APK `assets/index.html` |
-| GET / HEAD | `/control` | — | `{"seq":number,"command":string|null,"control":boolean}` |
-| GET / HEAD | `/status` | — | `{"bluetooth":string,"control":boolean}` |
+| GET / HEAD | `/control` | — | `{"seq":number,"command":string|null,"control":boolean,"controller":string|null}` |
+| GET / HEAD | `/status` | — | `{"bluetooth":string,"control":boolean,"controller":string|null,"scene":string,"pendingSeq":number}` |
+| GET / HEAD | `/capabilities` | — | `{"version":1,"commands":[...],"control":boolean}` |
+| POST | `/command` | `{"command":string}` | `{"accepted":true,"seq":number}`；非白名单返回 400 |
 | POST | `/telemetry` | `{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}` | `{"ok":true}` |
 | POST | `/state` | `{"scene":s,"session":b,"calibrating":b,"audio":b}` | `{"ok":true}` |
 
@@ -150,7 +164,7 @@ scene|session|calibrating|audioMuted
 - 其他方法返回 405；未知路径返回 404。
 - 页面读取失败时返回占位 HTML，而不是连接错误。
 
-`/control`、`/telemetry`、`/state` 没有认证。它们只绑定 loopback，适用于单设备环境。
+`/control`、`/command`、`/capabilities`、`/telemetry`、`/state` 没有认证。它们只绑定 loopback，适用于单设备环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
 
 ## 6. 头显入口与生命周期
 
@@ -158,7 +172,7 @@ scene|session|calibrating|audioMuted
 | --- | --- |
 | 应用图标 / `PortalActivity` | 打开头显控制台；创建/恢复时启动前台服务，但**不**自动拉起 Firefox。控制台显示蓝牙、服务和接管状态 |
 | 控制台“进入训练” | 唯一拉起 Firefox Reality 的按钮；显式 Intent，3 秒冷却，冷却期间点击只提示稍候 |
-| 常驻通知 | 点击通知正文或“打开控制台”动作打开控制台；另有“全部应用”“返回桌面” |
+| 常驻通知 | 点击通知正文或“打开控制台”动作打开控制台；不再播报“等待平板连接”，也不重复提供“全部应用/返回桌面” |
 | 快捷磁贴“静岸” | 打开控制台，不直接拉起 Firefox |
 | `BootReceiver` | 开机或应用更新后恢复服务与通知，不自动拉起浏览器 |
 

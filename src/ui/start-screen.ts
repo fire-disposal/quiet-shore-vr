@@ -1,4 +1,5 @@
 import type { Strings } from './strings';
+import { createGazeGuide } from './gaze-guide';
 
 export interface StartScreenHandlers {
   onEnter: () => void;
@@ -13,40 +14,49 @@ function element<T extends HTMLElement>(id: string): T {
   return node as T;
 }
 
+function optional<T extends HTMLElement>(id: string): T | null {
+  return document.getElementById(id) as T | null;
+}
+
 /**
- * Pre-session confirmation only. Scene choice belongs to the headset console
- * or the tablet; this surface confirms the pending scene and starts WebXR.
+ * Pre-session gate only. Scene choice belongs to the headset console or the
+ * tablet; this surface confirms it and starts WebXR with one gaze target.
  */
 export class StartScreen {
   readonly stageElement = element<HTMLElement>('stage');
 
   private readonly start = element<HTMLElement>('start');
   private readonly status = element<HTMLElement>('status');
+  private readonly statusText = optional<HTMLElement>('status-text');
   private readonly enter = element<HTMLButtonElement>('enter');
+  private readonly enterLabel = optional<HTMLElement>('enter-label');
   private readonly scene = element<HTMLElement>('launch-scene');
-  private readonly hint = element<HTMLElement>('enter-hint');
-  private readonly confirm = element<HTMLElement>('start').querySelector('.confirm') as HTMLElement;
-  private readonly settingsPanel = element<HTMLElement>('session-settings');
-  private readonly openSettings = element<HTMLButtonElement>('open-settings');
-  private readonly closeSettings = element<HTMLButtonElement>('close-settings');
-  private readonly perfSetting = element<HTMLInputElement>('perf-setting');
+  private readonly hint = optional<HTMLElement>('enter-hint');
+  private readonly core = this.enter.closest('.entry-core');
+  private readonly controllerGuide = optional<HTMLElement>('controller-guide');
+  private readonly settingsPanel = optional<HTMLElement>('session-settings');
+  private readonly openSettings = optional<HTMLButtonElement>('open-settings');
+  private readonly closeSettings = optional<HTMLButtonElement>('close-settings');
+  private readonly perfSetting = optional<HTMLInputElement>('perf-setting');
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
   private enterBusy = false;
   private enterAvailable = false;
+  private seen = false;
 
   constructor(strings: Strings, handlers: StartScreenHandlers) {
     this.strings = strings;
     this.handlers = handlers;
     this.enter.addEventListener('click', handlers.onEnter);
-    this.openSettings.addEventListener('click', () => this.setSettingsOpen(true));
-    this.closeSettings.addEventListener('click', () => this.setSettingsOpen(false));
-    this.perfSetting.addEventListener('change', () => {
-      handlers.onShowPerfChange(this.perfSetting.checked);
+    this.openSettings?.addEventListener('click', () => this.setSettingsOpen(true));
+    this.closeSettings?.addEventListener('click', () => this.setSettingsOpen(false));
+    const perfSetting = this.perfSetting;
+    perfSetting?.addEventListener('change', () => {
+      handlers.onShowPerfChange(perfSetting.checked);
     });
     // The right-side confirm arrives as a normal click at gaze. Empty space
-    // around the card is the same one-time gesture, so the patient does not
-    // have to aim at a small target.
+    // around the target is the same one-time gesture, so a patient does not
+    // have to aim at a small button.
     this.start.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       if (target && target.closest('button, a, input, label')) {
@@ -54,16 +64,36 @@ export class StartScreen {
       }
       handlers.onEnter();
     });
+    const guide = optional<HTMLCanvasElement>('gaze-guide');
+    const visual = this.enter.querySelector('.target-visual');
+    if (guide) {
+      createGazeGuide(guide, (visual as HTMLElement | null) ?? this.enter);
+    }
+    this.enter.addEventListener('pointerenter', () => this.setSeen(true));
+    this.enter.addEventListener('pointerleave', () => this.setSeen(false));
+    this.enter.addEventListener('focus', () => this.setSeen(true));
+    this.enter.addEventListener('blur', () => this.setSeen(false));
+    window.addEventListener('pointermove', (event) => {
+      if (this.enterBusy) return;
+      const box = this.enter.getBoundingClientRect();
+      const inside = event.clientX >= box.left && event.clientX <= box.right
+        && event.clientY >= box.top && event.clientY <= box.bottom;
+      this.setSeen(inside);
+    }, { passive: true });
   }
 
   setStatus(text: string, tone: 'neutral' | 'ok' | 'error' = 'neutral'): void {
-    this.status.textContent = text;
+    if (this.statusText) {
+      this.statusText.textContent = text;
+    } else {
+      this.status.textContent = text;
+    }
     this.status.dataset.tone = tone;
+    this.status.hidden = text.length === 0;
   }
 
   setScene(name: string): void {
     this.scene.textContent = name;
-    this.enter.textContent = this.strings.enter;
   }
 
   setEnterEnabled(enabled: boolean): void {
@@ -74,7 +104,10 @@ export class StartScreen {
   setEnterBusy(busy: boolean): void {
     this.enterBusy = busy;
     this.enter.disabled = !this.enterAvailable || busy;
-    this.enter.textContent = busy ? this.strings.entering : this.strings.enter;
+    if (busy) {
+      this.setSeen(false);
+    }
+    this.setEnterLabel(busy ? this.strings.entering : '看向我');
     this.enter.classList.toggle('is-busy', busy);
     this.start.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
@@ -90,20 +123,47 @@ export class StartScreen {
   }
 
   setHint(text: string): void {
-    this.hint.textContent = text;
+    if (this.hint) {
+      this.hint.textContent = text;
+    }
   }
 
   setShowPerf(enabled: boolean): void {
-    this.perfSetting.checked = enabled;
+    if (this.perfSetting) {
+      this.perfSetting.checked = enabled;
+    }
+  }
+
+  private setSeen(seen: boolean): void {
+    if (this.enterBusy || this.seen === seen) {
+      return;
+    }
+    this.seen = seen;
+    this.enter.classList.toggle('is-seen', seen);
+    this.core?.classList.toggle('is-seen', seen);
+    if (this.controllerGuide) {
+      this.controllerGuide.setAttribute('aria-hidden', seen ? 'false' : 'true');
+    }
+    this.setEnterLabel(seen ? '按下头显右侧中间的按钮' : '看向我');
+  }
+
+  private setEnterLabel(text: string): void {
+    if (this.enterLabel) {
+      this.enterLabel.textContent = text;
+    } else {
+      this.enter.textContent = text;
+    }
   }
 
   private setSettingsOpen(open: boolean): void {
+    if (!this.settingsPanel) {
+      return;
+    }
     this.settingsPanel.hidden = !open;
-    this.confirm.classList.toggle('is-settings', open);
     if (open) {
-      this.perfSetting.focus();
+      this.perfSetting?.focus();
     } else {
-      this.openSettings.focus();
+      this.openSettings?.focus();
     }
   }
 }

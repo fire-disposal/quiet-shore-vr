@@ -14,18 +14,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -57,6 +61,23 @@ fun ControlRail(
                 .padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
+            RailSection("护理辅助") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RailAction(
+                        label = "准备湖岸与水声",
+                        icon = Icons.Rounded.Waves,
+                        onClick = actions.onPrepareCare,
+                        enabled = connected,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "患者侧无需选场景，右侧确认键保留停止",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+            }
+
             RailSection("场景") {
                 SceneCards(
                     selectedId = state.control.scene,
@@ -99,6 +120,38 @@ fun ControlRail(
                             modifier = Modifier.weight(1f)
                         )
                     }
+                }
+            }
+
+            RailSection("虚拟起身") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        RailAction(
+                            label = "缓慢起身",
+                            icon = Icons.Rounded.ArrowUpward,
+                            onClick = actions.onPostureRise,
+                            enabled = connected && state.control.session,
+                            modifier = Modifier.weight(1f)
+                        )
+                        RailAction(
+                            label = "回躺",
+                            icon = Icons.Rounded.ArrowDownward,
+                            onClick = actions.onPostureLower,
+                            enabled = connected && state.control.session,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    TextButton(
+                        onClick = actions.onPostureStop,
+                        enabled = connected && state.control.session
+                    ) {
+                        Text("停止并保持", color = QuietPalette.TextPrimary)
+                    }
+                    Text(
+                        text = "仅训练中可用。患者确认键仍可立即停止。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
                 }
             }
 

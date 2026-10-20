@@ -58,6 +58,7 @@ export interface Strings {
   remoteUnknown: string;
   controlModeOn: string;
   controlModeOff: string;
+  patientStop: string;
 }
 
 export const ZH: Strings = {
@@ -119,7 +120,8 @@ export const ZH: Strings = {
   remoteStartNeedsGesture: '请在头显内启动一次，之后由平板控制',
   remoteUnknown: '未知蓝牙命令',
   controlModeOn: '平板控制中，按一次确认键开始',
-  controlModeOff: '平板已断开，恢复患者界面'
+  controlModeOff: '平板已断开，恢复患者界面',
+  patientStop: '已由患者停止训练'
 };
 
 export const EN: Strings = {
@@ -181,7 +183,8 @@ export const EN: Strings = {
   remoteStartNeedsGesture: 'Start once in the headset; the tablet controls after that',
   remoteUnknown: 'Unknown Bluetooth command',
   controlModeOn: 'Tablet control on, press confirm once to start',
-  controlModeOff: 'Tablet disconnected, patient UI restored'
+  controlModeOff: 'Tablet disconnected, patient UI restored',
+  patientStop: 'Session stopped by patient'
 };
 
 export function getStrings(lang: 'zh' | 'en'): Strings {

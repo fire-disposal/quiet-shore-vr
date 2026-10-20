@@ -84,6 +84,7 @@ export class QuietShoreApp {
   private hudAt = 0;
   private started = false;
   private enterPending = false;
+  private patientStopped = false;
 
   constructor() {
     this.config = readConfig(window.location.search);
@@ -208,6 +209,7 @@ export class QuietShoreApp {
       phase: 'render',
       order: 0,
       run: (dt: number, now: number) => {
+        this.comfort?.updatePosture(dt);
         this.input.update(dt, now, this.headPose);
       }
     });
@@ -400,10 +402,11 @@ export class QuietShoreApp {
     try {
       const supported = await navigator.xr.isSessionSupported('immersive-vr');
       this.start.setEnterEnabled(supported);
-      this.start.setStatus(
-        supported ? this.strings.xrReady : this.strings.xrUnsupported,
-        supported ? 'ok' : 'error'
-      );
+      if (supported) {
+        this.start.setStatus('');
+      } else {
+        this.start.setStatus(this.strings.xrUnsupported, 'error');
+      }
     } catch {
       this.start.setStatus(this.strings.xrFailed, 'error');
       this.start.setEnterEnabled(false);
@@ -425,6 +428,7 @@ export class QuietShoreApp {
     try {
       // Do not await a paint here: requestSession must stay in the same
       // transient user-activation window as the right-side confirm click.
+      this.patientStopped = false;
       const next = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor']
       });
@@ -446,7 +450,7 @@ export class QuietShoreApp {
       }
       this.input.setLayers(true, true);
       this.syncLab();
-      this.start.setStatus(this.strings.xrReady, 'ok');
+      this.start.setStatus('');
 
       if (this.config.skipCalibration) {
         if (this.handle) {
@@ -489,7 +493,10 @@ export class QuietShoreApp {
     this.start.setEnterEnabled(true);
     this.input.setLayers(true, true);
     this.syncLab();
-    this.start.setStatus(this.strings.sessionEnded);
+    this.start.setStatus(
+      this.patientStopped ? this.strings.patientStop : this.strings.sessionEnded
+    );
+    this.patientStopped = false;
     this.telemetry.sendStateNow();
     this.updateHud(performance.now());
   }
@@ -633,6 +640,16 @@ export class QuietShoreApp {
       case 'audio:toggle':
         this.toggleAudio();
         return;
+      case 'posture:rise':
+        this.setVirtualPosture(true);
+        return;
+      case 'posture:lower':
+        this.setVirtualPosture(false);
+        return;
+      case 'posture:stop':
+        this.comfort?.stopPosture();
+        this.start.setStatus('已停止虚拟起身', 'ok');
+        return;
       case 'start':
         this.start.setStatus(this.strings.remoteStartNeedsGesture, 'ok');
         return;
@@ -663,6 +680,24 @@ export class QuietShoreApp {
     this.updateHud(performance.now());
   }
 
+  private setVirtualPosture(rising: boolean): void {
+    if (!this.session || !this.comfort) {
+      this.start.setStatus('虚拟起身仅能在训练中使用', 'error');
+      return;
+    }
+    if (!this.comfort.isCalibrated()) {
+      this.start.setStatus('请先完成方向校准', 'error');
+      return;
+    }
+    if (rising) {
+      this.comfort.setPosture({ pitchDeg: -8, riseM: 0.45 }, 14000);
+      this.start.setStatus('虚拟起身中，随时可停止', 'ok');
+    } else {
+      this.comfort.setPosture({ pitchDeg: 0, riseM: 0 }, 12000);
+      this.start.setStatus('正在回到卧床视角', 'ok');
+    }
+  }
+
   private applyAudioMuted(next: boolean): void {
     setAudioMuted(next);
     this.audioMuted = next;
@@ -691,6 +726,12 @@ export class QuietShoreApp {
 
   private onSelect(): void {
     if (this.controlMode) {
+      // Safety exception: in guided mode the headset confirm key still ends
+      // the session immediately, so the patient is never trapped.
+      if (this.session) {
+        this.patientStopped = true;
+        void this.session.end();
+      }
       return;
     }
     if (this.menu.isOpen()) {

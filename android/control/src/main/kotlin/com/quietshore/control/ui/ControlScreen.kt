@@ -24,8 +24,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,54 +75,49 @@ fun ControlScreen(
             .safeDrawingPadding()
     ) {
         val compact = maxWidth < 1000.dp
-        val railWidth = if (compact) 320.dp else 400.dp
-        val horizontal = if (compact) 14.dp else 24.dp
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = horizontal, vertical = 12.dp)
-        ) {
+        var controlsOpen by rememberSaveable { mutableStateOf(!compact) }
+        val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
+
+        Box(Modifier.fillMaxSize()) {
+            viewportContent(Modifier.fillMaxSize())
+
             ControlTopBar(
                 state = state,
-                onDisconnect = actions.onDisconnect,
-                compact = compact
+                compact = compact,
+                controlsOpen = controlsOpen,
+                onToggleControls = { controlsOpen = !controlsOpen },
+                onDisconnect = actions.onDisconnect
             )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(QuietPalette.Outline)
-            )
-            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+
             if (offline) {
                 DisconnectedBanner(
                     onReconnect = actions.onReconnect,
-                    onLeave = actions.onLeave
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 20.dp)
-            ) {
-                ViewportPanel(
-                    state = state,
-                    onViewModeChange = actions.onViewModeChange,
-                    onFullscreen = { actions.onFullscreenChange(true) },
-                    viewport = viewportContent,
+                    onLeave = actions.onLeave,
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (compact) 62.dp else 72.dp)
                 )
+            }
+
+            if (controlsOpen) {
                 ControlRail(
                     state = state,
                     actions = actions,
                     modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(top = if (compact) 62.dp else 72.dp, end = 14.dp, bottom = 14.dp)
                         .width(railWidth)
                         .fillMaxHeight()
                 )
+            } else if (compact) {
+                TextButton(
+                    onClick = { controlsOpen = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                ) {
+                    Text("控制", color = QuietPalette.TextPrimary)
+                }
             }
         }
     }
@@ -181,49 +180,55 @@ private fun FullscreenPatientView(
 @Composable
 private fun ControlTopBar(
     state: ControlUiState,
-    onDisconnect: () -> Unit,
-    compact: Boolean
+    compact: Boolean,
+    controlsOpen: Boolean,
+    onToggleControls: () -> Unit,
+    onDisconnect: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (compact) 52.dp else 64.dp),
+            .padding(horizontal = if (compact) 10.dp else 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "静岸控制台",
-            style = MaterialTheme.typography.titleLarge,
-            color = QuietPalette.TextPrimary
-        )
-        Spacer(Modifier.width(if (compact) 14.dp else 28.dp))
-        Text(
-            text = "静岸头显",
-            style = MaterialTheme.typography.titleSmall,
-            color = QuietPalette.TextPrimary
-        )
-        if (!compact && state.deviceSuffix.isNotEmpty()) {
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = "尾号 ${state.deviceSuffix}",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
-        }
-        Spacer(Modifier.width(if (compact) 10.dp else 16.dp))
-        SignalBars(rssi = state.rssi)
-        if (!compact) {
-            state.rssi?.let { rssi ->
-                Spacer(Modifier.width(8.dp))
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = QuietPalette.Background.copy(alpha = 0.82f),
+            contentColor = QuietPalette.TextPrimary
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "$rssi dBm",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "静岸控制台",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = QuietPalette.TextPrimary
+                )
+                Spacer(Modifier.width(if (compact) 8.dp else 14.dp))
+                Text(
+                    text = "静岸头显",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = QuietPalette.TextSecondary
                 )
+                if (!compact && state.deviceSuffix.isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "尾号 ${state.deviceSuffix}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+                Spacer(Modifier.width(if (compact) 8.dp else 12.dp))
+                SignalBars(rssi = state.rssi)
+                Spacer(Modifier.width(8.dp))
+                ConnectionChip(phase = state.phase)
             }
         }
-        Spacer(Modifier.width(if (compact) 10.dp else 16.dp))
-        ConnectionChip(phase = state.phase)
         Spacer(Modifier.weight(1f))
+        TextButton(onClick = onToggleControls) {
+            Text(if (controlsOpen) "收起" else "控制", color = QuietPalette.TextPrimary)
+        }
         TextButton(
             onClick = onDisconnect,
             enabled = state.phase.isConnected,
@@ -237,10 +242,12 @@ private fun ControlTopBar(
 @Composable
 private fun DisconnectedBanner(
     onReconnect: () -> Unit,
-    onLeave: () -> Unit
+    onLeave: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
         color = QuietPalette.Danger.copy(alpha = 0.12f),
         contentColor = QuietPalette.Danger
     ) {

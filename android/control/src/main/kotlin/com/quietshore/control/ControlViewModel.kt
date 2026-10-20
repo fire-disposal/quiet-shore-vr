@@ -180,8 +180,57 @@ class ControlViewModel(application: Application) :
         sendCommand("preview")
     }
 
+    /**
+     * Bedside aid preset: lakeside scene with sound on and the patient view.
+     * Never starts a session from the tablet, so the stop key stays with the
+     * patient and the headset keeps its own start flow.
+     */
+    fun prepareBedsideVoiding() {
+        val state = _uiState.value
+        if (state.phase != BlePhase.READY) {
+            _uiState.update { it.copy(error = "头显未连接") }
+            return
+        }
+        // A running session owns its scene, so only preselect it when idle.
+        val sceneHeld = state.control.session && state.control.scene != CARE_SCENE
+        val sceneChanged = !state.control.session && state.control.scene != CARE_SCENE
+        if (sceneChanged) {
+            ble.sendCommand("scene:$CARE_SCENE")
+        }
+        if (state.control.audioMuted) {
+            ble.sendCommand("audio:on")
+        }
+        _uiState.update { current ->
+            current.copy(
+                viewMode = ViewMode.PATIENT,
+                control = current.control.copy(
+                    scene = if (sceneHeld) current.control.scene else CARE_SCENE,
+                    audioMuted = false
+                ),
+                error = null,
+                notice = if (sceneHeld) {
+                    "护理辅助已准备，场景将在训练结束后切换"
+                } else {
+                    "护理辅助已准备"
+                }
+            )
+        }
+    }
+
     fun toggleAudio() {
         sendCommand("audio:toggle")
+    }
+
+    fun postureRise() {
+        sendCommand("posture:rise")
+    }
+
+    fun postureLower() {
+        sendCommand("posture:lower")
+    }
+
+    fun postureStop() {
+        sendCommand("posture:stop")
     }
 
     fun sendCommand(command: String) {
@@ -305,5 +354,6 @@ class ControlViewModel(application: Application) :
         const val TICK_MS = 500L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
+        const val CARE_SCENE = "landscape"
     }
 }

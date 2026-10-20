@@ -1,6 +1,7 @@
 package com.quietshore.portal
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
@@ -68,7 +69,20 @@ internal object PortalActions {
      * `scene` 选择初始场景，`skipCalibration`
      * 映射为 `nocal=1`，`quality` 为 `low`/`high`。空值不下发。
      */
+    /** True only when the one WebXR-capable browser on this device exists. */
+    fun isFirefoxAvailable(context: Context): Boolean = try {
+        context.packageManager.getPackageInfo(FIREFOX_PACKAGE, 0)
+        true
+    } catch (ignored: PackageManager.NameNotFoundException) {
+        false
+    }
+
     fun enter(context: Context, options: LaunchOptions = LaunchOptions()): Boolean {
+        val app = applicationContext(context)
+        if (!isFirefoxAvailable(app)) {
+            toast(app, "未检测到 Firefox Reality，训练无法工作")
+            return false
+        }
         val now = System.currentTimeMillis()
         if (now - lastEnterAt < ENTER_COOLDOWN_MS) {
             return false
@@ -76,7 +90,6 @@ internal object PortalActions {
         lastEnterAt = now
         PortalSession.set(options)
         startServer(context)
-        val app = applicationContext(context)
         val url = buildUrl(options)
 
         // Firefox may be warm from the previous demo. Wait until the loopback
@@ -93,7 +106,7 @@ internal object PortalActions {
                 // telemetry session is already active. NEW_TASK + a fresh URL
                 // key reuses the warm task and navigates it.
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                launch(app, intent, "未找到 Firefox Reality，可用全部应用手动打开")
+                launch(app, intent, "未找到 Firefox Reality，训练无法工作")
             }, LAUNCH_DELAY_MS)
         }, "quietshore-launch").start()
         return true
@@ -203,12 +216,19 @@ internal object PortalStatus {
     @Volatile
     private var controlActive: Boolean = false
 
-    fun update(state: String, control: Boolean) {
+    @Volatile
+    private var controllerMac: String? = null
+
+    fun update(state: String, control: Boolean, mac: String? = null) {
         bluetoothState = state
         controlActive = control
+        controllerMac = mac
     }
 
     fun isControlActive(): Boolean = controlActive
+
+    /** BLE address of the controlling pad; null while nobody owns the console. */
+    fun controllerAddress(): String? = controllerMac
 
     /** One-line state for any UI surface that shows peripheral status. */
     fun description(): String {

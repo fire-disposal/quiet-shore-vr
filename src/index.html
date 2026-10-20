@@ -1,55 +1,43 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta http-equiv="Cache-Control" content="no-store">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>静岸 Quiet Shore VR</title>
-<!-- APP_CSS -->
+  <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a1211">
+  <title>静岸 Quiet Shore VR</title>
+  <!-- APP_CSS -->
 </head>
 <body>
   <main id="start" class="start">
-    <header class="brand">
-      <div class="brand-row">
-        <span class="brand-seal" aria-hidden="true">荷</span>
-        <div>
-          <p class="brand-en">Quiet Shore VR</p>
-          <h1>静岸</h1>
-        </div>
-        <span class="mode-chip">
-          <span class="mode-standalone">独立使用</span>
-          <span class="mode-guided">平板控制</span>
-        </span>
-      </div>
-      <p id="status" class="status" role="status">检测中…</p>
+    <canvas id="gaze-guide" class="gaze-guide" aria-hidden="true"></canvas>
+
+    <header class="entry-head">
+      <h1>静岸</h1>
+      <p class="entry-scene">
+        <span>即将进入</span>
+        <strong id="launch-scene"></strong>
+      </p>
     </header>
 
-    <section class="confirm" aria-labelledby="launch-scene">
-      <div class="confirm-main">
-        <p class="confirm-kicker">准备进入</p>
-        <h2 id="launch-scene" class="confirm-scene"></h2>
-        <p class="confirm-copy">场景已由头显控制台或平板确定。确认后戴上头显，按下右侧中间按钮进入。</p>
-      </div>
-      <div class="confirm-action">
-        <button id="enter" class="primary" aria-describedby="enter-hint" disabled>开始训练</button>
-        <p id="enter-hint" class="enter-hint">请看向按钮，将准星对准按钮后按下 VR 右侧中间的按钮</p>
-        <button id="open-settings" class="settings-link" type="button">设置</button>
-      </div>
-
-      <section id="session-settings" class="session-settings" aria-labelledby="session-settings-title" hidden>
-        <div class="settings-head">
-          <h3 id="session-settings-title">设置</h3>
-          <button id="close-settings" class="settings-link" type="button">返回</button>
-        </div>
-        <label class="setting-row">
-          <span>
-            <strong>性能顶栏</strong>
-            <small>在场景上方显示 FPS 与资源摘要</small>
+    <section class="entry-core" aria-label="进入训练">
+      <button id="enter" class="enter-target" type="button" disabled>
+        <span class="target-visual">
+          <span class="target-halo" aria-hidden="true"></span>
+          <span id="enter-label" class="target-label">看向我</span>
+          <span class="target-sub">进入场景</span>
+          <span id="controller-guide" class="controller-guide" aria-hidden="true">
+            <span class="controller-outline">
+              <span class="controller-round controller-top"></span>
+              <span class="controller-pill"><i></i></span>
+              <span class="controller-round controller-bottom"></span>
+            </span>
           </span>
-          <input id="perf-setting" type="checkbox">
-        </label>
-        <p class="settings-note">更多调试选项会放在这里。</p>
-      </section>
+        </span>
+      </button>
+      <p id="status" class="status" role="status" data-tone="neutral">
+        <span id="status-text">正在检测设备…</span>
+      </p>
     </section>
   </main>
 

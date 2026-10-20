@@ -26,6 +26,22 @@ object ControlProtocol {
     const val CLAIM: String = "CLAIM"
     const val RELEASE: String = "RELEASE"
 
+    /** Host-level commands are executed by the headset service, not the page. */
+    const val ENTER: String = "enter"
+    const val HOME: String = "home"
+    const val ALL_APPS: String = "allapps"
+    const val SETTINGS_SKIP_CALIBRATION: String = "settings:skipcalibration:"
+    const val SETTINGS_HUD: String = "settings:hud:"
+
+    val CAPABILITIES: List<String> = listOf(
+        "start", "enter", "preview", "exit", "stop", "pause", "resume",
+        "calibrate", "recalibrate", "status", "menu",
+        "audio:on", "audio:off", "audio:toggle",
+        "scene:<id>", "posture:rise", "posture:lower", "posture:stop",
+        "home", "allapps",
+        "settings:skipcalibration:on|off", "settings:hud:on|off"
+    )
+
     const val STATUS_CONNECTED: String = "CONNECTED"
     const val STATUS_CONTROL_OK: String = "CONTROL_OK"
     const val STATUS_CONTROL_BUSY: String = "CONTROL_BUSY"
@@ -42,18 +58,38 @@ object ControlProtocol {
     /** Returns a non-empty command, or null for malformed input. */
     fun parseCommand(raw: String): String? = raw.trim().ifEmpty { null }
 
-    fun isAllowedCommand(command: String): Boolean {
+    fun normalize(command: String): String? {
         val normalized = command.trim().lowercase()
+        return normalized.takeIf { it.isNotEmpty() && it.length <= 64 && !it.contains('\n') }
+    }
+
+    fun isAllowedCommand(command: String): Boolean {
+        val normalized = normalize(command) ?: return false
         return normalized == "start" ||
+            normalized == "enter" ||
+            normalized == "launch" ||
             normalized == "preview" ||
             normalized == "exit" ||
             normalized == "stop" ||
+            normalized == "pause" ||
+            normalized == "resume" ||
             normalized == "calibrate" ||
+            normalized == "recalibrate" ||
             normalized == "status" ||
+            normalized == "menu" ||
             normalized == "audio:on" ||
             normalized == "audio:off" ||
             normalized == "audio:toggle" ||
-            (normalized.startsWith("scene:") && normalized.length > "scene:".length)
+            (normalized.startsWith("scene:") && normalized.length > "scene:".length) ||
+            normalized == "posture:rise" ||
+            normalized == "posture:lower" ||
+            normalized == "posture:stop" ||
+            normalized == "home" ||
+            normalized == "allapps" ||
+            normalized == "settings:skipcalibration:on" ||
+            normalized == "settings:skipcalibration:off" ||
+            normalized == "settings:hud:on" ||
+            normalized == "settings:hud:off"
     }
 
     fun encodeTelemetry(pose: TelemetryPose): ByteArray =

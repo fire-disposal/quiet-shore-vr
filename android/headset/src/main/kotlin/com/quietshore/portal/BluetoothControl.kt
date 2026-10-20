@@ -280,6 +280,9 @@ internal class BluetoothControl(
         }
     }
 
+    /** BLE address of the pad that currently owns the console, if any. */
+    fun controllerAddress(): String? = synchronized(controlLock) { controller }
+
     private fun isController(device: BluetoothDevice): Boolean {
         val address = addressOf(device) ?: return false
         return synchronized(controlLock) { controller == address }

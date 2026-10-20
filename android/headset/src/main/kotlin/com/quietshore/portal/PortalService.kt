@@ -8,8 +8,10 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.BufferedInputStream
@@ -66,6 +68,8 @@ class PortalService : Service() {
         const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
 
         const val ROUTE_CONTROL = "/control"
+        const val ROUTE_COMMAND = "/command"
+        const val ROUTE_CAPABILITIES = "/capabilities"
         const val ROUTE_STATUS = "/status"
         const val ROUTE_BOOTSTRAP = "/bootstrap"
         const val ROUTE_TELEMETRY = "/telemetry"
@@ -106,8 +110,7 @@ class PortalService : Service() {
             this,
             object : BluetoothControl.Listener {
                 override fun onCommand(command: String) {
-                    pendingControl.set(command)
-                    controlSeq.incrementAndGet()
+                    dispatchControl(command)
                 }
 
                 override fun onControlMode(active: Boolean) {
@@ -242,6 +245,14 @@ class PortalService : Service() {
             if (method == "GET" || method == "HEAD") controlResponse()
             else methodNotAllowed("GET, HEAD")
 
+        ROUTE_COMMAND ->
+            if (method == "POST") handleCommand(headers, input)
+            else methodNotAllowed("POST")
+
+        ROUTE_CAPABILITIES ->
+            if (method == "GET" || method == "HEAD") capabilitiesResponse()
+            else methodNotAllowed("GET, HEAD")
+
         ROUTE_STATUS ->
             if (method == "GET" || method == "HEAD") statusResponse()
             else methodNotAllowed("GET, HEAD")
@@ -268,6 +279,79 @@ class PortalService : Service() {
         else -> Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
     }
 
+    /** Allowlisted command router shared by BLE, loopback HTTP and future intents. */
+    private fun dispatchControl(raw: String): Boolean {
+        val command = ControlProtocol.normalize(raw) ?: return false
+        if (!ControlProtocol.isAllowedCommand(command)) {
+            Log.w(TAG, "rejected command: $raw")
+            return false
+        }
+        controlSeq.incrementAndGet()
+        when {
+            command == "home" -> PortalActions.home(this)
+            command == "allapps" -> PortalActions.allApps(this)
+            command == "enter" || command == "launch" -> {
+                PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())
+            }
+            command.startsWith(ControlProtocol.SETTINGS_SKIP_CALIBRATION) -> {
+                val enabled = command.endsWith(":on")
+                HeadsetSettings.save(
+                    this,
+                    HeadsetSettings.read(this).copy(skipCalibration = enabled)
+                )
+            }
+            command.startsWith(ControlProtocol.SETTINGS_HUD) -> {
+                val enabled = command.endsWith(":on")
+                HeadsetSettings.save(this, HeadsetSettings.read(this).copy(showHud = enabled))
+            }
+            command.startsWith("scene:") -> {
+                val scene = command.substringAfter("scene:").trim()
+                if (scene in HeadsetSettings.SCENE_IDS) {
+                    HeadsetSettings.save(
+                        this,
+                        HeadsetSettings.read(this).copy(sceneId = scene)
+                    )
+                    pendingControl.set(command)
+                } else {
+                    Log.w(TAG, "rejected scene: $scene")
+                    return false
+                }
+            }
+            command == "status" -> Unit
+            else -> pendingControl.set(command)
+        }
+        try {
+            sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
+        } catch (ignored: RuntimeException) {
+            // No visible activity; the holder is still updated by the page poll.
+        }
+        return true
+    }
+
+    private fun handleCommand(headers: Map<String, String>, input: InputStream): Response {
+        val json = readJson(headers, input)
+        val raw = json.optString("command", "")
+        if (!dispatchControl(raw)) {
+            throw HttpError(400, "command not allowed")
+        }
+        val body = JSONObject()
+        body.put("accepted", true)
+        body.put("seq", controlSeq.get())
+        return jsonResponse(body)
+    }
+
+    private fun capabilitiesResponse(): Response {
+        val commands = JSONArray()
+        for (command in ControlProtocol.CAPABILITIES) {
+            commands.put(command)
+        }
+        val body = JSONObject()
+        body.put("version", 1)
+        body.put("commands", commands)
+        body.put("control", controlMode)
+        return jsonResponse(body)
+    }
+
     private fun controlResponse(): Response {
         val body = JSONObject()
         body.put("seq", controlSeq.get())
@@ -278,6 +362,7 @@ class PortalService : Service() {
             body.put("command", command)
         }
         body.put("control", controlMode)
+        body.put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
         return jsonResponse(body)
     }
 
@@ -288,6 +373,9 @@ class PortalService : Service() {
         val body = JSONObject()
         body.put("bluetooth", bluetooth?.state ?: "unavailable")
         body.put("control", controlMode)
+        body.put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
+        body.put("scene", HeadsetSettings.read(this).sceneId)
+        body.put("pendingSeq", controlSeq.get())
         return jsonResponse(body)
     }
 
@@ -520,7 +608,7 @@ class PortalService : Service() {
 
     /** Mirrors BLE state into the shared holder, then updates UI surfaces. */
     private fun publishStatus() {
-        PortalStatus.update(bluetooth?.state ?: "stopped", controlMode)
+        PortalStatus.update(bluetooth?.state ?: "stopped", controlMode, bluetooth?.controllerAddress())
         try {
             sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
         } catch (ignored: RuntimeException) {
@@ -531,42 +619,21 @@ class PortalService : Service() {
 
     private fun buildNotification(): Notification {
         val immutable = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-
-        val allApps = PendingIntent.getBroadcast(
-            this,
-            2,
-            Intent(this, PortalReceiver::class.java).setAction(PortalActions.ACTION_ALLAPPS),
-            immutable
-        )
-        val home = PendingIntent.getBroadcast(
-            this,
-            3,
-            Intent(this, PortalReceiver::class.java).setAction(PortalActions.ACTION_HOME),
-            immutable
-        )
         val content = PendingIntent.getActivity(
             this,
             4,
             Intent(this, PortalActivity::class.java),
             immutable
         )
-
-        val bluetooth = bluetooth
-        val state = bluetooth?.state ?: "stopped"
-        val headline = when {
-            controlMode -> "平板控制中，按一次确认键开始"
-            state == "advertising" -> "等待平板连接"
-            state == "bluetooth-off" -> "蓝牙未开启"
-            else -> "蓝牙不可用"
-        }
-        val serviceText = "$headline $HOST:$PORT"
+        val message = "点击进入，选择场景开始训练"
 
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setColor(BrandAssets.ACCENT)
-            .setContentTitle("静岸")
-            .setContentText(serviceText)
+            .setContentTitle("静岸 · 训练控制台")
+            .setContentText(message)
             .setContentIntent(content)
+            .setStyle(Notification.BigTextStyle().bigText(message))
             .setCategory(Notification.CATEGORY_SERVICE)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setPriority(Notification.PRIORITY_DEFAULT)
@@ -580,16 +647,6 @@ class PortalService : Service() {
                     "打开控制台",
                     content
                 ).build()
-            )
-            .addAction(
-                Notification.Action.Builder(
-                    android.R.drawable.ic_menu_sort_by_size,
-                    "全部应用",
-                    allApps
-                ).build()
-            )
-            .addAction(
-                Notification.Action.Builder(android.R.drawable.ic_menu_revert, "返回桌面", home).build()
             )
             .build()
     }

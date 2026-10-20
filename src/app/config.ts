@@ -25,12 +25,13 @@ export function readConfig(search: string): AppConfig {
   const quality = bootstrap.quality ?? params.get('quality');
   const lang = params.get('lang') === 'en' ? 'en' : 'zh';
   const scene = bootstrap.scene ?? params.get('scene');
-  const requestedScale = Number(params.get('scale'));
+  const scaleParam = params.get('scale');
+  const requestedScale = scaleParam === null ? Number.NaN : Number(scaleParam);
   const xrScale = Number.isFinite(requestedScale)
-    ? Math.min(1, Math.max(0.6, requestedScale))
+    ? Math.min(1.5, Math.max(0.6, requestedScale))
     : quality === 'low'
-      ? 0.85
-      : 1.0;
+      ? 0.9
+      : 1.25;
   return {
     highQuality: quality !== 'low',
     // Visual-first default: keep XR AA and native scale. Performance profiles
