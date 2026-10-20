@@ -236,6 +236,7 @@ build.mjs          esbuild 构建：患者页面、standalone、controller
 | `docs/design-direction.md` | 曲院风荷视觉方向、skill 取舍和对比度记录 |
 | `docs/performance-plan.md` | PICO 性能审计、实例复用现状和优化顺序 |
 | `docs/virtual-posture.md` | 远程虚拟起身视角的注入点、协议和安全约束 |
+| `docs/bedside-voiding.md` | 床上排尿辅助模式的目标、会话流程、隐私和安全边界 |
 | `docs/control-plane.md` | BLE GATT 契约、第一台接管状态机、回环接口、入口与排障 |
 | `docs/distribution.md` | 分发形态、方案矩阵与取舍、CI/CD、安全边界 |
 | `docs/pico-g2.md` | PICO G2 4K 实机基线、WebXR 坑、ADB 工作流 |
