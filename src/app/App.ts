@@ -1126,15 +1126,6 @@ export class QuietShoreApp {
   }
 
   private onSelectShort(): void {
-    if (this.controlMode) {
-      // Safety exception: in guided mode the headset confirm key still ends
-      // the session immediately, so the patient is never trapped.
-      if (this.session) {
-        this.patientStopped = true;
-        void this.session.end();
-      }
-      return;
-    }
     if (this.menu.isOpen()) {
       this.input.select();
       if (!this.input.getFocused()) {
@@ -1147,12 +1138,12 @@ export class QuietShoreApp {
       return;
     }
     if (
-      !this.controlMode
-      && this.session
+      this.session
       && this.sitUpReady
       && !(this.calibration?.isActive() ?? false)
     ) {
-      // Patient confirm key drives the sit-up: first press plays, next lies back.
+      // Patient confirm key drives the sit-up in both standalone and guided
+      // mode; the emergency stop now lives in the long-press menu.
       this.sitUpTarget = this.sitUpTarget >= 0.5 ? 0 : 1;
       this.sitUpMoving = true;
       this.start.setStatus(this.sitUpTarget > 0.5 ? '正在坐起' : '正在回躺', 'ok');
