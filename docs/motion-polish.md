@@ -33,8 +33,8 @@ scene
 | XR 相机归属 | `core/xr/renderer.ts:createRenderer`、`core/xr/pose.ts:readHeadPose` | `xr.enabled`、`setReferenceSpaceType('local')`；每帧从 `xr.getCamera()` 读世界位姿到 `headPose` | 相机 | 3DoF，位置近似恒定；`camera.position.set(0, eyeHeight, 3.2)` 只服务 2D 预览 |
 | 世界变换外壳 | `app/App.ts:loadScene`、`core/scene/host.ts` | comfort 包住 `host.content`；`content.y = -eyeHeight` | 世界 | 相机不入场，层级即安全边界 |
 | 校准重映射 | `core/xr/comfort.ts:calibrateTwo/updatePosture` | `remapDurationMs` 200–4000，默认 900；smoothstep；`weight ≤0.85`、旋转 ≤120° | 世界旋转/位移 | 失败保留旧帧 |
-| 姿态过渡 | `comfort.ts:setPosture/updatePosture/stopPosture` | `POSTURE_LIMITS` 默认：pitch ±20°、roll ±10°、rise 0–1.2 m、1–30 s、默认 10 s；`setPosture` 可传显式 pitch 上限（≤90°）；`postureEase` 五次平滑（峰值 1.875×平均）；停止减速 320 ms；`getPostureProgress()` 停止后冻结在停止比例 | 世界 | `App.setVirtualPosture`：起身 −90°/0.45 m/30 s，回躺 0/0/30 s（天花板 → 前墙的完整重定向） |
-| 平板视角平移 | `App.ts:startViewMovement/applyViewOffset/updateViewMovement` | `VIEW_TTL_MS 300`、`VIEW_MAX_SPEED 0.3`、`VIEW_MAX_OFFSET 0.45`；径向投影滑动 | `host.content` x/z | 速度**立即生效**：无 0.08 死区、无 500/200 ms 加减速（与 `control-interaction-spec.md §4/§5` 不一致） |
+| 姿态过渡 | `core/xr/situp-path.ts:SitUpPath` + `App.updateSitUp` | 髋部 0.45 m、躯干 0.55 m、站立眼高 1.70 m；前 70% 时间躯干旋转 90°，后 30% 抬升到眼高；`worldFor(head)` 自动反演镜头→世界；确认键短按坐起/回躺，长按菜单；会话内总时长 12 s | 世界 | `App.setVirtualPosture`：起身/回躺/停止；`sitUpT` 与姿态进度/俯仰/起身高度一致 |
+| 平板视角修正 | `App.ts:viewPitchDeg`、`ControlViewModel.setPitchOffset` | `view:move:<x>,<z>` 暂复用：z 轴为 [-1,1] 俯仰修正目标，±20°；方向摇杆已移除，改为滑动条 | 世界 | 待实现为新的 `视角` TAB；当前代码仍保留平移实现 |
 | 空间 UI | `core/spatial/anchor.ts`、`placement.ts` | 菜单 `summoned`（1.25 m，世界锁定，仅召唤时计算）；HUD `head-locked`（1.5 m，damping 0.06 s）；校准 `head-locked`（0.8 m，damping 0） | UI | 头锁只用于短时面板 |
 | 场景环境循环 | `scenes/*/…js:update` | landscape：水面/天空/风/泡沫 `uTime`，云/雾/鸟 `InstancedMesh`；ward：心电纹理 0.09/s、屏幕 2.6 s 切换、秒针；bathroom：叶片 ±0.028 rad、水面 ±0.0012 m；lab：0.35 rad/s | 世界内容 | 全部 `dt ≤0.1` |
 | 重力粒子 | `core/xr/posture-cue.ts:createPostureCue` | 双 `Points`：近 17（r 0.22–0.46 m、size 0.0095、opacity 0.34、0.020–0.034 m/s），远 11（r 0.40–1.10 m、size 0.0075、opacity 0.18、0.010–0.018 m/s）；横向摆动 ±0.045 rad；`depth`/`spread` 缩放；`sin^p × skew` 包络；静止淡出 τ=0.28 s；种子 PRNG；`dt ≤0.05` | 近场点云（2 draw call） | 仅 `landscape` 安装；`scene` 根下的两层；`dt=0` 时硬复位；`spread` 无越界联动 |
@@ -45,9 +45,9 @@ scene
 ```text
 readHeadPose()                       // XR 相机世界位姿（只读）
 simulation 0  scene.update(dt)       // 场景环境循环
-simulation 5  view-movement          // 300 ms TTL 内的世界平移
+simulation 5  sit-up path / view tilt // 确认键或 view:move 俯仰修正
 layout   0    menu / lab / hud / calibration anchors
-render   0    comfort.updatePosture → postureCue.update → input.update
+render   0    sitUpPath → postureCue.update → input.update
 render  10    renderer.render(scene, camera)
 ```
 
