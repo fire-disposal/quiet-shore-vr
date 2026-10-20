@@ -31,9 +31,9 @@ function buildBathroom(quality: 'high' | 'low') {
 }
 
 describe('scene registry', () => {
-  it('lists the three shipped scenes in stable order', () => {
+  it('lists the shipped scenes in stable order', () => {
     const scenes = listScenes();
-    expect(scenes.map((scene) => scene.id)).toEqual(['landscape', 'ward', 'bathroom']);
+    expect(scenes.map((scene) => scene.id)).toEqual(['landscape', 'ward', 'bathroom', 'lab']);
   });
 
   it('exposes localized metadata and the stream bed for the bathroom', () => {

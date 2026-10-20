@@ -32,7 +32,7 @@ public class PortalService extends Service {
     static final int PORT = 8130;
 
     private static final String TAG = "QuietShorePortal";
-    private static final String CHANNEL_ID = "quietshore";
+    private static final String CHANNEL_ID = "quietshore.entry";
     private static final String CHANNEL_NAME = "静岸";
     private static final String THREAD_NAME = "quietshore-http";
     private static final String HOST = "127.0.0.1";
@@ -256,9 +256,12 @@ public class PortalService extends Service {
             return;
         }
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("本地训练服务");
+                CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription("本地训练服务入口");
         channel.setShowBadge(false);
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         manager.createNotificationChannel(channel);
     }
 
@@ -268,10 +271,11 @@ public class PortalService extends Service {
             immutable |= PendingIntent.FLAG_IMMUTABLE;
         }
 
+        Intent enterIntent = new Intent(this, PortalReceiver.class)
+                .setAction(PortalActions.ACTION_ENTER)
+                .putExtra(PortalActions.EXTRA_MINIMAL, true);
         PendingIntent enter = PendingIntent.getBroadcast(
-                this, 1,
-                new Intent(this, PortalReceiver.class).setAction(PortalActions.ACTION_ENTER),
-                immutable);
+                this, 1, enterIntent, immutable);
         PendingIntent allApps = PendingIntent.getBroadcast(
                 this, 2,
                 new Intent(this, PortalReceiver.class).setAction(PortalActions.ACTION_ALLAPPS),
@@ -289,9 +293,14 @@ public class PortalService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
         builder.setSmallIcon(android.R.drawable.ic_media_play)
+                .setColor(BrandAssets.ACCENT)
                 .setContentTitle("静岸")
                 .setContentText("本地训练服务运行中 · " + HOST + ":" + PORT)
                 .setContentIntent(content)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setPriority(Notification.PRIORITY_DEFAULT)
+                .setDefaults(0)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)

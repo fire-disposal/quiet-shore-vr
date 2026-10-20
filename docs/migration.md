@@ -7,6 +7,7 @@
 | `src/scene/landscape.js` | `src/scenes/landscape/landscape.js` + `index.ts` | 去 IIFE，导出 `createWorld`，包装成 `SceneDefinition`；画质 4.0 |
 | `src/scene/ward.js` | `src/scenes/ward/ward.js` + `index.ts` | 同上；画质 2.0 |
 | 新增 | `src/scenes/bathroom/bathroom.js` + `index.ts` | 新场景 1.0：暖石浴室，`stream` 水声 |
+| 新增 | `src/scenes/lab/lab.js` + `index.ts` | 新场景 1.0：空间实验，四种空间 UI + 控制台 |
 | `src/audio/*.mp3` | `src/audio/*.mp3` | 直接复用；`audio.ts` 适配类型 |
 | `src/vr/comfort.ts` | `src/core/xr/comfort.ts` | 数学层复用 |
 | `src/ui/xr-menu.ts` | `src/ui/xr-menu.ts` | 重写为 `SpatialAnchor/Surface/Input` |

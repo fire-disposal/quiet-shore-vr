@@ -34,6 +34,7 @@ public class PortalTileService extends TileService {
             return;
         }
         tile.setLabel(TILE_LABEL);
+        tile.setIcon(BrandAssets.largeIcon(this));
         tile.setState(Tile.STATE_ACTIVE);
         tile.updateTile();
     }

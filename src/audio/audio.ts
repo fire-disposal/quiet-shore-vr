@@ -21,6 +21,8 @@ const buffers: Partial<Record<AudioTrack, AudioBuffer>> = {};
 let muted = false;
 let playing = false;
 let token = 0;
+let currentTrack: AudioTrack | null = null;
+let requestedTrack: AudioTrack | null = null;
 
 function ensureContext(): AudioContext | null {
   if (!context) {
@@ -62,13 +64,26 @@ export async function unlockAudio(): Promise<void> {
   }
 }
 
+export function preloadTrack(track: AudioTrack): void {
+  if (buffers[track]) {
+    return;
+  }
+  void bufferFor(track).catch(() => undefined);
+}
+
 export function playTrack(track: AudioTrack): void {
+  if (playing && (requestedTrack === track || currentTrack === track)) {
+    return;
+  }
   playing = true;
+  requestedTrack = track;
   const myToken = ++token;
   void bufferFor(track).then((buffer) => {
     if (!buffer || !playing || myToken !== token || !context || !master) {
       return;
     }
+    currentTrack = track;
+    requestedTrack = null;
     const now = context.currentTime;
     const source = context.createBufferSource();
     source.buffer = buffer;
@@ -94,12 +109,14 @@ export function playTrack(track: AudioTrack): void {
       }
     }
   }).catch(() => {
-    playing = false;
+    requestedTrack = null;
   });
 }
 
 export function stopAudio(): void {
   playing = false;
+  requestedTrack = null;
+  currentTrack = null;
   token += 1;
   if (current && context) {
     const now = context.currentTime;

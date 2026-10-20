@@ -34,6 +34,7 @@ ASSETS_DIR="$SHELL_DIR/assets"
 ASSET_FILE="$ASSETS_DIR/index.html"
 MANIFEST="$SHELL_DIR/AndroidManifest.xml"
 SRC_DIR="$SHELL_DIR/src"
+RES_DIR="$SHELL_DIR/res"
 STANDALONE_FILE="$REPO_ROOT/dist/standalone.html"
 APK_OUT="$BUILD_DIR/quiet-shore.apk"
 DEBUG_KEYSTORE="$BUILD_DIR/debug.keystore"
@@ -85,12 +86,7 @@ pick_android_jar() {
 }
 
 pick_build_tools() {
-  local preferred="$SDK_ROOT/build-tools/33.0.2"
-  local candidate=""
-  if [ -x "$preferred/aapt2" ]; then
-    printf '%s\n' "$preferred"
-    return 0
-  fi
+  local candidate
   candidate="$(find "$SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -n 1)"
   if [ -n "$candidate" ] && [ -x "$candidate/aapt2" ]; then
     printf '%s\n' "$candidate"
@@ -192,11 +188,19 @@ find "$WORK_DIR/classes" -name '*.class' | sort > "$WORK_DIR/classes.txt"
 
 # --- aapt2 link ------------------------------------------------------------
 
+AAPT_RES_ARGS=()
+if [ -d "$RES_DIR" ]; then
+  "$BUILD_TOOLS/aapt2" compile --dir "$RES_DIR" -o "$WORK_DIR/res.zip"
+  AAPT_RES_ARGS=("$WORK_DIR/res.zip")
+  log "aapt2 res:   $(du -h "$WORK_DIR/res.zip" | cut -f1)"
+fi
+
 "$BUILD_TOOLS/aapt2" link \
   -o "$WORK_DIR/unsigned.apk" \
   -I "$ANDROID_JAR" \
   --manifest "$WORK_DIR/AndroidManifest.xml" \
-  -A "$ASSETS_DIR"
+  -A "$ASSETS_DIR" \
+  "${AAPT_RES_ARGS[@]}"
 
 # aapt2 只负责资源与 assets，dex 要自己塞进 APK。
 ( cd "$WORK_DIR/dex" && zip -q -X "$WORK_DIR/unsigned.apk" classes.dex )

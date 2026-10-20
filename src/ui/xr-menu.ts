@@ -112,10 +112,14 @@ export function createXrMenu(options: XrMenuOptions): XrMenuApi {
     options.onAction?.(action);
   };
 
-  const continueButton = surface.addButton(strings.menuContinue, () => dispatch('continue'), BUTTON_DWELL);
-  const recalibrateButton = surface.addButton(strings.menuRecalibrate, () => dispatch('recalibrate'), BUTTON_DWELL);
-  const audioButton = surface.addButton(strings.menuAudio, () => dispatch('audio'), BUTTON_DWELL);
-  const exitButton = surface.addButton(strings.menuExit, () => dispatch('exit'), BUTTON_DWELL);
+  const continueButton = surface.addButton(
+    strings.menuContinue, () => dispatch('continue'), BUTTON_DWELL);
+  const recalibrateButton = surface.addButton(
+    strings.menuRecalibrate, () => dispatch('recalibrate'), BUTTON_DWELL);
+  const audioButton = surface.addButton(
+    strings.menuAudio, () => dispatch('audio'), BUTTON_DWELL);
+  const exitButton = surface.addButton(
+    strings.menuExit, () => dispatch('exit'), BUTTON_DWELL);
   const buttons = [continueButton, recalibrateButton, audioButton, exitButton];
 
   const registerButtons = (): void => {

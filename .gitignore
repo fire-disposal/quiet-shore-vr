@@ -1,6 +1,8 @@
 node_modules
 node_modules/
 dist/
+artifacts/
+*.apk
 shell/android/build/
 shell/android/assets/index.html
 *.keystore

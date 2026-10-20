@@ -9,13 +9,13 @@ export interface StartScreenHandlers {
   onRecalibrate: () => void;
   onAudio: () => void;
   onExit: () => void;
-  onLab: () => void;
-  onDebugChange: (enabled: boolean) => void;
+  onPerfChange: (enabled: boolean) => void;
 }
 
 interface SceneCard {
   readonly id: SceneId;
   readonly node: HTMLButtonElement;
+  readonly name: string;
 }
 
 /** Keys that move focus inside the single-select scene group. */
@@ -33,7 +33,6 @@ export class StartScreen {
   readonly stageElement = element<HTMLElement>('stage');
 
   private readonly start = element<HTMLElement>('start');
-  private readonly hud = element<HTMLElement>('hud');
   private readonly toolbar = element<HTMLElement>('toolbar');
   private readonly status = element<HTMLElement>('status');
   private readonly enter = element<HTMLButtonElement>('enter');
@@ -41,16 +40,19 @@ export class StartScreen {
   private readonly audio = element<HTMLButtonElement>('audio');
   private readonly recalibrate = element<HTMLButtonElement>('recalibrate');
   private readonly exit = element<HTMLButtonElement>('exit');
-  private readonly debug = element<HTMLInputElement>('debug');
-  private readonly lab = element<HTMLButtonElement>('lab');
+  private readonly perf = element<HTMLInputElement>('perf');
   private readonly sceneList = element<HTMLElement>('scene-list');
   private readonly sceneNote = element<HTMLElement>('scene-note');
+  private readonly scenePicker = element<HTMLElement>('scene-picker');
+  private readonly launchScene = element<HTMLElement>('launch-scene');
+  private readonly launchNote = element<HTMLElement>('launch-note');
+  private readonly switchScene = element<HTMLButtonElement>('switch-scene');
   private readonly cards: SceneCard[] = [];
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
   private readonly lang: 'zh' | 'en';
   private selectedId: SceneId | null = null;
-  private debugEnabled = false;
+  private minimal = false;
 
   constructor(
     scenes: readonly SceneSummary[],
@@ -67,13 +69,21 @@ export class StartScreen {
     this.audio.addEventListener('click', handlers.onAudio);
     this.recalibrate.addEventListener('click', handlers.onRecalibrate);
     this.exit.addEventListener('click', handlers.onExit);
-    this.lab.addEventListener('click', handlers.onLab);
+    this.switchScene.addEventListener('click', () => {
+      this.setMinimal(false);
+      for (let i = 0; i < this.cards.length; i += 1) {
+        if (this.cards[i].id === this.selectedId) {
+          this.cards[i].node.focus();
+          return;
+        }
+      }
+      if (this.cards.length > 0) {
+        this.cards[0].node.focus();
+      }
+    });
 
-    this.debug.addEventListener('change', () => {
-      this.debugEnabled = this.debug.checked;
-      this.lab.hidden = !this.debugEnabled;
-      this.hud.hidden = !this.debugEnabled;
-      handlers.onDebugChange(this.debugEnabled);
+    this.perf.addEventListener('change', () => {
+      handlers.onPerfChange(this.perf.checked);
     });
 
     // The note is announced as a whole whenever the selection settles.
@@ -99,6 +109,9 @@ export class StartScreen {
       card.node.classList.toggle('is-selected', selected);
       card.node.setAttribute('aria-pressed', selected ? 'true' : 'false');
       card.node.tabIndex = selected ? 0 : -1;
+      if (selected) {
+        this.launchScene.textContent = `${this.strings.sceneTitle}：${card.name}`;
+      }
     }
     // A stale stored id must not leave the whole group out of the tab order.
     if (!matched && this.cards.length > 0) {
@@ -123,43 +136,41 @@ export class StartScreen {
     this.audio.textContent = muted ? this.strings.audioOff : this.strings.audioOn;
   }
 
-  /** Patient-facing scene copy; engineering stats belong to the debug HUD. */
+  /** Patient-facing scene copy; engineering stats belong to the optional performance bar. */
   setSceneNote(text: string): void {
     this.sceneNote.textContent = text;
+    this.launchNote.textContent = text;
   }
 
-  setHud(lines: readonly string[]): void {
-    this.hud.textContent = lines.join('\n');
-    this.hud.hidden = !this.debugEnabled;
+  /** Portal launch: hide choices, keep one primary action and an optional switch. */
+  setMinimal(minimal: boolean): void {
+    this.minimal = minimal;
+    this.start.classList.toggle('is-minimal', minimal);
+    this.scenePicker.hidden = minimal;
+    this.preview.hidden = minimal;
+    this.switchScene.hidden = !minimal;
+    this.launchScene.hidden = !minimal;
+    this.launchNote.hidden = !minimal;
+  }
+
+  get isMinimal(): boolean {
+    return this.minimal;
   }
 
   showStage(): void {
     this.start.hidden = true;
     this.stageElement.hidden = false;
     this.toolbar.hidden = false;
-    this.hud.hidden = !this.debugEnabled;
   }
 
   showStart(): void {
     this.start.hidden = false;
     this.stageElement.hidden = true;
     this.toolbar.hidden = true;
-    this.hud.hidden = true;
   }
 
-  setLabVisible(visible: boolean): void {
-    this.lab.hidden = !visible || !this.debugEnabled;
-  }
-
-  setDebug(enabled: boolean): void {
-    this.debugEnabled = enabled;
-    this.debug.checked = enabled;
-    this.lab.hidden = !enabled;
-    this.hud.hidden = !enabled;
-  }
-
-  get isDebug(): boolean {
-    return this.debugEnabled;
+  setPerf(enabled: boolean): void {
+    this.perf.checked = enabled;
   }
 
   /**
@@ -174,10 +185,6 @@ export class StartScreen {
     button.dataset.scene = scene.id;
     button.setAttribute('aria-pressed', 'false');
     button.tabIndex = -1;
-
-    const thumb = document.createElement('span');
-    thumb.className = 'scene-card-thumb';
-    thumb.setAttribute('aria-hidden', 'true');
 
     const body = document.createElement('span');
     body.className = 'scene-card-body';
@@ -202,14 +209,13 @@ export class StartScreen {
     head.appendChild(check);
     body.appendChild(head);
     body.appendChild(tagline);
-    button.appendChild(thumb);
     button.appendChild(body);
 
     const id = scene.id as SceneId;
     button.addEventListener('click', () => this.choose(id));
 
     this.sceneList.appendChild(button);
-    return { id, node: button };
+    return { id, node: button, name: scene.name[this.lang] };
   }
 
   /**

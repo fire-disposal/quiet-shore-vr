@@ -1,11 +1,17 @@
 import type { SceneDefinition, SceneSummary } from '../core/scene/contract';
 import { bathroomScene } from './bathroom/index';
+import { labScene } from './lab/index';
 import { landscapeScene } from './landscape/index';
 import { wardScene } from './ward/index';
 
 export type { SceneSummary } from '../core/scene/contract';
 
-export const SCENES: readonly SceneDefinition[] = [landscapeScene, wardScene, bathroomScene];
+export const SCENES: readonly SceneDefinition[] = [
+  landscapeScene,
+  wardScene,
+  bathroomScene,
+  labScene
+];
 
 export function getSceneDefinition(id: string): SceneDefinition | undefined {
   for (let i = 0; i < SCENES.length; i++) {

@@ -11,6 +11,24 @@ export interface SpatialButtonOptions {
   dwellTime?: number;
 }
 
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
 function drawButton(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -22,35 +40,27 @@ function drawButton(
   enabled: boolean
 ): void {
   ctx.clearRect(0, 0, width, height);
-  const r = theme.radiusPx * 0.7;
-  const x = 4;
-  const y = 4;
-  const w = width - 8;
-  const h = height - 8;
+  const pad = 3;
+  roundRect(ctx, pad, pad, width - pad * 2, height - pad * 2, 20);
 
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-
-  ctx.fillStyle = !enabled
-    ? 'rgba(40, 54, 51, 0.9)'
-    : focused
-      ? pressed ? '#c9a45f' : theme.accent
-      : theme.panelStrong;
+  if (!enabled) {
+    ctx.fillStyle = 'rgba(40, 54, 51, 0.9)';
+  } else if (focused) {
+    ctx.fillStyle = pressed ? '#c9a45f' : theme.accent;
+  } else {
+    ctx.fillStyle = pressed ? '#1b302b' : theme.panelStrong;
+  }
   ctx.fill();
-  ctx.lineWidth = focused ? 4 : 2;
-  ctx.strokeStyle = !enabled ? theme.muted : focused ? theme.focus : theme.border;
+
+  ctx.lineWidth = focused ? 3 : 1.5;
+  ctx.strokeStyle = !enabled ? theme.muted : focused ? '#f0d49a' : theme.border;
   ctx.stroke();
 
   ctx.fillStyle = !enabled ? theme.muted : focused ? theme.accentText : theme.text;
   ctx.font = `600 ${theme.buttonPx}px ${theme.fontFamily}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, width / 2, height / 2 + 1);
+  ctx.fillText(label, width / 2, height / 2 + 1, width - 48);
 }
 
 export class SpatialButton {
@@ -159,7 +169,16 @@ export class SpatialButton {
   }
 
   private draw(): void {
-    drawButton(this.ctx, this.canvas.width, this.canvas.height, this.label, this.theme, this.focused, this.pressed, this.enabled);
+    drawButton(
+      this.ctx,
+      this.canvas.width,
+      this.canvas.height,
+      this.label,
+      this.theme,
+      this.focused,
+      this.pressed,
+      this.enabled
+    );
     this.texture.needsUpdate = true;
   }
 

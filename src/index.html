@@ -14,32 +14,27 @@
       <p id="status" class="status" role="status">检测中…</p>
     </header>
 
-    <section class="scene-picker" aria-labelledby="scene-picker-title">
+    <p id="launch-scene" class="launch-scene"></p>
+    <p id="launch-note" class="launch-note"></p>
+    <button id="switch-scene" class="switch-scene" type="button">切换场景</button>
+
+    <section id="scene-picker" class="scene-picker" aria-labelledby="scene-picker-title">
       <div class="section-head">
         <h2 id="scene-picker-title">场景</h2>
-        <span class="section-hint">可稍后切换</span>
       </div>
       <div id="scene-list" class="scene-list" role="group" aria-labelledby="scene-picker-title"></div>
       <p id="scene-note" class="scene-note" aria-live="polite"></p>
     </section>
 
+    <label class="perf-toggle"><input id="perf" type="checkbox"> 显示性能面板</label>
+
     <div class="actions">
       <button id="enter" class="primary" disabled>进入训练</button>
       <button id="preview" class="secondary">2D 预览</button>
     </div>
-    <p class="hint">进入后先完成两步方向校准。<br>场景内短按右侧确认键打开菜单。</p>
-
-    <details class="operator">
-      <summary>操作员</summary>
-      <div class="operator-body">
-        <label class="toggle"><input id="debug" type="checkbox"> 显示诊断信息</label>
-        <button id="lab" class="small" hidden>空间 UI 实验</button>
-      </div>
-    </details>
   </main>
 
   <div id="stage" class="stage" hidden></div>
-  <div id="hud" class="hud" hidden></div>
 
   <div id="toolbar" class="toolbar" hidden>
     <button id="audio">声音: 开</button>

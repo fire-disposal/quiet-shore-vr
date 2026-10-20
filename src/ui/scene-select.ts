@@ -1,11 +1,16 @@
-export type SceneId = 'landscape' | 'ward' | 'bathroom';
+export type SceneId = 'landscape' | 'ward' | 'bathroom' | 'lab';
 
 export const DEFAULT_SCENE: SceneId = 'landscape';
 export const SCENE_STORAGE_KEY = 'quietshore.scene.v1';
 export const LEGACY_SCENE_STORAGE_KEY = 'stillwater.scene.v1';
 
 export function normalizeSceneId(value: string | null | undefined): SceneId | null {
-  return value === 'landscape' || value === 'ward' || value === 'bathroom' ? value : null;
+  return value === 'landscape'
+    || value === 'ward'
+    || value === 'bathroom'
+    || value === 'lab'
+    ? value
+    : null;
 }
 
 /** New key wins; a legacy draft key is migrated once and then ignored. */

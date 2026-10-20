@@ -15,6 +15,7 @@ import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
 import { Calibration } from '../ui/calibration';
 import { StartScreen } from '../ui/start-screen';
+import { SpatialHud } from '../ui/spatial-hud';
 import {
   normalizeSceneId,
   readStoredScene,
@@ -25,6 +26,7 @@ import { getStrings, type Strings } from '../ui/strings';
 import {
   disposeAudio,
   playTrack,
+  preloadTrack,
   stopAudio,
   toggleMuted,
   unlockAudio
@@ -46,6 +48,7 @@ export class QuietShoreApp {
   private readonly input: SpatialInput;
   private readonly menu: XrMenuApi;
   private readonly lab: SpatialLabApi;
+  private readonly hud: SpatialHud;
 
   private sceneId: SceneId;
   private handle: SceneHandle | null = null;
@@ -62,7 +65,7 @@ export class QuietShoreApp {
   private focusedSelectable: THREE.Object3D | null = null;
   private flashTimers = new Set<number>();
   private selectCount = 0;
-  private debug: boolean;
+  private showPerf: boolean;
   private audioMuted = false;
   private lastFrame = 0;
   private elapsed = 0;
@@ -75,7 +78,7 @@ export class QuietShoreApp {
   constructor() {
     this.config = readConfig(window.location.search);
     this.strings = getStrings(this.config.lang);
-    this.debug = this.config.debug;
+    this.showPerf = this.config.showPerf;
     this.sceneId = this.config.initialScene ?? readStoredScene() ?? 'landscape';
 
     this.start = new StartScreen(listScenes(), this.strings, this.config.lang, {
@@ -85,13 +88,13 @@ export class QuietShoreApp {
       onRecalibrate: () => this.recalibrate(),
       onAudio: () => this.toggleAudio(),
       onExit: () => this.exitAll(),
-      onLab: () => this.lab.toggle(),
-      onDebugChange: (enabled) => {
-        this.debug = enabled;
+      onPerfChange: (enabled) => {
+        this.showPerf = enabled;
         this.updateHud(performance.now());
       }
     });
-    this.start.setDebug(this.config.debug);
+    this.start.setPerf(this.showPerf);
+    this.start.setMinimal(this.config.minimal);
 
     this.camera = new THREE.PerspectiveCamera(
       70,
@@ -115,7 +118,24 @@ export class QuietShoreApp {
       camera: this.camera,
       input: this.input,
       strings: this.strings,
-      theme: DEFAULT_SPATIAL_THEME
+      theme: DEFAULT_SPATIAL_THEME,
+      onAction: (action) => {
+        if (action === 'recalibrate') {
+          if (this.session) {
+            this.beginCalibration();
+          } else {
+            this.start.setStatus(this.strings.recalibrateNeedsSession, 'error');
+          }
+        } else if (action === 'audio') {
+          this.toggleAudio();
+        } else if (action === 'exit') {
+          if (this.session) {
+            void this.session.end();
+          } else {
+            this.exitAll();
+          }
+        }
+      }
     });
     this.lab = createSpatialLab({
       scene: this.scene,
@@ -123,6 +143,7 @@ export class QuietShoreApp {
       input: this.input,
       theme: DEFAULT_SPATIAL_THEME
     });
+    this.hud = new SpatialHud(this.scene, DEFAULT_SPATIAL_THEME);
 
     this.pipeline.add({
       id: 'scene-update',
@@ -142,6 +163,10 @@ export class QuietShoreApp {
       run: (dt: number, now: number) => {
         this.menu.update(this.headPose, dt, now);
         this.lab.update(this.headPose, dt, now);
+        this.hud.setVisible(
+          this.showPerf && !this.menu.isOpen() && (this.xr.isPresenting || this.previewing)
+        );
+        this.hud.update(this.headPose, dt, now);
         this.calibration?.update(dt, now, this.headPose);
       }
     });
@@ -223,7 +248,6 @@ export class QuietShoreApp {
         event.preventDefault();
       } else if (event.key === 'Escape') {
         this.menu.close();
-        this.lab.close();
       } else if (event.key === 'Enter' || event.key === ' ') {
         this.onSelect();
       }
@@ -255,13 +279,16 @@ export class QuietShoreApp {
     this.registerSelectables(handle.selectables);
     this.host.setFloorOffset(this.session ? -EYE_HEIGHT : 0);
     this.savedBackground = this.scene.background;
+    preloadTrack(definition.audio);
     this.sceneId = id;
     storeScene(id);
     this.start.setSelected(id);
     this.start.setSceneNote(this.sceneNote(definition));
+    this.syncLab();
   }
 
   private disposeScene(): void {
+    this.lab.setActive(false);
     this.unregisterSelectables();
     this.calibration?.dispose();
     this.calibration = null;
@@ -320,9 +347,18 @@ export class QuietShoreApp {
     this.flashTimers.add(timer);
   }
 
-  /** Patient-facing copy only; triangles/draw calls stay in the debug HUD. */
+  private syncLab(): void {
+    const active = this.sceneId === 'lab'
+      && (this.previewing || this.xr.isPresenting)
+      && !(this.calibration?.isActive() ?? false);
+    this.lab.setActive(active);
+  }
+
+  /** Patient-facing copy only; triangles/draw calls stay in the performance bar. */
   private sceneNote(definition: SceneDefinition): string {
-    return definition.description[this.config.lang] || definition.tagline[this.config.lang];
+    return this.start.isMinimal
+      ? definition.tagline[this.config.lang]
+      : definition.description[this.config.lang] || definition.tagline[this.config.lang];
   }
 
   private async detectXR(): Promise<void> {
@@ -372,6 +408,7 @@ export class QuietShoreApp {
       this.menu.close();
       this.menu.setAudioEnabled(!this.audioMuted);
       this.input.setLayers(true, true);
+      this.syncLab();
       this.start.setStatus(this.strings.xrReady, 'ok');
 
       if (this.config.skipCalibration) {
@@ -412,6 +449,7 @@ export class QuietShoreApp {
     this.start.setEnterEnabled(true);
     this.start.setRecalibrateEnabled(false);
     this.input.setLayers(true, true);
+    this.syncLab();
     this.start.setStatus(this.strings.sessionEnded);
     this.updateHud(performance.now());
   }
@@ -426,6 +464,7 @@ export class QuietShoreApp {
     this.menu.close();
     this.input.setLayers(false, false);
     this.calibration.start();
+    this.syncLab();
     this.updateHud(performance.now());
   }
 
@@ -435,6 +474,7 @@ export class QuietShoreApp {
       this.handle.root.visible = true;
     }
     this.input.setLayers(true, this.session !== null);
+    this.syncLab();
     if (this.session) {
       this.playSceneAudio();
     }
@@ -465,6 +505,7 @@ export class QuietShoreApp {
     this.renderer.setAnimationLoop(this.onFrame);
     this.start.setRecalibrateEnabled(false);
     this.start.setStatus(this.strings.modePreview);
+    this.syncLab();
     this.updateHud(performance.now());
   }
 
@@ -481,6 +522,7 @@ export class QuietShoreApp {
     this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setStatus(this.strings.modeIdle);
+    this.syncLab();
     this.updateHud(performance.now());
   }
 
@@ -576,39 +618,38 @@ export class QuietShoreApp {
     }
   };
 
-  private updateHud(now: number): void {
-    if (!this.debug) {
-      this.start.setHud([]);
+  private updateHud(_now: number): void {
+    const visible = this.showPerf
+      && !this.menu.isOpen()
+      && (this.xr.isPresenting || this.previewing);
+    this.hud.setVisible(visible);
+    if (!visible) {
       return;
     }
-    const mode = this.xr.isPresenting
-      ? this.strings.modeXR
-      : this.previewing
-        ? this.strings.modePreview
-        : this.strings.modeIdle;
-    const calibrationState = this.calibration?.isActive()
-      ? '进行中'
-      : this.comfort?.isCalibrated()
-        ? '完成'
-        : '未校准';
     const definition = getSceneDefinition(this.sceneId);
-    const lines = [
-      `${mode} · ${definition?.name[this.config.lang] ?? this.sceneId}`,
-      `${this.strings.hudFps}: ${this.fps}`,
-      `${this.strings.hudCalibration}: ${calibrationState}`,
-      `${this.strings.hudQuality}: ${this.config.highQuality ? '高' : '低'} · AA: ${this.config.aa ? '开' : '关'}`,
-      `${this.strings.hudSelect}: ${this.selectCount}`,
-      `${this.strings.hudAudio}: ${this.audioMuted ? '关' : '开'}`,
-      `t=${(now / 1000).toFixed(1)}s`
-    ];
-    if (this.handle) {
-      // Engineering numbers are debug-only; the start screen shows patient copy.
-      const stats = measureObject(this.handle.root);
-      lines.push(
-        `${this.strings.hudTriangles}: ${stats.triangles} · ${this.strings.hudDrawCalls}: ${stats.drawCalls}`
-      );
-    }
-    this.start.setHud(lines);
+    const calibrationState = this.calibration?.isActive()
+      ? '校准中'
+      : this.comfort?.isCalibrated()
+        ? '校准✓'
+        : '未校准';
+    const mode = this.xr.isPresenting
+      ? 'XR'
+      : this.previewing
+        ? '预览'
+        : '待机';
+    const stats = this.handle ? measureObject(this.handle.root) : null;
+    const triangles = stats ? `${(stats.triangles / 1000).toFixed(1)}k△` : '--';
+    const draws = stats ? `${stats.drawCalls}dc` : '--';
+    const summary = [
+      mode,
+      definition?.name[this.config.lang] ?? this.sceneId,
+      calibrationState,
+      this.config.highQuality ? '高' : '低',
+      triangles,
+      draws,
+      this.audioMuted ? '声关' : '声开'
+    ].join(' · ');
+    this.hud.setStats(this.fps, summary);
   }
 
   dispose(): void {
@@ -616,6 +657,7 @@ export class QuietShoreApp {
     disposeAudio();
     this.menu.dispose();
     this.lab.dispose();
+    this.hud.dispose();
     this.input.dispose();
     this.disposeScene();
     this.host.dispose();
