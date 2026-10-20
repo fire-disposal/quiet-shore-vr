@@ -306,44 +306,41 @@ button.small {
   line-height: 1.6;
 }
 
-/* Portal launch: one action, fewer choices. */
-.launch-scene, .launch-note, .switch-scene { display: none; }
+/* Portal launch: one action, no in-web scene switching. */
+.launch-scene, .launch-note { display: none; }
 .is-minimal {
-  justify-content: center;
+  justify-content: flex-start;
+  padding: 18px 16px;
+  gap: 10px;
 }
 .is-minimal .brand {
+  order: 0;
   margin-top: 0;
 }
+.is-minimal .brand-en { display: none; }
+.is-minimal .status { font-size: 13px; min-height: 20px; }
 .is-minimal .launch-scene {
+  order: 1;
   display: block;
   margin: 0;
-  font-size: 21px;
+  font-size: 22px;
   font-weight: 650;
 }
+.is-minimal .actions { order: 2; }
+.is-minimal .perf-toggle { order: 3; }
 .is-minimal .launch-note {
-  display: block;
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.55;
-}
-.is-minimal .scene-picker,
-.is-minimal .hint,
-.is-minimal .operator,
-.is-minimal #preview { display: none; }
-button.switch-scene {
-  display: none;
-  flex: none;
-  align-self: flex-start;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border-color: var(--border);
-  background: transparent;
+  order: 4;
+  display: -webkit-box;
+  margin: 0;
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.is-minimal button.switch-scene { display: inline-flex; align-items: center; }
+.is-minimal .scene-picker,
+.is-minimal #preview { display: none; }
 
 .operator { margin-bottom: auto; color: var(--muted); font-size: 13px; }
 .operator summary {

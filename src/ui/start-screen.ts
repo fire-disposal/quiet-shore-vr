@@ -46,7 +46,6 @@ export class StartScreen {
   private readonly scenePicker = element<HTMLElement>('scene-picker');
   private readonly launchScene = element<HTMLElement>('launch-scene');
   private readonly launchNote = element<HTMLElement>('launch-note');
-  private readonly switchScene = element<HTMLButtonElement>('switch-scene');
   private readonly cards: SceneCard[] = [];
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
@@ -69,18 +68,6 @@ export class StartScreen {
     this.audio.addEventListener('click', handlers.onAudio);
     this.recalibrate.addEventListener('click', handlers.onRecalibrate);
     this.exit.addEventListener('click', handlers.onExit);
-    this.switchScene.addEventListener('click', () => {
-      this.setMinimal(false);
-      for (let i = 0; i < this.cards.length; i += 1) {
-        if (this.cards[i].id === this.selectedId) {
-          this.cards[i].node.focus();
-          return;
-        }
-      }
-      if (this.cards.length > 0) {
-        this.cards[0].node.focus();
-      }
-    });
 
     this.perf.addEventListener('change', () => {
       handlers.onPerfChange(this.perf.checked);
@@ -111,6 +98,7 @@ export class StartScreen {
       card.node.tabIndex = selected ? 0 : -1;
       if (selected) {
         this.launchScene.textContent = `${this.strings.sceneTitle}：${card.name}`;
+        this.enter.textContent = `${this.strings.enter} · ${card.name}`;
       }
     }
     // A stale stored id must not leave the whole group out of the tab order.
@@ -148,7 +136,6 @@ export class StartScreen {
     this.start.classList.toggle('is-minimal', minimal);
     this.scenePicker.hidden = minimal;
     this.preview.hidden = minimal;
-    this.switchScene.hidden = !minimal;
     this.launchScene.hidden = !minimal;
     this.launchNote.hidden = !minimal;
   }

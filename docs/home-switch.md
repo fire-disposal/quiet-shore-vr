@@ -119,3 +119,19 @@ APK 内无 ADB 时：点“切换桌面” → 系统选择器 → 选择静岸/
 - **设备所有者**：把静岸设为 Device Owner 会与厂商 ToB 管理冲突，且卸载/恢复成本高；临床设备不建议。
 - **HOME 崩溃兜底**：静岸作为 HOME 时必须保证 `MainActivity` 可重复启动、服务可重试；已有通知/磁贴作为保底入口。
 - **系统更新/恢复出厂**：HOME 偏好会重置，需重新执行切换。
+
+## 6. 锁定/回拉日志结论（2026-10-20）
+
+实机抓取 `logcat` 与 `dumpsys`：
+
+- `mLockTaskModeState=NONE`，`mLockTaskPackages` 为空：**没有 kiosk/LockTask 锁定**。
+- `dumpsys device_policy` 没有 Device Owner（仅 `mPasswordOwner=-1`）；厂商 `com.pvr.tobservice` 是系统 Admin，持有 `MANAGE_ROLE_HOLDERS`、`OBSERVE_ROLE_HOLDERS`、`MANAGE_PROFILE_AND_DEVICE_OWNERS`、`BOOT_COMPLETED`，具备改 HOME 的能力，但测试期间没有看到它主动改回心景。
+- 设置静岸为 HOME 后：
+  - 20 秒后仍是 `com.quietshore.portal/.MainActivity`；
+  - 熄屏/亮屏后仍是静岸；
+  - 重启后仍是静岸（见第 5 节）。
+- Home 键正常投递时会记录：
+  `START u0 {act=MAIN cat=[HOME] ... cmp=com.quietshore.portal/.MainActivity} from uid 1000`。
+- 但在 Firefox Reality 处于 VR 前台时，Home 键可能被 `PvrService` 消费，`mResumedActivity` 仍停在 Firefox；此时从通知栏/磁贴重新进入，或 ADB `am start -n com.quietshore.portal/.MainActivity`。
+
+结论：当前不是“系统锁死桌面”，而是**默认 HOME 偏好 + 厂商高权限 ToB 服务**。演示切换用 ADB 最稳；APK 内只能走系统设置让用户确认。测试结束后已恢复原厂心景 HOME。

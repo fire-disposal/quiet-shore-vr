@@ -358,7 +358,7 @@ export class QuietShoreApp {
   private sceneNote(definition: SceneDefinition): string {
     return this.start.isMinimal
       ? definition.tagline[this.config.lang]
-      : definition.description[this.config.lang] || definition.tagline[this.config.lang];
+      : `已选：${definition.name[this.config.lang]}`;
   }
 
   private async detectXR(): Promise<void> {

@@ -9,6 +9,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+
 /**
  * 壳的全部动作：起服务、进入训练、全部应用、返回桌面。
  *
@@ -75,16 +79,53 @@ final class PortalActions {
         startServer(context);
         final Context app = applicationContext(context);
         final String url = buildUrl(scene, minimal, skipCalibration, quality);
-        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+
+        // Firefox may be warm from the previous demo. Wait until the loopback
+        // server actually accepts connections before handing it the URL;
+        // otherwise the first navigation can fail and Firefox shows its
+        // "network connection lost" dialog over the page.
+        new Thread(new Runnable() {
             @Override
             public void run() {
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                intent.setClassName(FIREFOX_PACKAGE, FIREFOX_ACTIVITY);
-                // 复用 Firefox 的 task 但清空回退栈，冷/热启动都会重新加载 URL。
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                launch(app, intent, "未找到 Firefox Reality，可用“全部应用”手动打开");
+                waitForServer(3000);
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                        intent.setClassName(FIREFOX_PACKAGE, FIREFOX_ACTIVITY);
+                        // 复用 Firefox 的 task 但清空回退栈，冷/热启动都会重新加载 URL。
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        launch(app, intent, "未找到 Firefox Reality，可用“全部应用”手动打开");
+                    }
+                });
             }
-        }, LAUNCH_DELAY_MS);
+        }, "quietshore-launch").start();
+    }
+
+    private static boolean waitForServer(int timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            Socket socket = new Socket();
+            try {
+                socket.connect(new InetSocketAddress("127.0.0.1", PortalService.PORT), 120);
+                return true;
+            } catch (IOException ignored) {
+                // not listening yet
+            } finally {
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                    // nothing
+                }
+            }
+            try {
+                Thread.sleep(80);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     static String buildUrl(String scene, boolean minimal, boolean skipCalibration, String quality) {
@@ -102,6 +143,9 @@ final class PortalActions {
             builder.appendQueryParameter(EXTRA_QUALITY, quality);
         }
         builder.appendQueryParameter("from", "portal");
+        // A warm Firefox can reuse the previous document for an identical URL.
+        // The token makes every entry a distinct navigation; the web ignores it.
+        builder.appendQueryParameter("t", Long.toString(System.currentTimeMillis()));
         return builder.build().toString();
     }
 
