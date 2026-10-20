@@ -81,13 +81,14 @@ ASCII 字符串，通知给所有已连接设备：
 UTF-8 文本，四段用 `|` 分隔：
 
 ```
-scene|session|calibrating|audioMuted
+scene|session|calibrating|audioMuted|eyeHeight
 ```
 
 - 布尔值用 `1` / `0`。
+- `eyeHeight` 为两位小数米（如 `1.35`）；旧四段 payload 仍可解码，缺省 1.60。
 - `scene` 中的 `|` 替换为 `_`，并截断到 16 字符。
 - 例：`landscape|1|0|0` 表示湖畔场景、训练中、未校准、声音开。
-- 由于场景名截断后仍可能达到 23 字节，接收端不依赖固定长度，按字符串解析。
+- 五段 payload 可能超过默认 ATT 负载；接收端按字符串解析，不依赖固定长度；`stateMaxBytes` 已放宽到 32。
 
 `state` 只在控制者存在时发送；平板用它同步场景选择、训练阶段、校准和声音图标。
 

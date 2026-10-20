@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | P0 | `PortalService.kt` | 约千行，HTTP/SSE/GATT/设置/命令路由混在一个类 | 拆成 `LoopbackHttpServer`、`EventHub`、`CommandRouter`；先拆纯函数，不动线程模型 |
 | P0 | `pendingControl` | 单槽 last-write-wins；`view:stop` 可能被后续 move 覆盖，靠 TTL 兜底 | 改为有界命令队列 + ack，或明确保留单槽但给 stop 优先级 |
-| P1 | 平板眼高 | 头显持久化值没有读回，平板从 1.60 本地假设开始 | 增加 config 特征或 state v2，先读后写 |
+| P1 | 平板眼高 | 已通过 state 第 5 段回读首个值；仍需确认旧客户端兼容与 MTU | 保留四段 fallback，后续若要更高频配置可独立特征 |
 | P1 | 能力清单 | `CAPABILITIES` 是字符串，实际能力仍依赖场景/会话/页面 | 改成结构化 capability，返回 `supported/unsupported/not_ready` |
 | P1 | 页面命令 | `start` 只提示，不是真正启动；`cue` 只在 landscape 生效 | 返回明确的 `NOT_READY` / `UNSUPPORTED`，不要静默成功 |
 | P2 | `Comfort` | 重映射、posture、减速、状态查询都集中在一个闭包对象 | 保留 API，内部拆纯计算模块；先加测试再拆 |

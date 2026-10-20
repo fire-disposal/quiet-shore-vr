@@ -829,7 +829,13 @@ class PortalService : Service() {
             scene = if (scene.isEmpty()) ControlState().scene else scene,
             session = json.optBoolean("session", false),
             calibrating = json.optBoolean("calibrating", false),
-            audioMuted = json.optBoolean("audio", false)
+            audioMuted = json.optBoolean("audio", false),
+            eyeHeight = json.optDouble("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT.toDouble())
+                .toFloat()
+                .takeIf {
+                    it.isFinite() && it >= ControlProtocol.EYE_HEIGHT_MIN &&
+                        it <= ControlProtocol.EYE_HEIGHT_MAX
+                } ?: ControlProtocol.EYE_HEIGHT_DEFAULT
         )
         bluetooth?.publishState(state)
         return okResponse()

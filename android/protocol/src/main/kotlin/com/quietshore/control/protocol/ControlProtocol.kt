@@ -3,6 +3,7 @@ package com.quietshore.control.protocol
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -20,7 +21,7 @@ object ControlProtocol {
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
-    const val stateMaxBytes: Int = 20
+    const val stateMaxBytes: Int = 32
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -183,6 +184,7 @@ object ControlProtocol {
 
     fun encodeState(state: ControlState): ByteArray {
         val scene = state.scene.replace('|', '_').take(16)
+        val eyeHeight = state.eyeHeight.coerceIn(EYE_HEIGHT_MIN, EYE_HEIGHT_MAX)
         val raw = buildString {
             append(scene)
             append('|')
@@ -191,18 +193,28 @@ object ControlProtocol {
             append(if (state.calibrating) '1' else '0')
             append('|')
             append(if (state.audioMuted) '1' else '0')
+            append('|')
+            append(String.format(Locale.US, "%.2f", eyeHeight))
         }
         return raw.toByteArray(StandardCharsets.UTF_8)
     }
 
     fun decodeState(raw: String): ControlState? {
         val parts = raw.trim().split('|')
-        if (parts.size != 4 || parts[0].isEmpty()) return null
+        if (parts.size !in 4..5 || parts[0].isEmpty()) return null
+        val eyeHeight = if (parts.size == 5) {
+            val value = parts[4].toFloatOrNull() ?: return null
+            if (!value.isFinite() || value < EYE_HEIGHT_MIN || value > EYE_HEIGHT_MAX) return null
+            value
+        } else {
+            EYE_HEIGHT_DEFAULT
+        }
         return ControlState(
             scene = parts[0],
             session = parts[1] == "1",
             calibrating = parts[2] == "1",
-            audioMuted = parts[3] == "1"
+            audioMuted = parts[3] == "1",
+            eyeHeight = eyeHeight
         )
     }
 
@@ -226,5 +238,7 @@ data class ControlState(
     val scene: String = "landscape",
     val session: Boolean = false,
     val calibrating: Boolean = false,
-    val audioMuted: Boolean = false
+    val audioMuted: Boolean = false,
+    /** Effective eye height reported by the page; appended to state v2. */
+    val eyeHeight: Float = ControlProtocol.EYE_HEIGHT_DEFAULT
 )

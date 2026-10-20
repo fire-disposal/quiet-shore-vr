@@ -196,7 +196,8 @@ export class QuietShoreApp {
         scene: this.sceneId,
         session: this.session !== null,
         calibrating: this.calibration?.isActive() ?? false,
-        audio: this.audioMuted
+        audio: this.audioMuted,
+        eyeHeight: this.eyeHeight
       })
     );
 

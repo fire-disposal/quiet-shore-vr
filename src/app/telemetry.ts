@@ -11,6 +11,7 @@ export interface StateSnapshot {
   session: boolean;
   calibrating: boolean;
   audio: boolean;
+  eyeHeight: number;
 }
 
 const POSE_MS = 200;

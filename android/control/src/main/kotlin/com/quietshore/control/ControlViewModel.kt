@@ -65,6 +65,8 @@ class ControlViewModel(application: Application) :
     private var viewSending = false
 
     private var eyeHeightJob: Job? = null
+    /** First state after a connection seeds the stepper from the headset. */
+    private var eyeHeightSynced = false
 
     /** One-shot commands win over movement for a moment; the pad must re-engage. */
     private var viewSuppressedUntil = 0L
@@ -121,6 +123,7 @@ class ControlViewModel(application: Application) :
         if (_uiState.value.phase.isBusy) {
             return
         }
+        eyeHeightSynced = false
         _uiState.update {
             it.copy(
                 selectedAddress = address,
@@ -455,6 +458,7 @@ class ControlViewModel(application: Application) :
         // A reconnected headset may have restarted; let the next tap write the
         // height again instead of trusting our last sent value.
         lastEyeHeightSent = Float.NaN
+        eyeHeightSynced = false
         _uiState.update {
             it.copy(
                 controlGranted = false,
@@ -478,7 +482,21 @@ class ControlViewModel(application: Application) :
         if (!state.session || state.calibrating) {
             stopView()
         }
-        _uiState.update { it.copy(control = state) }
+        val syncEyeHeight = !eyeHeightSynced && lastEyeHeightSent.isNaN()
+        if (syncEyeHeight) {
+            eyeHeightSynced = true
+        }
+        _uiState.update {
+            if (syncEyeHeight) {
+                it.copy(
+                    control = state,
+                    eyeHeightRequested = state.eyeHeight,
+                    eyeHeightConfirmed = true
+                )
+            } else {
+                it.copy(control = state)
+            }
+        }
     }
 
     override fun onSignal(rssi: Int) {
