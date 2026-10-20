@@ -46,6 +46,11 @@ describe('posture cue', () => {
     expect(cue.object.material).toBeInstanceOf(THREE.PointsMaterial);
 
     cue.update(0.016, 1, head);
+    // Ending progress fades out instead of popping; it must disappear shortly.
+    expect(cue.getState().visible).toBe(true);
+    for (let i = 0; i < 40; i += 1) {
+      cue.update(0.05, 1, head);
+    }
     expect(cue.getState().visible).toBe(false);
 
     cue.dispose();
