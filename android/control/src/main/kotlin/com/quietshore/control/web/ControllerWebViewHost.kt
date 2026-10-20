@@ -2,13 +2,18 @@ package com.quietshore.control.web
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.View
+import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.webkit.WebViewAssetLoader
@@ -30,10 +35,12 @@ import java.util.Locale
 @SuppressLint("SetJavaScriptEnabled")
 class ControllerWebViewHost(
     context: Context,
-    private val onCommand: (String) -> Unit
+    private val onCommand: (String) -> Unit,
+    private val onFullscreen: (() -> Unit)? = null
 ) {
 
     var onPageReady: (() -> Unit)? = null
+    var onPageLoading: (() -> Unit)? = null
     var onLoadError: ((String) -> Unit)? = null
 
     private val assetLoader: WebViewAssetLoader = WebViewAssetLoader.Builder()
@@ -60,7 +67,16 @@ class ControllerWebViewHost(
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         settings.cacheMode = WebSettings.LOAD_DEFAULT
+        if ((context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
         addJavascriptInterface(Bridge(), BRIDGE_NAME)
+        webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                Log.i(TAG, "controller console: ${message.message()} @${message.lineNumber()}")
+                return true
+            }
+        }
         webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,
@@ -73,6 +89,7 @@ class ControllerWebViewHost(
                     return
                 }
                 ready = false
+                onPageLoading?.invoke()
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -81,8 +98,31 @@ class ControllerWebViewHost(
                     return
                 }
                 ready = true
-                replaySnapshot()
-                onPageReady?.invoke()
+                view?.evaluateJavascript(HEALTH_SCRIPT) { result ->
+                    if (destroyed) {
+                        return@evaluateJavascript
+                    }
+                    if (result != "\"ok\"") {
+                        failed = true
+                        ready = false
+                        onLoadError?.invoke("三维视图不可用：$result")
+                    } else {
+                        replaySnapshot()
+                        onPageReady?.invoke()
+                    }
+                }
+            }
+
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: RenderProcessGoneDetail?
+            ): Boolean {
+                if (!destroyed) {
+                    failed = true
+                    ready = false
+                    onLoadError?.invoke("三维视图进程已退出")
+                }
+                return true
             }
 
             override fun onReceivedError(
@@ -100,8 +140,10 @@ class ControllerWebViewHost(
         }
     }
 
+    private val pageUrl = "$CONTROLLER_URL?v=${System.currentTimeMillis()}"
+
     init {
-        webView.loadUrl(CONTROLLER_URL)
+        webView.loadUrl(pageUrl)
     }
 
     fun onTelemetry(pose: TelemetryPose) {
@@ -143,7 +185,7 @@ class ControllerWebViewHost(
         }
         failed = false
         ready = false
-        webView.loadUrl(CONTROLLER_URL)
+        webView.loadUrl(pageUrl)
     }
 
     fun destroy() {
@@ -199,11 +241,30 @@ class ControllerWebViewHost(
         fun send(command: String) {
             onCommand(command)
         }
+
+        @JavascriptInterface
+        fun openFullscreen() {
+            onFullscreen?.invoke()
+        }
     }
 
     private companion object {
         const val CONTROLLER_URL = "https://appassets.androidplatform.net/assets/controller.html"
         const val ASSETS_PATH = "/assets/"
         const val BRIDGE_NAME = "QuietShoreBridge"
+        const val TAG = "QuietShoreControl"
+        val HEALTH_SCRIPT = """
+            (function () {
+              try {
+                var canvas = document.createElement('canvas');
+                var gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                if (!gl) return 'webgl-unavailable';
+                if (!window.qsControl) return 'controller-missing';
+                return 'ok';
+              } catch (error) {
+                return 'error:' + (error && error.message ? error.message : 'unknown');
+              }
+            })()
+        """.trimIndent()
     }
 }

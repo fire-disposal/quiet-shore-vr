@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.quietshore.control.ControlViewModel
 import com.quietshore.control.ui.theme.QuietPalette
+import com.quietshore.control.ui.components.LoadingDots
 import com.quietshore.control.web.ControllerWebViewHost
 
 /**
@@ -35,17 +36,28 @@ import com.quietshore.control.web.ControllerWebViewHost
 @Composable
 fun ControllerViewport(
     viewModel: ControlViewModel,
+    onFullscreen: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val controller = remember {
-        ControllerWebViewHost(context, viewModel::sendCommand)
+        ControllerWebViewHost(context, viewModel::sendCommand) {
+            onFullscreen(true)
+        }
     }
-    var loadError by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var loaded by remember { mutableStateOf(false) }
 
     DisposableEffect(controller) {
-        controller.onPageReady = { loadError = false }
-        controller.onLoadError = { loadError = true }
+        controller.onPageLoading = { loaded = false }
+        controller.onPageReady = {
+            loaded = true
+            loadError = null
+        }
+        controller.onLoadError = { message ->
+            loaded = false
+            loadError = message
+        }
         onDispose { controller.destroy() }
     }
 
@@ -74,7 +86,24 @@ fun ControllerViewport(
             factory = { controller.webView },
             modifier = Modifier.fillMaxSize()
         )
-        if (loadError) {
+        if (!loaded && loadError == null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(QuietPalette.SurfaceSunken),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LoadingDots()
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "正在加载三维视图",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+        }
+        loadError?.let { error ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -90,7 +119,7 @@ fun ControllerViewport(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "页面加载失败，请检查 controller.html 是否已生成",
+                    text = error,
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
                 )

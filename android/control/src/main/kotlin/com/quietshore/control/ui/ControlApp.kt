@@ -104,9 +104,16 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onPreview = viewModel::preview,
                 onDisconnect = viewModel::disconnect,
                 onReconnect = viewModel::reconnect,
-                onLeave = viewModel::leaveControl
+                onLeave = viewModel::leaveControl,
+                onFullscreenChange = viewModel::setFullscreen
             ),
-            viewport = { modifier -> ControllerViewport(viewModel, modifier) }
+            viewport = { modifier ->
+                ControllerViewport(
+                    viewModel = viewModel,
+                    onFullscreen = viewModel::setFullscreen,
+                    modifier = modifier
+                )
+            }
         )
     } else {
         PairingScreen(

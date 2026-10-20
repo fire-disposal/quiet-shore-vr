@@ -13,5 +13,6 @@ data class ControlActions(
     val onPreview: () -> Unit,
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
-    val onLeave: () -> Unit
+    val onLeave: () -> Unit,
+    val onFullscreenChange: (Boolean) -> Unit
 )

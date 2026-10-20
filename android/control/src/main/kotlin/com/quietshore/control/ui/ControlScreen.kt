@@ -1,8 +1,10 @@
 package com.quietshore.control.ui
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +24,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,66 +49,145 @@ fun ControlScreen(
     actions: ControlActions,
     viewport: @Composable (Modifier) -> Unit
 ) {
+    // Keep the WebView alive when moving between the docked layout and the
+    // fullscreen patient view; recreating it would reload the 3D scene.
+    val viewportContent = remember {
+        movableContentOf<Modifier> { modifier -> viewport(modifier) }
+    }
+
+    if (state.fullscreen) {
+        FullscreenPatientView(state = state, actions = actions, viewport = viewportContent)
+        return
+    }
+
     val offline = state.phase == BlePhase.DISCONNECTED ||
         state.phase == BlePhase.ERROR ||
         state.phase == BlePhase.IDLE
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(QuietPalette.Background)
             .safeDrawingPadding()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        ControlTopBar(state = state, onDisconnect = actions.onDisconnect)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(QuietPalette.Outline)
-        )
-        Spacer(Modifier.height(12.dp))
-        if (offline) {
-            DisconnectedBanner(
-                onReconnect = actions.onReconnect,
-                onLeave = actions.onLeave
+        val compact = maxWidth < 1000.dp
+        val railWidth = if (compact) 320.dp else 400.dp
+        val horizontal = if (compact) 14.dp else 24.dp
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontal, vertical = 12.dp)
+        ) {
+            ControlTopBar(
+                state = state,
+                onDisconnect = actions.onDisconnect,
+                compact = compact
             )
-            Spacer(Modifier.height(12.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(QuietPalette.Outline)
+            )
+            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+            if (offline) {
+                DisconnectedBanner(
+                    onReconnect = actions.onReconnect,
+                    onLeave = actions.onLeave
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 20.dp)
+            ) {
+                ViewportPanel(
+                    state = state,
+                    onViewModeChange = actions.onViewModeChange,
+                    onFullscreen = { actions.onFullscreenChange(true) },
+                    viewport = viewportContent,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+                ControlRail(
+                    state = state,
+                    actions = actions,
+                    modifier = Modifier
+                        .width(railWidth)
+                        .fillMaxHeight()
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun FullscreenPatientView(
+    state: ControlUiState,
+    actions: ControlActions,
+    viewport: @Composable (Modifier) -> Unit
+) {
+    BackHandler { actions.onFullscreenChange(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(QuietPalette.Viewport)
+    ) {
+        viewport(Modifier.fillMaxSize())
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                .align(Alignment.TopStart)
+                .padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            ViewportPanel(
-                state = state,
-                onViewModeChange = actions.onViewModeChange,
-                viewport = viewport,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+            OverlayPill(
+                label = Scenes.label(state.control.scene),
+                accent = QuietPalette.Primary
             )
-            ControlRail(
-                state = state,
-                actions = actions,
-                modifier = Modifier
-                    .width(400.dp)
-                    .fillMaxHeight()
+            OverlayPill(
+                label = phaseLabel(state.phase),
+                accent = phaseColor(state.phase)
             )
         }
+        TextButton(
+            onClick = { actions.onFullscreenChange(false) },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp)
+        ) {
+            Text("退出全屏", color = QuietPalette.TextPrimary)
+        }
+        ViewModeToggle(
+            selected = state.viewMode,
+            onSelect = actions.onViewModeChange,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(18.dp)
+                .width(320.dp)
+        )
+        PoseFreshness(
+            stale = state.poseStale || state.pose == null,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(18.dp)
+        )
     }
 }
 
 @Composable
 private fun ControlTopBar(
     state: ControlUiState,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    compact: Boolean
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp),
+            .height(if (compact) 52.dp else 64.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -112,13 +195,13 @@ private fun ControlTopBar(
             style = MaterialTheme.typography.titleLarge,
             color = QuietPalette.TextPrimary
         )
-        Spacer(Modifier.width(28.dp))
+        Spacer(Modifier.width(if (compact) 14.dp else 28.dp))
         Text(
             text = "静岸头显",
             style = MaterialTheme.typography.titleSmall,
             color = QuietPalette.TextPrimary
         )
-        if (state.deviceSuffix.isNotEmpty()) {
+        if (!compact && state.deviceSuffix.isNotEmpty()) {
             Spacer(Modifier.width(10.dp))
             Text(
                 text = "尾号 ${state.deviceSuffix}",
@@ -126,17 +209,19 @@ private fun ControlTopBar(
                 color = QuietPalette.TextSecondary
             )
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(if (compact) 10.dp else 16.dp))
         SignalBars(rssi = state.rssi)
-        state.rssi?.let { rssi ->
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "$rssi dBm",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
+        if (!compact) {
+            state.rssi?.let { rssi ->
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "$rssi dBm",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(if (compact) 10.dp else 16.dp))
         ConnectionChip(phase = state.phase)
         Spacer(Modifier.weight(1f))
         TextButton(
@@ -187,12 +272,13 @@ private fun DisconnectedBanner(
 private fun ViewportPanel(
     state: ControlUiState,
     onViewModeChange: (ViewMode) -> Unit,
+    onFullscreen: () -> Unit,
     viewport: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(QuietPalette.Viewport)
     ) {
         viewport(Modifier.fillMaxSize())
@@ -228,6 +314,15 @@ private fun ViewportPanel(
                 .align(Alignment.BottomEnd)
                 .padding(20.dp)
         )
+
+        TextButton(
+            onClick = onFullscreen,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+        ) {
+            Text("全屏患者视角", color = QuietPalette.TextPrimary)
+        }
     }
 }
 

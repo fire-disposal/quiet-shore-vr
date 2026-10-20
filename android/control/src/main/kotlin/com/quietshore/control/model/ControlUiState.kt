@@ -47,6 +47,7 @@ data class ControlUiState(
     val poseStale: Boolean = true,
     val control: ControlState = ControlState(),
     val viewMode: ViewMode = ViewMode.GLOBAL,
+    val fullscreen: Boolean = false,
     val rssi: Int? = null,
     val notice: String? = null,
     val error: String? = null,

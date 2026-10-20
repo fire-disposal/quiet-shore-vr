@@ -24,7 +24,7 @@ interface ControllerApi {
 declare global {
   interface Window {
     qsControl: ControllerApi;
-    QuietShoreBridge?: { send(command: string): void };
+    QuietShoreBridge?: { send(command: string): void; openFullscreen?: () => void };
   }
 }
 
@@ -221,10 +221,16 @@ resize();
 let dragging = false;
 let lastX = 0;
 let lastY = 0;
+let tapStartedAt = 0;
+let tapStartX = 0;
+let tapStartY = 0;
 const pointers = new Map<number, { x: number; y: number }>();
 let pinchDistance = 0;
 
 renderer.domElement.addEventListener('pointerdown', (event) => {
+  tapStartedAt = performance.now();
+  tapStartX = event.clientX;
+  tapStartY = event.clientY;
   if (viewMode !== 'global') return;
   renderer.domElement.setPointerCapture(event.pointerId);
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -261,6 +267,11 @@ renderer.domElement.addEventListener('pointermove', (event) => {
 });
 
 function endPointer(event: PointerEvent): void {
+  const isTap = performance.now() - tapStartedAt < 450
+    && Math.hypot(event.clientX - tapStartX, event.clientY - tapStartY) < 8;
+  if (isTap && viewMode === 'patient') {
+    window.QuietShoreBridge?.openFullscreen?.();
+  }
   pointers.delete(event.pointerId);
   if (pointers.size === 0) {
     dragging = false;

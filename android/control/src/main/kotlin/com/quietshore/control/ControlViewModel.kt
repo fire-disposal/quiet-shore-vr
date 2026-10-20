@@ -151,6 +151,15 @@ class ControlViewModel(application: Application) :
         _uiState.update { it.copy(viewMode = mode) }
     }
 
+    fun setFullscreen(active: Boolean) {
+        _uiState.update {
+            it.copy(
+                fullscreen = active,
+                viewMode = if (active) ViewMode.PATIENT else it.viewMode
+            )
+        }
+    }
+
     fun selectScene(sceneId: String) {
         sendCommand("scene:$sceneId")
     }
