@@ -6,7 +6,7 @@
 
 | APK | 包名 | 角色 |
 | --- | --- | --- |
-| 静岸（头显端） | `com.quietshore.portal` | 头显控制台（服务/BLE/接管状态）+ BLE 外设 + 本机回环桥；通知/快捷磁贴只打开控制台 |
+| 静岸（头显端） | `com.quietshore.portal` | 头显控制台（服务/BLE/接管状态）+ BLE 外设 + 本机回环桥；通知正文/快捷磁贴只打开控制台 |
 | 静岸控制台（平板端） | `com.quietshore.control` | Compose 操作台 + BLE 中心 + WebView 三维视图 |
 
 ## 谁控制什么

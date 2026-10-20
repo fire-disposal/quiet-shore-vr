@@ -27,12 +27,12 @@
 1. 在 `127.0.0.1:8130` 起一个本地 HTTP 服务：静态页面来自 APK `assets/index.html`（由 `dist/standalone.html` 在构建时复制），另提供控制桥接口。
 2. 同一服务提供 `/control`、`/status`、`/telemetry`、`/state` 回环接口，作为患者页面与 BLE 之间的桥。
 3. 作为 BLE 外设广播 `QuietShore`，向平板提供 `command` / `status` / `telemetry` / `state` 四个特征。
-4. `PortalActivity` 是可见控制台；应用图标、常驻通知和快捷磁贴都先打开它，显示服务、蓝牙和接管状态。
+4. `PortalActivity` 是可见控制台；应用图标、通知正文和快捷磁贴都先打开它，显示服务、蓝牙和接管状态。
 5. 控制台的“进入训练”是唯一拉起 Firefox Reality 的按钮（3 秒冷却），用显式 Intent 打开 `http://127.0.0.1:8130/?minimal=1&from=portal&t=<时间戳>`；通知另有“打开控制台/全部应用/返回桌面”。
 6. `BootReceiver` 在重启/更新后恢复服务与通知，但不自动拉起 Firefox。
 7. 不修改默认 HOME，不碰厂家数据；卸载 APK 后系统恢复原状。
 
-头显端入口是可见的 `PortalActivity` 控制台；应用图标、通知和快捷磁贴都先到这里，不直接跳 Firefox。业务内容仍在 Web 层；壳负责控制台、离线资产、BLE 外设和回环桥。
+头显端入口是可见的 `PortalActivity` 控制台；应用图标、通知正文和快捷磁贴都先到这里，不直接跳 Firefox（通知的“全部应用/返回桌面”是直达动作）。业务内容仍在 Web 层；壳负责控制台、离线资产、BLE 外设和回环桥。
 
 ### 2.2 平板端 `com.quietshore.control`（`:control`）
 
