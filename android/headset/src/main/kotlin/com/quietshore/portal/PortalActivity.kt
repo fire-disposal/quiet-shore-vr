@@ -18,7 +18,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 
@@ -42,8 +41,8 @@ class PortalActivity : Activity() {
         val SURFACE: Int = 0xFFECE6DA.toInt()
         val BORDER: Int = 0xFFD5CCBB.toInt()
         val TEXT: Int = 0xFF20251F.toInt()
-        val MUTED: Int = 0xFF6D7468.toInt()
-        val ACCENT: Int = 0xFFA9563E.toInt()
+        val MUTED: Int = 0xFF5E655A.toInt()
+        val ACCENT: Int = 0xFF8F4634.toInt()
         val ACCENT_INK: Int = 0xFFF8F3E9.toInt()
         val OK: Int = 0xFF486B58.toInt()
     }
@@ -52,6 +51,8 @@ class PortalActivity : Activity() {
     private lateinit var nav: LinearLayout
     private lateinit var modeChip: TextView
     private var currentPage = Page.HOME
+    private var settingsPageIndex = 0
+    private var helpPageIndex = 0
     private var settings = HeadsetSettings()
     private val sceneChips = mutableListOf<TextView>()
     private val qualityChips = mutableListOf<TextView>()
@@ -199,14 +200,11 @@ class PortalActivity : Activity() {
         }
         content.removeAllViews()
         content.addView(
-            ScrollView(this).apply {
-                isFillViewport = true
-                clipToPadding = false
-                addView(body)
-            },
+            body,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.TOP
             )
         )
         refreshStatus()
@@ -293,67 +291,58 @@ class PortalActivity : Activity() {
         return page
     }
 
-    private fun buildSettingsPage(): View {
+    private fun buildSettingsPage(): View = when (settingsPageIndex) {
+        0 -> buildSettingsStartPage()
+        1 -> buildSettingsUsagePage()
+        else -> buildSettingsAboutPage()
+    }
+
+    private fun buildSettingsStartPage(): View {
         val page = pageColumn()
         page.addView(titleLabel("设置"))
-        page.addView(
-            label("启动偏好保存在本机，下次进入继续使用", 13f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(6), 0, dp(20))
-            }
-        )
-
-        val launch = sectionCard()
-        launch.addView(sectionLabel("启动"))
-        launch.addView(label("默认场景", 14f, TEXT, Typeface.BOLD, 0f).apply {
-            setPadding(0, dp(12), 0, dp(8))
+        page.addView(pageSubtitle("启动偏好保存在本机，无需重复设置"))
+        val card = sectionCard()
+        card.addView(sectionLabel("启动"))
+        card.addView(label("默认场景", 15f, TEXT, Typeface.BOLD, 0f).apply {
+            setPadding(0, dp(10), 0, dp(8))
         })
         for (rowIndex in 0 until 2) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for (column in 0 until 2) {
                 val index = rowIndex * 2 + column
                 val id = HeadsetSettings.SCENE_IDS[index]
-                val chip = label(sceneLabel(id), 13f, TEXT, Typeface.BOLD, 0f).apply {
+                val chip = label(sceneLabel(id), 14f, TEXT, Typeface.BOLD, 0f).apply {
                     gravity = Gravity.CENTER
-                    minHeight = dp(44)
+                    minHeight = dp(46)
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
                         settings = settings.copy(sceneId = id)
                         HeadsetSettings.save(this@PortalActivity, settings)
                         updateSceneChips()
-                        homeScene?.text = "当前场景  ${sceneLabel(settings.sceneId)}"
                     }
                 }
                 sceneChips += chip
-                row.addView(chip, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                row.addView(chip, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
                     marginEnd = dp(4)
                     marginStart = dp(4)
                 })
             }
-            launch.addView(row, LinearLayout.LayoutParams(
+            card.addView(row, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(6) })
         }
         updateSceneChips()
 
-        launch.addView(settingSwitch("跳过方向校准", settings.skipCalibration) {
-            settings = settings.copy(skipCalibration = it)
-            HeadsetSettings.save(this, settings)
-        })
-        launch.addView(settingSwitch("显示性能面板", settings.showHud) {
-            settings = settings.copy(showHud = it)
-            HeadsetSettings.save(this, settings)
-        })
-
-        launch.addView(label("画质", 14f, TEXT, Typeface.BOLD, 0f).apply {
-            setPadding(0, dp(14), 0, dp(8))
+        card.addView(label("画质", 15f, TEXT, Typeface.BOLD, 0f).apply {
+            setPadding(0, dp(12), 0, dp(8))
         })
         val qualityRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         for ((index, value) in listOf(HeadsetSettings.QUALITY_HIGH, HeadsetSettings.QUALITY_LOW).withIndex()) {
-            val chip = label(if (value == HeadsetSettings.QUALITY_HIGH) "高画质" else "低画质", 13f, TEXT, Typeface.BOLD, 0f).apply {
+            val chip = label(if (value == HeadsetSettings.QUALITY_HIGH) "高画质" else "低画质", 14f, TEXT, Typeface.BOLD, 0f).apply {
                 gravity = Gravity.CENTER
-                minHeight = dp(44)
+                minHeight = dp(46)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
@@ -363,69 +352,159 @@ class PortalActivity : Activity() {
                 }
             }
             qualityChips += chip
-            qualityRow.addView(chip, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+            qualityRow.addView(chip, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
                 marginEnd = if (index == 0) dp(4) else 0
                 marginStart = if (index == 0) 0 else dp(4)
             })
         }
-        launch.addView(qualityRow)
+        card.addView(qualityRow)
         updateQualityChips()
-        page.addView(launch)
-
-        val connection = sectionCard().apply { setPadding(dp(18), dp(18), dp(18), dp(14)) }
-        connection.addView(sectionLabel("连接"))
-        connection.addView(
-            label("平板接管后会自动切到精简开始页", 13f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(10), 0, dp(10))
-            }
-        )
-        connection.addView(actionButton("打开蓝牙设置", false) {
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(48)
-        ))
-        page.addView(connection)
-
-        val about = sectionCard()
-        about.addView(sectionLabel("关于"))
-        about.addView(infoRow("版本", versionName()))
-        about.addView(infoRow("浏览器", "Firefox Reality 10"))
-        about.addView(infoRow("本机服务", "127.0.0.1:8130"))
-        page.addView(about)
+        page.addView(card)
+        page.addView(pager(0, 3, onPrev = {}, onNext = {
+            settingsPageIndex = 1
+            showPage(Page.SETTINGS)
+        }))
         return page
     }
 
-    private fun buildHelpPage(): View {
+    private fun buildSettingsUsagePage(): View {
         val page = pageColumn()
-        page.addView(titleLabel("帮助"))
-        page.addView(
-            label("先选择使用方式，再开始训练", 13f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(6), 0, dp(20))
+        page.addView(titleLabel("设置"))
+        page.addView(pageSubtitle("使用偏好与连接"))
+        val card = sectionCard()
+        card.addView(sectionLabel("使用"))
+        card.addView(settingSwitch("跳过方向校准", settings.skipCalibration) {
+            settings = settings.copy(skipCalibration = it)
+            HeadsetSettings.save(this, settings)
+        })
+        card.addView(settingSwitch("显示性能面板", settings.showHud) {
+            settings = settings.copy(showHud = it)
+            HeadsetSettings.save(this, settings)
+        })
+        card.addView(
+            label("平板接管后会自动切到精简开始页", 14f, MUTED, Typeface.NORMAL, 0f).apply {
+                setPadding(0, dp(10), 0, dp(10))
             }
         )
+        card.addView(actionButton("打开蓝牙设置", false) {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(50)
+        ))
+        page.addView(card)
+        page.addView(pager(1, 3, onPrev = {
+            settingsPageIndex = 0
+            showPage(Page.SETTINGS)
+        }, onNext = {
+            settingsPageIndex = 2
+            showPage(Page.SETTINGS)
+        }))
+        return page
+    }
 
+    private fun buildSettingsAboutPage(): View {
+        val page = pageColumn()
+        page.addView(titleLabel("设置"))
+        page.addView(pageSubtitle("版本与服务"))
         val card = sectionCard()
-        card.addView(stepRow("1", "没有平板时，直接在启动页选择场景"))
-        card.addView(stepRow("2", "有平板时，在平板控制台搜索并连接头显"))
-        card.addView(stepRow("3", "看向进入按钮，将准星对准后按右侧中间确认键"))
+        card.addView(sectionLabel("关于"))
+        card.addView(infoRow("版本", versionName()))
+        card.addView(infoRow("浏览器", "Firefox Reality 10"))
+        card.addView(infoRow("本机服务", "127.0.0.1:8130"))
+        card.addView(infoRow("控制方式", "平板先到先得"))
+        page.addView(card)
+        page.addView(pager(2, 3, onPrev = {
+            settingsPageIndex = 1
+            showPage(Page.SETTINGS)
+        }, onNext = {}))
+        return page
+    }
+
+    private fun buildHelpPage(): View = if (helpPageIndex == 0) {
+        buildHelpStandalonePage()
+    } else {
+        buildHelpTabletPage()
+    }
+
+    private fun buildHelpStandalonePage(): View {
+        val page = pageColumn()
+        page.addView(titleLabel("帮助"))
+        page.addView(pageSubtitle("没有平板时"))
+        val card = sectionCard()
+        card.addView(stepRow("1", "在启动页选择场景"))
+        card.addView(stepRow("2", "看向进入按钮，将准星对准后按右侧中间确认键"))
+        page.addView(card)
+        page.addView(pager(0, 2, onPrev = {}, onNext = {
+            helpPageIndex = 1
+            showPage(Page.HELP)
+        }))
+        return page
+    }
+
+    private fun buildHelpTabletPage(): View {
+        val page = pageColumn()
+        page.addView(titleLabel("帮助"))
+        page.addView(pageSubtitle("平板接管时"))
+        val card = sectionCard()
+        card.addView(stepRow("3", "在平板控制台搜索并连接头显"))
         card.addView(stepRow("4", "训练中的场景、声音和校准由平板控制"))
         page.addView(card)
-
         val note = sectionCard()
-        note.addView(sectionLabel("说明"))
+        note.addView(sectionLabel("控制权"))
         note.addView(
             label(
                 "第一台发送 CLAIM 的平板获得控制。第二台会提示已被占用。平板释放或断开后，头显恢复完整启动页。",
-                13f,
+                14f,
                 MUTED,
                 Typeface.NORMAL,
                 0f
             ).apply { setPadding(0, dp(10), 0, 0) }
         )
         page.addView(note)
+        page.addView(pager(1, 2, onPrev = {
+            helpPageIndex = 0
+            showPage(Page.HELP)
+        }, onNext = {}))
         return page
     }
+
+    private fun pageSubtitle(text: String): TextView =
+        label(text, 14f, MUTED, Typeface.NORMAL, 0f).apply {
+            setPadding(0, dp(6), 0, dp(16))
+        }
+
+    private fun pager(index: Int, count: Int, onPrev: () -> Unit, onNext: () -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        row.addView(
+            pagerButton("上一页", index > 0, onPrev),
+            LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(4) }
+        )
+        row.addView(
+            label("${index + 1} / $count", 12f, MUTED, Typeface.NORMAL, 0f).apply {
+                gravity = Gravity.CENTER
+            },
+            LinearLayout.LayoutParams(dp(72), dp(44))
+        )
+        row.addView(
+            pagerButton("下一页", index < count - 1, onNext),
+            LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(4) }
+        )
+        return row
+    }
+
+    private fun pagerButton(text: String, enabled: Boolean, onClick: () -> Unit): TextView =
+        label(text, 14f, if (enabled) TEXT else MUTED, Typeface.BOLD, 0f).apply {
+            gravity = Gravity.CENTER
+            isEnabled = enabled
+            isClickable = enabled
+            background = rounded(SURFACE, 2, if (enabled) BORDER else SURFACE, 1)
+            setOnClickListener { if (enabled) onClick() }
+        }
 
     private fun launchTraining() {
         val launched = PortalActions.enter(this, settings.toLaunchOptions())

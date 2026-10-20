@@ -416,6 +416,7 @@ button.small {
 
 .perf-toggle {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 12px;
   min-height: 52px;
@@ -519,8 +520,8 @@ body.control-mode .brand .status {
   --border: #d5ccbb;
   --border-strong: #b9ae9a;
   --text: #20251f;
-  --muted: #6d7468;
-  --accent: #a9563e;
+  --muted: #5e655a;
+  --accent: #8f4634;
   --accent-ink: #f8f3e9;
   --ok: #486b58;
   --danger: #a34d3d;
@@ -535,17 +536,20 @@ html, body {
 .start {
   position: fixed;
   inset: 0;
-  display: block;
+  display: flex;
+  flex-direction: column;
   max-width: none;
-  padding: clamp(26px, 4vw, 56px) clamp(24px, 6vw, 88px) 48px;
-  overflow-y: auto;
+  height: 100%;
+  padding: clamp(22px, 3.6vw, 48px) clamp(24px, 6vw, 88px) 28px;
+  overflow: hidden;
   background:
     radial-gradient(90% 55% at 8% 0%, rgba(255, 252, 244, .9), transparent 65%),
     var(--paper);
 }
 
 .brand {
-  margin: 0 0 30px;
+  flex: 0 0 auto;
+  margin: 0 0 22px;
   max-width: 1180px;
 }
 .brand-row { align-items: flex-start; }
@@ -555,6 +559,10 @@ html, body {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .28em;
+}
+.brand h1,
+.preview-name {
+  text-wrap: balance;
 }
 .brand h1 {
   font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
@@ -566,7 +574,7 @@ html, body {
 .status {
   margin-top: 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
 }
 .status[data-tone="ok"] { color: var(--ok); }
 .status[data-tone="error"] { color: var(--danger); }
@@ -588,9 +596,11 @@ body.control-mode .mode-chip {
 
 .start-grid {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr);
-  gap: clamp(36px, 5vw, 76px);
+  gap: clamp(30px, 4.5vw, 64px);
   max-width: 1180px;
+  min-height: 0;
   align-items: stretch;
 }
 
@@ -661,7 +671,7 @@ button.scene-card.is-selected .scene-card-index { color: var(--accent); }
 .scene-card-tag {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.55;
   white-space: nowrap;
   overflow: hidden;
@@ -686,7 +696,7 @@ button.scene-card.is-selected .scene-card-check { display: inline; }
 .scene-preview {
   display: flex;
   flex-direction: column;
-  min-height: 430px;
+  min-height: 0;
   padding-left: clamp(22px, 3.2vw, 44px);
   border-left: 1px solid var(--border);
 }
@@ -697,8 +707,8 @@ button.scene-card.is-selected .scene-card-check { display: inline; }
 }
 .preview-art {
   position: relative;
-  flex: 1;
-  min-height: 300px;
+  flex: 1 1 auto;
+  min-height: 180px;
   margin: 14px 0 18px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
@@ -753,18 +763,19 @@ button.scene-card.is-selected .scene-card-check { display: inline; }
   max-width: 34em;
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .launch-scene { display: none; }
 
 .actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 20px;
   max-width: 1180px;
-  margin: 36px 0 0;
+  margin: 18px 0 0;
 }
 button.primary,
 button.secondary {
@@ -785,29 +796,30 @@ button.primary {
 button.primary:hover { border-color: var(--accent); background: var(--accent); }
 button.primary:disabled { opacity: .38; }
 button.secondary {
-  padding: 0 4px;
-  border: 0;
+  min-width: 108px;
+  padding: 0 18px;
+  border: 1px solid var(--border-strong);
   background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  text-decoration: underline;
-  text-underline-offset: 5px;
+  color: var(--text);
+  font-size: 14px;
 }
-button.secondary:hover { color: var(--text); }
+button.secondary:hover { border-color: var(--text); color: var(--text); }
 .enter-hint {
+  flex: 0 0 auto;
   max-width: 44em;
   margin: 12px 0 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 14px;
+  line-height: 1.65;
   text-align: left;
 }
 .launch-note { display: none; }
 .perf-toggle {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
+  min-height: 46px;
   margin-top: 24px;
   padding: 14px 0 0;
   border: 0;
@@ -815,7 +827,7 @@ button.secondary:hover { color: var(--text); }
   border-radius: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
 }
 .perf-toggle input {
@@ -851,7 +863,7 @@ button.secondary:hover { color: var(--text); }
   .start { padding: 26px 22px 32px; }
   .start-grid { grid-template-columns: 1fr; gap: 30px; }
   .scene-preview { display: none; }
-  .scene-card-tag { white-space: normal; }
+  .scene-card-tag { white-space: normal; font-size: 15px; }
   .actions { align-items: stretch; flex-direction: column; gap: 10px; }
   button.primary { width: 100%; }
   button.secondary { align-self: flex-start; }
@@ -867,6 +879,18 @@ button.secondary:hover { color: var(--text); }
   .preview-art { min-height: 190px; margin: 10px 0 12px; }
   .preview-name { font-size: 23px; }
   .preview-desc { font-size: 11px; line-height: 1.6; }
-  .actions { margin-top: 18px; }
-  .perf-toggle { margin-top: 12px; padding-top: 10px; }
+  .actions { margin-top: 12px; }
+  .perf-toggle { margin-top: 8px; padding-top: 8px; }
+  .enter-hint { margin-top: 8px; }
+}
+
+@media (max-height: 640px) {
+  .scene-preview { display: none; }
+  .start-grid { grid-template-columns: 1fr; }
+  .brand h1 { font-size: 34px; }
+  .brand { margin-bottom: 12px; }
+  button.scene-card { min-height: 54px; padding: 8px 6px; }
+  .scene-card-tag { display: none; }
+  .actions { margin-top: 8px; }
+  .perf-toggle { margin-top: 6px; }
 }
