@@ -10,6 +10,9 @@ export interface Strings {
   xrFailed: string;
   sceneTitle: string;
   sceneHint: string;
+  sceneSelected: string;
+  sceneSelectedStatus: string;
+  sceneSwitchBlocked: string;
   operator: string;
   debug: string;
   lab: string;
@@ -31,6 +34,8 @@ export interface Strings {
   calibrationFailed: string;
   sessionEnded: string;
   enterFailed: string;
+  skippedCalibration: string;
+  recalibrateNeedsSession: string;
   waitingHead: string;
   labTitle: string;
   labSummoned: string;
@@ -46,6 +51,8 @@ export interface Strings {
   hudSelect: string;
   hudQuality: string;
   hudAudio: string;
+  hudTriangles: string;
+  hudDrawCalls: string;
 }
 
 export const ZH: Strings = {
@@ -60,6 +67,9 @@ export const ZH: Strings = {
   xrFailed: 'WebXR 检测失败',
   sceneTitle: '场景',
   sceneHint: '可稍后切换',
+  sceneSelected: '已选',
+  sceneSelectedStatus: '已选择：',
+  sceneSwitchBlocked: '请先退出 VR 会话再切换场景',
   operator: '操作员',
   debug: '显示诊断信息',
   lab: '空间 UI 实验',
@@ -81,6 +91,8 @@ export const ZH: Strings = {
   calibrationFailed: '方向校准失败',
   sessionEnded: '会话已结束',
   enterFailed: '进入失败',
+  skippedCalibration: '已跳过方向校准',
+  recalibrateNeedsSession: '重新校准仅在 VR 会话中可用',
   waitingHead: '等待头显姿态…',
   labTitle: '空间 UI 实验',
   labSummoned: '召唤后锁定',
@@ -95,7 +107,9 @@ export const ZH: Strings = {
   hudFps: 'FPS',
   hudSelect: '注视选择',
   hudQuality: '画质',
-  hudAudio: '声音'
+  hudAudio: '声音',
+  hudTriangles: '三角面',
+  hudDrawCalls: 'Draw call'
 };
 
 export const EN: Strings = {
@@ -110,6 +124,9 @@ export const EN: Strings = {
   xrFailed: 'WebXR detection failed',
   sceneTitle: 'Scenes',
   sceneHint: 'Can switch later',
+  sceneSelected: 'Selected',
+  sceneSelectedStatus: 'Selected: ',
+  sceneSwitchBlocked: 'Exit the VR session before switching scenes',
   operator: 'Operator',
   debug: 'Show diagnostics',
   lab: 'Spatial UI lab',
@@ -131,6 +148,8 @@ export const EN: Strings = {
   calibrationFailed: 'Direction calibration failed',
   sessionEnded: 'Session ended',
   enterFailed: 'Could not enter',
+  skippedCalibration: 'Direction calibration skipped',
+  recalibrateNeedsSession: 'Recalibration is only available inside a VR session',
   waitingHead: 'Waiting for head pose…',
   labTitle: 'Spatial UI lab',
   labSummoned: 'Summoned, then locked',
@@ -145,7 +164,9 @@ export const EN: Strings = {
   hudFps: 'FPS',
   hudSelect: 'Selections',
   hudQuality: 'Quality',
-  hudAudio: 'Sound'
+  hudAudio: 'Sound',
+  hudTriangles: 'Triangles',
+  hudDrawCalls: 'Draw calls'
 };
 
 export function getStrings(lang: 'zh' | 'en'): Strings {

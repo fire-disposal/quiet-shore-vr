@@ -1,9 +1,10 @@
 :root {
   color-scheme: dark;
   --bg: #0a1211;
-  --surface: #121e1c;
+  --surface: #101b19;
   --surface-2: #172724;
-  --border: #2e4a45;
+  --border: #2b4640;
+  --border-strong: #41665f;
   --text: #eef4f0;
   --muted: #9fb3ac;
   --accent: #e0bb78;
@@ -24,39 +25,45 @@ html, body {
   font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", sans-serif;
 }
 
+/*
+ * No `justify-content: center` here: with auto margins on the brand and the
+ * operator block, spare space still centres the content, but a short viewport
+ * (360x640) scrolls from the true top instead of clipping the brand.
+ */
 .start {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 20px;
-  padding: 28px;
-  max-width: 760px;
+  gap: 26px;
+  padding: 40px 24px 32px;
+  max-width: 960px;
   margin: 0 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
 .brand { margin-top: auto; }
 .brand-en {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: .18em;
+  letter-spacing: .22em;
   text-transform: uppercase;
+  opacity: .85;
 }
-h1 {
+.brand h1 {
   margin: 0;
-  font-size: 40px;
-  line-height: 1.15;
-  font-weight: 650;
-  letter-spacing: .04em;
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: .02em;
 }
 .status {
-  margin: 8px 0 0;
-  min-height: 24px;
+  margin: 10px 0 0;
+  min-height: 22px;
   color: var(--muted);
   font-size: 14px;
 }
@@ -68,43 +75,48 @@ h1 {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .section-head h2 {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
-  letter-spacing: .14em;
+  letter-spacing: .16em;
   text-transform: uppercase;
 }
-.section-hint { color: var(--muted); font-size: 12px; }
+.section-hint { color: var(--muted); font-size: 12px; opacity: .8; }
 
 .scene-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 14px;
 }
+
 button.scene-card {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  min-height: 126px;
-  padding: 16px 18px;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(155deg, var(--surface-2), var(--surface));
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
   color: var(--text);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
-button.scene-card:hover { border-color: #41665f; }
+button.scene-card:hover { border-color: var(--border-strong); }
+button.scene-card:active { transform: translateY(1px); }
 button.scene-card.is-selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(224, 187, 120, .35);
+  box-shadow: 0 0 0 1px rgba(224, 187, 120, .45), 0 10px 24px rgba(0, 0, 0, .28);
+}
+button.scene-card.is-selected .scene-card-thumb {
+  box-shadow: inset 0 0 0 2px rgba(224, 187, 120, .85);
 }
 button.scene-card:focus-visible,
 button:focus-visible,
@@ -112,36 +124,118 @@ summary:focus-visible {
   outline: 3px solid #9fd8ca;
   outline-offset: 3px;
 }
+
+/* Thumbnail: pure CSS scene art, no image files. Unknown ids keep the base
+ * gradient so a newly registered scene still renders a card. */
+.scene-card-thumb {
+  position: relative;
+  display: block;
+  height: 96px;
+  border-radius: 11px;
+  overflow: hidden;
+  background: radial-gradient(90% 120% at 50% 0%, #243b37 0%, #101b19 70%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05);
+}
+.scene-card-thumb::before,
+.scene-card-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* lakeside dawn: sun low over water, shimmer lines below the horizon */
+button.scene-card[data-scene="landscape"] .scene-card-thumb {
+  background:
+    radial-gradient(circle at 74% 36%, #ffe6b8 0 6%, rgba(255, 224, 170, .75) 13%, rgba(255, 214, 150, 0) 34%),
+    linear-gradient(180deg, #1d3340 0%, #3d5f66 30%, #7d938a 51%, #2c4a49 51.5%, #16292b 100%);
+}
+button.scene-card[data-scene="landscape"] .scene-card-thumb::after {
+  inset: 52% 0 0 0;
+  background: repeating-linear-gradient(180deg, rgba(255, 242, 214, .28) 0 1px, rgba(255, 242, 214, 0) 1px 6px);
+  opacity: .45;
+}
+
+/* ward: cool window light over a dim room */
+button.scene-card[data-scene="ward"] .scene-card-thumb {
+  background:
+    linear-gradient(200deg, rgba(214, 238, 247, 0) 40%, rgba(214, 238, 247, .16) 58%, rgba(214, 238, 247, 0) 78%),
+    linear-gradient(180deg, #141d1b 0%, #22302c 55%, #1a2522 100%);
+}
+button.scene-card[data-scene="ward"] .scene-card-thumb::before {
+  inset: 16% 16% auto auto;
+  width: 34%;
+  height: 58%;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #d6e9f2 0%, #a9ccd8 62%, #7ea3ae 100%);
+  box-shadow: 0 0 18px rgba(190, 225, 240, .35), inset 0 0 0 2px rgba(10, 18, 17, .5);
+}
+button.scene-card[data-scene="ward"] .scene-card-thumb::after {
+  inset: auto 0 14% 0;
+  height: 3px;
+  background: rgba(190, 225, 240, .28);
+}
+
+/* bathroom: warm brick courses, arched mirror, lamp glow */
+button.scene-card[data-scene="bathroom"] .scene-card-thumb {
+  background:
+    radial-gradient(80% 60% at 50% 0%, rgba(255, 190, 120, .32) 0%, rgba(255, 190, 120, 0) 62%),
+    linear-gradient(180deg, #3a2a20 0%, #4a3426 62%, #2a1e17 100%);
+}
+button.scene-card[data-scene="bathroom"] .scene-card-thumb::before {
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 214, 170, .10) 0 2px, rgba(0, 0, 0, 0) 2px 14px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, .20) 0 1px, rgba(0, 0, 0, 0) 1px 28px);
+}
+button.scene-card[data-scene="bathroom"] .scene-card-thumb::after {
+  inset: 14% auto auto 50%;
+  width: 36%;
+  height: 48%;
+  transform: translateX(-50%);
+  border-radius: 48% 48% 8px 8px;
+  background: linear-gradient(120deg, #e6f1ee 0%, #b3ccc6 55%, #dcebe6 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .3), 0 0 16px rgba(255, 205, 150, .28);
+  opacity: .92;
+}
+
+.scene-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 6px 6px;
+}
 .scene-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
-.scene-card-name { font-size: 19px; font-weight: 650; }
-.scene-card-tag { color: var(--muted); font-size: 13px; }
-.scene-card-desc { color: #c4d3cd; font-size: 14px; line-height: 1.5; }
+.scene-card-name { font-size: 17px; font-weight: 650; }
+.scene-card-tag { color: var(--muted); font-size: 13px; line-height: 1.45; }
 .scene-card-check {
   display: none;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-ink);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
 }
 button.scene-card.is-selected .scene-card-check { display: inline-block; }
 
 .scene-note {
-  margin: 8px 0 0;
-  min-height: 20px;
-  color: var(--muted);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  margin: 12px 0 0;
+  min-height: 44px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(224, 187, 120, .55);
+  color: #c4d3cd;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 68ch;
 }
 
-.actions { display: flex; gap: 12px; }
+.actions { display: flex; gap: 12px; align-items: stretch; }
 button {
   flex: 1;
   min-height: 60px;
@@ -155,16 +249,29 @@ button {
   cursor: pointer;
 }
 button.primary {
+  flex: 2;
   border-color: var(--accent);
-  background: var(--accent);
+  background: linear-gradient(180deg, #e8c88b 0%, var(--accent) 100%);
   color: var(--accent-ink);
-  font-weight: 650;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  box-shadow: 0 8px 20px rgba(224, 187, 120, .18);
 }
-button.secondary { background: transparent; }
-button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary:hover:not(:disabled) { filter: brightness(1.05); }
+button.secondary {
+  flex: 1;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 500;
+}
+button.secondary:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 button.small {
   flex: none;
-  min-height: 40px;
+  min-height: 48px;
   padding: 0 14px;
   border-radius: 10px;
   font-size: 14px;
@@ -173,22 +280,35 @@ button.small {
 .hint {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
 .operator { margin-bottom: auto; color: var(--muted); font-size: 13px; }
-.operator summary { cursor: pointer; width: max-content; padding: 4px 0; }
-.operator-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 0 4px; }
-.toggle { display: inline-flex; align-items: center; gap: 8px; }
-.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.operator summary {
+  cursor: pointer;
+  width: max-content;
+  min-height: 48px;
+  padding: 12px 2px;
+}
+.operator-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 4px 0; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; }
+.toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
 
-@media (max-width: 520px) {
-  .start { padding: 20px 16px; gap: 16px; }
-  h1 { font-size: 32px; }
-  button.scene-card { min-height: 108px; padding: 14px 16px; }
-  .scene-card-desc { font-size: 13px; }
+@media (max-width: 560px) {
+  .start { padding: 28px 16px 24px; gap: 20px; }
+  .brand h1 { font-size: 26px; }
+  .scene-card-thumb { height: 84px; }
+  .scene-note { min-height: 0; }
   .actions { flex-direction: column; }
+  button.primary,
+  button.secondary { flex: none; width: 100%; }
+  button.secondary { min-height: 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.scene-card,
+  button { transition: none; }
 }
 
 /* immersive stage */
