@@ -115,6 +115,20 @@ class BleController(
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device ?: return
                 val address = device.address ?: return
+                val record = result.scanRecord
+                val serviceMatch = record?.serviceUuids?.any {
+                    it.uuid == ControlProtocol.serviceUuid
+                } == true
+                val deviceName = try {
+                    device.name
+                } catch (ignored: SecurityException) {
+                    null
+                }
+                val nameMatch = record?.deviceName == ControlProtocol.deviceName ||
+                    deviceName == ControlProtocol.deviceName
+                if (!serviceMatch && !nameMatch) {
+                    return
+                }
                 val discovered = DiscoveredDevice(address, result.rssi)
                 mainHandler.post {
                     val previous = found[address]
@@ -135,18 +149,17 @@ class BleController(
             }
         }
 
-        val filters = listOf(
-            ScanFilter.Builder()
-                .setServiceUuid(ParcelUuid(ControlProtocol.serviceUuid))
-                .build()
-        )
+        // Do not rely on ScanFilter for the 128-bit service UUID: several
+        // Android stacks only expose it in the scan record after the callback,
+        // while the system Bluetooth UI still sees the device. Scan broadly
+        // and match UUID/name inside onScanResult.
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .setReportDelay(0)
             .build()
 
         try {
-            scanner.startScan(filters, settings, callback)
+            scanner.startScan(emptyList(), settings, callback)
         } catch (error: SecurityException) {
             listener.onError("缺少蓝牙搜索权限")
             return
