@@ -4,8 +4,9 @@
 
 | 草稿 | 新库 | 处理 |
 | --- | --- | --- |
-| `src/scene/landscape.js` | `src/scenes/landscape/landscape.legacy.js` + `index.ts` | 去 IIFE，导出 `createWorld`，包装成 `SceneDefinition` |
-| `src/scene/ward.js` | `src/scenes/ward/ward.legacy.js` + `index.ts` | 同上 |
+| `src/scene/landscape.js` | `src/scenes/landscape/landscape.js` + `index.ts` | 去 IIFE，导出 `createWorld`，包装成 `SceneDefinition`；画质 4.0 |
+| `src/scene/ward.js` | `src/scenes/ward/ward.js` + `index.ts` | 同上；画质 2.0 |
+| 新增 | `src/scenes/bathroom/bathroom.js` + `index.ts` | 新场景 1.0：暖石浴室，`stream` 水声 |
 | `src/audio/*.mp3` | `src/audio/*.mp3` | 直接复用；`audio.ts` 适配类型 |
 | `src/vr/comfort.ts` | `src/core/xr/comfort.ts` | 数学层复用 |
 | `src/ui/xr-menu.ts` | `src/ui/xr-menu.ts` | 重写为 `SpatialAnchor/Surface/Input` |
@@ -37,7 +38,7 @@ legacy 场景内部仍是命令式 ES5，保持视觉算法不变：
 
 - 草稿为 Three r128；新库升到 0.152。颜色管理默认 `SRGBColorSpace`，纹理需显式 `colorSpace`。
 - 如果真机对比发现草稿更暗/更亮，优先调整纹理 `colorSpace` 和灯光强度，不要回退 Three 版本。
-- 场景预算保持不变：landscape 约 21 draw call / 34k 三角形；ward 以草稿 stats 为准。
+- 场景预算（代码侧 stats，high / low）：landscape 24 / 43.8k · 21 / 10k；ward 20 / 5.7k · 20 / 4.9k；bathroom 17–18 / 2.7k · 16 / 1.9k。均无阴影贴图、无后处理。
 
 ## 5. 验证
 

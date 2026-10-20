@@ -95,7 +95,7 @@
 - 签名：仓库不提交 keystore；CI 从 Secrets 读取 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。缺失时生成一次性 debug keystore，artifact 明确标注 `unsigned-debug`。
 - 版本：`versionCode` 取 `GITHUB_RUN_NUMBER`，`versionName` 取 `package.json` 版本；本地构建可覆盖。
 - 产物：`quiet-shore.apk` + `quiet-shore-standalone.html` + source maps（可选）。
-- 旧库 `fire-disposal/stillwater-vr` 在新库首次 CI 通过后从 GitHub 删除；本地草稿 `~/dev/VR` 保留。
+- 旧库 `fire-disposal/stillwater-vr` 已在新库基线 CI 通过后从 GitHub 删除；本地草稿 `~/dev/VR` 保留。
 
 ## 6. 安全与运维边界
 

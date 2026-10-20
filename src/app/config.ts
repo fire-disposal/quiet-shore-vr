@@ -1,4 +1,4 @@
-import type { SceneId } from '../ui/scene-select';
+import { normalizeSceneId, type SceneId } from '../ui/scene-select';
 
 export interface AppConfig {
   highQuality: boolean;
@@ -21,7 +21,7 @@ export function readConfig(search: string): AppConfig {
     skipCalibration: params.get('nocal') === '1',
     debug: params.get('debug') === '1',
     lang,
-    initialScene: scene === 'landscape' || scene === 'ward' ? scene : null,
+    initialScene: normalizeSceneId(scene),
     spin: params.get('spin') === '1'
   };
 }

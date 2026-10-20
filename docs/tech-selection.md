@@ -6,7 +6,7 @@
 - 唯一已验证的 WebXR 入口：Firefox Reality 10（Gecko 78，`immersive-vr=true`）。
 - 系统 WebVR 浏览器：Chromium 67，只有 WebVR 1.1，无 WebXR；WebView 74 无 XR。
 - 3DoF 头显 + 3DoF 手柄，无位置追踪；无 root。
-- 现有场景预算：landscape 约 24 draw call / 44k 三角形（低画质约 21 / 10k）；无阴影、无后处理。
+- 现有场景预算（代码侧 stats，high / low）：landscape 24 / 43.8k · 21 / 10k，ward 20 / 5.7k · 20 / 4.9k，bathroom 17–18 / 2.7k · 16 / 1.9k；均无阴影贴图、无后处理。
 - APK 在 GitHub Actions 构建；发布入口是通知栏/快捷磁贴 → 本地 HTTP → Firefox Reality。
 - 内容层必须能在未来换成内嵌 WebXR 或原生渲染器时不重写空间/场景契约。
 
@@ -51,7 +51,7 @@
 
 理由：
 
-1. 应用只有 2 个场景 + 一套空间 UI；R3F 的组件化收益不足以抵消 React/reconciler 的运行时与兼容风险。
+1. 应用只有 3 个程序化场景 + 一套空间 UI；R3F 的组件化收益不足以抵消 React/reconciler 的运行时与兼容风险。
 2. 真正的复杂度在 XR 会话、3DoF 姿态、四种空间模式、场景预算与旧浏览器，R3F/Drei 不解决这些；反而增加一层需要桥接的抽象。
 3. 分发壳可能从 Firefox Reality 换成内嵌 WebXR 或原生 OpenGL ES；纯 Three.js 的核心数学/契约可直接复用，React 层则会被丢弃。
 4. Drei 的依赖面与老 GPU 风险不符合“正式化基线”的保守原则。
@@ -70,12 +70,12 @@
 - 有实机证据表明 R3F 8 + React 18 在 Gecko 78 上启动、内存、帧率均无回归（需给出数据，不是“能跑”）。
 - 需要 R3F 生态的 3D 资产管线（GLTF、材质编辑器）且收益大于迁移成本。
 
-## 6. 实测记录
+## 6. 兼容性评估状态
 
-R3F 8 + React 18 + Three 0.152 的独立 spike 用于验证构建与运行时，不作为生产依赖：
+R3F 8 + React 18 + Three 0.152 的独立 spike **未完成**：
 
-- 构建：esbuild `target=chrome67`、IIFE、minify。
-- 检查：bundle 体积、`queueMicrotask`/`ResizeObserver`/`globalThis` 等运行时 API、桌面 Chromium 启动。
-- 结论：即使 spike 能运行，上述决策仍以“内容层可移植 + 老硬件保守”为准；spike 只用于排除“完全不可行”的情况。
+- `npm install` 因 R3F 的 `peerOptional`（expo/react-native）与 npm 11 的严格解析冲突，需要 `--legacy-peer-deps`；后续安装未在超时前完成。
+- 因此没有可信的 bundle 体积、运行时 API 扫描或桌面启动数据。本文的决策**不建立在“R3F 能跑”之上**，而是基于依赖面、运行时成本、XR 桥接和原生移植风险。
+- 若未来要重新评估，必须先完成：固定版本安装 → esbuild `target=chrome67` IIFE 构建 → 扫描 `queueMicrotask`/`ResizeObserver`/`globalThis` → 桌面 Chromium 启动 → 再上 Gecko 78 实机。只有给出这些数据，才能推翻当前决策。
 
-> 具体命令与数字见仓库提交记录与 `docs/ui-audit.md` 的验证基线；不在文档中复制易过期的 bundle 数字。
+> 不复制易过期的 bundle 数字；以上为当前事实状态。

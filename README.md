@@ -6,7 +6,7 @@ PICO G2 4K 上的 WebXR 引导想象训练应用。正式化基线仓；草稿�
 
 - **内容层**：Three.js 0.152 + TypeScript + esbuild；不引入 React/R3F/Drei。核心空间/场景/几何契约可移植到未来内嵌 WebXR 或原生渲染器。
 - **空间 UI**：统一的 `SpatialAnchor` / `SpatialSurface` / `SpatialButton` / `SpatialInput`，四种模式：召唤后世界锁定、跟随视角、世界锁定、世界锁定+朝向用户。
-- **场景**：`landscape`（湖畔日出）与 `ward`（训练病房）作为 `SceneDefinition`；legacy 程序化场景被隔离在 `src/scenes/*/landscape.legacy.js` / `ward.legacy.js`，由契约适配器包装。
+- **场景**：`landscape`（湖畔晨岸）、`ward`（训练病房）、`bathroom`（暖石浴室）作为 `SceneDefinition`；程序化场景隔离在 `src/scenes/*/*.js`，由契约适配器包装。卫生间使用 `stream` 水声，按真实尺度布置，服务站姿引导与注视练习。
 - **分发壳**：`shell/android` 是薄 Portal APK：`127.0.0.1:8130` 只读静态服务 + 常驻通知/快捷磁贴 + 拉起 Firefox Reality。不修改 HOME，不 root。
 - **CI/CD**：GitHub Actions 构建 Web bundle 与 APK；签名从 Secrets 读取，仓库不提交 keystore。
 
@@ -31,7 +31,7 @@ npm run standalone   # dist/standalone.html
 npm run apk          # 需要 Android SDK；输出 shell/android/build/quiet-shore.apk
 ```
 
-URL 参数：`?quality=low`、`?aa=0`、`?scene=landscape|ward`、`?nocal=1`、`?debug=1`、`?lang=en`、`?spin=1`。
+URL 参数：`?quality=low`、`?aa=0`、`?scene=landscape|ward|bathroom`、`?nocal=1`、`?debug=1`、`?lang=en`、`?spin=1`。
 
 ## 发布
 
@@ -39,4 +39,4 @@ URL 参数：`?quality=low`、`?aa=0`、`?scene=landscape|ward`、`?nocal=1`、`
 2. `shell/android/build.sh` 用 `aapt2 + javac + d8 + zipalign + apksigner` 构建并签名。
 3. 从 PICO 下拉通知栏点击“进入训练”；APK 启动本地 HTTP 服务并拉起 Firefox Reality。
 
-旧 GitHub 仓 `stillwater-vr` 在新仓首次 CI 通过后删除；本地草稿 `~/dev/VR` 保留。
+旧 GitHub 仓 `stillwater-vr` 已在新仓基线 CI 通过后删除；本地草稿 `~/dev/VR` 保留。
