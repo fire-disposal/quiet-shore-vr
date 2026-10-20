@@ -162,14 +162,14 @@ ASCII 字符串，通知给所有已连接设备：
 | GET | `/events` | — | `text/event-stream`；`control` 帧含 seq/command/control/controller，`state` 帧单独推送 CLAIM/RELEASE |
 | POST | `/command` | `{"command":string}` | `{"accepted":true,"seq":number}`；非白名单返回 400 |
 | POST | `/telemetry` | `{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}` | `{"ok":true}` |
-| POST | `/state` | `{"scene":s,"session":b,"calibrating":b,"audio":b}` | `{"ok":true}` |
+| POST | `/state` | `{"scene":s,"session":b,"calibrating":b,"audio":b,"eyeHeight":n,"posturePitch":n,"postureRoll":n,"postureRise":n,"postureProgress":n,"viewX":n,"viewZ":n,"cueEnabled":b,"cueIntensity":n,"calibrationConfidence":n}` | `{"ok":true}` |
 
 细节：
 
 - `/control` 的 `seq` 每收到一条 BLE 命令加一；`command` 保留最后一条。页面优先订阅 `/events`，按 `seq` 去重；SSE 断线时才改为 100 ms 轮询 `/control`。
 - `control` 直接反映当前是否有平板持有控制权。
 - `/telemetry` 的字段缺失时按 `0` 处理；非数字或非有限值返回 400。头显服务把它编码成 20 字节并通知控制者。
-- `/state` 的 `audio` 字段表示“是否静音”，不是“声音是否开启”。
+- `/state` 的 `audio` 字段表示“是否静音”；`eyeHeight`、posture、view、cue、置信度由页面按 1 Hz 上报。
 - 请求体上限 64 KiB，必须带 `Content-Length`；不支持 `Transfer-Encoding`。
 - 其他方法返回 405；未知路径返回 404。
 - 页面读取失败时返回占位 HTML，而不是连接错误。
@@ -208,7 +208,7 @@ ASCII 字符串，通知给所有已连接设备：
 - **单控制者。** 不支持多平板协作或观察者模式；第二台平板只能等待。
 - **无持久化。** 控制权、最后场景和控制状态都只存在于进程内存；服务重启后平板需重新接管。
 - **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态；平板视图不是逐帧镜像。
-- **状态可能超出默认 ATT 负载。** 场景名 16 字符时 `state` 最长 23 字节；如更换长场景名，应缩短或改用更紧凑编码。
+- **state 已固定为 12 字节二进制 v3**，不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。
 
 ## 9. 排障

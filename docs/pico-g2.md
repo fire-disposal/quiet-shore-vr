@@ -144,10 +144,10 @@ adb shell am start -a android.intent.action.VIEW \
 
 头显 APK 有一个轻量 `PortalActivity` 控制台；品牌资产也用于通知和磁贴：
 
-- 控制台显示服务/蓝牙/接管状态，提供“进入训练 / 全部应用 / 返回桌面”。只有“进入训练”拉起 Firefox Reality，并带 3 秒冷却。
+- 控制台显示当前场景、服务/蓝牙/接管状态；顶栏退出弹窗提供“原训练系统 / 全部应用 / 默认桌面”。只有“进入训练”拉起 Firefox Reality，并带 3 秒冷却。
 - `BrandAssets.kt` 用 Canvas 绘制通知图标、磁贴图标与动作图标；没有位图资源。
 - `res/drawable/ic_launcher.xml` 是启动图标；`res/values/styles.xml` 是壳主题，`PortalActivity` 使用 `PortalTheme`。
-- 常驻通知显示“等待平板连接 / 平板控制中，按一次确认键开始 / 蓝牙未开启 / 蓝牙不可用”，动作是“打开控制台 / 全部应用 / 返回桌面”。
+- 常驻通知只保留“打开控制台”入口，不再播报等待状态；退出/全部应用/默认桌面统一在控制台或顶栏退出弹窗中处理。
 - 快捷磁贴标签“静岸”，点击打开控制台，不直接进入训练。
 
 ## 8. 代码侧与实机侧边界

@@ -22,7 +22,7 @@ XR 会把场景渲染两次，所以湖畔实际约 48 次场景 draw / 帧；�
 
 | 优先级 | 证据 | 成本 | 判断 |
 | --- | --- | --- | --- |
-| P0 | `renderer.ts` 高清 XR 使用 1.0 framebuffer scale，且默认请求 MSAA | 双目约 8.29M 像素/帧，MSAA resolve 增加带宽 | 最大的确定性成本 |
+| P0 | `renderer.ts` 高清 XR 使用 1.25 framebuffer scale（本文件为历史性能分析），且默认请求 MSAA | 双目约 8.29M 像素/帧，MSAA resolve 增加带宽 | 最大的确定性成本 |
 | P0 | 天空球覆盖 100% 像素，约 9 次 `hash21`、2 次噪声、`acos`、多次 `pow` | 全屏片元 ALU | 湖畔首要 ALU 成本 |
 | P1 | 水面 5 个 `sin`、5 个 `cos`、4 个 `pow`，高覆盖 | 大面积 SFU 与片元 | 湖畔第二成本 |
 | P1 | 病区/浴室/实验大量 `MeshStandardMaterial` + 2 到 3 盏灯 | 房间几乎全屏 PBR | 房间首要成本 |
@@ -100,7 +100,7 @@ XR 会把场景渲染两次，所以湖畔实际约 48 次场景 draw / 帧；�
 ## 7. 已落地的小改动
 
 - HUD 改用 `renderer.info.render` 的实际 calls/triangles，并显示 120 帧 p95 帧时间。
-- XR 默认保留 AA 和 1.0 framebuffer scale，视觉优先；`?aa=0`、`?scale=` 是显式性能 A/B 工具。
+- XR 默认保留 AA 和 1.25 framebuffer scale，视觉优先；`?aa=0`、`?scale=` 是显式性能 A/B 工具。
 - 低画质默认 0.85 scale 且关闭 AA；不把性能档强加给患者。
 - 空间 UI 的标题/正文网格共享一个单位平面，减少重复几何。
 - 校准循环复用 forward 向量，不再每帧分配 `Vector3`。
@@ -109,4 +109,4 @@ XR 会把场景渲染两次，所以湖畔实际约 48 次场景 draw / 帧；�
 
 ## 8. 视觉优先修订
 
-当前设备 FPS 尚可，默认恢复 XR AA 和 1.0 framebuffer scale；`?aa=0`、`?scale=` 仅作为设备 A/B 与低配逃生口。湖畔三个悬浮多面体已删除，减少无意义装饰与选择负担。
+当前设备 FPS 尚可，默认恢复 XR AA 和 1.25 framebuffer scale；`?aa=0`、`?scale=` 仅作为设备 A/B 与低配逃生口。湖畔三个悬浮多面体已删除，减少无意义装饰与选择负担。
