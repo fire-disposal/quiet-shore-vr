@@ -171,6 +171,8 @@ jobs:
           produce android/control/build/outputs/apk/debug/control-debug.apk \
             "$OUT/quiet-shore-control-$TAG.apk"
 
+          cp "$OUT/quiet-shore-headset-$TAG.apk" "$OUT/quiet-shore-headset.apk"
+          cp "$OUT/quiet-shore-control-$TAG.apk" "$OUT/quiet-shore-control.apk"
           ( cd "$OUT" && sha256sum "quiet-shore-headset-$TAG.apk" "quiet-shore-control-$TAG.apk" > SHA256SUMS.txt )
 
           "$BT/apksigner" verify "$OUT/quiet-shore-headset-$TAG.apk"
@@ -237,4 +239,6 @@ jobs:
           files: |
             ${{ runner.temp }}/qs-release/quiet-shore-headset-${{ steps.version.outputs.tag }}.apk
             ${{ runner.temp }}/qs-release/quiet-shore-control-${{ steps.version.outputs.tag }}.apk
+            ${{ runner.temp }}/qs-release/quiet-shore-headset.apk
+            ${{ runner.temp }}/qs-release/quiet-shore-control.apk
             ${{ runner.temp }}/qs-release/SHA256SUMS.txt

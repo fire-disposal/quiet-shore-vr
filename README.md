@@ -7,7 +7,7 @@
 | 静岸（头显端） | `com.quietshore.portal` | 控制台 + 前台服务 + BLE 外设 + 本机回环桥 |
 | 静岸控制台（平板端） | `com.quietshore.control` | Compose 控制台 + BLE 中心 + WebView 三维镜像 |
 
-当前版本：**v0.8.7**。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
+当前版本：**v0.8.8**。项目站：<https://qs.205716.xyz>。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
 ## 当前流程
 

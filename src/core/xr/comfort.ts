@@ -107,6 +107,44 @@ export const POSTURE_LIMITS = {
   stopDecelMs: 320
 } as const;
 
+/**
+ * Posture easing: quintic smootherstep, f(t) = 6t^5 - 15t^4 + 10t^3.
+ *
+ * Smoothstep only matches velocity at the endpoints; this curve matches
+ * velocity *and* acceleration, so a transition starts and stops without a
+ * jerk. The takeoff is also slower: at t = 0.1 smoothstep is already at 2.8 %
+ * of the travel while this curve is at 0.86 %, so the first frames of an
+ * operator command read as a drift rather than a push. Peak speed is 1.875x
+ * the average (smoothstep: 1.5x), but the speed *change* is spread over the
+ * whole transition instead of being concentrated at the ends.
+ *
+ * Input outside 0..1 (and NaN) is clamped, so callers cannot extrapolate.
+ */
+export function postureEase(t: number): number {
+  const x = t > 0 ? (t < 1 ? t : 1) : 0;
+  return x * x * x * (x * (6 * x - 15) + 10);
+}
+
+/** d/dt of `postureEase` per unit of normalised time: 30 t^2 (1 - t)^2. */
+export function postureEaseRate(t: number): number {
+  const x = t > 0 ? (t < 1 ? t : 1) : 0;
+  const s = x * (1 - x);
+  return 30 * s * s;
+}
+
+/**
+ * Peak speed of a posture transition relative to its average, i.e.
+ * `postureEaseRate(0.5)`. To honour the documented POSTURE_RATE envelope
+ * (docs/control-interaction-spec.md §5: rise <= 0.05 m/s, pitch/roll <=
+ * 2 deg/s) a requested duration must satisfy
+ * `durationMs >= travel * POSTURE_EASE_PEAK / rate * 1000`; presets must be
+ * tuned against this factor, not against the average. comfort.ts does not
+ * stretch the requested duration itself: the 1 s neutral return used while
+ * the scene is hidden (and the 1.2 m / 30 s corner) would be moved far off
+ * the intended timing.
+ */
+export const POSTURE_EASE_PEAK = postureEaseRate(0.5);
+
 export interface ComfortState {
   calibrated: boolean;
   mode: 'none' | 'single' | 'two-pose';
@@ -140,16 +178,32 @@ export interface ComfortApi {
   getState(): ComfortState;
   /**
    * Eased interpolation to the target posture. No-op until calibrated.
-   * A new target while a transition runs starts from the current values.
+   * A new target while a transition runs starts from the current values with
+   * zero speed, superseding any deceleration in progress.
    */
   setPosture(target: VirtualPosture, durationMs: number): void;
   /** Advance the posture, deceleration and remap transitions; `dt` is seconds. */
   updatePosture(dt: number): void;
-  /** Stop heading for the target: the remaining motion decelerates to rest. */
+  /**
+   * Stop heading for the target: the remaining motion decelerates to rest
+   * over `stopDecelMs` from the exact current speed. It never passes the
+   * target. A later `setPosture` retargets from the braked pose.
+   */
   stopPosture(): void;
   getPostureState(): PostureState;
-  /** Monotonic progress toward the current posture target, 0..1, no allocation. */
+  /**
+   * Monotonic progress toward the current posture target, 0..1, no
+   * allocation. A stopped transition keeps reporting the fraction it reached
+   * while the brake runs out, so a head-locked cue never jumps to 1.
+   */
   getPostureProgress(): number;
+  /**
+   * True while the world is still moving for the posture: an active
+   * transition or the stop brake. Allocation-free, so a per-frame cue can
+   * gate its flow on real motion instead of inferring it from progress (a
+   * stopped transition freezes progress short of 1).
+   */
+  isPostureMoving(): boolean;
 }
 
 /**
@@ -349,6 +403,7 @@ export function createComfort(options: {
     return value < min ? min : value > max ? max : value;
   }
 
+  /** Smoothstep for the two-pose remap frame; posture uses `postureEase`. */
   function easeInOut(t: number): number {
     const c = t < 0 ? 0 : t > 1 ? 1 : t;
     return c * c * (3 - 2 * c);
@@ -441,6 +496,8 @@ export function createComfort(options: {
    * Decelerate a stopped transition to rest. Velocity decays as (1-u)^2 over
    * `stopDecelMs`, so the pose creeps forward smoothly instead of snapping to
    * a halt, and the travel is clamped to the segment it was following.
+   * The initial velocity is the exact derivative of `postureEase` at the stop
+   * instant, so stopping never introduces a speed jump.
    */
   function advanceBrake(dt: number): void {
     const durationMs = POSTURE_LIMITS.stopDecelMs;
@@ -495,7 +552,7 @@ export function createComfort(options: {
     if (postureActive) {
       postureElapsedMs = Math.min(postureDurationMs, postureElapsedMs + dt * 1000);
       const t = postureDurationMs > 0 ? postureElapsedMs / postureDurationMs : 1;
-      const eased = easeInOut(t);
+      const eased = postureEase(t);
       posture.pitchDeg = postureStart.pitchDeg + (postureTarget.pitchDeg - postureStart.pitchDeg) * eased;
       posture.rollDeg = postureStart.rollDeg + (postureTarget.rollDeg - postureStart.rollDeg) * eased;
       posture.riseM = postureStart.riseM + (postureTarget.riseM - postureStart.riseM) * eased;
@@ -518,8 +575,9 @@ export function createComfort(options: {
       return;
     }
     const t = postureDurationMs > 0 ? Math.min(1, postureElapsedMs / postureDurationMs) : 1;
-    // d/dt of smoothstep at the stop moment, i.e. current pose units per second.
-    const rate = postureDurationMs > 0 ? (6 * t * (1 - t) * 1000) / postureDurationMs : 0;
+    // d/dt of postureEase at the stop moment, i.e. pose units per second.
+    // Zero at both ends of a transition, so a stop there coasts not at all.
+    const rate = postureDurationMs > 0 ? (postureEaseRate(t) * 1000) / postureDurationMs : 0;
     brakeStart.pitchDeg = posture.pitchDeg;
     brakeStart.rollDeg = posture.rollDeg;
     brakeStart.riseM = posture.riseM;
@@ -528,8 +586,16 @@ export function createComfort(options: {
     brakeVelocity.riseM = (postureTarget.riseM - postureStart.riseM) * rate;
     postureActive = false;
     brakeElapsedMs = 0;
-    braking =
-      brakeVelocity.pitchDeg !== 0 || brakeVelocity.rollDeg !== 0 || brakeVelocity.riseM !== 0;
+    // A stop within a hair of the end leaves nothing to coast out: treat it
+    // as at rest instead of reporting 320 ms of invisible motion.
+    const coast =
+      Math.max(
+        Math.abs(brakeVelocity.pitchDeg),
+        Math.abs(brakeVelocity.rollDeg),
+        Math.abs(brakeVelocity.riseM)
+      ) *
+      (POSTURE_LIMITS.stopDecelMs / 3000);
+    braking = coast > 1e-4;
   }
 
   function getPostureState(): PostureState {
@@ -551,12 +617,20 @@ export function createComfort(options: {
   }
 
   function getPostureProgress(): number {
-    if (!postureActive) {
-      return postureEngagement(posture) > 1e-6 ? 1 : 0;
+    // A stopped transition keeps the fraction it reached while the brake runs
+    // out, so a head-locked cue driven by this value never jumps to 1 while
+    // the world is still creeping to rest.
+    if (postureEngagement(posture) <= 1e-6) {
+      return 0;
     }
     return postureDurationMs > 0
       ? Math.min(1, postureElapsedMs / postureDurationMs)
       : 1;
+  }
+
+  /** A cue must gate on this, not on `progress`, which freezes at a stop. */
+  function isPostureMoving(): boolean {
+    return postureActive || braking;
   }
 
   function calibrate(pose: PoseLike): boolean {
@@ -648,6 +722,7 @@ export function createComfort(options: {
     updatePosture,
     stopPosture,
     getPostureState,
-    getPostureProgress
+    getPostureProgress,
+    isPostureMoving
   };
 }

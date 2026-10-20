@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2ede3">
+  <title>静岸 · Quiet Shore VR</title>
+  <meta name="description" content="静岸是面向卧床患者的 WebXR 引导想象训练系统。下载头显端与控制端 APK。">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="./">
+      <span class="seal" aria-hidden="true">静</span>
+      <span><strong>静岸</strong><small>QUIET SHORE VR</small></span>
+    </a>
+    <a class="ghost" href="https://github.com/fire-disposal/quiet-shore-vr" target="_blank" rel="noreferrer">GitHub ↗</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow"><span></span>沉浸式引导想象训练</p>
+      <h1>让卧床患者，<br>重新看见站立。</h1>
+      <p class="lede">PICO 头显呈现湖畔与病房，平板负责场景、校准与缓慢起身。所有数据留在设备本地。</p>
+      <div class="actions">
+        <a class="button primary" data-download="headset" href="https://github.com/fire-disposal/quiet-shore-vr/releases/latest">下载头显端 APK</a>
+        <a class="button" data-download="control" href="https://github.com/fire-disposal/quiet-shore-vr/releases/latest">下载平板端 APK</a>
+      </div>
+      <p class="meta"><span data-latest-version>最新版本</span> · <a data-release-link href="https://github.com/fire-disposal/quiet-shore-vr/releases/latest" target="_blank" rel="noreferrer">发布说明</a> · <a data-checksum href="https://github.com/fire-disposal/quiet-shore-vr/releases/latest" target="_blank" rel="noreferrer">SHA256</a> · <a href="https://github.com/fire-disposal/quiet-shore-vr/releases/latest" target="_blank" rel="noreferrer">GitHub 备用</a></p>
+    </section>
+
+    <section class="grid" aria-label="系统构成">
+      <article><span class="index">01</span><h2>头显端</h2><p>控制台、BLE 外设与本地页面。患者在 Firefox Reality 中完成一次确认，进入校准或训练。</p></article>
+      <article><span class="index">02</span><h2>控制端</h2><p>平板通过蓝牙接管。场景、眼高、声音、SUS 量表与虚拟起身都在一个操作台里。</p></article>
+      <article><span class="index">03</span><h2>离线优先</h2><p>页面走 127.0.0.1；控制命令走 BLE。没有云端账号，也不把训练数据上传。</p></article>
+    </section>
+
+    <a class="github-card" href="https://github.com/fire-disposal/quiet-shore-vr" target="_blank" rel="noreferrer">
+      <span class="github-mark" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      </span>
+      <span class="github-copy"><strong>fire-disposal / quiet-shore-vr</strong><small>源码、Issue 与发布记录</small></span>
+      <span class="github-arrow" aria-hidden="true">↗</span>
+    </a>
+    <section class="install">
+      <div>
+        <p class="eyebrow"><span></span>调试安装</p>
+        <h2>两个 APK，按顺序安装。</h2>
+        <p class="muted">当前发布物为 debug 签名，仅用于受控设备侧载。头显与平板必须同版本。</p>
+      </div>
+      <pre><code><span data-install-headset>adb install -r quiet-shore-headset.apk</span>
+<span data-install-control>adb install -r quiet-shore-control.apk</span></code></pre>
+    </section>
+  </main>
+
+  <footer><span>静岸 · Quiet Shore VR</span><span>本地训练 · 不替代医疗建议</span></footer>
+  <script src="main.js"></script>
+</body>
+</html>

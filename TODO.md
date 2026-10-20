@@ -5,6 +5,7 @@
 ## P0 · 实机验证
 
 - [ ] 验证 SUS 10 题分页、计分、控制端翻页/关闭与设置入口。
+- [ ] 验证 v0.8.8 的 18s posture、停止时粒子淡出、SUS 页面布局。
 
 - [ ] 在 PICO + 平板上验证 12 字节 state v3、PING/PONG 心跳与 `CONTROL_RELEASED` 收口。
 - [ ] 验证开机默认 HOME、退出三选一、通知入口与 Firefox 首次引导/离线提示。

@@ -7,8 +7,10 @@ import { SpatialSurface } from './spatial/surface';
 import type { Strings } from './strings';
 
 const TOLERANCE_DEG = 6;
-const HOLD_MS = 600;
-const COUNTDOWN_MS = 2000;
+const CEILING_HOLD_MS = 1200;
+const CEILING_COUNTDOWN_MS = 3000;
+const TOES_HOLD_MS = 900;
+const TOES_COUNTDOWN_MS = 2500;
 
 export interface CalibrationOptions {
   scene: THREE.Scene;
@@ -53,6 +55,14 @@ export class Calibration {
   private poseC: PoseLike | null = null;
   private poseT: PoseLike | null = null;
   private lastDeviation = 0;
+
+  private get holdMs(): number {
+    return this.step === 1 ? CEILING_HOLD_MS : TOES_HOLD_MS;
+  }
+
+  private get countdownMs(): number {
+    return this.step === 1 ? CEILING_COUNTDOWN_MS : TOES_COUNTDOWN_MS;
+  }
 
   constructor(options: CalibrationOptions) {
     this.options = options;
@@ -155,25 +165,25 @@ export class Calibration {
       this.countdownStart = 0;
     }
 
-    if (this.stableMs >= HOLD_MS && this.countdownStart === 0) {
+    if (this.stableMs >= this.holdMs && this.countdownStart === 0) {
       this.countdownStart = now;
     }
 
     let progress = 0;
     let status = this.options.strings.calibrationHold;
     if (this.countdownStart > 0) {
-      progress = Math.min((now - this.countdownStart) / COUNTDOWN_MS, 1);
-      const left = Math.max(0, Math.ceil((COUNTDOWN_MS - (now - this.countdownStart)) / 1000));
+      progress = Math.min((now - this.countdownStart) / this.countdownMs, 1);
+      const left = Math.max(0, Math.ceil((this.countdownMs - (now - this.countdownStart)) / 1000));
       status = `${this.options.strings.calibrationRecording} ${left}s`;
     } else if (this.stableMs > 0) {
-      progress = Math.min(this.stableMs / HOLD_MS, 1);
+      progress = Math.min(this.stableMs / this.holdMs, 1);
       status = this.options.strings.calibrationStable;
     }
 
     this.surface.setBody(status);
     this.setProgress(progress);
 
-    if (this.countdownStart > 0 && now - this.countdownStart >= COUNTDOWN_MS) {
+    if (this.countdownStart > 0 && now - this.countdownStart >= this.countdownMs) {
       this.captureStep(toPoseLike(head));
     }
   }

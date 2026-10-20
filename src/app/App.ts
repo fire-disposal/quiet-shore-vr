@@ -257,6 +257,7 @@ export class QuietShoreApp {
         this.comfort?.updatePosture(dt);
         if (this.postureCueState) {
           const progress = this.comfort?.getPostureProgress() ?? 0;
+          this.postureCueState.setMoving(this.comfort?.isPostureMoving() ?? false);
           this.postureCueState.update(dt, progress, this.headPose.position);
         }
         this.input.update(dt, now, this.headPose);
@@ -925,10 +926,10 @@ export class QuietShoreApp {
       return;
     }
     if (rising) {
-      this.comfort.setPosture({ pitchDeg: -8, riseM: 0.45 }, 14000);
+      this.comfort.setPosture({ pitchDeg: -8, riseM: 0.45 }, 18000);
       this.start.setStatus('虚拟起身中，随时可停止', 'ok');
     } else {
-      this.comfort.setPosture({ pitchDeg: 0, riseM: 0 }, 12000);
+      this.comfort.setPosture({ pitchDeg: 0, riseM: 0 }, 18000);
       this.start.setStatus('正在回到卧床视角', 'ok');
     }
   }

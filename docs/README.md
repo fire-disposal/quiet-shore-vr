@@ -12,6 +12,7 @@
 | `control-interaction-spec.md` | 权限、状态机、干预目录、安全包络、验收 |
 | `kiss-review.md` | 已收口项与剩余复杂度 |
 | `virtual-posture.md` | posture/comfort、视觉引导与粒子 |
+| `motion-polish.md` | 镜头动画、失重感、粒子/停止安全审计 |
 | `home-switch.md` | 默认 HOME 切换、恢复命令 |
 | `distribution.md` | 双 APK、签名、分发边界 |
 | `pico-g2.md` | 设备勘测与实机结论 |

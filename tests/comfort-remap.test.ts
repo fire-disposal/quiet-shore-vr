@@ -341,20 +341,21 @@ describe('posture stop deceleration', () => {
     expect(stopped.pitchDeg).toBeCloseTo(5, 10);
     expect(stopped.riseM).toBeCloseTo(0.5, 10);
 
-    // Velocity at the stop: 6*t*(1-t)/duration = 0.75 per second of travel.
+    // Velocity at the stop: 30*t^2*(1-t)^2/duration = 0.9375 per second of
+    // travel, so 9.375 deg/s and 0.9375 m/s at the midpoint.
     comfort.updatePosture(POSTURE_LIMITS.stopDecelMs / 2000);
     const midway = comfort.getPostureState();
     expect(midway.pitchDeg).toBeGreaterThan(5);
-    expect(midway.pitchDeg).toBeLessThan(5.8);
+    expect(midway.pitchDeg).toBeLessThanOrEqual(5.875 + 1e-9);
     expect(midway.riseM).toBeGreaterThan(0.5);
-    expect(midway.riseM).toBeLessThan(0.58);
+    expect(midway.riseM).toBeLessThanOrEqual(0.5875 + 1e-9);
     expect(midway.phase).toBe('standing');
 
     comfort.updatePosture(1);
     const settled = comfort.getPostureState();
-    // v0 * stopDecelMs / 3 = 7.5 deg/s * 0.32 s / 3 and 0.75 m/s * 0.32 s / 3.
-    expect(settled.pitchDeg).toBeCloseTo(5.8, 10);
-    expect(settled.riseM).toBeCloseTo(0.58, 10);
+    // Full ramp travel is v0 * stopDecelMs / 3 = 1 deg and 0.1 m.
+    expect(settled.pitchDeg).toBeCloseTo(6, 10);
+    expect(settled.riseM).toBeCloseTo(0.6, 10);
     expect(settled.phase).toBe('standing');
 
     comfort.updatePosture(10);
