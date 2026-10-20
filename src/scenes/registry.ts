@@ -1,16 +1,8 @@
-import type { AudioTrack } from '../audio/types';
-import type { LocalizedText, SceneDefinition } from '../core/scene/contract';
+import type { SceneDefinition, SceneSummary } from '../core/scene/contract';
 import { landscapeScene } from './landscape/index';
 import { wardScene } from './ward/index';
 
-/** Card-sized view of a scene for 2D and XR menus. */
-export interface SceneSummary {
-  id: string;
-  name: LocalizedText;
-  tagline: LocalizedText;
-  description: LocalizedText;
-  audio: AudioTrack;
-}
+export type { SceneSummary } from '../core/scene/contract';
 
 export const SCENES: readonly SceneDefinition[] = [landscapeScene, wardScene];
 

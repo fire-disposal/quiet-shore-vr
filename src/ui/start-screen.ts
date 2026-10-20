@@ -1,4 +1,4 @@
-import type { SceneDefinition } from '../core/scene/contract';
+import type { SceneSummary } from '../core/scene/contract';
 import type { SceneId } from './scene-select';
 import type { Strings } from './strings';
 
@@ -43,7 +43,7 @@ export class StartScreen {
   private debugEnabled = false;
 
   constructor(
-    scenes: readonly SceneDefinition[],
+    scenes: readonly SceneSummary[],
     strings: Strings,
     lang: 'zh' | 'en',
     handlers: StartScreenHandlers

@@ -29,11 +29,14 @@ export interface SceneHandle {
   budget?: SceneBudget;
 }
 
-export interface SceneDefinition {
+export interface SceneSummary {
   id: string;
   name: LocalizedText;
   tagline: LocalizedText;
   description: LocalizedText;
   audio: AudioTrack;
+}
+
+export interface SceneDefinition extends SceneSummary {
   build(ctx: SceneBuildContext): SceneHandle;
 }
