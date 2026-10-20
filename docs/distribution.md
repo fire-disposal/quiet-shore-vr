@@ -28,7 +28,7 @@
 2. 同一服务提供 `/control`、`/status`、`/telemetry`、`/state` 回环接口，作为患者页面与 BLE 之间的桥。
 3. 作为 BLE 外设广播 `QuietShore`，向平板提供 `command` / `status` / `telemetry` / `state` 四个特征。
 4. `PortalActivity` 是可见控制台；应用图标、通知正文和快捷磁贴都先打开它，显示服务、蓝牙和接管状态。
-5. 控制台的“进入训练”是唯一拉起 Firefox Reality 的按钮（3 秒冷却），用显式 Intent 打开 `http://127.0.0.1:8130/?from=portal&t=<时间戳>`；通知另有“打开控制台/全部应用/返回桌面”。
+5. 控制台的“进入训练”是唯一拉起 Firefox Reality 的按钮（3 秒冷却），用显式 Intent 打开 `http://127.0.0.1:8130/?t=<时间戳>`；通知另有“打开控制台/全部应用/返回桌面”。
 6. `BootReceiver` 在重启/更新后恢复服务与通知，但不自动拉起 Firefox。
 7. 不修改默认 HOME，不碰厂家数据；卸载 APK 后系统恢复原状。
 

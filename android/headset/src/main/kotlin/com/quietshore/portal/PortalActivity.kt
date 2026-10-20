@@ -119,7 +119,7 @@ class PortalActivity : Activity() {
             setPadding(dp(24), dp(20), dp(24), dp(10))
         }
         val seal = TextView(this).apply {
-            text = "静"
+            text = "荷"
             gravity = Gravity.CENTER
             setTextColor(ACCENT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
@@ -151,6 +151,10 @@ class PortalActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+        root.addView(
+            View(this).apply { setBackgroundColor(BORDER) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+        )
 
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(
@@ -255,8 +259,14 @@ class PortalActivity : Activity() {
             setPadding(0, dp(12), 0, 0)
         }
         card.addView(homeBluetooth)
-        homeScene = label("当前场景  ${sceneLabel(settings.sceneId)}", 13f, MUTED, Typeface.NORMAL, 0f).apply {
+        homeScene = label("当前场景  ${sceneLabel(settings.sceneId)}  更换", 13f, MUTED, Typeface.NORMAL, 0f).apply {
             setPadding(0, dp(6), 0, 0)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                settingsPageIndex = 0
+                showPage(Page.SETTINGS)
+            }
         }
         card.addView(homeScene)
         page.addView(card)

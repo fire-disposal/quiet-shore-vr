@@ -14,7 +14,6 @@ import java.net.Socket
 /** Immutable launch inputs; keeps Activity/Receiver from passing positional flags. */
 internal data class LaunchOptions(
     val scene: String? = null,
-    val minimal: Boolean = false,
     val skipCalibration: Boolean = false,
     val quality: String? = null,
     val showHud: Boolean = false
@@ -36,7 +35,6 @@ internal object PortalActions {
 
     /** Launch parameters accepted by the activity, receiver and deep link. */
     const val EXTRA_SCENE = "scene"
-    const val EXTRA_MINIMAL = "minimal"
     const val EXTRA_SKIP_CALIBRATION = "skipCalibration"
     const val EXTRA_QUALITY = "quality"
 
@@ -67,7 +65,7 @@ internal object PortalActions {
 
     /**
      * 进入训练：确保服务在跑，然后用显式 Intent 拉起 Firefox Reality。
-     * `scene` 选择初始场景，`minimal` 隐藏 Web 端选择器，`skipCalibration`
+     * `scene` 选择初始场景，`skipCalibration`
      * 映射为 `nocal=1`，`quality` 为 `low`/`high`。空值不下发。
      */
     fun enter(context: Context, options: LaunchOptions = LaunchOptions()): Boolean {
@@ -76,6 +74,7 @@ internal object PortalActions {
             return false
         }
         lastEnterAt = now
+        PortalSession.set(options)
         startServer(context)
         val app = applicationContext(context)
         val url = buildUrl(options)
@@ -127,26 +126,9 @@ internal object PortalActions {
     }
 
     private fun buildUrl(options: LaunchOptions): String {
+        // Business configuration travels through PortalSession and is injected
+        // by PortalService. The URL only carries a cache-busting key.
         val builder = Uri.parse(URL).buildUpon()
-        if (!options.scene.isNullOrEmpty()) {
-            builder.appendQueryParameter(EXTRA_SCENE, options.scene)
-        }
-        if (options.minimal) {
-            builder.appendQueryParameter(EXTRA_MINIMAL, "1")
-        }
-        if (options.skipCalibration) {
-            builder.appendQueryParameter("nocal", "1")
-        }
-        if (!options.quality.isNullOrEmpty()) {
-            builder.appendQueryParameter(EXTRA_QUALITY, options.quality)
-        }
-        if (options.showHud) {
-            builder.appendQueryParameter("hud", "1")
-        }
-        builder.appendQueryParameter("from", "portal")
-        // Firefox Reality can reuse the previous document for an identical URL,
-        // even with no-store. A fresh key forces a new navigation and lets the
-        // loopback server serve the current APK asset.
         builder.appendQueryParameter("t", System.currentTimeMillis().toString())
         return builder.build().toString()
     }

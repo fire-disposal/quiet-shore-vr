@@ -27,9 +27,9 @@ function createPanelTexture(widthMeters: number, heightMeters: number, theme: Sp
   const pad = 10;
   const r = theme.radiusPx * (widthPx / 512);
   ctx.clearRect(0, 0, widthPx, heightPx);
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-  ctx.shadowBlur = 26;
-  ctx.shadowOffsetY = 12;
+  ctx.shadowColor = 'rgba(32, 37, 31, 0.3)';
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 8;
   ctx.beginPath();
   ctx.moveTo(pad + r, pad);
   ctx.arcTo(widthPx - pad, pad, widthPx - pad, heightPx - pad, r);

@@ -162,7 +162,7 @@ scene|session|calibrating|audioMuted
 | 快捷磁贴“静岸” | 打开控制台，不直接拉起 Firefox |
 | `BootReceiver` | 开机或应用更新后恢复服务与通知，不自动拉起浏览器 |
 
-`PortalActivity` 的“进入训练”通过显式 Intent 打开 `org.mozilla.vrbrowser/.VRBrowserActivity`，URL 为 `http://127.0.0.1:8130/?from=portal&t=<时间戳>`。时间戳避免 Firefox 复用旧文档；拉起前会探测 `:8130` 是否可连接，避免 Firefox 冷启动把请求丢掉。未安装 Firefox Reality 时只做提示，不劫持默认浏览器。控制台另有“全部应用”和“返回桌面”；后者打开系统 HOME 设置，由用户确认。
+`PortalActivity` 的“进入训练”通过显式 Intent 打开 `org.mozilla.vrbrowser/.VRBrowserActivity`，URL 为 `http://127.0.0.1:8130/?t=<时间戳>`。时间戳避免 Firefox 复用旧文档；拉起前会探测 `:8130` 是否可连接，避免 Firefox 冷启动把请求丢掉。未安装 Firefox Reality 时只做提示，不劫持默认浏览器。控制台另有“全部应用”和“返回桌面”；后者打开系统 HOME 设置，由用户确认。
 
 `PortalService` 是 `START_STICKY` 前台服务。服务重启后会重新读取 APK 内的 `assets/index.html`，重新广播 BLE，并清空控制者。
 

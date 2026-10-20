@@ -18,19 +18,19 @@ export interface SpatialTheme {
 
 /** Calm, low-glare palette for the patient-facing spatial UI. */
 export const DEFAULT_SPATIAL_THEME: SpatialTheme = {
-  panel: 'rgba(14, 26, 24, 0.94)',
-  panelStrong: 'rgba(20, 36, 32, 0.97)',
-  border: '#41665f',
-  text: '#eef4f0',
-  muted: '#a8bcb4',
-  accent: '#e0bb78',
-  accentText: '#1a1408',
-  focus: '#9fd8ca',
-  success: '#88d3c1',
-  fontFamily: '"Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", sans-serif',
-  titlePx: 58,
-  bodyPx: 34,
-  buttonPx: 34,
-  radiusPx: 28,
-  paddingPx: 36
+  panel: 'rgba(247, 243, 234, 0.96)',
+  panelStrong: 'rgba(250, 247, 240, 0.98)',
+  border: '#b9ae9a',
+  text: '#20251f',
+  muted: '#5e655a',
+  accent: '#8f4634',
+  accentText: '#f8f3e9',
+  focus: '#8f4634',
+  success: '#486b58',
+  fontFamily: '"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "Noto Sans CJK SC", sans-serif',
+  titlePx: 54,
+  bodyPx: 30,
+  buttonPx: 30,
+  radiusPx: 4,
+  paddingPx: 30
 };

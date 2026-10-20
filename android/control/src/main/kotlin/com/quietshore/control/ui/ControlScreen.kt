@@ -57,6 +57,12 @@ fun ControlScreen(
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         ControlTopBar(state = state, onDisconnect = actions.onDisconnect)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(QuietPalette.Outline)
+        )
         Spacer(Modifier.height(12.dp))
         if (offline) {
             DisconnectedBanner(

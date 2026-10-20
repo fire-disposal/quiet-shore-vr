@@ -76,7 +76,7 @@ PICO 应用图标 / 下拉通知栏 / 快捷磁贴
   → PortalService：127.0.0.1:8130 + BLE 外设 "QuietShore"
   → 控制台“进入训练”（3 秒冷却）
   → 显式 Intent: org.mozilla.vrbrowser/.VRBrowserActivity
-  → http://127.0.0.1:8130/?from=portal&t=<时间戳>
+  → http://127.0.0.1:8130/?t=<时间戳>
   → APK assets/index.html（构建自 dist/standalone.html）
 ```
 

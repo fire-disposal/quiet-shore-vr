@@ -15,7 +15,6 @@ class PortalReceiver : BroadcastReceiver() {
                 context,
                 LaunchOptions(
                     scene = intent.getStringExtra(PortalActions.EXTRA_SCENE),
-                    minimal = intent.getBooleanExtra(PortalActions.EXTRA_MINIMAL, false),
                     skipCalibration = intent.getBooleanExtra(
                         PortalActions.EXTRA_SKIP_CALIBRATION,
                         false

@@ -1,5 +1,12 @@
 import { normalizeSceneId, type SceneId } from '../ui/scene-select';
 
+interface Bootstrap {
+  scene?: string | null;
+  skipCalibration?: boolean;
+  quality?: string | null;
+  showHud?: boolean;
+}
+
 export interface AppConfig {
   highQuality: boolean;
   aa: boolean;
@@ -7,23 +14,23 @@ export interface AppConfig {
   showPerf: boolean;
   lang: 'zh' | 'en';
   initialScene: SceneId | null;
-  minimal: boolean;
   spin: boolean;
 }
 
 export function readConfig(search: string): AppConfig {
   const params = new URLSearchParams(search);
-  const quality = params.get('quality');
+  const injected = (window as unknown as { __QS_BOOTSTRAP__?: Bootstrap }).__QS_BOOTSTRAP__;
+  const bootstrap: Bootstrap = injected ?? {};
+  const quality = bootstrap.quality ?? params.get('quality');
   const lang = params.get('lang') === 'en' ? 'en' : 'zh';
-  const scene = params.get('scene');
+  const scene = bootstrap.scene ?? params.get('scene');
   return {
     highQuality: quality !== 'low',
     aa: quality !== 'low' && params.get('aa') !== '0',
-    skipCalibration: params.get('nocal') === '1',
-    showPerf: params.get('hud') === '1' || params.get('debug') === '1',
+    skipCalibration: bootstrap.skipCalibration ?? params.get('nocal') === '1',
+    showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     lang,
     initialScene: normalizeSceneId(scene),
-    minimal: params.get('minimal') === '1',
     spin: params.get('spin') === '1'
   };
 }

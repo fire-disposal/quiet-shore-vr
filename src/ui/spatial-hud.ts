@@ -104,7 +104,7 @@ export class SpatialHud {
     ctx.arcTo(pad, height - pad, pad, pad, radius);
     ctx.arcTo(pad, pad, width - pad, pad, radius);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(10, 18, 17, 0.90)';
+    ctx.fillStyle = 'rgba(247, 243, 234, 0.94)';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = this.theme.border;

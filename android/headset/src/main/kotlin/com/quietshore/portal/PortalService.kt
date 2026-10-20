@@ -67,6 +67,7 @@ class PortalService : Service() {
 
         const val ROUTE_CONTROL = "/control"
         const val ROUTE_STATUS = "/status"
+        const val ROUTE_BOOTSTRAP = "/bootstrap"
         const val ROUTE_TELEMETRY = "/telemetry"
         const val ROUTE_STATE = "/state"
         const val ROUTE_INDEX = "/"
@@ -245,6 +246,10 @@ class PortalService : Service() {
             if (method == "GET" || method == "HEAD") statusResponse()
             else methodNotAllowed("GET, HEAD")
 
+        ROUTE_BOOTSTRAP ->
+            if (method == "GET" || method == "HEAD") bootstrapResponse()
+            else methodNotAllowed("GET, HEAD")
+
         ROUTE_INDEX, ROUTE_INDEX_FILE ->
             if (method == "GET" || method == "HEAD") {
                 Response(200, CONTENT_TYPE_HTML, currentPage())
@@ -275,6 +280,8 @@ class PortalService : Service() {
         body.put("control", controlMode)
         return jsonResponse(body)
     }
+
+    private fun bootstrapResponse(): Response = jsonResponse(PortalSession.toJson())
 
     private fun statusResponse(): Response {
         val bluetooth = bluetooth
@@ -453,7 +460,16 @@ class PortalService : Service() {
             allow
         )
 
-    private fun currentPage(): ByteArray = page ?: FALLBACK_PAGE
+    private fun currentPage(): ByteArray {
+        val base = page ?: return FALLBACK_PAGE
+        val marker = "<!-- QS_BOOTSTRAP -->"
+        val html = String(base, StandardCharsets.UTF_8)
+        if (!html.contains(marker)) {
+            return base
+        }
+        val script = "<script>window.__QS_BOOTSTRAP__ = ${PortalSession.toJson()};</script>"
+        return html.replace(marker, script).toByteArray(StandardCharsets.UTF_8)
+    }
 
     private fun readPage(): ByteArray? {
         var input: InputStream? = null

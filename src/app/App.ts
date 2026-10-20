@@ -5,8 +5,8 @@ import { readHeadPose } from '../core/xr/pose';
 import { createComfort, type ComfortApi, type RemapResult } from '../core/xr/comfort';
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
-import type { SceneDefinition, SceneHandle } from '../core/scene/contract';
-import { getSceneDefinition, listScenes } from '../scenes/registry';
+import type { SceneHandle } from '../core/scene/contract';
+import { getSceneDefinition } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { measureObject } from '../core/geometry/budget';
 import { createSpatialLab, type SpatialLabApi } from '../ui/spatial-lab';
@@ -33,6 +33,7 @@ import {
   unlockAudio
 } from '../audio/audio';
 import { RemoteControl } from './remote-control';
+import { readStoredShowPerf, storeShowPerf } from './preferences';
 import { TelemetrySender } from './telemetry';
 
 const EYE_HEIGHT = 1.6;
@@ -86,23 +87,19 @@ export class QuietShoreApp {
   constructor() {
     this.config = readConfig(window.location.search);
     this.strings = getStrings(this.config.lang);
-    this.showPerf = this.config.showPerf;
+    this.showPerf = this.config.showPerf || readStoredShowPerf();
     this.sceneId = this.config.initialScene ?? readStoredScene() ?? 'landscape';
 
-    this.start = new StartScreen(listScenes(), this.strings, this.config.lang, {
+    this.start = new StartScreen(this.strings, {
       onEnter: () => void this.enterVR(),
-      onPreview: () => this.startPreview(),
-      onSelectScene: (id) => this.switchScene(id),
-      onRecalibrate: () => this.recalibrate(),
-      onAudio: () => this.toggleAudio(),
-      onExit: () => this.exitAll(),
-      onPerfChange: (enabled) => {
+      onShowPerfChange: (enabled) => {
         this.showPerf = enabled;
+        storeShowPerf(enabled);
+        this.start.setShowPerf(enabled);
         this.updateHud(performance.now());
       }
     });
-    this.start.setPerf(this.showPerf);
-    this.start.setMinimal(this.config.minimal);
+    this.start.setShowPerf(this.showPerf);
 
     this.camera = new THREE.PerspectiveCamera(
       70,
@@ -219,8 +216,7 @@ export class QuietShoreApp {
     });
 
     this.loadScene(this.sceneId);
-    this.start.setSelected(this.sceneId);
-    this.start.setAudioLabel(false);
+    this.start.setScene(this.sceneName(this.sceneId));
     this.menu.setAudioEnabled(true);
     this.bind();
     this.start.setStatus(this.strings.checking);
@@ -315,8 +311,7 @@ export class QuietShoreApp {
     preloadSceneAudio(definition.audio);
     this.sceneId = id;
     storeScene(id);
-    this.start.setSelected(id);
-    this.start.setSceneNote(this.sceneNote(definition));
+    this.start.setScene(this.sceneName(id));
     this.syncLab();
   }
 
@@ -387,11 +382,8 @@ export class QuietShoreApp {
     this.lab.setActive(active);
   }
 
-  /** Patient-facing copy only; triangles/draw calls stay in the performance bar. */
-  private sceneNote(definition: SceneDefinition): string {
-    return this.start.isMinimal
-      ? definition.tagline[this.config.lang]
-      : `已选：${definition.name[this.config.lang]}`;
+  private sceneName(id: string): string {
+    return getSceneDefinition(id)?.name[this.config.lang] ?? id;
   }
 
   private async detectXR(): Promise<void> {
@@ -440,7 +432,6 @@ export class QuietShoreApp {
 
       this.start.showStage();
       this.start.setEnterEnabled(false);
-      this.start.setRecalibrateEnabled(true);
       this.host.setFloorOffset(-EYE_HEIGHT);
       this.menu.attach(next);
       this.menu.close();
@@ -491,7 +482,6 @@ export class QuietShoreApp {
     this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setEnterEnabled(true);
-    this.start.setRecalibrateEnabled(false);
     this.input.setLayers(true, true);
     this.syncLab();
     this.start.setStatus(this.strings.sessionEnded);
@@ -550,7 +540,6 @@ export class QuietShoreApp {
     this.input.setLayers(true, true);
     this.lastFrame = 0;
     this.renderer.setAnimationLoop(this.onFrame);
-    this.start.setRecalibrateEnabled(false);
     this.start.setStatus(this.strings.modePreview);
     this.syncLab();
     this.updateHud(performance.now());
@@ -591,12 +580,12 @@ export class QuietShoreApp {
     }
     if (this.session) {
       this.start.setStatus(this.strings.sceneSwitchBlocked, 'error');
-      this.start.setSelected(this.sceneId);
+      this.start.setScene(this.sceneName(this.sceneId));
       return;
     }
     if (normalized === this.sceneId && this.handle) {
       storeScene(this.sceneId);
-      this.start.setSelected(this.sceneId);
+      this.start.setScene(this.sceneName(this.sceneId));
       return;
     }
     this.loadScene(normalized);
@@ -653,7 +642,6 @@ export class QuietShoreApp {
     }
     this.controlMode = active;
     document.body.classList.toggle('control-mode', active);
-    this.start.setMinimal(active);
     if (active) {
       this.menu.close();
       if (this.session) {
@@ -673,7 +661,6 @@ export class QuietShoreApp {
   private applyAudioMuted(next: boolean): void {
     setAudioMuted(next);
     this.audioMuted = next;
-    this.start.setAudioLabel(next);
     this.menu.setAudioEnabled(!next);
     this.telemetry.sendStateNow();
     this.updateHud(performance.now());
@@ -681,7 +668,6 @@ export class QuietShoreApp {
 
   private toggleAudio(): void {
     this.audioMuted = toggleMuted();
-    this.start.setAudioLabel(this.audioMuted);
     this.menu.setAudioEnabled(!this.audioMuted);
     this.telemetry.sendStateNow();
     this.updateHud(performance.now());

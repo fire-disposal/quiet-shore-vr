@@ -46,14 +46,14 @@ function drawButton(
   if (!enabled) {
     ctx.fillStyle = 'rgba(40, 54, 51, 0.9)';
   } else if (focused) {
-    ctx.fillStyle = pressed ? '#c9a45f' : theme.accent;
+    ctx.fillStyle = pressed ? '#7d3c2d' : theme.accent;
   } else {
-    ctx.fillStyle = pressed ? '#1b302b' : theme.panelStrong;
+    ctx.fillStyle = pressed ? '#e8ded0' : theme.panelStrong;
   }
   ctx.fill();
 
   ctx.lineWidth = focused ? 3 : 1.5;
-  ctx.strokeStyle = !enabled ? theme.muted : focused ? '#f0d49a' : theme.border;
+  ctx.strokeStyle = !enabled ? theme.muted : focused ? theme.focus : theme.border;
   ctx.stroke();
 
   ctx.fillStyle = !enabled ? theme.muted : focused ? theme.accentText : theme.text;
