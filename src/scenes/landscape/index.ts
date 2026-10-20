@@ -16,8 +16,8 @@ export const landscapeScene: SceneDefinition = {
     en: 'Watch the water brighten and let your breathing slow down.'
   },
   description: {
-    zh: '清晨的湖岸：远山、芦苇、木栈桥与低飞的水鸟。柔和的天光和水声适合放松与注意力恢复练习。',
-    en: 'A lakeside at sunrise with distant ridges, reeds, a timber pier and low-flying birds. Soft light and lapping water support relaxation and attention-restoration practice.'
+    zh: '清晨的湖岸：远山薄雾、芦苇、木栈桥与低飞的水鸟，阳光在水面拉出一条细碎的波光。柔和的天光和水声适合放松与注意力恢复练习。',
+    en: 'A lakeside at sunrise with misted ridges, reeds, a timber pier and low-flying birds, and a glittering path of sunlight across the water. Soft light and lapping water support relaxation and attention-restoration practice.'
   },
   audio: 'lake',
   build: function (ctx: SceneBuildContext): SceneHandle {

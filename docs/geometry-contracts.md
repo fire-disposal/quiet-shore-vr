@@ -67,7 +67,7 @@ input → simulation → animation → layout → render
 - `SceneBudget`：`drawCalls`、`triangles`、`geometries`、`materials`、`textures` 上限；`check(stats)` 返回违规列表。
 - 预算检查在开发/CI 可用；生产不阻断渲染，只记录。
 
-现有基线（草稿实测）：landscape 约 21 draw call / 34k 三角形。新场景不得无理由超过；超预算需在 PR 说明。
+现有基线（实测）：landscape 约 24 draw call / 44k 三角形（`?quality=low` 约 21 / 10k）。新场景不得无理由超过；超预算需在 PR 说明。
 
 ## 6. 场景生命周期
 

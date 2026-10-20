@@ -6,7 +6,7 @@
 - 唯一已验证的 WebXR 入口：Firefox Reality 10（Gecko 78，`immersive-vr=true`）。
 - 系统 WebVR 浏览器：Chromium 67，只有 WebVR 1.1，无 WebXR；WebView 74 无 XR。
 - 3DoF 头显 + 3DoF 手柄，无位置追踪；无 root。
-- 现有场景预算：landscape 约 21 draw call / 34k 三角形；无阴影、无后处理。
+- 现有场景预算：landscape 约 24 draw call / 44k 三角形（低画质约 21 / 10k）；无阴影、无后处理。
 - APK 在 GitHub Actions 构建；发布入口是通知栏/快捷磁贴 → 本地 HTTP → Firefox Reality。
 - 内容层必须能在未来换成内嵌 WebXR 或原生渲染器时不重写空间/场景契约。
 
