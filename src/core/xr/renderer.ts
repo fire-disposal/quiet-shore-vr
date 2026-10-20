@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export interface Quality {
   high: boolean;
   aa: boolean;
+  xrScale: number;
 }
 
 type XRContextAttributes = WebGLContextAttributes & { xrCompatible: boolean };
@@ -45,7 +46,7 @@ export function createRenderer(container: HTMLElement, quality: Quality): THREE.
   if (xrManager && typeof xrManager === 'object' && 'setFramebufferScaleFactor' in xrManager) {
     const setScale = xrManager.setFramebufferScaleFactor;
     if (typeof setScale === 'function') {
-      setScale.call(xrManager, quality.high ? 1.0 : 0.85);
+      setScale.call(xrManager, quality.xrScale);
     }
   }
 

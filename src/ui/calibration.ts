@@ -48,6 +48,7 @@ export class Calibration {
   private step = 1;
   private stableMs = 0;
   private countdownStart = 0;
+  private readonly forward = new THREE.Vector3();
   private filtered: THREE.Vector3 | null = null;
   private poseC: PoseLike | null = null;
   private poseT: PoseLike | null = null;
@@ -135,14 +136,14 @@ export class Calibration {
 
     this.anchor.update(head, dt, now);
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(head.quaternion);
+    this.forward.set(0, 0, -1).applyQuaternion(head.quaternion);
     if (!this.filtered) {
-      this.filtered = forward.clone();
+      this.filtered = this.forward.clone();
     } else {
       const alpha = 1 - Math.exp(-dt / 0.18);
-      this.filtered.lerp(forward, alpha).normalize();
+      this.filtered.lerp(this.forward, alpha).normalize();
     }
-    const deviation = (forward.angleTo(this.filtered) * 180) / Math.PI;
+    const deviation = (this.forward.angleTo(this.filtered) * 180) / Math.PI;
     this.lastDeviation = deviation;
 
     if (deviation <= TOLERANCE_DEG) {

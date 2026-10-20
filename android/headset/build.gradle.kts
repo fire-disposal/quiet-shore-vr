@@ -10,8 +10,8 @@ android {
         applicationId = "com.quietshore.portal"
         minSdk = 26
         targetSdk = 33
-        versionCode = 13
-        versionName = "0.5.0"
+        versionCode = 15
+        versionName = "0.6.0"
     }
 
     buildFeatures {

@@ -8,7 +8,6 @@ import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
 import { getSceneDefinition } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
-import { measureObject } from '../core/geometry/budget';
 import { createSpatialLab, type SpatialLabApi } from '../ui/spatial-lab';
 import { createXrMenu, type XrMenuApi } from '../ui/xr-menu';
 import { SpatialInput } from '../ui/spatial/input';
@@ -33,6 +32,7 @@ import {
   unlockAudio
 } from '../audio/audio';
 import { RemoteControl } from './remote-control';
+import { RenderMonitor } from '../core/performance/render-monitor';
 import { readStoredShowPerf, storeShowPerf } from './preferences';
 import { TelemetrySender } from './telemetry';
 
@@ -55,6 +55,7 @@ export class QuietShoreApp {
   private readonly hud: SpatialHud;
   private readonly remote: RemoteControl;
   private readonly telemetry: TelemetrySender;
+  private readonly renderMonitor = new RenderMonitor();
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private controlMode = false;
 
@@ -110,7 +111,11 @@ export class QuietShoreApp {
     this.camera.position.set(0, EYE_HEIGHT, 3.2);
     this.camera.rotation.order = 'YXZ';
 
-    const quality: Quality = { high: this.config.highQuality, aa: this.config.aa };
+    const quality: Quality = {
+      high: this.config.highQuality,
+      aa: this.config.aa,
+      xrScale: this.config.xrScale
+    };
     this.renderer = createRenderer(this.start.stageElement, quality);
     // WebXRManager's public surface differs across Three typings; the narrow
     // interface is the only part this app uses.
@@ -709,6 +714,7 @@ export class QuietShoreApp {
     const dt = this.lastFrame > 0 ? Math.min((now - this.lastFrame) / 1000, MAX_DT) : 0;
     this.lastFrame = now;
     this.elapsed += dt;
+    this.renderMonitor.push(dt * 1000);
 
     readHeadPose(this.camera, this.xr, this.headPose);
     this.pipeline.run(dt, now);
@@ -744,16 +750,20 @@ export class QuietShoreApp {
       : this.previewing
         ? '预览'
         : '待机';
-    const stats = this.handle ? measureObject(this.handle.root) : null;
-    const triangles = stats ? `${(stats.triangles / 1000).toFixed(1)}k△` : '--';
-    const draws = stats ? `${stats.drawCalls}dc` : '--';
+    // Actual render stats, including both XR eyes. Design-time scene counts
+    // hid the real per-frame load and the double-eye render in XR.
+    const render = this.renderer.info.render;
+    const budget = this.renderMonitor.snapshot();
+    const triangles = `${(render.triangles / 1000).toFixed(1)}k△`;
+    const draws = `${render.calls}dc`;
     const summary = [
       mode,
       definition?.name[this.config.lang] ?? this.sceneId,
       calibrationState,
-      this.config.highQuality ? '高' : '低',
+      this.config.highQuality ? `高 ${Math.round(this.config.xrScale * 100)}%` : `低 ${Math.round(this.config.xrScale * 100)}%`,
       triangles,
       draws,
+      `p95 ${budget.p95Ms.toFixed(0)}ms`,
       this.audioMuted ? '声关' : '声开'
     ].join('  ');
     this.hud.setStats(this.fps, summary);

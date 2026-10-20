@@ -4,6 +4,8 @@ import { DEFAULT_SPATIAL_THEME } from '../../core/spatial/theme';
 import { SpatialButton } from './button';
 import { TextTexture } from './text';
 
+const UNIT_PLANE = new THREE.PlaneGeometry(1, 1);
+
 export interface SpatialSurfaceOptions {
   width: number;
   height: number;
@@ -54,7 +56,6 @@ function createPanelTexture(widthMeters: number, heightMeters: number, theme: Sp
 
 function createTextMesh(texture: THREE.Texture, width: number, height: number, renderOrder: number): THREE.Mesh {
   // Unit geometry: layout writes world-space size via scale.
-  const geometry = new THREE.PlaneGeometry(1, 1);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
@@ -62,7 +63,7 @@ function createTextMesh(texture: THREE.Texture, width: number, height: number, r
     depthWrite: false,
     toneMapped: false
   });
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(UNIT_PLANE, material);
   mesh.renderOrder = renderOrder;
   return mesh;
 }
@@ -218,7 +219,6 @@ export class SpatialSurface {
     }
     if (this.titleMesh) {
       this.object.remove(this.titleMesh);
-      this.titleMesh.geometry.dispose();
       (this.titleMesh.material as THREE.Material).dispose();
       this.titleMesh = null;
     }
@@ -228,7 +228,6 @@ export class SpatialSurface {
     }
     if (this.bodyMesh) {
       this.object.remove(this.bodyMesh);
-      this.bodyMesh.geometry.dispose();
       (this.bodyMesh.material as THREE.Material).dispose();
       this.bodyMesh = null;
     }

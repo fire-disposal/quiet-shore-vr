@@ -181,13 +181,12 @@ adb shell am start -n com.quietshore.control/.MainActivity
 
 | 参数 | 作用 |
 | --- | --- |
-| `?quality=low` | 低画质（同时关闭 AA） |
-| `?aa=0` | 关闭抗锯齿 |
-| `?scene=landscape\|ward\|bathroom\|lab` | 初始场景 |
+| `?quality=low` | 低画质，XR framebuffer scale 默认 0.85 |
+| `?aa=0` | 关闭抗锯齿；默认高清模式开启 |
+| `?scale=0.6..1.0` | 覆盖 XR framebuffer scale；默认高清 1.0，低画质 0.85 |
+| `?scene=landscape\|ward\|bathroom\|lab` | 手工调试初始场景 |
 | `?nocal=1` | 跳过方向校准 |
-| `?minimal=1` | 手工调试用的旧后备参数；正常入口由 bootstrap 决定 |
-| `?from=portal` | 已废弃，不再影响模式 |
-| `GET /bootstrap` | 返回本次启动的 scene、minimal、skipCalibration、quality、showHud、revision |
+| `GET /bootstrap` | 返回本次启动的 scene、skipCalibration、quality、showHud、revision |
 | 注入脚本 | `window.__QS_BOOTSTRAP__` 优先于 URL 参数 |
 | `?hud=1` | 测试员性能面板 |
 | `?lang=en` | 英文界面 |
@@ -214,9 +213,9 @@ build.mjs          esbuild 构建：患者页面、standalone、controller
 
 ## 发布下载
 
-- **GitHub Release v0.5.0**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.5.0>
-- 头显 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.5.0/quiet-shore-headset-v0.5.0.apk>
-- 平板 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.5.0/quiet-shore-control-v0.5.0.apk>
+- **GitHub Release v0.6.0**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.6.0>
+- 头显 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.6.0/quiet-shore-headset-v0.6.0.apk>
+- 平板 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.6.0/quiet-shore-control-v0.6.0.apk>
 - 校验：同一 Release 内的 `SHA256SUMS.txt`
 
 若 Release 尚未出现，可在 GitHub Actions 的 `build` 运行里下载 `quiet-shore-apk` 工件，内含 `headset-debug.apk`、`control-debug.apk` 与 `SHA256SUMS.txt`。未配置签名 secrets 时产物是 debug 签名，只用于侧载验收。
@@ -232,6 +231,10 @@ build.mjs          esbuild 构建：患者页面、standalone、controller
 
 | 文档 | 内容 |
 | --- | --- |
+| `docs/requirements.md` | 需求分类、代码归属、无滚动约束和变更检查 |
+| `docs/scene-contract.md` | 场景接口、场景级音频和扩展边界 |
+| `docs/design-direction.md` | 曲院风荷视觉方向、skill 取舍和对比度记录 |
+| `docs/performance-plan.md` | PICO 性能审计、实例复用现状和优化顺序 |
 | `docs/control-plane.md` | BLE GATT 契约、第一台接管状态机、回环接口、入口与排障 |
 | `docs/distribution.md` | 分发形态、方案矩阵与取舍、CI/CD、安全边界 |
 | `docs/pico-g2.md` | PICO G2 4K 实机基线、WebXR 坑、ADB 工作流 |

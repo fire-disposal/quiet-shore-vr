@@ -137,7 +137,7 @@ adb shell am start -a android.intent.action.VIEW \
 
 - 默认高画质：`?quality=high`；低画质：`?quality=low`，同时关闭 AA、降低帧缓冲缩放。
 - 无阴影贴图、无后处理；landscape/ward/bathroom 的预算见 `docs/geometry-contracts.md`。
-- 若真机掉帧：先 `?quality=low&aa=0`，再降低场景细节；不要引入后处理来“补偿”。
+- 若真机掉帧：默认保留高清和 AA；掉帧时先 `?quality=low` 或 `?scale=0.85`，再评估 `?aa=0`；不要引入后处理来“补偿”。
 - Firefox Reality 的 `MAX_TEXTURE_SIZE` 16384；程序化纹理均为 POT。
 
 ## 7. 头显控制台、通知与磁贴
