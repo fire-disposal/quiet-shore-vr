@@ -128,7 +128,7 @@ ASCII 字符串，通知给所有已连接设备：
 
 | 命令 | 页面行为 |
 | --- | --- |
-| `enter` / `launch` | 头显服务直接拉起 Firefox Reality 训练页（仍需患者按一次确认键进入 WebXR） |
+| `enter` | 头显服务直接拉起 Firefox Reality 训练页（仍需患者按一次确认键进入 WebXR） |
 | `home` | 头显回到系统桌面 |
 | `allapps` | 打开系统全部应用页 |
 | `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |
@@ -138,10 +138,8 @@ ASCII 字符串，通知给所有已连接设备：
 | `calibrate` / `recalibrate` | 重新校准；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 设置/切换静音 |
 | `exit` / `stop` | 结束训练、退出会话 |
-| `pause` / `resume` | 预留给页面级暂停 |
 | `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止 |
 | `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场重力粒子引导开关与强度（当前仅 landscape 场景生效） |
-| `menu` | 预留给头显内菜单 |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
