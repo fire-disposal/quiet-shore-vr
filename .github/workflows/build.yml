@@ -1,0 +1,132 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: standalone + portal apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build web bundle
+        run: npm run build
+
+      - name: Build standalone page
+        run: npm run standalone
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          node -e "console.log('name=' + require('./package.json').version)" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Android SDK 33
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::ANDROID_SDK_ROOT 未设置，无法定位 Android SDK"
+            exit 1
+          fi
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          [ -x "$SDKMANAGER" ] || { echo "::error::找不到 sdkmanager"; exit 1; }
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-33" "build-tools;33.0.2"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Resolve signing material
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            mkdir -p "$RUNNER_TEMP/quietshore-signing"
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/quietshore-signing/upload.keystore"
+            echo "keystore=$RUNNER_TEMP/quietshore-signing/upload.keystore" >> "$GITHUB_OUTPUT"
+            echo "mode=signed" >> "$GITHUB_OUTPUT"
+            echo "artifact=quiet-shore-apk" >> "$GITHUB_OUTPUT"
+            echo "签名：仓库 secrets 提供的 keystore" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "keystore=" >> "$GITHUB_OUTPUT"
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "artifact=quiet-shore-apk-debug" >> "$GITHUB_OUTPUT"
+            echo "签名：secrets 缺失，使用一次性 debug keystore；产物仅可用于侧载安装" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build APK
+        env:
+          ANDROID_KEYSTORE: ${{ steps.signing.outputs.keystore }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: bash shell/android/build.sh
+
+      - name: Summarize artifact
+        env:
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          APK=shell/android/build/quiet-shore.apk
+          [ -f "$APK" ] || { echo "::error::$APK 不存在"; exit 1; }
+          SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
+          SIZE="$(stat -c%s "$APK")"
+          {
+            echo "### 静岸 APK"
+            echo ""
+            echo "- versionCode: \`$VERSION_CODE\`"
+            echo "- versionName: \`$VERSION_NAME\`"
+            echo "- 签名: \`$SIGNING_MODE\`"
+            echo "- 大小: \`$SIZE\` bytes"
+            echo "- sha256: \`$SHA\`"
+            if [ "$SIGNING_MODE" = "debug" ]; then
+              echo ""
+              echo "> 未配置签名 secrets：该 APK 由一次性 debug keystore 签名，"
+              echo "> 只用于侧载验证，不作为发布产物。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.signing.outputs.artifact }}
+          path: shell/android/build/quiet-shore.apk
+          if-no-files-found: error
+          retention-days: 30
