@@ -1,0 +1,88 @@
+import * as esbuild from 'esbuild';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+
+const serve = process.argv.includes('--serve');
+const standalone = process.argv.includes('--standalone');
+const root = process.cwd();
+const src = path.join(root, 'src');
+const dist = path.join(root, 'dist');
+
+fs.rmSync(dist, { recursive: true, force: true });
+fs.mkdirSync(dist, { recursive: true });
+
+const common = {
+  bundle: true,
+  target: ['chrome67'],
+  sourcemap: true,
+  logLevel: 'info',
+  legalComments: 'none',
+  minify: !serve,
+  loader: { '.mp3': 'dataurl' }
+};
+
+await esbuild.build({
+  ...common,
+  entryPoints: [path.join(src, 'main.ts')],
+  outfile: path.join(dist, 'app.js'),
+  format: 'iife'
+});
+
+await esbuild.build({
+  ...common,
+  entryPoints: [path.join(src, 'styles.css')],
+  outfile: path.join(dist, 'styles.css')
+});
+
+const template = fs.readFileSync(path.join(src, 'index.html'), 'utf8');
+const version = crypto.createHash('sha1')
+  .update(fs.readFileSync(path.join(dist, 'app.js')))
+  .update(fs.readFileSync(path.join(dist, 'styles.css')))
+  .digest('hex')
+  .slice(0, 10);
+
+const page = template
+  .replace('<!-- APP_CSS -->', `<link rel="stylesheet" href="styles.css?v=${version}">`)
+  .replace('<!-- APP_JS -->', `<script src="app.js?v=${version}"></script>`);
+fs.writeFileSync(path.join(dist, 'index.html'), page);
+
+if (standalone) {
+  const js = fs.readFileSync(path.join(dist, 'app.js'), 'utf8')
+    .replace(/\/\/# sourceMappingURL=.*$/gm, '')
+    .replace(/<\/script/gi, '<\\/script');
+  const css = fs.readFileSync(path.join(dist, 'styles.css'), 'utf8');
+  const single = template
+    .replace('<!-- APP_CSS -->', () => `<style>\n${css}\n</style>`)
+    .replace('<!-- APP_JS -->', () => `<script>\n${js}\n</script>`);
+  fs.writeFileSync(path.join(dist, 'standalone.html'), single);
+  const kb = (Buffer.byteLength(single) / 1024).toFixed(0);
+  console.log(`standalone.html ${kb} KB`);
+}
+
+if (serve) {
+  const types = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.map': 'application/json; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml'
+  };
+  const server = http.createServer((req, res) => {
+    const url = decodeURIComponent((req.url || '/').split('?')[0]);
+    const rel = url === '/' ? 'index.html' : url.replace(/^\/+/, '');
+    const file = path.join(dist, rel);
+    if (!file.startsWith(dist)) { res.writeHead(403).end(); return; }
+    fs.readFile(file, (err, data) => {
+      if (err) { res.writeHead(404).end('not found'); return; }
+      res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' });
+      res.end(data);
+    });
+  });
+  server.listen(8125, '127.0.0.1', () => {
+    console.log('dev server: http://127.0.0.1:8125/');
+  });
+}

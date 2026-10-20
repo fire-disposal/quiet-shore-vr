@@ -1,0 +1,27 @@
+{
+  "name": "quiet-shore-vr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "静岸 · Quiet Shore VR — WebXR training app for PICO G2 4K",
+  "scripts": {
+    "dev": "node build.mjs --serve",
+    "build": "node build.mjs",
+    "standalone": "node build.mjs --standalone",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "verify": "npm run check && npm test && npm run build && npm run standalone",
+    "apk": "bash shell/android/build.sh"
+  },
+  "dependencies": {
+    "three": "0.152.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/three": "0.152.1",
+    "@types/webxr": "0.5.20",
+    "esbuild": "0.25.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.9"
+  }
+}

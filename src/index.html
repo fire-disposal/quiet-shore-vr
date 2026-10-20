@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>静岸 · Quiet Shore VR</title>
+<!-- APP_CSS -->
+</head>
+<body>
+  <main id="start" class="start">
+    <header class="brand">
+      <p class="brand-en">Quiet Shore VR</p>
+      <h1>静岸</h1>
+      <p id="status" class="status" role="status">检测中…</p>
+    </header>
+
+    <section class="scene-picker" aria-labelledby="scene-picker-title">
+      <div class="section-head">
+        <h2 id="scene-picker-title">场景</h2>
+        <span class="section-hint">可稍后切换</span>
+      </div>
+      <div id="scene-list" class="scene-list" role="group" aria-labelledby="scene-picker-title"></div>
+      <p id="scene-note" class="scene-note" aria-live="polite"></p>
+    </section>
+
+    <div class="actions">
+      <button id="enter" class="primary" disabled>进入训练</button>
+      <button id="preview" class="secondary">2D 预览</button>
+    </div>
+    <p class="hint">进入后先完成两步方向校准。<br>场景内短按右侧确认键打开菜单。</p>
+
+    <details class="operator">
+      <summary>操作员</summary>
+      <div class="operator-body">
+        <label class="toggle"><input id="debug" type="checkbox"> 显示诊断信息</label>
+        <button id="lab" class="small" hidden>空间 UI 实验</button>
+      </div>
+    </details>
+  </main>
+
+  <div id="stage" class="stage" hidden></div>
+  <div id="hud" class="hud" hidden></div>
+
+  <div id="toolbar" class="toolbar" hidden>
+    <button id="audio">声音: 开</button>
+    <button id="recalibrate">重新校准</button>
+    <button id="exit">退出</button>
+  </div>
+
+  <!-- APP_JS -->
+</body>
+</html>

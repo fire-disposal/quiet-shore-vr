@@ -1,0 +1,10 @@
+node_modules/
+dist/
+shell/android/build/
+shell/android/assets/index.html
+*.keystore
+*.jks
+*.log
+.DS_Store
+coverage/
+.vitest/
