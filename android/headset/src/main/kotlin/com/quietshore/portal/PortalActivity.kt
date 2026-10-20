@@ -161,9 +161,9 @@ class PortalActivity : Activity() {
         header.addView(pageCount, LinearLayout.LayoutParams(dp(54), dp(38)))
         header.addView(nextPage, LinearLayout.LayoutParams(dp(38), dp(38)))
         val homeButton = ImageView(this).apply {
-            setImageDrawable(HomeIconDrawable(ACCENT_INK))
+            setImageDrawable(ExitIconDrawable(DANGER))
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = rounded(DANGER, 2, DANGER, 0)
+            background = rounded(SURFACE, 2, DANGER, 1)
             isClickable = true
             isFocusable = true
             contentDescription = "退出选项"
@@ -195,7 +195,7 @@ class PortalActivity : Activity() {
             setPadding(dp(16), dp(4), dp(16), dp(10))
         }
         for (page in Page.values()) {
-            val item = label(page.label, 13f, MUTED, Typeface.BOLD, 0f).apply {
+            val item = label(page.label, 16f, MUTED, Typeface.BOLD, 0f).apply {
                 gravity = Gravity.CENTER
                 minHeight = dp(44)
                 isClickable = true
