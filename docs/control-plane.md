@@ -132,6 +132,7 @@ scene|session|calibrating|audioMuted
 | `exit` / `stop` | 结束训练、退出会话 |
 | `pause` / `resume` | 预留给页面级暂停 |
 | `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止 |
+| `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场重力粒子引导开关与强度（当前仅 landscape 场景生效） |
 | `menu` | 预留给头显内菜单 |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `status` | 协议允许，当前平板 UI 不发送 |

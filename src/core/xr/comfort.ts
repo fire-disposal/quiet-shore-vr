@@ -148,6 +148,8 @@ export interface ComfortApi {
   /** Stop heading for the target: the remaining motion decelerates to rest. */
   stopPosture(): void;
   getPostureState(): PostureState;
+  /** Monotonic progress toward the current posture target, 0..1, no allocation. */
+  getPostureProgress(): number;
 }
 
 /**
@@ -548,6 +550,15 @@ export function createComfort(options: {
     };
   }
 
+  function getPostureProgress(): number {
+    if (!postureActive) {
+      return postureEngagement(posture) > 1e-6 ? 1 : 0;
+    }
+    return postureDurationMs > 0
+      ? Math.min(1, postureElapsedMs / postureDurationMs)
+      : 1;
+  }
+
   function calibrate(pose: PoseLike): boolean {
     if (!pose.transform) {
       return false;
@@ -636,6 +647,7 @@ export function createComfort(options: {
     setPosture,
     updatePosture,
     stopPosture,
-    getPostureState
+    getPostureState,
+    getPostureProgress
   };
 }

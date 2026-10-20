@@ -55,6 +55,7 @@ object ControlProtocol {
         "calibrate", "recalibrate", "status", "menu",
         "audio:on", "audio:off", "audio:toggle",
         "scene:<id>", "posture:rise", "posture:lower", "posture:stop",
+        "cue:on", "cue:off", "cue:intensity:0-1",
         "home", "allapps",
         "settings:skipcalibration:on|off", "settings:hud:on|off",
         "settings:eyeheight:1.2-1.9",
@@ -149,6 +150,9 @@ object ControlProtocol {
             normalized == "posture:rise" ||
             normalized == "posture:lower" ||
             normalized == "posture:stop" ||
+            normalized == "cue:on" ||
+            normalized == "cue:off" ||
+            (normalized.startsWith("cue:intensity:") && normalized.length > "cue:intensity:".length) ||
             normalized == "home" ||
             normalized == "allapps" ||
             normalized == "settings:skipcalibration:on" ||

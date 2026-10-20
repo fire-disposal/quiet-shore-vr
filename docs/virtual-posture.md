@@ -102,12 +102,18 @@ scene|session|calib|audio|posture
 
 ## 7. 当前状态
 
-本文是设计裁定，尚未实现。实现前需要先在 PICO 上确认：
+Posture 变换、限幅、缓动和停止减速已实现；近场重力粒子（`src/core/xr/posture-cue.ts`）先只安装在 `landscape` 场景，作为体验验证。控制柄已预留：
 
-1. 正交/俯仰符号与坐卧基准。
+- 代码：`window.__app.postureCue`（`setEnabled` / `setIntensity` / `getState`）。
+- BLE：`cue:on`、`cue:off`、`cue:intensity:<0..1>`。
+
+仍需在 PICO 上确认：
+
+1. 粒子密度、亮度和下方流速是否造成眩晕。
 2. riseM 与场景地面的视觉比例。
 3. 10 到 20 秒速度下的眩晕反馈。
 4. 校准 pivot 与站立偏移组合后是否出现边缘穿帮。
+5. 粒子是否只在 `landscape` 保留，或推广到 `ward`；推广前先保持单一场景对照。
 
 
 ## 8. 视觉方向错觉与失重感
@@ -134,7 +140,7 @@ scene|session|calib|audio|posture
 
 ### 视觉引导层
 
-建议新增一个应用级 `PostureCue`，不属于任何具体场景：
+`PostureCue` 是应用级模块，但当前只挂到 `landscape` 场景验证；接口按可推广设计：
 
 ```ts
 interface PostureCue {
@@ -148,7 +154,7 @@ interface PostureCue {
 - 粒子附着在头部参考系附近，透明度随 `progress` 淡入淡出。
 - 不修改患者真实 head pose，只改变视觉流和世界变换。
 - 起身完成后粒子淡出，保留稳定的站立视角；回躺时反向播放。
-- 控制侧提供“视觉引导”开关，默认开启但可关闭。
+- 控制侧提供“视觉引导”开关，默认开启但可关闭；当前先通过 `cue:*` 命令预留，尚未加入平板 UI。
 
 ### 安全节奏
 

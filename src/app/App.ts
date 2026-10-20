@@ -37,6 +37,8 @@ import {
   unlockAudio
 } from '../audio/audio';
 import { RemoteControl } from './remote-control';
+import { createPostureCue } from '../core/xr/posture-cue';
+import type { PostureCueApi } from '../core/xr/posture-cue';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { readStoredShowPerf, storeShowPerf } from './preferences';
 import { TelemetrySender } from './telemetry';
@@ -81,6 +83,7 @@ export class QuietShoreApp {
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
   private calibration: Calibration | null = null;
+  private postureCueState: PostureCueApi | null = null;
   private session: XRSession | null = null;
   private previewing = false;
   private savedBackground: THREE.Scene['background'] = null;
@@ -237,6 +240,10 @@ export class QuietShoreApp {
       order: 0,
       run: (dt: number, now: number) => {
         this.comfort?.updatePosture(dt);
+        if (this.postureCueState) {
+          const progress = this.comfort?.getPostureProgress() ?? 0;
+          this.postureCueState.update(dt, progress, this.headPose.position);
+        }
         this.input.update(dt, now, this.headPose);
       }
     });
@@ -332,6 +339,10 @@ export class QuietShoreApp {
     // Wrap the host's content group, not the scene root: floor offset stays on
     // content and survives the comfort rotation.
     this.comfort = createComfort({ scene: this.scene, world: this.host.content });
+    this.disposePostureCue();
+    if (id === 'landscape') {
+      this.postureCueState = createPostureCue({ scene: this.scene });
+    }
     this.calibration = new Calibration({
       scene: this.scene,
       comfort: this.comfort,
@@ -349,7 +360,13 @@ export class QuietShoreApp {
     this.syncLab();
   }
 
+  private disposePostureCue(): void {
+    this.postureCueState?.dispose();
+    this.postureCueState = null;
+  }
+
   private disposeScene(): void {
+    this.disposePostureCue();
     this.lab.setActive(false);
     this.unregisterSelectables();
     this.calibration?.dispose();
@@ -516,6 +533,7 @@ export class QuietShoreApp {
     this.resetViewMovement();
     this.host.setFloorOffset(0);
     this.comfort?.reset();
+    this.postureCueState?.update(0, 0, this.headPose.position);
     this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setEnterEnabled(true);
@@ -667,6 +685,13 @@ export class QuietShoreApp {
       this.start.setStatus('已停止视角移动', 'ok');
       return;
     }
+    if (command.startsWith('cue:intensity:')) {
+      const value = Number(command.substring('cue:intensity:'.length));
+      if (Number.isFinite(value) && value >= 0 && value <= 1) {
+        this.postureCueState?.setIntensity(value);
+      }
+      return;
+    }
     switch (command) {
       case 'preview':
         this.startPreview();
@@ -700,6 +725,12 @@ export class QuietShoreApp {
         }
         this.comfort?.stopPosture();
         this.start.setStatus('已停止虚拟起身', 'ok');
+        return;
+      case 'cue:on':
+        this.postureCueState?.setEnabled(true);
+        return;
+      case 'cue:off':
+        this.postureCueState?.setEnabled(false);
         return;
       case 'start':
         this.start.setStatus(this.strings.remoteStartNeedsGesture, 'ok');
@@ -997,6 +1028,10 @@ export class QuietShoreApp {
       this.audioMuted ? '声关' : '声开'
     ].join('  ');
     this.hud.setStats(this.fps, summary);
+  }
+
+  get postureCue(): PostureCueApi | null {
+    return this.postureCueState;
   }
 
   dispose(): void {
