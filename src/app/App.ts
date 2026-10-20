@@ -320,11 +320,9 @@ export class QuietShoreApp {
     this.flashTimers.add(timer);
   }
 
+  /** Patient-facing copy only; triangles/draw calls stay in the debug HUD. */
   private sceneNote(definition: SceneDefinition): string {
-    const stats = this.handle ? measureObject(this.handle.root) : null;
-    return stats
-      ? `${definition.name[this.config.lang]}：${stats.triangles} 三角形 · ${stats.drawCalls} draw call`
-      : definition.name[this.config.lang];
+    return definition.description[this.config.lang] || definition.tagline[this.config.lang];
   }
 
   private async detectXR(): Promise<void> {
@@ -383,7 +381,7 @@ export class QuietShoreApp {
         this.comfort?.reset();
         this.menu.close();
         this.playSceneAudio();
-        this.start.setStatus('已跳过方向校准', 'ok');
+        this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
         this.beginCalibration();
       }
@@ -488,7 +486,7 @@ export class QuietShoreApp {
 
   private recalibrate(): void {
     if (!this.session || !this.xr.isPresenting) {
-      this.start.setStatus('重新校准仅在 VR 会话中可用', 'error');
+      this.start.setStatus(this.strings.recalibrateNeedsSession, 'error');
       return;
     }
     if (this.calibration?.isActive()) {
@@ -503,7 +501,7 @@ export class QuietShoreApp {
       return;
     }
     if (this.session) {
-      this.start.setStatus('请先退出 VR 会话再切换场景', 'error');
+      this.start.setStatus(this.strings.sceneSwitchBlocked, 'error');
       this.start.setSelected(this.sceneId);
       return;
     }
@@ -517,7 +515,9 @@ export class QuietShoreApp {
       this.playSceneAudio();
       this.start.showStage();
     }
-    this.start.setStatus(`已选择：${getSceneDefinition(normalized)?.name[this.config.lang] ?? normalized}`);
+    this.start.setStatus(
+      `${this.strings.sceneSelectedStatus}${getSceneDefinition(normalized)?.name[this.config.lang] ?? normalized}`
+    );
   }
 
   private toggleAudio(): void {
@@ -592,7 +592,7 @@ export class QuietShoreApp {
         ? '完成'
         : '未校准';
     const definition = getSceneDefinition(this.sceneId);
-    this.start.setHud([
+    const lines = [
       `${mode} · ${definition?.name[this.config.lang] ?? this.sceneId}`,
       `${this.strings.hudFps}: ${this.fps}`,
       `${this.strings.hudCalibration}: ${calibrationState}`,
@@ -600,7 +600,15 @@ export class QuietShoreApp {
       `${this.strings.hudSelect}: ${this.selectCount}`,
       `${this.strings.hudAudio}: ${this.audioMuted ? '关' : '开'}`,
       `t=${(now / 1000).toFixed(1)}s`
-    ]);
+    ];
+    if (this.handle) {
+      // Engineering numbers are debug-only; the start screen shows patient copy.
+      const stats = measureObject(this.handle.root);
+      lines.push(
+        `${this.strings.hudTriangles}: ${stats.triangles} · ${this.strings.hudDrawCalls}: ${stats.drawCalls}`
+      );
+    }
+    this.start.setHud(lines);
   }
 
   dispose(): void {
