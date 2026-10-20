@@ -245,7 +245,9 @@ export class QuietShoreApp {
       registry: this.registry
     });
     this.handle = handle;
-    this.comfort = createComfort({ scene: this.scene, world: handle.root });
+    // Wrap the host's content group, not the scene root: floor offset stays on
+    // content and survives the comfort rotation.
+    this.comfort = createComfort({ scene: this.scene, world: this.host.content });
     this.calibration = new Calibration({
       scene: this.scene,
       comfort: this.comfort,
@@ -269,7 +271,9 @@ export class QuietShoreApp {
     if (this.comfort) {
       this.comfort.reset();
       this.scene.remove(this.comfort.group);
-      this.comfort.group.clear();
+      this.comfort.group.remove(this.host.content);
+      this.scene.add(this.host.content);
+      this.host.setFloorOffset(0);
       this.comfort = null;
     }
     this.host.unload();
@@ -604,6 +608,7 @@ export class QuietShoreApp {
     this.lab.dispose();
     this.input.dispose();
     this.disposeScene();
+    this.host.dispose();
     this.registry.disposeAll();
     this.renderer.setAnimationLoop(null);
     this.renderer.dispose();
