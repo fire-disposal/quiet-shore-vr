@@ -61,6 +61,7 @@ fun PairingScreen(
         contentAlignment = Alignment.Center
     ) {
         val wide = maxWidth >= 560.dp
+        val compact = maxHeight < 520.dp
         if (wide) {
             Row(
                 modifier = Modifier
@@ -71,10 +72,10 @@ fun PairingScreen(
                 verticalAlignment = Alignment.Top
             ) {
                 PairingIntro(
+                    compact = compact,
                     modifier = Modifier
                         .weight(2f)
                         .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
                 )
                 PairingCard(
                     state = state,
@@ -100,7 +101,7 @@ fun PairingScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                PairingIntro(modifier = Modifier.fillMaxWidth())
+                PairingIntro(compact = compact, modifier = Modifier.fillMaxWidth())
                 PairingCard(
                     state = state,
                     bluetoothEnabled = bluetoothEnabled,
@@ -121,46 +122,48 @@ fun PairingScreen(
 }
 
 @Composable
-private fun PairingIntro(modifier: Modifier = Modifier) {
+private fun PairingIntro(compact: Boolean, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(
             text = "静岸控制台",
             style = MaterialTheme.typography.labelLarge,
             color = QuietPalette.Primary
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(if (compact) 6.dp else 14.dp))
         Text(
             text = "连接头显",
-            style = MaterialTheme.typography.headlineLarge,
+            style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
             color = QuietPalette.TextPrimary
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
         Text(
             text = "同一时间只有一台平板可以控制头显",
             style = MaterialTheme.typography.titleMedium,
             color = QuietPalette.TextSecondary
         )
-        Spacer(Modifier.height(24.dp))
-        StepRow("1", "打开头显")
-        Spacer(Modifier.height(12.dp))
-        StepRow("2", "搜索并连接头显")
-        Spacer(Modifier.height(12.dp))
-        StepRow("3", "平板接管控制")
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = "连接后由平板控制场景、声音和校准",
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextSecondary
-        )
+        Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
+        StepRow("1", "打开头显", compact)
+        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
+        StepRow("2", "搜索并连接头显", compact)
+        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
+        StepRow("3", "平板接管控制", compact)
+        if (!compact) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = "连接后由平板控制场景、声音和校准",
+                style = MaterialTheme.typography.bodyMedium,
+                color = QuietPalette.TextSecondary
+            )
+        }
     }
 }
 
 @Composable
-private fun StepRow(index: String, text: String) {
+private fun StepRow(index: String, text: String, compact: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(if (compact) 26.dp else 32.dp)
                 .clip(CircleShape)
                 .background(QuietPalette.SurfaceRaised),
             contentAlignment = Alignment.Center
@@ -171,10 +174,10 @@ private fun StepRow(index: String, text: String) {
                 color = QuietPalette.Primary
             )
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(if (compact) 10.dp else 14.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.titleMedium,
+            style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
             color = QuietPalette.TextPrimary
         )
     }
