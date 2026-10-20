@@ -16,6 +16,8 @@ interface SceneCard {
   readonly id: SceneId;
   readonly node: HTMLButtonElement;
   readonly name: string;
+  readonly tagline: string;
+  readonly description: string;
 }
 
 /** Keys that move focus inside the single-select scene group. */
@@ -44,6 +46,10 @@ export class StartScreen {
   private readonly sceneList = element<HTMLElement>('scene-list');
   private readonly sceneNote = element<HTMLElement>('scene-note');
   private readonly scenePicker = element<HTMLElement>('scene-picker');
+  private readonly scenePreview = element<HTMLElement>('scene-preview');
+  private readonly previewIndex = element<HTMLElement>('preview-index');
+  private readonly previewName = element<HTMLElement>('preview-name');
+  private readonly previewDesc = element<HTMLElement>('preview-desc');
   private readonly launchScene = element<HTMLElement>('launch-scene');
   private readonly launchNote = element<HTMLElement>('launch-note');
   private readonly cards: SceneCard[] = [];
@@ -92,7 +98,7 @@ export class StartScreen {
     this.sceneList.addEventListener('keydown', this.onKeyDown);
 
     for (let i = 0; i < scenes.length; i += 1) {
-      this.cards.push(this.createCard(scenes[i]));
+      this.cards.push(this.createCard(scenes[i], i));
     }
     if (this.cards.length > 0) {
       // Roving tabindex: the group is one tab stop until a card is selected.
@@ -113,6 +119,10 @@ export class StartScreen {
       if (selected) {
         this.launchScene.textContent = `${this.strings.sceneTitle}：${card.name}`;
         this.enterIdleLabel = `${this.strings.enter} ${card.name}`;
+        this.scenePreview.dataset.scene = card.id;
+        this.previewIndex.textContent = String(i + 1).padStart(2, '0');
+        this.previewName.textContent = card.name;
+        this.previewDesc.textContent = card.description;
         if (!this.enterBusy) {
           this.enter.textContent = this.enterIdleLabel;
         }
@@ -191,7 +201,7 @@ export class StartScreen {
    * without touching this file. The thumbnail art is pure CSS keyed on
    * `data-scene`; unknown ids fall back to the neutral gradient.
    */
-  private createCard(scene: SceneSummary): SceneCard {
+  private createCard(scene: SceneSummary, index: number): SceneCard {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'scene-card';
@@ -199,9 +209,10 @@ export class StartScreen {
     button.setAttribute('aria-pressed', 'false');
     button.tabIndex = -1;
 
-    const thumb = document.createElement('span');
-    thumb.className = 'scene-card-thumb';
-    thumb.setAttribute('aria-hidden', 'true');
+    const order = document.createElement('span');
+    order.className = 'scene-card-index';
+    order.setAttribute('aria-hidden', 'true');
+    order.textContent = String(index + 1).padStart(2, '0');
 
     const body = document.createElement('span');
     body.className = 'scene-card-body';
@@ -226,14 +237,20 @@ export class StartScreen {
     head.appendChild(check);
     body.appendChild(head);
     body.appendChild(tagline);
-    button.appendChild(thumb);
+    button.appendChild(order);
     button.appendChild(body);
 
     const id = scene.id as SceneId;
     button.addEventListener('click', () => this.choose(id));
 
     this.sceneList.appendChild(button);
-    return { id, node: button, name: scene.name[this.lang] };
+    return {
+      id,
+      node: button,
+      name: scene.name[this.lang],
+      tagline: scene.tagline[this.lang],
+      description: scene.description[this.lang]
+    };
   }
 
   /**

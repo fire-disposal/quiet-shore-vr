@@ -53,7 +53,7 @@ function createDefinition(
     name: { zh: id, en: id },
     tagline: { zh: '', en: '' },
     description: { zh: '', en: '' },
-    audio: 'lake',
+    audio: { track: 'lake' },
     build
   };
 }

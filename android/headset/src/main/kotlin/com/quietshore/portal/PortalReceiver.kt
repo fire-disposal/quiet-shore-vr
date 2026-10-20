@@ -13,10 +13,15 @@ class PortalReceiver : BroadcastReceiver() {
         when (action) {
             PortalActions.ACTION_ENTER -> PortalActions.enter(
                 context,
-                intent.getStringExtra(PortalActions.EXTRA_SCENE),
-                intent.getBooleanExtra(PortalActions.EXTRA_MINIMAL, false),
-                intent.getBooleanExtra(PortalActions.EXTRA_SKIP_CALIBRATION, false),
-                intent.getStringExtra(PortalActions.EXTRA_QUALITY)
+                LaunchOptions(
+                    scene = intent.getStringExtra(PortalActions.EXTRA_SCENE),
+                    minimal = intent.getBooleanExtra(PortalActions.EXTRA_MINIMAL, false),
+                    skipCalibration = intent.getBooleanExtra(
+                        PortalActions.EXTRA_SKIP_CALIBRATION,
+                        false
+                    ),
+                    quality = intent.getStringExtra(PortalActions.EXTRA_QUALITY)
+                )
             )
 
             PortalActions.ACTION_ALLAPPS -> PortalActions.allApps(context)

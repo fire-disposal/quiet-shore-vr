@@ -19,7 +19,7 @@ export const labScene: SceneDefinition = {
     zh: '一个低刺激的抽象场地：地面网格、环形边界与四根立柱。四块面板分别演示召唤后锁定、跟随视角、世界锁定、世界锁定+朝向用户；下方控制台可重新布置或隐藏面板。用视线指向、短按确认键操作。',
     en: 'A low-stimulus abstract stage: grid floor, ring boundary and four pillars. Four panels demonstrate summoned, head-locked, world-locked and world-billboard modes; the lower console can re-layout or hide them. Aim with gaze and press the confirm button.'
   },
-  audio: 'stream',
+  audio: { track: 'stream', volume: 0.8, fadeMs: 1200, loop: true },
   build: function (ctx: SceneBuildContext): SceneHandle {
     const built = createWorld(THREE, {
       quality: ctx.quality,

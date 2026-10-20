@@ -25,14 +25,25 @@
 
     <p id="launch-scene" class="launch-scene"></p>
 
-    <section id="scene-picker" class="scene-picker" aria-labelledby="scene-picker-title">
-      <div class="section-head">
-        <h2 id="scene-picker-title">选择场景</h2>
-        <span class="section-hint">注视并确认</span>
-      </div>
-      <div id="scene-list" class="scene-list" role="group" aria-labelledby="scene-picker-title"></div>
-      <p id="scene-note" class="scene-note" aria-live="polite"></p>
-    </section>
+    <div class="start-grid">
+      <section id="scene-picker" class="scene-picker" aria-labelledby="scene-picker-title">
+        <div class="section-head">
+          <h2 id="scene-picker-title">选择场景</h2>
+          <span class="section-hint">注视并确认</span>
+        </div>
+        <div id="scene-list" class="scene-list" role="group" aria-labelledby="scene-picker-title"></div>
+        <p id="scene-note" class="scene-note" aria-live="polite"></p>
+      </section>
+
+      <aside id="scene-preview" class="scene-preview" data-scene="landscape" aria-hidden="true">
+        <span id="preview-index" class="preview-index">01</span>
+        <div class="preview-art"></div>
+        <div class="preview-copy">
+          <p id="preview-name" class="preview-name"></p>
+          <p id="preview-desc" class="preview-desc"></p>
+        </div>
+      </aside>
+    </div>
 
     <div class="actions">
       <button id="enter" class="primary" aria-describedby="enter-hint" disabled>开始训练</button>

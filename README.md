@@ -212,9 +212,9 @@ build.mjs          esbuild 构建：患者页面、standalone、controller
 
 ## 发布下载
 
-- **GitHub Release v0.2.4**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.2.4>
-- 头显 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.2.4/quiet-shore-headset-v0.2.4.apk>
-- 平板 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.2.4/quiet-shore-control-v0.2.4.apk>
+- **GitHub Release v0.3.0**：<https://github.com/fire-disposal/quiet-shore-vr/releases/tag/v0.3.0>
+- 头显 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.3.0/quiet-shore-headset-v0.3.0.apk>
+- 平板 APK：<https://github.com/fire-disposal/quiet-shore-vr/releases/download/v0.3.0/quiet-shore-control-v0.3.0.apk>
 - 校验：同一 Release 内的 `SHA256SUMS.txt`
 
 若 Release 尚未出现，可在 GitHub Actions 的 `build` 运行里下载 `quiet-shore-apk` 工件，内含 `headset-debug.apk`、`control-debug.apk` 与 `SHA256SUMS.txt`。未配置签名 secrets 时产物是 debug 签名，只用于侧载验收。

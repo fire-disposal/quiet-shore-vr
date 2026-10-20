@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import type { ResourceRegistry } from '../geometry/registry';
 import type { SceneBudget } from '../geometry/budget';
-import type { AudioTrack } from '../../audio/types';
+import type { SceneAudio } from '../../audio/types';
 
 export interface LocalizedText {
   zh: string;
@@ -34,7 +34,7 @@ export interface SceneSummary {
   name: LocalizedText;
   tagline: LocalizedText;
   description: LocalizedText;
-  audio: AudioTrack;
+  audio: SceneAudio;
 }
 
 export interface SceneDefinition extends SceneSummary {

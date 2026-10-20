@@ -14,7 +14,7 @@ import android.graphics.drawable.Icon
  * platform as bitmaps.
  */
 internal object BrandAssets {
-    val ACCENT: Int = 0xFFE0BB78.toInt()
+    val ACCENT: Int = 0xFFA9563E.toInt()
     private val TEAL: Int = 0xFF7FC8B8.toInt()
     private val SURFACE: Int = 0xFF12211E.toInt()
     private val BORDER: Int = 0xFF2E4A45.toInt()

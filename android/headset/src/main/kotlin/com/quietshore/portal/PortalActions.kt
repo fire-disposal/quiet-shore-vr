@@ -11,6 +11,15 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 
+/** Immutable launch inputs; keeps Activity/Receiver from passing positional flags. */
+internal data class LaunchOptions(
+    val scene: String? = null,
+    val minimal: Boolean = false,
+    val skipCalibration: Boolean = false,
+    val quality: String? = null,
+    val showHud: Boolean = false
+)
+
 /**
  * 壳的全部动作：起服务、进入训练、全部应用、返回桌面。
  *
@@ -61,13 +70,7 @@ internal object PortalActions {
      * `scene` 选择初始场景，`minimal` 隐藏 Web 端选择器，`skipCalibration`
      * 映射为 `nocal=1`，`quality` 为 `low`/`high`。空值不下发。
      */
-    fun enter(
-        context: Context,
-        scene: String? = null,
-        minimal: Boolean = false,
-        skipCalibration: Boolean = false,
-        quality: String? = null
-    ): Boolean {
+    fun enter(context: Context, options: LaunchOptions = LaunchOptions()): Boolean {
         val now = System.currentTimeMillis()
         if (now - lastEnterAt < ENTER_COOLDOWN_MS) {
             return false
@@ -75,7 +78,7 @@ internal object PortalActions {
         lastEnterAt = now
         startServer(context)
         val app = applicationContext(context)
-        val url = buildUrl(scene, minimal, skipCalibration, quality)
+        val url = buildUrl(options)
 
         // Firefox may be warm from the previous demo. Wait until the loopback
         // server actually accepts connections before handing it the URL;
@@ -123,24 +126,22 @@ internal object PortalActions {
         return false
     }
 
-    private fun buildUrl(
-        scene: String?,
-        minimal: Boolean,
-        skipCalibration: Boolean,
-        quality: String?
-    ): String {
+    private fun buildUrl(options: LaunchOptions): String {
         val builder = Uri.parse(URL).buildUpon()
-        if (!scene.isNullOrEmpty()) {
-            builder.appendQueryParameter(EXTRA_SCENE, scene)
+        if (!options.scene.isNullOrEmpty()) {
+            builder.appendQueryParameter(EXTRA_SCENE, options.scene)
         }
-        if (minimal) {
+        if (options.minimal) {
             builder.appendQueryParameter(EXTRA_MINIMAL, "1")
         }
-        if (skipCalibration) {
+        if (options.skipCalibration) {
             builder.appendQueryParameter("nocal", "1")
         }
-        if (!quality.isNullOrEmpty()) {
-            builder.appendQueryParameter(EXTRA_QUALITY, quality)
+        if (!options.quality.isNullOrEmpty()) {
+            builder.appendQueryParameter(EXTRA_QUALITY, options.quality)
+        }
+        if (options.showHud) {
+            builder.appendQueryParameter("hud", "1")
         }
         builder.appendQueryParameter("from", "portal")
         // Firefox Reality can reuse the previous document for an identical URL,

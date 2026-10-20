@@ -40,7 +40,7 @@ describe('scene registry', () => {
     const bathroom = getSceneDefinition('bathroom');
     expect(bathroom).toBeDefined();
     expect(bathroom?.name).toEqual({ zh: '暖石浴室', en: 'Quiet Bathroom' });
-    expect(bathroom?.audio).toBe('stream');
+    expect(bathroom?.audio.track).toBe('stream');
 
     const summary = listScenes().find((scene) => scene.id === 'bathroom');
     expect(summary).toBeDefined();

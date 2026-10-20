@@ -25,8 +25,8 @@ import {
 import { getStrings, type Strings } from '../ui/strings';
 import {
   disposeAudio,
-  playTrack,
-  preloadTrack,
+  playSceneAudio,
+  preloadSceneAudio,
   setAudioMuted,
   stopAudio,
   toggleMuted,
@@ -312,7 +312,7 @@ export class QuietShoreApp {
     this.registerSelectables(handle.selectables);
     this.host.setFloorOffset(this.session ? -EYE_HEIGHT : 0);
     this.savedBackground = this.scene.background;
-    preloadTrack(definition.audio);
+    preloadSceneAudio(definition.audio);
     this.sceneId = id;
     storeScene(id);
     this.start.setSelected(id);
@@ -458,7 +458,7 @@ export class QuietShoreApp {
         }
         this.comfort?.reset();
         this.menu.close();
-        this.playSceneAudio();
+        this.startSceneAudio();
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
         this.beginCalibration();
@@ -522,7 +522,7 @@ export class QuietShoreApp {
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     this.syncLab();
     if (this.session) {
-      this.playSceneAudio();
+      this.startSceneAudio();
     }
     this.start.setStatus(
       result.ok ? this.strings.calibrationDone : `${this.strings.calibrationFailed}：${result.reason ?? 'unknown'}`,
@@ -538,7 +538,7 @@ export class QuietShoreApp {
     }
     this.previewing = true;
     void unlockAudio();
-    this.playSceneAudio();
+    this.startSceneAudio();
     this.start.showStage();
     if (this.handle) {
       this.handle.root.visible = true;
@@ -601,7 +601,7 @@ export class QuietShoreApp {
     }
     this.loadScene(normalized);
     if (this.previewing) {
-      this.playSceneAudio();
+      this.startSceneAudio();
       this.start.showStage();
     }
     this.start.setStatus(
@@ -687,10 +687,10 @@ export class QuietShoreApp {
     this.updateHud(performance.now());
   }
 
-  private playSceneAudio(): void {
+  private startSceneAudio(): void {
     const definition = getSceneDefinition(this.sceneId);
     if (definition) {
-      playTrack(definition.audio);
+      playSceneAudio(definition.audio);
     }
   }
 

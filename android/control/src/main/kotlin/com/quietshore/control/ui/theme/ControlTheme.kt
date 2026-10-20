@@ -2,7 +2,7 @@ package com.quietshore.control.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
@@ -11,30 +11,30 @@ import androidx.compose.ui.graphics.Color
  * the patient, so the screen must never compete with the headset view.
  */
 object QuietPalette {
-    val Background = Color(0xFF0B1416)
-    val Surface = Color(0xFF12201F)
-    val SurfaceRaised = Color(0xFF182B29)
-    val SurfaceSunken = Color(0xFF0E1B1C)
-    val Viewport = Color(0xFF061110)
-    val Primary = Color(0xFF7FC9BC)
-    val OnPrimary = Color(0xFF04211D)
-    val Accent = Color(0xFFE7D6B6)
-    val TextPrimary = Color(0xFFEAF3F0)
-    val TextSecondary = Color(0xFF9EB5B0)
-    val Outline = Color(0xFF2E4442)
-    val Success = Color(0xFF8FD3A8)
-    val Warning = Color(0xFFE5C07B)
-    val Danger = Color(0xFFF0A8A2)
+    val Background = Color(0xFFF3EFE6)
+    val Surface = Color(0xFFECE6DA)
+    val SurfaceRaised = Color(0xFFE4DCCD)
+    val SurfaceSunken = Color(0xFFE8E1D4)
+    val Viewport = Color(0xFF1E2421)
+    val Primary = Color(0xFFA9563E)
+    val OnPrimary = Color(0xFFF8F3E9)
+    val Accent = Color(0xFF486B58)
+    val TextPrimary = Color(0xFF20251F)
+    val TextSecondary = Color(0xFF6D7468)
+    val Outline = Color(0xFFD5CCBB)
+    val Success = Color(0xFF486B58)
+    val Warning = Color(0xFF96652C)
+    val Danger = Color(0xFFA34D3D)
 }
 
-private val QuietColorScheme = darkColorScheme(
+private val QuietColorScheme = lightColorScheme(
     primary = QuietPalette.Primary,
     onPrimary = QuietPalette.OnPrimary,
-    primaryContainer = Color(0xFF1C3A36),
+    primaryContainer = Color(0xFFEADBD2),
     onPrimaryContainer = QuietPalette.TextPrimary,
     secondary = QuietPalette.Accent,
-    onSecondary = Color(0xFF2A2114),
-    secondaryContainer = Color(0xFF2C2A22),
+    onSecondary = Color(0xFFF8F3E9),
+    secondaryContainer = Color(0xFFE0E7DE),
     onSecondaryContainer = QuietPalette.TextPrimary,
     background = QuietPalette.Background,
     onBackground = QuietPalette.TextPrimary,
@@ -44,8 +44,8 @@ private val QuietColorScheme = darkColorScheme(
     onSurfaceVariant = QuietPalette.TextSecondary,
     outline = QuietPalette.Outline,
     error = QuietPalette.Danger,
-    onError = Color(0xFF3A0D0A),
-    errorContainer = Color(0xFF3C1E1C),
+    onError = QuietPalette.OnPrimary,
+    errorContainer = Color(0xFFEADBD2),
     onErrorContainer = QuietPalette.TextPrimary
 )
 

@@ -2,6 +2,7 @@ import lakeUrl from './lake.mp3';
 import streamUrl from './stream.mp3';
 import rainUrl from './rain.mp3';
 import type { AudioTrack } from './types';
+import type { SceneAudio } from './types';
 
 export type { AudioTrack } from './types';
 
@@ -71,7 +72,13 @@ export function preloadTrack(track: AudioTrack): void {
   void bufferFor(track).catch(() => undefined);
 }
 
-export function playTrack(track: AudioTrack): void {
+export interface PlayOptions {
+  volume?: number;
+  fadeMs?: number;
+  loop?: boolean;
+}
+
+export function playTrack(track: AudioTrack, options: PlayOptions = {}): void {
   if (playing && (requestedTrack === track || currentTrack === track)) {
     return;
   }
@@ -85,25 +92,27 @@ export function playTrack(track: AudioTrack): void {
     currentTrack = track;
     requestedTrack = null;
     const now = context.currentTime;
+    const fade = Math.max(0, (options.fadeMs ?? FADE_SECONDS * 1000) / 1000);
+    const volume = Math.max(0, options.volume ?? 1);
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.loop = true;
+    source.loop = options.loop ?? true;
     const gain = context.createGain();
     gain.gain.value = 0;
     source.connect(gain);
     gain.connect(master);
     source.start();
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(1, now + FADE_SECONDS);
+    gain.gain.linearRampToValueAtTime(volume, now + fade);
 
     const old = current;
     current = { source, gain };
     if (old) {
       old.gain.gain.cancelScheduledValues(now);
       old.gain.gain.setValueAtTime(old.gain.gain.value, now);
-      old.gain.gain.linearRampToValueAtTime(0, now + FADE_SECONDS);
+      old.gain.gain.linearRampToValueAtTime(0, now + fade);
       try {
-        old.source.stop(now + FADE_SECONDS + 0.05);
+        old.source.stop(now + fade + 0.05);
       } catch {
         // already stopped
       }
@@ -130,6 +139,18 @@ export function stopAudio(): void {
     }
   }
   current = null;
+}
+
+export function preloadSceneAudio(audio: SceneAudio): void {
+  preloadTrack(audio.track);
+}
+
+export function playSceneAudio(audio: SceneAudio): void {
+  playTrack(audio.track, {
+    volume: audio.volume,
+    fadeMs: audio.fadeMs,
+    loop: audio.loop
+  });
 }
 
 function setMuted(next: boolean): void {

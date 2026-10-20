@@ -19,7 +19,7 @@ export const landscapeScene: SceneDefinition = {
     zh: '清晨的湖岸：远山薄雾、芦苇、木栈桥与低飞的水鸟，阳光在水面拉出一条细碎的波光。柔和的天光和水声适合放松与注意力恢复练习。',
     en: 'A lakeside at sunrise with misted ridges, reeds, a timber pier and low-flying birds, and a glittering path of sunlight across the water. Soft light and lapping water support relaxation and attention-restoration practice.'
   },
-  audio: 'lake',
+  audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true },
   build: function (ctx: SceneBuildContext): SceneHandle {
     const built = createWorld(THREE, {
       quality: ctx.quality,
