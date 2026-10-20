@@ -166,8 +166,8 @@ class PortalActivity : Activity() {
             background = rounded(DANGER, 2, DANGER, 0)
             isClickable = true
             isFocusable = true
-            contentDescription = "返回桌面"
-            setOnClickListener { confirmHome() }
+            contentDescription = "退出选项"
+            setOnClickListener { showExitDialog() }
         }
         header.addView(homeButton, LinearLayout.LayoutParams(dp(38), dp(38)).apply {
             marginStart = dp(8)
@@ -223,12 +223,25 @@ class PortalActivity : Activity() {
             setOnClickListener { onClick() }
         }
 
-    private fun confirmHome() {
+    private fun showExitDialog() {
+        val legacy = PortalActions.legacySystemLabel(this)
+        val labels = ArrayList<String>()
+        val actions = ArrayList<() -> Unit>()
+        if (legacy != null) {
+            labels.add("打开 $legacy")
+            actions.add { PortalActions.openLegacySystem(this) }
+        }
+        labels.add("浏览所有应用")
+        actions.add { PortalActions.allApps(this) }
+        labels.add("返回默认桌面")
+        actions.add { PortalActions.openDefaultDesktop(this) }
+
         AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            .setTitle("返回桌面")
-            .setMessage("静岸服务会继续在后台运行。")
+            .setTitle("离开静岸")
+            .setItems(labels.toTypedArray()) { _, which ->
+                actions.getOrNull(which)?.invoke()
+            }
             .setNegativeButton("取消", null)
-            .setPositiveButton("返回桌面") { _, _ -> PortalActions.chooseHome(this) }
             .show()
     }
 
@@ -466,8 +479,8 @@ class PortalActivity : Activity() {
         system.addView(actionButton("全部应用", false) {
             PortalActions.allApps(this)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
-        system.addView(actionButton("返回桌面", false) {
-            confirmHome()
+        system.addView(actionButton("离开静岸", false) {
+            showExitDialog()
         }.apply { setTextColor(DANGER) }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(46)

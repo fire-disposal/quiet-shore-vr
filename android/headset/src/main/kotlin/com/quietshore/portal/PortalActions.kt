@@ -49,6 +49,14 @@ internal object PortalActions {
     private const val ALL_APPS_PACKAGE = "com.pvr.home"
     private const val ALL_APPS_ACTIVITY = "com.pvr.home.AllAppActivity"
 
+    /** 现场保留的旧训练系统；不卸载、不替换。 */
+    private const val LEGACY_PACKAGE = "vr.xinjing.com.vrmc"
+    private const val LEGACY_ACTIVITY = "vr.xinjing.com.vrmc.ui.SplashActivity"
+
+    /** 厂商默认桌面/启动器。 */
+    private const val SYSTEM_LAUNCHER_PACKAGE = "com.pvr.launcher"
+    private const val SYSTEM_LAUNCHER_ACTIVITY = "com.pvr.launcher.MainActivity"
+
     /**
      * 拉起浏览器前留出的前台化窗口。Firefox Reality 冷启动时会把刚收到的
      * ACTION_VIEW 丢掉，先让本应用退出前台再投递能稳定落到 8130 页面。
@@ -146,6 +154,33 @@ internal object PortalActions {
         val builder = Uri.parse(URL).buildUpon()
         builder.appendQueryParameter("t", System.currentTimeMillis().toString())
         return builder.build().toString()
+    }
+
+    /** Name of the retained legacy system, or null when it is absent. */
+    fun legacySystemLabel(context: Context): String? = try {
+        val app = applicationContext(context)
+        val info = app.packageManager.getApplicationInfo(LEGACY_PACKAGE, 0)
+        app.packageManager.getApplicationLabel(info).toString()
+    } catch (ignored: RuntimeException) {
+        null
+    }
+
+    fun openLegacySystem(context: Context) {
+        val app = applicationContext(context)
+        val intent = Intent().apply {
+            setClassName(LEGACY_PACKAGE, LEGACY_ACTIVITY)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        launch(app, intent, "未找到原训练系统")
+    }
+
+    fun openDefaultDesktop(context: Context) {
+        val app = applicationContext(context)
+        val intent = Intent().apply {
+            setClassName(SYSTEM_LAUNCHER_PACKAGE, SYSTEM_LAUNCHER_ACTIVITY)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        launch(app, intent, "未找到默认桌面")
     }
 
     fun allApps(context: Context) {
