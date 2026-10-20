@@ -67,12 +67,15 @@ export class SpatialAnchor {
 
   setVisible(visible: boolean): void {
     this.manuallyVisible = visible;
-    this.object.visible = visible && !this.hiddenByDistance;
+    this.object.visible = visible && this.placed && !this.hiddenByDistance;
   }
 
   update(head: HeadPose, dt: number, now: number): void {
     if (!this.placed) {
-      return;
+      if (this.options.mode !== 'head-locked') {
+        return;
+      }
+      this.placed = true;
     }
 
     switch (this.options.mode) {

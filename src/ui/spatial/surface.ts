@@ -177,7 +177,7 @@ export class SpatialSurface {
   }
 
   private layout(): void {
-    const { width, height, theme } = this.options;
+    const { width, height } = this.options;
     const padding = 0.05;
     let cursor = height / 2 - padding;
 
@@ -204,9 +204,6 @@ export class SpatialSurface {
       button.setPose(0, cursor - buttonHeight / 2, 0.01);
       cursor -= buttonHeight + rowGap;
     }
-
-    // Keep the theme reachable for future layout variants; avoids an unused warning.
-    void theme;
   }
 
   dispose(): void {
