@@ -386,15 +386,28 @@ button.small {
 .perf-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(23, 39, 36, 0.78);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
 }
 .perf-toggle input {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  flex: 0 0 auto;
   accent-color: var(--accent);
+}
+.perf-toggle:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .scene-list {
@@ -439,4 +452,19 @@ body.control-mode .brand .status {
 
 @media (prefers-reduced-motion: reduce) {
   .primary.is-busy { animation: none; }
+}
+
+.enter-hint {
+  max-width: 36em;
+  margin: 0 auto;
+  color: var(--muted, #9fb3ac);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .enter-hint {
+    font-size: 11px;
+  }
 }

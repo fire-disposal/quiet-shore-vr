@@ -538,7 +538,7 @@ class PortalService : Service() {
         val bluetooth = bluetooth
         val state = bluetooth?.state ?: "stopped"
         val headline = when {
-            controlMode -> "平板控制中，患者无需操作"
+            controlMode -> "平板控制中，按一次确认键开始"
             state == "advertising" -> "等待平板连接"
             state == "bluetooth-off" -> "蓝牙未开启"
             else -> "蓝牙不可用"

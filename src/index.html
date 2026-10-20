@@ -26,9 +26,11 @@
     </section>
 
     <div class="actions">
-      <button id="enter" class="primary" disabled>开始训练</button>
+      <button id="enter" class="primary" aria-describedby="enter-hint" disabled>开始训练</button>
       <button id="preview" class="secondary">2D 预览</button>
     </div>
+
+    <p id="enter-hint" class="enter-hint">请看向按钮，将准星对准按钮后按下 VR 右侧中间的按钮</p>
 
     <p id="launch-note" class="launch-note"></p>
     <label class="perf-toggle"><input id="perf" type="checkbox"> 测试员：显示性能面板</label>

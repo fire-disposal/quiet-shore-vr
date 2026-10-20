@@ -118,7 +118,7 @@ export const ZH: Strings = {
   hudDrawCalls: 'Draw call',
   remoteStartNeedsGesture: '请在头显内启动一次，之后由平板控制',
   remoteUnknown: '未知蓝牙命令',
-  controlModeOn: '平板控制中，患者无需操作',
+  controlModeOn: '平板控制中，按一次确认键开始',
   controlModeOff: '平板已断开，恢复患者界面'
 };
 
@@ -180,7 +180,7 @@ export const EN: Strings = {
   hudDrawCalls: 'Draw calls',
   remoteStartNeedsGesture: 'Start once in the headset; the tablet controls after that',
   remoteUnknown: 'Unknown Bluetooth command',
-  controlModeOn: 'Tablet control on, no patient input needed',
+  controlModeOn: 'Tablet control on, press confirm once to start',
   controlModeOff: 'Tablet disconnected, patient UI restored'
 };
 

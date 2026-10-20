@@ -231,7 +231,7 @@ internal object PortalStatus {
     fun description(): String {
         val state = bluetoothState
         return when {
-            state == "advertising" && controlActive -> "平板控制中，患者无需操作"
+            state == "advertising" && controlActive -> "平板控制中，按一次确认键开始"
             state == "advertising" -> "等待平板连接"
             state == "bluetooth-off" -> "蓝牙未开启"
             state == "starting" -> "蓝牙正在启动"
