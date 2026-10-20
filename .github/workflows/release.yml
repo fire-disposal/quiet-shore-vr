@@ -1,0 +1,240 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布用 tag（留空则使用 v<package.json version>）'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build apks + publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            android/settings.gradle.kts
+            android/build.gradle.kts
+            android/protocol/build.gradle.kts
+            android/headset/build.gradle.kts
+            android/control/build.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build web bundle
+        run: npm run build
+
+      - name: Build standalone page
+        run: npm run standalone
+
+      - name: Provision Android SDK 36
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::ANDROID_SDK_ROOT / ANDROID_HOME 未设置，无法定位 Android SDK"
+            exit 1
+          fi
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          [ -x "$SDKMANAGER" ] || { echo "::error::找不到 sdkmanager"; exit 1; }
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" "build-tools;36.0.0"
+          {
+            echo "ANDROID_SDK_ROOT=$SDK_ROOT"
+            echo "ANDROID_HOME=$SDK_ROOT"
+          } >> "$GITHUB_ENV"
+
+      - name: Resolve release tag
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="v$(node -p 'require("./package.json").version')"
+          fi
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::发布 tag 必须以 v 开头（收到：$tag）"; exit 1 ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "### Release APK: $tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve signing material
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ] && [ -n "${KEYSTORE_PASSWORD:-}" ] && [ -n "${KEY_ALIAS:-}" ]; then
+            install -d -m 700 "$RUNNER_TEMP/qs-signing"
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/qs-signing/release.keystore"
+            chmod 600 "$RUNNER_TEMP/qs-signing/release.keystore"
+            echo "keystore=$RUNNER_TEMP/qs-signing/release.keystore" >> "$GITHUB_OUTPUT"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "签名：secrets 提供的 release keystore（apksigner 重新签名）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "keystore=" >> "$GITHUB_OUTPUT"
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "签名：未配置 keystore secrets，使用 debug keystore（仅限侧载）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build Android APKs
+        run: |
+          set -euo pipefail
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :protocol:build :headset:assembleDebug :control:assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare named APKs
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          KEYSTORE: ${{ steps.signing.outputs.keystore }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          BT="$SDK_ROOT/build-tools/36.0.0"
+          [ -x "$BT/apksigner" ] || { echo "::error::缺少 $BT/apksigner"; exit 1; }
+
+          OUT="$RUNNER_TEMP/qs-release"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+
+          produce() {
+            src="$1"
+            dst="$2"
+            [ -f "$src" ] || { echo "::error::缺少构建产物 $src"; exit 1; }
+            if [ -n "${KEYSTORE:-}" ]; then
+              "$BT/zipalign" -c -p 4 "$src" >/dev/null || { echo "::error::$src 未 zipalign 对齐"; exit 1; }
+              args=(--ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$KEYSTORE_PASSWORD")
+              if [ -n "${KEY_PASSWORD:-}" ]; then
+                args+=(--key-pass "pass:$KEY_PASSWORD")
+              fi
+              "$BT/apksigner" sign "${args[@]}" --out "$dst" "$src"
+            else
+              cp "$src" "$dst"
+            fi
+          }
+
+          produce android/headset/build/outputs/apk/debug/headset-debug.apk \
+            "$OUT/quiet-shore-headset-$TAG.apk"
+          produce android/control/build/outputs/apk/debug/control-debug.apk \
+            "$OUT/quiet-shore-control-$TAG.apk"
+
+          ( cd "$OUT" && sha256sum "quiet-shore-headset-$TAG.apk" "quiet-shore-control-$TAG.apk" > SHA256SUMS.txt )
+
+          "$BT/apksigner" verify "$OUT/quiet-shore-headset-$TAG.apk"
+          "$BT/apksigner" verify "$OUT/quiet-shore-control-$TAG.apk"
+          cat "$OUT/SHA256SUMS.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compose release notes
+        id: notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/qs-release"
+          NOTES="$OUT/RELEASE_NOTES.md"
+          if [ "$SIGNING_MODE" = "release" ]; then
+            signing_text="使用仓库 secrets 中的 release keystore 重新签名（APK Signature Scheme v2/v3）。构建变体仍为 debug（\`android:debuggable=true\`），适合侧载分发给受控设备。"
+          else
+            signing_text="**未配置 release keystore**：APK 由 Android debug keystore 签名，属于 debug 构建（\`android:debuggable=true\`）。可直接侧载安装用于内测与验收，不作为应用商店发布包。"
+          fi
+          cat > "$NOTES" <<EOF
+          ## 静岸 / Quiet Shore VR ${TAG}
+
+          本次发布包含两个 APK，按设备分别安装，**不要装错**：
+
+          | 资产 | 装到哪台设备 | 作用 |
+          | --- | --- | --- |
+          | \`quiet-shore-headset-${TAG}.apk\` | PICO G2 4K 头显 | 头显端：后台服务 + 可进入的控制台 + 快速设置磁贴 |
+          | \`quiet-shore-control-${TAG}.apk\` | Android 平板 | 控制器：连接头显、选择场景、查看状态 |
+
+          侧载安装：
+
+          \`\`\`
+          adb install -r quiet-shore-headset-${TAG}.apk   # 头显
+          adb install -r quiet-shore-control-${TAG}.apk   # 平板
+          \`\`\`
+
+          头显端：桌面图标、通知、快速设置磁贴都会打开头显内的控制台；通知提供「打开控制台 / 全部应用 / 返回桌面」。控制台里显式点击「进入训练」（按钮有 3 秒冷却）后才会启动 Firefox；进入 WebXR 后仍需患者在头显内按右侧确认键开始会话。
+
+          平板端：选择场景、查看状态；训练开始只能在头显内触发，平板上的启动按钮为禁用状态并提示「请在头显内启动」。
+
+          连接：无控制码。第一台连上头显的平板获得控制权，第二台会收到 CONTROL_BUSY；平板点 RELEASE 或断开蓝牙即释放控制权。
+
+          完整性校验：
+
+          \`\`\`
+          sha256sum -c SHA256SUMS.txt
+          \`\`\`
+
+          签名：${signing_text}
+
+          构建自 \`${GITHUB_SHA}\`（run \`${GITHUB_RUN_NUMBER}\`）。
+          EOF
+          echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Quiet Shore VR ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body_path: ${{ steps.notes.outputs.path }}
+          fail_on_unmatched_files: true
+          files: |
+            ${{ runner.temp }}/qs-release/quiet-shore-headset-${{ steps.version.outputs.tag }}.apk
+            ${{ runner.temp }}/qs-release/quiet-shore-control-${{ steps.version.outputs.tag }}.apk
+            ${{ runner.temp }}/qs-release/SHA256SUMS.txt

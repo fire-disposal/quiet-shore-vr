@@ -1,0 +1,274 @@
+package com.quietshore.control.ui.components
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.Scenes
+import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.ui.ControlActions
+import com.quietshore.control.ui.theme.QuietPalette
+import java.util.Locale
+
+@Composable
+fun ControlRail(
+    state: ControlUiState,
+    actions: ControlActions,
+    modifier: Modifier = Modifier
+) {
+    val connected = state.phase == BlePhase.READY
+    Surface(modifier = modifier, shape = RoundedCornerShape(24.dp), color = QuietPalette.Surface) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp)
+        ) {
+            RailSection("场景") {
+                SceneCards(
+                    selectedId = state.control.scene,
+                    enabled = connected,
+                    onSelect = actions.onSceneSelect
+                )
+            }
+
+            RailSection("控制") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        RailAction(
+                            label = "校准",
+                            icon = Icons.Rounded.MyLocation,
+                            onClick = actions.onRecalibrate,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        )
+                        RailAction(
+                            label = if (state.control.audioMuted) "打开声音" else "关闭声音",
+                            icon = if (state.control.audioMuted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                            onClick = actions.onToggleAudio,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        RailAction(
+                            label = "预览",
+                            icon = Icons.Rounded.Visibility,
+                            onClick = actions.onPreview,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SessionAction(
+                            session = state.control.session,
+                            onStart = actions.onStart,
+                            onEnd = actions.onEnd,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            RailSection("状态") {
+                StatusSummary(state)
+                state.error?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.Danger
+                    )
+                }
+            }
+
+            RailSection("提示") {
+                Text(
+                    text = "请在头显内启动一次，之后由平板控制",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextSecondary
+                )
+                Text(
+                    text = "患者无需操作",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+
+            state.notice?.let { notice ->
+                Text(
+                    text = notice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailSection(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = QuietPalette.TextSecondary
+        )
+        content()
+    }
+}
+
+@Composable
+private fun RailAction(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.height(56.dp),
+        enabled = enabled,
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = QuietPalette.SurfaceRaised,
+            contentColor = QuietPalette.TextPrimary,
+            disabledContainerColor = QuietPalette.SurfaceRaised.copy(alpha = 0.4f),
+            disabledContentColor = QuietPalette.TextSecondary.copy(alpha = 0.5f)
+        )
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+    }
+}
+
+@Composable
+private fun SessionAction(
+    session: Boolean,
+    onStart: () -> Unit,
+    onEnd: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (session) {
+        Button(
+            onClick = onEnd,
+            modifier = modifier.height(56.dp),
+            enabled = enabled,
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = QuietPalette.Danger,
+                contentColor = Color(0xFF2A0B09)
+            )
+        ) {
+            Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("结束训练", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        }
+    } else {
+        Button(
+            onClick = onStart,
+            modifier = modifier.height(56.dp),
+            enabled = false,
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("请在头显内启动", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun StatusSummary(state: ControlUiState) {
+    val pose = state.pose
+    val fresh = pose != null && !state.poseStale
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SummaryRow("患者场景", Scenes.label(state.control.scene))
+        SummaryRow(
+            label = "训练状态",
+            value = when {
+                state.control.calibrating -> "校准中"
+                state.control.session -> "训练中"
+                else -> "待机"
+            }
+        )
+        SummaryRow("声音", if (state.control.audioMuted) "关" else "开")
+        SummaryRow("患者姿态", if (fresh) "实时" else "姿态未更新")
+        if (fresh) {
+            Text(
+                text = "位置 ${position(pose)} 米",
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.TextSecondary
+            )
+            Text(
+                text = "朝向 ${orientation(pose)} 度",
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.TextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun SummaryRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = QuietPalette.TextSecondary,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = QuietPalette.TextPrimary,
+            textAlign = TextAlign.End
+        )
+    }
+}
+
+private fun position(pose: TelemetryPose): String =
+    String.format(Locale.US, "%.2f %.2f %.2f", pose.x, pose.y, pose.z)
+
+private fun orientation(pose: TelemetryPose): String =
+    String.format(Locale.US, "%.0f %.0f", pose.yaw, pose.pitch)

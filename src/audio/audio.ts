@@ -142,6 +142,10 @@ function setMuted(next: boolean): void {
   }
 }
 
+export function setAudioMuted(next: boolean): void {
+  setMuted(next);
+}
+
 export function toggleMuted(): boolean {
   setMuted(!muted);
   return muted;

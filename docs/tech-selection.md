@@ -7,7 +7,7 @@
 - 系统 WebVR 浏览器：Chromium 67，只有 WebVR 1.1，无 WebXR；WebView 74 无 XR。
 - 3DoF 头显 + 3DoF 手柄，无位置追踪；无 root。
 - 现有场景预算（代码侧 stats，high / low）：landscape 24 / 43.8k · 21 / 10k，ward 20 / 5.7k · 20 / 4.9k，bathroom 17–18 / 2.7k · 16 / 1.9k；均无阴影贴图、无后处理。
-- APK 在 GitHub Actions 构建；发布入口是通知栏/快捷磁贴 → 本地 HTTP → Firefox Reality。
+- 两个 APK 在 GitHub Actions 构建：头显壳（应用图标/通知/磁贴 → 控制台 → 本地 HTTP → Firefox Reality）与平板控制台（BLE 中心 + WebView 镜像）；平板不承载 XR。
 - 内容层必须能在未来换成内嵌 WebXR 或原生渲染器时不重写空间/场景契约。
 
 ## 2. 候选

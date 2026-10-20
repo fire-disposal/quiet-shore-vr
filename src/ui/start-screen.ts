@@ -52,6 +52,9 @@ export class StartScreen {
   private readonly lang: 'zh' | 'en';
   private selectedId: SceneId | null = null;
   private minimal = false;
+  private enterBusy = false;
+  private enterAvailable = false;
+  private enterIdleLabel = '';
 
   constructor(
     scenes: readonly SceneSummary[],
@@ -62,8 +65,19 @@ export class StartScreen {
     this.strings = strings;
     this.lang = lang;
     this.handlers = handlers;
+    this.enterIdleLabel = strings.enter;
 
     this.enter.addEventListener('click', handlers.onEnter);
+    // Firefox Reality's right-side confirm arrives as a normal click at gaze.
+    // Treat a click on empty start-page space as the same one-time gesture, so
+    // the patient does not have to aim at a small button.
+    this.start.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest('button, input, label, a')) {
+        return;
+      }
+      handlers.onEnter();
+    });
     this.preview.addEventListener('click', handlers.onPreview);
     this.audio.addEventListener('click', handlers.onAudio);
     this.recalibrate.addEventListener('click', handlers.onRecalibrate);
@@ -98,7 +112,10 @@ export class StartScreen {
       card.node.tabIndex = selected ? 0 : -1;
       if (selected) {
         this.launchScene.textContent = `${this.strings.sceneTitle}：${card.name}`;
-        this.enter.textContent = `${this.strings.enter} · ${card.name}`;
+        this.enterIdleLabel = `${this.strings.enter} ${card.name}`;
+        if (!this.enterBusy) {
+          this.enter.textContent = this.enterIdleLabel;
+        }
       }
     }
     // A stale stored id must not leave the whole group out of the tab order.
@@ -113,7 +130,16 @@ export class StartScreen {
   }
 
   setEnterEnabled(enabled: boolean): void {
-    this.enter.disabled = !enabled;
+    this.enterAvailable = enabled;
+    this.enter.disabled = !enabled || this.enterBusy;
+  }
+
+  setEnterBusy(busy: boolean): void {
+    this.enterBusy = busy;
+    this.enter.disabled = !this.enterAvailable || busy;
+    this.enter.textContent = busy ? this.strings.entering : this.enterIdleLabel;
+    this.enter.classList.toggle('is-busy', busy);
+    this.start.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
 
   setRecalibrateEnabled(enabled: boolean): void {

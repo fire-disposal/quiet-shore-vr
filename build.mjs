@@ -61,6 +61,31 @@ if (standalone) {
   console.log(`standalone.html ${kb} KB`);
 }
 
+// Tablet console bundle: the same Three.js scene modules as the headset,
+// wrapped in a standalone page loaded by the control APK's WebView.
+await esbuild.build({
+  ...common,
+  entryPoints: [path.join(src, 'controller/main.ts')],
+  outfile: path.join(dist, 'controller.js'),
+  format: 'iife'
+});
+await esbuild.build({
+  ...common,
+  entryPoints: [path.join(src, 'controller/style.css')],
+  outfile: path.join(dist, 'controller.css')
+});
+const controllerTemplate = fs.readFileSync(path.join(src, 'controller/index.html'), 'utf8');
+const controllerJs = fs.readFileSync(path.join(dist, 'controller.js'), 'utf8')
+  .replace(/\/\/# sourceMappingURL=.*$/gm, '')
+  .replace(/<\/script/gi, '<\\/script');
+const controllerCss = fs.readFileSync(path.join(dist, 'controller.css'), 'utf8');
+const controllerPage = controllerTemplate
+  .replace('<!-- CONTROLLER_CSS -->', () => `<style>\n${controllerCss}\n</style>`)
+  .replace('<!-- CONTROLLER_JS -->', () => `<script>\n${controllerJs}\n</script>`);
+fs.writeFileSync(path.join(dist, 'controller.html'), controllerPage);
+const controllerKb = (Buffer.byteLength(controllerPage) / 1024).toFixed(0);
+console.log(`controller.html ${controllerKb} KB`);
+
 if (serve) {
   const types = {
     '.html': 'text/html; charset=utf-8',

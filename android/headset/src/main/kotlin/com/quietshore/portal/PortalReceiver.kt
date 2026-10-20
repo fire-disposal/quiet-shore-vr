@@ -1,0 +1,26 @@
+package com.quietshore.portal
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/**
+ * 通知按钮的落点。仅由本应用的 PendingIntent 触发，未导出。
+ */
+class PortalReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent?) {
+        val action = intent?.action ?: return
+        when (action) {
+            PortalActions.ACTION_ENTER -> PortalActions.enter(
+                context,
+                intent.getStringExtra(PortalActions.EXTRA_SCENE),
+                intent.getBooleanExtra(PortalActions.EXTRA_MINIMAL, true),
+                intent.getBooleanExtra(PortalActions.EXTRA_SKIP_CALIBRATION, false),
+                intent.getStringExtra(PortalActions.EXTRA_QUALITY)
+            )
+
+            PortalActions.ACTION_ALLAPPS -> PortalActions.allApps(context)
+            PortalActions.ACTION_HOME -> PortalActions.home(context)
+        }
+    }
+}

@@ -11,3 +11,10 @@ shell/android/assets/index.html
 .DS_Store
 coverage/
 .vitest/
+
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/headset/src/main/assets/index.html
+android/control/src/main/assets/controller.html

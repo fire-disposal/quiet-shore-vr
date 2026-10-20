@@ -364,10 +364,6 @@ button.small {
   button.secondary { min-height: 52px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  button.scene-card,
-  button { transition: none; }
-}
 
 /* immersive stage */
 .stage { position: fixed; inset: 0; background: #000; }
@@ -416,3 +412,31 @@ button.scene-card {
 .scene-card-body { padding: 0; gap: 2px; }
 .scene-card-name { font-size: 16px; }
 .scene-card-tag { font-size: 12px; }
+
+/* Tablet takeover: the operator chooses scenes and session actions; the
+   patient keeps only the one-time headset entry button. */
+body.control-mode .scene-picker,
+body.control-mode .hint,
+body.control-mode #launch-scene,
+body.control-mode #launch-note,
+body.control-mode #preview,
+body.control-mode .perf-toggle {
+  display: none;
+}
+
+body.control-mode .brand .status {
+  color: var(--accent, #e0bb78);
+}
+
+.primary.is-busy {
+  animation: enter-breathe 1.1s ease-in-out infinite;
+}
+
+@keyframes enter-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary.is-busy { animation: none; }
+}

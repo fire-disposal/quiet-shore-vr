@@ -1,0 +1,60 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Noto Sans SC", sans-serif;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #08100f;
+}
+
+#viewport {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+}
+
+#viewport:active {
+  cursor: grabbing;
+}
+
+#viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.world-label,
+.world-status {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  color: #f4efe4;
+  background: rgba(8, 16, 15, 0.72);
+  border: 1px solid rgba(127, 200, 184, 0.18);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+}
+
+.world-label {
+  left: 16px;
+  bottom: 16px;
+}
+
+.world-status {
+  right: 16px;
+  bottom: 16px;
+  color: #9fc8be;
+}
+
+.world-status.error {
+  color: #e8a59b;
+}

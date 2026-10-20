@@ -2,6 +2,7 @@ export interface Strings {
   appName: string;
   appNameEn: string;
   enter: string;
+  entering: string;
   preview: string;
   checking: string;
   xrReady: string;
@@ -53,15 +54,20 @@ export interface Strings {
   hudAudio: string;
   hudTriangles: string;
   hudDrawCalls: string;
+  remoteStartNeedsGesture: string;
+  remoteUnknown: string;
+  controlModeOn: string;
+  controlModeOff: string;
 }
 
 export const ZH: Strings = {
   appName: '静岸',
   appNameEn: 'Quiet Shore VR',
   enter: '开始训练',
+  entering: '正在进入 VR',
   preview: '2D 预览',
   checking: '正在检测设备…',
-  xrReady: '设备已就绪 · 戴上头显开始',
+  xrReady: '设备已就绪，戴上头显开始',
   noXR: '请用 Firefox Reality 打开本页',
   xrUnsupported: '当前浏览器不支持沉浸模式，请用 Firefox Reality',
   xrFailed: '设备检测失败，请重试',
@@ -109,16 +115,21 @@ export const ZH: Strings = {
   hudQuality: '画质',
   hudAudio: '声音',
   hudTriangles: '三角面',
-  hudDrawCalls: 'Draw call'
+  hudDrawCalls: 'Draw call',
+  remoteStartNeedsGesture: '请在头显内启动一次，之后由平板控制',
+  remoteUnknown: '未知蓝牙命令',
+  controlModeOn: '平板控制中，患者无需操作',
+  controlModeOff: '平板已断开，恢复患者界面'
 };
 
 export const EN: Strings = {
   appName: 'Quiet Shore',
   appNameEn: 'Quiet Shore VR',
   enter: 'Start training',
+  entering: 'Entering VR',
   preview: '2D preview',
   checking: 'Checking device…',
-  xrReady: 'Ready · put on the headset and start',
+  xrReady: 'Ready, put on the headset and start',
   noXR: 'Open this page in Firefox Reality',
   xrUnsupported: 'Immersive mode is not available in this browser. Use Firefox Reality.',
   xrFailed: 'Device check failed. Try again.',
@@ -166,7 +177,11 @@ export const EN: Strings = {
   hudQuality: 'Quality',
   hudAudio: 'Sound',
   hudTriangles: 'Triangles',
-  hudDrawCalls: 'Draw calls'
+  hudDrawCalls: 'Draw calls',
+  remoteStartNeedsGesture: 'Start once in the headset; the tablet controls after that',
+  remoteUnknown: 'Unknown Bluetooth command',
+  controlModeOn: 'Tablet control on, no patient input needed',
+  controlModeOff: 'Tablet disconnected, patient UI restored'
 };
 
 export function getStrings(lang: 'zh' | 'en'): Strings {

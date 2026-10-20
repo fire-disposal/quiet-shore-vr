@@ -27,10 +27,13 @@ import {
   disposeAudio,
   playTrack,
   preloadTrack,
+  setAudioMuted,
   stopAudio,
   toggleMuted,
   unlockAudio
 } from '../audio/audio';
+import { RemoteControl } from './remote-control';
+import { TelemetrySender } from './telemetry';
 
 const EYE_HEIGHT = 1.6;
 const MAX_DT = 0.25;
@@ -49,6 +52,10 @@ export class QuietShoreApp {
   private readonly menu: XrMenuApi;
   private readonly lab: SpatialLabApi;
   private readonly hud: SpatialHud;
+  private readonly remote: RemoteControl;
+  private readonly telemetry: TelemetrySender;
+  private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private controlMode = false;
 
   private sceneId: SceneId;
   private handle: SceneHandle | null = null;
@@ -74,6 +81,7 @@ export class QuietShoreApp {
   private fpsAt = 0;
   private hudAt = 0;
   private started = false;
+  private enterPending = false;
 
   constructor() {
     this.config = readConfig(window.location.search);
@@ -144,6 +152,28 @@ export class QuietShoreApp {
       theme: DEFAULT_SPATIAL_THEME
     });
     this.hud = new SpatialHud(this.scene, DEFAULT_SPATIAL_THEME);
+    this.remote = new RemoteControl(
+      (command) => this.handleRemoteCommand(command),
+      (active) => this.setControlMode(active)
+    );
+    this.telemetry = new TelemetrySender(
+      () => {
+        this.headEuler.setFromQuaternion(this.headPose.quaternion, 'YXZ');
+        return {
+          x: this.headPose.position.x,
+          y: this.headPose.position.y,
+          z: this.headPose.position.z,
+          yaw: this.headEuler.y,
+          pitch: this.headEuler.x
+        };
+      },
+      () => ({
+        scene: this.sceneId,
+        session: this.session !== null,
+        calibrating: this.calibration?.isActive() ?? false,
+        audio: this.audioMuted
+      })
+    );
 
     this.pipeline.add({
       id: 'scene-update',
@@ -202,6 +232,8 @@ export class QuietShoreApp {
     }
     this.started = true;
     this.lastFrame = 0;
+    this.remote.start();
+    this.telemetry.start();
     void this.detectXR();
   }
 
@@ -381,15 +413,20 @@ export class QuietShoreApp {
   }
 
   private async enterVR(): Promise<void> {
-    if (this.session) {
+    if (this.session || this.enterPending) {
       return;
     }
     if (!navigator.xr) {
       this.start.setStatus(this.strings.noXR, 'error');
       return;
     }
+    this.enterPending = true;
+    this.start.setEnterBusy(true);
+    this.start.setStatus(this.strings.entering);
     void unlockAudio();
     try {
+      // Let the busy state paint before Gecko starts the session handoff.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const next = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor']
       });
@@ -407,6 +444,9 @@ export class QuietShoreApp {
       this.menu.attach(next);
       this.menu.close();
       this.menu.setAudioEnabled(!this.audioMuted);
+      if (this.controlMode) {
+        this.input.setLayers(false, false);
+      }
       this.input.setLayers(true, true);
       this.syncLab();
       this.start.setStatus(this.strings.xrReady, 'ok');
@@ -429,6 +469,9 @@ export class QuietShoreApp {
         `${this.strings.enterFailed}：${error instanceof Error ? error.message : String(error)}`,
         'error'
       );
+    } finally {
+      this.enterPending = false;
+      this.start.setEnterBusy(false);
     }
   }
 
@@ -451,6 +494,7 @@ export class QuietShoreApp {
     this.input.setLayers(true, true);
     this.syncLab();
     this.start.setStatus(this.strings.sessionEnded);
+    this.telemetry.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -465,6 +509,7 @@ export class QuietShoreApp {
     this.input.setLayers(false, false);
     this.calibration.start();
     this.syncLab();
+    this.telemetry.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -473,7 +518,7 @@ export class QuietShoreApp {
     if (this.handle) {
       this.handle.root.visible = true;
     }
-    this.input.setLayers(true, this.session !== null);
+    this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     this.syncLab();
     if (this.session) {
       this.playSceneAudio();
@@ -482,6 +527,7 @@ export class QuietShoreApp {
       result.ok ? this.strings.calibrationDone : `${this.strings.calibrationFailed}：${result.reason ?? 'unknown'}`,
       result.ok ? 'ok' : 'error'
     );
+    this.telemetry.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -560,12 +606,82 @@ export class QuietShoreApp {
     this.start.setStatus(
       `${this.strings.sceneSelectedStatus}${getSceneDefinition(normalized)?.name[this.config.lang] ?? normalized}`
     );
+    this.telemetry.sendStateNow();
+  }
+
+  private handleRemoteCommand(raw: string): void {
+    const command = raw.trim().toLowerCase();
+    if (!command) {
+      return;
+    }
+    if (command.startsWith('scene:')) {
+      this.switchScene(command.slice('scene:'.length) as SceneId);
+      return;
+    }
+    switch (command) {
+      case 'preview':
+        this.startPreview();
+        return;
+      case 'calibrate':
+        this.recalibrate();
+        return;
+      case 'exit':
+      case 'stop':
+        this.exitAll();
+        return;
+      case 'audio:on':
+        this.applyAudioMuted(false);
+        return;
+      case 'audio:off':
+        this.applyAudioMuted(true);
+        return;
+      case 'audio:toggle':
+        this.toggleAudio();
+        return;
+      case 'start':
+        this.start.setStatus(this.strings.remoteStartNeedsGesture, 'ok');
+        return;
+      default:
+        this.start.setStatus(`${this.strings.remoteUnknown}: ${raw}`, 'error');
+    }
+  }
+
+  private setControlMode(active: boolean): void {
+    if (this.controlMode === active) {
+      return;
+    }
+    this.controlMode = active;
+    document.body.classList.toggle('control-mode', active);
+    if (active) {
+      this.menu.close();
+      if (this.session) {
+        this.input.setLayers(false, false);
+      }
+      this.start.setStatus(this.strings.controlModeOn, 'ok');
+    } else {
+      if (this.session) {
+        this.input.setLayers(true, true);
+      }
+      this.start.setStatus(this.strings.controlModeOff);
+    }
+    this.telemetry.sendStateNow();
+    this.updateHud(performance.now());
+  }
+
+  private applyAudioMuted(next: boolean): void {
+    setAudioMuted(next);
+    this.audioMuted = next;
+    this.start.setAudioLabel(next);
+    this.menu.setAudioEnabled(!next);
+    this.telemetry.sendStateNow();
+    this.updateHud(performance.now());
   }
 
   private toggleAudio(): void {
     this.audioMuted = toggleMuted();
     this.start.setAudioLabel(this.audioMuted);
     this.menu.setAudioEnabled(!this.audioMuted);
+    this.telemetry.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -581,6 +697,9 @@ export class QuietShoreApp {
   }
 
   private onSelect(): void {
+    if (this.controlMode) {
+      return;
+    }
     if (this.menu.isOpen()) {
       this.input.select();
       if (!this.input.getFocused()) {
@@ -648,11 +767,13 @@ export class QuietShoreApp {
       triangles,
       draws,
       this.audioMuted ? '声关' : '声开'
-    ].join(' · ');
+    ].join('  ');
     this.hud.setStats(this.fps, summary);
   }
 
   dispose(): void {
+    this.remote.stop();
+    this.telemetry.stop();
     this.stopSceneAudio();
     disposeAudio();
     this.menu.dispose();
