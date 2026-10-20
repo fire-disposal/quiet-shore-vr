@@ -29,6 +29,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -84,6 +85,30 @@ fun ControlRail(
                     enabled = connected,
                     onSelect = actions.onSceneSelect
                 )
+            }
+
+            RailSection("视点高度") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EyeHeightStepper(
+                        meters = state.eyeHeightRequested,
+                        enabled = connected && !state.control.calibrating,
+                        onChange = actions.onEyeHeightChange
+                    )
+                    Text(
+                        text = when {
+                            !connected -> "头显未连接"
+                            state.control.calibrating -> "校准中不可调整"
+                            state.eyeHeightConfirmed -> "头显已生效"
+                            else -> "按 5 厘米步进；平板只记录请求值"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (connected && state.eyeHeightConfirmed) {
+                            QuietPalette.Success
+                        } else {
+                            QuietPalette.TextSecondary
+                        }
+                    )
+                }
             }
 
             RailSection("控制") {
@@ -152,6 +177,69 @@ fun ControlRail(
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextSecondary
                     )
+                }
+            }
+
+            RailSection("治疗师模式") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "高级视图控制",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = QuietPalette.TextPrimary
+                            )
+                            Text(
+                                text = "仅治疗师使用，默认关闭",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = QuietPalette.TextSecondary
+                            )
+                        }
+                        Switch(
+                            checked = state.advancedUnlocked,
+                            onCheckedChange = actions.onAdvancedUnlockChange
+                        )
+                    }
+                    if (state.advancedUnlocked) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            JoystickPad(
+                                enabled = state.canSteerView,
+                                onVector = actions.onViewMove,
+                                onRelease = actions.onViewStop
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = when {
+                                        !connected -> "头显未连接"
+                                        !state.controlGranted -> "尚未取得控制"
+                                        !state.control.session -> "训练开始后可用"
+                                        state.control.calibrating -> "校准中视角已冻结"
+                                        state.poseStale -> "姿态数据过期，暂停平移"
+                                        else -> "按住拖动，松手即停"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = QuietPalette.TextSecondary
+                                )
+                                Text(
+                                    text = "只平移虚拟视点，不改变患者头部姿态",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = QuietPalette.TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -283,6 +371,10 @@ private fun StatusSummary(state: ControlUiState) {
             }
         )
         SummaryRow("声音", if (state.control.audioMuted) "关" else "开")
+        SummaryRow(
+            label = "视点高度",
+            value = String.format(Locale.US, "%.2f 米", state.eyeHeightRequested)
+        )
         SummaryRow("患者姿态", if (fresh) "实时" else "姿态未更新")
         if (fresh) {
             Text(

@@ -1,8 +1,33 @@
 import * as THREE from 'three';
 import type { PoseLike } from './types';
 
+const DEG_PER_RAD = 180 / Math.PI;
+/** Read-only identity, used to measure how far a raw basis rotates. */
+const IDENTITY_QUATERNION = new THREE.Quaternion();
+
+/** Unit orientation of a captured pose, or null when the sample is unusable. */
+function poseQuaternion(pose: PoseLike | undefined): THREE.Quaternion | null {
+  const o = pose?.transform?.orientation;
+  if (!o) {
+    return null;
+  }
+  if (
+    !Number.isFinite(o.x) ||
+    !Number.isFinite(o.y) ||
+    !Number.isFinite(o.z) ||
+    !Number.isFinite(o.w)
+  ) {
+    return null;
+  }
+  const q = new THREE.Quaternion(o.x, o.y, o.z, o.w);
+  if (q.lengthSq() < 1e-12) {
+    return null;
+  }
+  return q.normalize();
+}
+
 export interface RemapOptions {
-  /** 0..1; 0.9 by default. The remap is a correction, not a hard flip. */
+  /** 0..1; 1 by default. Scales the confidence-weighted blend. */
   strength?: number;
 }
 
@@ -16,8 +41,37 @@ export interface RemapResult {
   forward?: THREE.Vector3;
   angleDeg?: number;
   confidence?: number;
+  /** Requested blend: clamp(strength * confidence, 0, maxWeight). */
   weight?: number;
+  /** Blend actually applied after the rotation-angle cap. Never exceeds weight. */
+  appliedWeight?: number;
+  /** Rotation angle of the raw basis, before any cap. */
+  rawAngleDeg?: number;
 }
+
+/**
+ * Safety envelope for two-pose captures. A noisy capture is either rejected
+ * or attenuated: it can never rotate the world far enough to invert it.
+ */
+export const REMAP_LIMITS = {
+  /** Below this sin(angle) the capture pair is too noisy to trust. */
+  minConfidence: 0.35,
+  /** Captures closer than this angle (or its supplement) are ill-conditioned. */
+  minAngleDeg: 15,
+  /** Hard cap on the blend; the raw basis is never applied at full strength. */
+  maxWeight: 0.85,
+  /** Hard cap on the applied rotation, whatever the raw basis says. */
+  maxRotationDeg: 120,
+  /** Pivots closer than this are treated as one duplicated sample. */
+  minPivotSeparationM: 0.005
+} as const;
+
+/** Easing applied when a two-pose remap replaces the current frame. */
+export const REMAP_TRANSITION_MS = {
+  min: 200,
+  max: 4000,
+  default: 900
+} as const;
 
 /**
  * Remote virtual posture. The world is tilted and lowered around the
@@ -48,7 +102,9 @@ export const POSTURE_LIMITS = {
   maxRiseM: 1.2,
   minDurationMs: 1000,
   maxDurationMs: 30000,
-  defaultDurationMs: 10000
+  defaultDurationMs: 10000,
+  /** A stop command brakes for this long instead of freezing instantly. */
+  stopDecelMs: 320
 } as const;
 
 export interface ComfortState {
@@ -63,13 +119,21 @@ export interface ComfortState {
     angleDeg: number;
     confidence: number;
     weight: number;
+    appliedWeight: number;
   } | null;
+  /** 0..1 progress of the eased two-pose remap; 1 once settled. */
+  remapProgress: number;
   posture: PostureState;
 }
 
 export interface ComfortApi {
   group: THREE.Group;
   calibrate(pose: PoseLike): boolean;
+  /**
+   * Two-pose remap. The new frame is eased in by `updatePosture(dt)`
+   * (`remapDurationMs`), never applied as an instantaneous jump.
+   * A rejected capture leaves the current calibration untouched.
+   */
   calibrateTwo(poseC: PoseLike, poseT: PoseLike, opts?: RemapOptions): RemapResult;
   reset(): void;
   isCalibrated(): boolean;
@@ -79,9 +143,9 @@ export interface ComfortApi {
    * A new target while a transition runs starts from the current values.
    */
   setPosture(target: VirtualPosture, durationMs: number): void;
-  /** Advance the posture transition; `dt` is in seconds. */
+  /** Advance the posture, deceleration and remap transitions; `dt` is seconds. */
   updatePosture(dt: number): void;
-  /** Freeze the posture where it currently is. */
+  /** Stop heading for the target: the remaining motion decelerates to rest. */
   stopPosture(): void;
   getPostureState(): PostureState;
 }
@@ -91,58 +155,23 @@ export interface ComfortApi {
  *   toes direction  -> patient's body-down
  *   ceiling direction -> patient's front
  * Maps body-up to +Y and front to -Z. The measured angle is rarely 90
- * degrees, so the result is confidence-weighted (sin of the angle) and
- * blended with identity instead of being applied as a hard flip.
+ * degrees, so the blend is weighted by the capture confidence (sin of the
+ * angle) on top of the requested strength, and both the blend and the raw
+ * rotation are capped: a noisy capture is corrected, never flipped.
  */
 export function remapFromPoses(
   poseC: PoseLike,
   poseT: PoseLike,
   opts: RemapOptions = {}
 ): RemapResult {
-  const qC = poseC.transform.orientation;
-  const qT = poseT.transform.orientation;
-  const fC = new THREE.Vector3(0, 0, -1).applyQuaternion(
-    new THREE.Quaternion(qC.x, qC.y, qC.z, qC.w)
-  );
-  const fT = new THREE.Vector3(0, 0, -1).applyQuaternion(
-    new THREE.Quaternion(qT.x, qT.y, qT.z, qT.w)
-  );
-
-  const up = fT.clone().negate();
-  if (up.lengthSq() < 1e-8) {
-    return { ok: false, reason: 'toes-zero' };
+  if (!poseC?.transform || !poseT?.transform) {
+    return { ok: false, reason: 'missing-pose' };
   }
-  up.normalize();
-
-  const forward = fC.clone().addScaledVector(up, -fC.dot(up));
-  if (forward.lengthSq() < 1e-6) {
-    return { ok: false, reason: 'poses-parallel' };
+  const qC = poseQuaternion(poseC);
+  const qT = poseQuaternion(poseT);
+  if (!qC || !qT) {
+    return { ok: false, reason: 'invalid-pose' };
   }
-  forward.normalize();
-
-  const zs = forward.clone().negate();
-  const xs = new THREE.Vector3().crossVectors(up, zs);
-  if (xs.lengthSq() < 1e-8) {
-    return { ok: false, reason: 'degenerate' };
-  }
-  xs.normalize();
-
-  const basis = new THREE.Matrix4().makeBasis(xs, up, zs);
-  const raw = new THREE.Quaternion().setFromRotationMatrix(basis);
-
-  const angle = fC.angleTo(fT);
-  // The raw basis is exact for any non-degenerate pair; confidence is a
-  // validity gate, not an attenuation of an exact rotation. Reject near-
-  // parallel/anti-parallel captures where the basis is ill-conditioned.
-  const minAngle = Math.PI / 6;
-  if (angle < minAngle || Math.PI - angle < minAngle) {
-    return { ok: false, reason: 'poses-too-similar' };
-  }
-  const confidence = Math.sin(angle);
-  const requestedStrength = typeof opts.strength === 'number' ? opts.strength : 1;
-  const strength = Math.max(0, Math.min(1, requestedStrength));
-  const weight = strength;
-  const quaternion = new THREE.Quaternion().slerp(raw, weight);
 
   const posC = poseC.transform.position;
   const posT = poseT.transform.position;
@@ -151,6 +180,76 @@ export function remapFromPoses(
     (posC.y + posT.y) / 2,
     (posC.z + posT.z) / 2
   );
+  if (!Number.isFinite(pivot.x) || !Number.isFinite(pivot.y) || !Number.isFinite(pivot.z)) {
+    return { ok: false, reason: 'invalid-pivot' };
+  }
+  // Poses captured without the headset moving at all are one duplicated
+  // sample, not a two-pose calibration; their midpoint is an arbitrary spot.
+  const separation = Math.hypot(posT.x - posC.x, posT.y - posC.y, posT.z - posC.z);
+  if (!(separation >= REMAP_LIMITS.minPivotSeparationM)) {
+    return { ok: false, reason: 'degenerate-pivot', pivot };
+  }
+
+  const fC = new THREE.Vector3(0, 0, -1).applyQuaternion(qC);
+  const fT = new THREE.Vector3(0, 0, -1).applyQuaternion(qT);
+
+  const up = fT.clone().negate();
+  if (up.lengthSq() < 1e-8) {
+    return { ok: false, reason: 'toes-zero', pivot };
+  }
+  up.normalize();
+
+  const forward = fC.clone().addScaledVector(up, -fC.dot(up));
+  if (forward.lengthSq() < 1e-6) {
+    return { ok: false, reason: 'poses-parallel', pivot, up };
+  }
+  forward.normalize();
+
+  const zs = forward.clone().negate();
+  const xs = new THREE.Vector3().crossVectors(up, zs);
+  if (xs.lengthSq() < 1e-8) {
+    return { ok: false, reason: 'degenerate', pivot, up, forward };
+  }
+  xs.normalize();
+
+  const basis = new THREE.Matrix4().makeBasis(xs, up, zs);
+  const raw = new THREE.Quaternion().setFromRotationMatrix(basis);
+
+  const angle = fC.angleTo(fT);
+  const angleDeg = angle * DEG_PER_RAD;
+  const confidence = Math.sin(angle);
+  // Keep the measurements on the failure result: an operator diagnosing a
+  // bad capture needs them, and they are exactly what the success path used.
+  const measurements = { pivot, up, forward, angleDeg, confidence, rawQuaternion: raw };
+
+  // Near-parallel or near-anti-parallel captures leave the basis
+  // ill-conditioned, so the derived frame is dominated by sensor noise.
+  if (
+    angleDeg < REMAP_LIMITS.minAngleDeg ||
+    angleDeg > 180 - REMAP_LIMITS.minAngleDeg
+  ) {
+    return { ok: false, reason: 'poses-too-similar', ...measurements };
+  }
+  // sin(angle) is the geometric margin of the capture. Below the threshold
+  // the operator most likely sampled the same body axis twice.
+  if (!(confidence >= REMAP_LIMITS.minConfidence)) {
+    return { ok: false, reason: 'low-confidence', ...measurements };
+  }
+  // Non-finite strength falls back to full correction instead of poisoning
+  // the frame with NaN.
+  const requestedStrength =
+    typeof opts?.strength === 'number' && Number.isFinite(opts.strength) ? opts.strength : 1;
+  const strength =
+    requestedStrength < 0 ? 0 : requestedStrength > 1 ? 1 : requestedStrength;
+  const weight = Math.min(strength * confidence, REMAP_LIMITS.maxWeight);
+
+  // The raw basis may describe an almost complete inversion. Cap what is
+  // actually blended into identity so the world can never turn over.
+  const rawAngle = raw.angleTo(IDENTITY_QUATERNION);
+  const maxRotationRad = THREE.MathUtils.degToRad(REMAP_LIMITS.maxRotationDeg);
+  const appliedWeight =
+    rawAngle > 1e-6 ? Math.min(weight, maxRotationRad / rawAngle) : 0;
+  const quaternion = new THREE.Quaternion().slerp(raw, appliedWeight);
 
   return {
     ok: true,
@@ -159,15 +258,19 @@ export function remapFromPoses(
     pivot,
     up,
     forward,
-    angleDeg: (angle * 180) / Math.PI,
+    angleDeg,
     confidence,
-    weight
+    weight,
+    appliedWeight,
+    rawAngleDeg: rawAngle * DEG_PER_RAD
   };
 }
 
 export function createComfort(options: {
   scene: THREE.Scene;
   world: THREE.Object3D;
+  /** Ease duration when a two-pose remap replaces the current frame. */
+  remapDurationMs?: number;
 }): ComfortApi {
   const { scene, world } = options;
 
@@ -184,11 +287,28 @@ export function createComfort(options: {
   const rotatedPivot = new THREE.Vector3();
   let lastRemap: RemapResult | null = null;
 
+  // Two-pose remap transition. The new frame is eased in from the currently
+  // applied one by updatePosture, so a calibration never jumps the world.
+  const q0Start = new THREE.Quaternion();
+  const q0Target = new THREE.Quaternion();
+  const p0Start = new THREE.Vector3();
+  const p0Target = new THREE.Vector3();
+  let remapActive = false;
+  let remapElapsedMs = 0;
+  const remapDurationMs = clampNumber(
+    options.remapDurationMs,
+    REMAP_TRANSITION_MS.default,
+    REMAP_TRANSITION_MS.min,
+    REMAP_TRANSITION_MS.max
+  );
+
   // Posture layer. All scratch objects are allocated once: updatePosture runs
   // every frame and must not allocate.
   const posture = { pitchDeg: 0, rollDeg: 0, riseM: 0 };
   const postureStart = { pitchDeg: 0, rollDeg: 0, riseM: 0 };
   const postureTarget = { pitchDeg: 0, rollDeg: 0, riseM: 0 };
+  const brakeStart = { pitchDeg: 0, rollDeg: 0, riseM: 0 };
+  const brakeVelocity = { pitchDeg: 0, rollDeg: 0, riseM: 0 };
   const qPosture = new THREE.Quaternion();
   const qTotal = new THREE.Quaternion();
   const postureEuler = new THREE.Euler(0, 0, 0, 'XYZ');
@@ -196,6 +316,8 @@ export function createComfort(options: {
   let postureElapsedMs = 0;
   let postureDurationMs = 0;
   let postureDirection: 'rising' | 'lowering' = 'rising';
+  let braking = false;
+  let brakeElapsedMs = 0;
 
   function applyTransform(): void {
     if (!calibrated) {
@@ -230,6 +352,13 @@ export function createComfort(options: {
     return c * c * (3 - 2 * c);
   }
 
+  /** Keep a decelerating value inside the segment it was travelling along. */
+  function clampToSegment(value: number, from: number, to: number): number {
+    const low = from < to ? from : to;
+    const high = from < to ? to : from;
+    return value < low ? low : value > high ? high : value;
+  }
+
   /** How engaged a posture is; rise dominates because it drives the phase. */
   function postureEngagement(p: { pitchDeg: number; rollDeg: number; riseM: number }): number {
     return p.riseM + (Math.abs(p.pitchDeg) + Math.abs(p.rollDeg)) * 0.01;
@@ -249,6 +378,14 @@ export function createComfort(options: {
     postureElapsedMs = 0;
     postureDurationMs = 0;
     postureDirection = 'rising';
+    braking = false;
+    brakeElapsedMs = 0;
+    brakeStart.pitchDeg = 0;
+    brakeStart.rollDeg = 0;
+    brakeStart.riseM = 0;
+    brakeVelocity.pitchDeg = 0;
+    brakeVelocity.rollDeg = 0;
+    brakeVelocity.riseM = 0;
   }
 
   function setPosture(target: VirtualPosture, durationMs: number): void {
@@ -256,6 +393,9 @@ export function createComfort(options: {
     if (!calibrated) {
       return;
     }
+    // A fresh target supersedes any deceleration in progress.
+    braking = false;
+    brakeElapsedMs = 0;
     postureStart.pitchDeg = posture.pitchDeg;
     postureStart.rollDeg = posture.rollDeg;
     postureStart.riseM = posture.riseM;
@@ -295,35 +435,105 @@ export function createComfort(options: {
     }
   }
 
+  /**
+   * Decelerate a stopped transition to rest. Velocity decays as (1-u)^2 over
+   * `stopDecelMs`, so the pose creeps forward smoothly instead of snapping to
+   * a halt, and the travel is clamped to the segment it was following.
+   */
+  function advanceBrake(dt: number): void {
+    const durationMs = POSTURE_LIMITS.stopDecelMs;
+    brakeElapsedMs = Math.min(durationMs, brakeElapsedMs + dt * 1000);
+    const u = durationMs > 0 ? brakeElapsedMs / durationMs : 1;
+    // Displacement of a (1-s)^2 velocity ramp: integral of u - u^2 + u^3/3.
+    const distance = (u - u * u + (u * u * u) / 3) * (durationMs / 1000);
+    posture.pitchDeg = clampToSegment(
+      brakeStart.pitchDeg + brakeVelocity.pitchDeg * distance,
+      brakeStart.pitchDeg,
+      postureTarget.pitchDeg
+    );
+    posture.rollDeg = clampToSegment(
+      brakeStart.rollDeg + brakeVelocity.rollDeg * distance,
+      brakeStart.rollDeg,
+      postureTarget.rollDeg
+    );
+    posture.riseM = clampToSegment(
+      brakeStart.riseM + brakeVelocity.riseM * distance,
+      brakeStart.riseM,
+      postureTarget.riseM
+    );
+    if (brakeElapsedMs >= durationMs) {
+      braking = false;
+    }
+  }
+
   function updatePosture(dt: number): void {
-    if (!postureActive || !calibrated) {
+    if (!calibrated) {
       return;
     }
     if (!Number.isFinite(dt) || dt <= 0) {
       return;
     }
-    postureElapsedMs = Math.min(postureDurationMs, postureElapsedMs + dt * 1000);
-    const t = postureDurationMs > 0 ? postureElapsedMs / postureDurationMs : 1;
-    const eased = easeInOut(t);
-    posture.pitchDeg = postureStart.pitchDeg + (postureTarget.pitchDeg - postureStart.pitchDeg) * eased;
-    posture.rollDeg = postureStart.rollDeg + (postureTarget.rollDeg - postureStart.rollDeg) * eased;
-    posture.riseM = postureStart.riseM + (postureTarget.riseM - postureStart.riseM) * eased;
-    if (postureElapsedMs >= postureDurationMs) {
-      postureActive = false;
-      posture.pitchDeg = postureTarget.pitchDeg;
-      posture.rollDeg = postureTarget.rollDeg;
-      posture.riseM = postureTarget.riseM;
+    if (!remapActive && !postureActive && !braking) {
+      return;
     }
+
+    if (remapActive) {
+      remapElapsedMs = Math.min(remapDurationMs, remapElapsedMs + dt * 1000);
+      const remapT = remapDurationMs > 0 ? remapElapsedMs / remapDurationMs : 1;
+      const remapEased = easeInOut(remapT);
+      q0.slerpQuaternions(q0Start, q0Target, remapEased);
+      p0.lerpVectors(p0Start, p0Target, remapEased);
+      if (remapElapsedMs >= remapDurationMs) {
+        remapActive = false;
+        q0.copy(q0Target);
+        p0.copy(p0Target);
+      }
+    }
+
+    if (postureActive) {
+      postureElapsedMs = Math.min(postureDurationMs, postureElapsedMs + dt * 1000);
+      const t = postureDurationMs > 0 ? postureElapsedMs / postureDurationMs : 1;
+      const eased = easeInOut(t);
+      posture.pitchDeg = postureStart.pitchDeg + (postureTarget.pitchDeg - postureStart.pitchDeg) * eased;
+      posture.rollDeg = postureStart.rollDeg + (postureTarget.rollDeg - postureStart.rollDeg) * eased;
+      posture.riseM = postureStart.riseM + (postureTarget.riseM - postureStart.riseM) * eased;
+      if (postureElapsedMs >= postureDurationMs) {
+        postureActive = false;
+        posture.pitchDeg = postureTarget.pitchDeg;
+        posture.rollDeg = postureTarget.rollDeg;
+        posture.riseM = postureTarget.riseM;
+      }
+    } else if (braking) {
+      advanceBrake(dt);
+    }
+
     applyTransform();
   }
 
   function stopPosture(): void {
-    // Keep the current values; only the interpolation stops.
+    // The stop command always wins; only the motion is smoothed out.
+    if (!postureActive) {
+      return;
+    }
+    const t = postureDurationMs > 0 ? Math.min(1, postureElapsedMs / postureDurationMs) : 1;
+    // d/dt of smoothstep at the stop moment, i.e. current pose units per second.
+    const rate = postureDurationMs > 0 ? (6 * t * (1 - t) * 1000) / postureDurationMs : 0;
+    brakeStart.pitchDeg = posture.pitchDeg;
+    brakeStart.rollDeg = posture.rollDeg;
+    brakeStart.riseM = posture.riseM;
+    brakeVelocity.pitchDeg = (postureTarget.pitchDeg - postureStart.pitchDeg) * rate;
+    brakeVelocity.rollDeg = (postureTarget.rollDeg - postureStart.rollDeg) * rate;
+    brakeVelocity.riseM = (postureTarget.riseM - postureStart.riseM) * rate;
     postureActive = false;
+    brakeElapsedMs = 0;
+    braking =
+      brakeVelocity.pitchDeg !== 0 || brakeVelocity.rollDeg !== 0 || brakeVelocity.riseM !== 0;
   }
 
   function getPostureState(): PostureState {
     const engaged = postureEngagement(posture) > 1e-6;
+    // Progress tracks the target transition. A stopped transition keeps the
+    // fraction it reached while the brake runs out, so the value is stable.
     const progress = !engaged
       ? 0
       : postureDurationMs > 0
@@ -346,6 +556,8 @@ export function createComfort(options: {
     const q = pose.transform.orientation;
     p0.set(p.x, p.y, p.z);
     q0.set(q.x, q.y, q.z, q.w);
+    remapActive = false;
+    remapElapsedMs = 0;
     calibrated = true;
     applyTransform();
     mode = 'single';
@@ -356,10 +568,17 @@ export function createComfort(options: {
   function calibrateTwo(poseC: PoseLike, poseT: PoseLike, opts?: RemapOptions): RemapResult {
     const result = remapFromPoses(poseC, poseT, opts);
     if (!result.ok || !result.quaternion || !result.pivot) {
+      // A rejected capture must not disturb the frame already in use.
       return result;
     }
-    q0.copy(result.quaternion);
-    p0.copy(result.pivot);
+    // Ease from whatever frame is applied right now into the new one;
+    // updatePosture advances it, so the world never snaps to the new basis.
+    q0Start.copy(q0);
+    p0Start.copy(p0);
+    q0Target.copy(result.quaternion);
+    p0Target.copy(result.pivot);
+    remapElapsedMs = 0;
+    remapActive = true;
     calibrated = true;
     applyTransform();
     mode = 'two-pose';
@@ -374,6 +593,14 @@ export function createComfort(options: {
     calibrated = false;
     mode = 'none';
     lastRemap = null;
+    remapActive = false;
+    remapElapsedMs = 0;
+    q0.identity();
+    p0.set(0, 0, 0);
+    q0Start.identity();
+    q0Target.identity();
+    p0Start.set(0, 0, 0);
+    p0Target.set(0, 0, 0);
   }
 
   function getState(): ComfortState {
@@ -390,9 +617,11 @@ export function createComfort(options: {
             pivot: [r.pivot.x, r.pivot.y, r.pivot.z],
             angleDeg: r.angleDeg ?? 0,
             confidence: r.confidence ?? 0,
-            weight: r.weight ?? 0
+            weight: r.weight ?? 0,
+            appliedWeight: r.appliedWeight ?? r.weight ?? 0
           }
         : null,
+      remapProgress: remapActive ? Math.min(1, remapElapsedMs / remapDurationMs) : 1,
       posture: getPostureState()
     };
   }

@@ -136,7 +136,7 @@ scene|session|calibrating|audioMuted
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-`enter`、`home`、`allapps`、`settings:*`、`scene:<id>` 由头显服务执行；其余命令进入页面命令队列，由患者页面每 400 ms 轮询 `/control` 后执行。
+`enter`、`home`、`allapps`、`settings:*`、`scene:<id>` 由头显服务执行；其余命令进入页面队列，并通过 `/events` SSE 立即推送。EventSource 不可用时页面退回 100 ms `/control` 轮询。
 
 非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 
@@ -147,16 +147,17 @@ scene|session|calibrating|audioMuted
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
 | GET / HEAD | `/`、`/index.html` | — | `text/html`，APK `assets/index.html` |
-| GET / HEAD | `/control` | — | `{"seq":number,"command":string|null,"control":boolean,"controller":string|null}` |
+| GET / HEAD | `/control` | — | `{"seq":number,"command":string|null,"control":boolean,"controller":string|null}`；兼容/回退 |
 | GET / HEAD | `/status` | — | `{"bluetooth":string,"control":boolean,"controller":string|null,"scene":string,"pendingSeq":number}` |
 | GET / HEAD | `/capabilities` | — | `{"version":1,"commands":[...],"control":boolean}` |
+| GET | `/events` | — | `text/event-stream`；`control` 帧含 seq/command/control/controller，`state` 帧单独推送 CLAIM/RELEASE |
 | POST | `/command` | `{"command":string}` | `{"accepted":true,"seq":number}`；非白名单返回 400 |
 | POST | `/telemetry` | `{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}` | `{"ok":true}` |
 | POST | `/state` | `{"scene":s,"session":b,"calibrating":b,"audio":b}` | `{"ok":true}` |
 
 细节：
 
-- `/control` 的 `seq` 每收到一条 BLE 命令加一；`command` 保留最后一条。患者页面每 400 ms 轮询，按 `seq` 去重，因此重复读取不会重复执行。
+- `/control` 的 `seq` 每收到一条 BLE 命令加一；`command` 保留最后一条。页面优先订阅 `/events`，按 `seq` 去重；SSE 断线时才改为 100 ms 轮询 `/control`。
 - `control` 直接反映当前是否有平板持有控制权。
 - `/telemetry` 的字段缺失时按 `0` 处理；非数字或非有限值返回 400。头显服务把它编码成 20 字节并通知控制者。
 - `/state` 的 `audio` 字段表示“是否静音”，不是“声音是否开启”。
@@ -164,7 +165,7 @@ scene|session|calibrating|audioMuted
 - 其他方法返回 405；未知路径返回 404。
 - 页面读取失败时返回占位 HTML，而不是连接错误。
 
-`/control`、`/command`、`/capabilities`、`/telemetry`、`/state` 没有认证。它们只绑定 loopback，适用于单设备环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
+`/control`、`/events`、`/command`、`/capabilities`、`/telemetry`、`/state` 没有认证。它们只绑定 loopback，适用于单设备环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
 
 ## 6. 头显入口与生命周期
 

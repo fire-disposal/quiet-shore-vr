@@ -2,7 +2,7 @@
 
 目标：演示时在 PICO G2 4K 上快速切换默认 HOME，必要时可恢复原厂桌面。
 
-> **状态（双 APK 改造后）**：头显 APK 不再注册 `CATEGORY_HOME`；旧的 `MainActivity` 和“切换桌面”按钮已不存在，当前入口是 `PortalActivity` 控制台。本文保留为设备 HOME 行为的实机勘测记录；下文 APK 侧的实现描述属于旧单 APK 时代，不再适用。ADB 命令仍可用于演示切换与恢复。
+> **状态（v0.8 现场授权）**：头显 APK 现在同时提供 `CATEGORY_HOME` 候选（`PortalActivity`）。可在受控设备上用 ADB 将其设为默认 HOME，实现开机直接进入静岸控制台；另一套系统保持安装，可用同样命令切回。下文 APK 侧历史描述仍保留作记录。
 
 结论先行：
 
@@ -139,3 +139,20 @@ APK 内无 ADB 时：点“切换桌面” → 系统选择器 → 选择静岸/
 - 但在 Firefox Reality 处于 VR 前台时，Home 键可能被 `PvrService` 消费，`mResumedActivity` 仍停在 Firefox；此时从通知栏/磁贴重新进入，或 ADB `am start -n com.quietshore.portal/.MainActivity`。
 
 结论：当前不是“系统锁死桌面”，而是**默认 HOME 偏好 + 厂商高权限 ToB 服务**。演示切换用 ADB 最稳；APK 内只能走系统设置让用户确认。测试结束后已恢复原厂心景 HOME。
+
+
+## v0.8 现场开机启动
+
+在受控设备上把静岸设为默认 HOME（`--user 0` 必需）：
+
+```bash
+adb shell cmd package set-home-activity --user 0 com.quietshore.portal/.PortalActivity
+```
+
+切回另一套系统：
+
+```bash
+adb shell cmd package set-home-activity --user 0 vr.xinjing.com.vrmc/.ui.MainActivity
+```
+
+`PortalActivity` 同时保留 LAUNCHER 入口；开机后由系统 HOME 直接拉起，不卸载另一套系统。

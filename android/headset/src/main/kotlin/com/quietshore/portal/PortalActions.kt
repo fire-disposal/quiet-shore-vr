@@ -17,7 +17,9 @@ internal data class LaunchOptions(
     val scene: String? = null,
     val skipCalibration: Boolean = false,
     val quality: String? = null,
-    val showHud: Boolean = false
+    val showHud: Boolean = false,
+    /** Comfort eye height in meters (1.2–1.9); the page applies it, never the headset. */
+    val eyeHeight: Float = HeadsetSettings.DEFAULT_EYE_HEIGHT
 )
 
 /**

@@ -19,7 +19,8 @@ class PortalReceiver : BroadcastReceiver() {
                         PortalActions.EXTRA_SKIP_CALIBRATION,
                         false
                     ),
-                    quality = intent.getStringExtra(PortalActions.EXTRA_QUALITY)
+                    quality = intent.getStringExtra(PortalActions.EXTRA_QUALITY),
+                    eyeHeight = HeadsetSettings.read(context).eyeHeight
                 )
             )
 

@@ -1,8 +1,13 @@
 import * as THREE from 'three';
-import { readConfig, type AppConfig } from './config';
+import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN, readConfig, type AppConfig } from './config';
 import { createRenderer, type Quality } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
-import { createComfort, type ComfortApi, type RemapResult } from '../core/xr/comfort';
+import {
+  createComfort,
+  POSTURE_LIMITS,
+  type ComfortApi,
+  type RemapResult
+} from '../core/xr/comfort';
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
@@ -36,8 +41,14 @@ import { RenderMonitor } from '../core/performance/render-monitor';
 import { readStoredShowPerf, storeShowPerf } from './preferences';
 import { TelemetrySender } from './telemetry';
 
-const EYE_HEIGHT = 1.6;
 const MAX_DT = 0.25;
+/** Operator view movement: bounded virtual translation, never the XR camera. */
+const VIEW_MAX_SPEED = 0.3; // m/s at full joystick deflection
+const VIEW_MAX_OFFSET = 0.45; // m radial, from the session origin
+const VIEW_TTL_MS = 300; // no intent update → stop within this window
+// Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
+const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
+const VIEW_ARG = /^-?\d+(?:\.\d+)?$/;
 
 export class QuietShoreApp {
   private readonly config: AppConfig;
@@ -58,6 +69,13 @@ export class QuietShoreApp {
   private readonly renderMonitor = new RenderMonitor();
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private controlMode = false;
+
+  private eyeHeight: number;
+  private viewVelocityX = 0;
+  private viewVelocityZ = 0;
+  private viewOffsetX = 0;
+  private viewOffsetZ = 0;
+  private viewExpiresAt = 0;
 
   private sceneId: SceneId;
   private handle: SceneHandle | null = null;
@@ -88,6 +106,7 @@ export class QuietShoreApp {
 
   constructor() {
     this.config = readConfig(window.location.search);
+    this.eyeHeight = this.config.eyeHeight;
     this.strings = getStrings(this.config.lang);
     this.showPerf = this.config.showPerf || readStoredShowPerf();
     this.sceneId = this.config.initialScene ?? readStoredScene() ?? 'landscape';
@@ -109,7 +128,7 @@ export class QuietShoreApp {
       0.05,
       500
     );
-    this.camera.position.set(0, EYE_HEIGHT, 3.2);
+    this.camera.position.set(0, this.eyeHeight, 3.2);
     this.camera.rotation.order = 'YXZ';
 
     const quality: Quality = {
@@ -188,6 +207,14 @@ export class QuietShoreApp {
           this.focusedSelectable.rotation.y += dt * 1.6;
         }
       }
+    });
+    this.pipeline.add({
+      id: 'view-movement',
+      phase: 'simulation',
+      order: 5,
+      // Translate scene content, never the XR camera: head pose stays the
+      // patient's own, and comfort calibration keeps working on its wrapper.
+      run: (dt: number, now: number) => this.updateViewMovement(dt, now)
     });
     this.pipeline.add({
       id: 'spatial-layout',
@@ -299,7 +326,7 @@ export class QuietShoreApp {
     this.disposeScene();
     const handle = this.host.load(definition, {
       quality: this.config.highQuality ? 'high' : 'low',
-      eyeHeight: EYE_HEIGHT
+      eyeHeight: this.eyeHeight
     });
     this.handle = handle;
     // Wrap the host's content group, not the scene root: floor offset stays on
@@ -313,7 +340,7 @@ export class QuietShoreApp {
       onResult: (result) => this.onCalibrationResult(result)
     });
     this.registerSelectables(handle.selectables);
-    this.host.setFloorOffset(this.session ? -EYE_HEIGHT : 0);
+    this.host.setFloorOffset(this.session ? -this.eyeHeight : 0);
     this.savedBackground = this.scene.background;
     preloadSceneAudio(definition.audio);
     this.sceneId = id;
@@ -441,7 +468,7 @@ export class QuietShoreApp {
 
       this.start.showStage();
       this.start.setEnterEnabled(false);
-      this.host.setFloorOffset(-EYE_HEIGHT);
+      this.host.setFloorOffset(-this.eyeHeight);
       this.menu.attach(next);
       this.menu.close();
       this.menu.setAudioEnabled(!this.audioMuted);
@@ -486,6 +513,7 @@ export class QuietShoreApp {
     if (this.handle) {
       this.handle.root.visible = true;
     }
+    this.resetViewMovement();
     this.host.setFloorOffset(0);
     this.comfort?.reset();
     this.renderer.setAnimationLoop(null);
@@ -505,6 +533,12 @@ export class QuietShoreApp {
     if (!this.calibration || !this.handle) {
       return;
     }
+    // Calibration starts from the session origin: no residual operator offset.
+    this.resetViewMovement();
+    // A running posture transition must not keep advancing through the
+    // capture. setPosture supersedes it and heads for neutral; the API's
+    // 1 s floor runs while the scene is hidden.
+    this.comfort?.setPosture({ pitchDeg: 0, rollDeg: 0, riseM: 0 }, POSTURE_LIMITS.minDurationMs);
     this.savedBackground = this.scene.background;
     this.scene.background = new THREE.Color(0x000000);
     this.handle.root.visible = false;
@@ -620,6 +654,19 @@ export class QuietShoreApp {
       this.switchScene(command.slice('scene:'.length) as SceneId);
       return;
     }
+    if (command.startsWith('settings:eyeheight:')) {
+      this.applyEyeHeightCommand(command.slice('settings:eyeheight:'.length));
+      return;
+    }
+    if (command.startsWith('view:move:')) {
+      this.startViewMovement(command.slice('view:move:'.length));
+      return;
+    }
+    if (command === 'view:stop') {
+      this.haltViewMovement();
+      this.start.setStatus('已停止视角移动', 'ok');
+      return;
+    }
     switch (command) {
       case 'preview':
         this.startPreview();
@@ -647,6 +694,10 @@ export class QuietShoreApp {
         this.setVirtualPosture(false);
         return;
       case 'posture:stop':
+        if (this.calibration?.isActive()) {
+          // Calibration already drives posture to neutral; do not freeze it.
+          return;
+        }
         this.comfort?.stopPosture();
         this.start.setStatus('已停止虚拟起身', 'ok');
         return;
@@ -656,6 +707,138 @@ export class QuietShoreApp {
       default:
         this.start.setStatus(`${this.strings.remoteUnknown}: ${raw}`, 'error');
     }
+  }
+
+  /** `settings:eyeheight:<m>`: strict 1.2–1.9 decimal, no scene rebuild. */
+  private applyEyeHeightCommand(raw: string): void {
+    // Resent values must be rejected whole, never clamped into range.
+    if (!EYE_HEIGHT_ARG.test(raw)) {
+      this.start.setStatus(`视点高度无效：${raw}`, 'error');
+      return;
+    }
+    const next = Number(raw);
+    if (!Number.isFinite(next) || next < EYE_HEIGHT_MIN || next > EYE_HEIGHT_MAX) {
+      this.start.setStatus(`视点高度无效：${raw}`, 'error');
+      return;
+    }
+    if (this.calibration?.isActive()) {
+      this.start.setStatus('校准中无法调整视点高度', 'error');
+      return;
+    }
+    this.eyeHeight = next;
+    // In XR the headset owns camera height; moving the content floor keeps the
+    // world under the patient's physical floor without rebuilding the scene.
+    if (!this.xr.isPresenting) {
+      this.camera.position.y = next;
+    }
+    if (this.session) {
+      this.host.setFloorOffset(-next);
+    }
+    this.start.setStatus(`视点高度 ${next.toFixed(2)} m`, 'ok');
+  }
+
+  /**
+   * `view:move:<x>,<z>`: normalized intent, resent at ~10 Hz while held.
+   * Every accepted update refreshes the TTL; invalid or out-of-session
+   * commands are ignored so a stuck tablet cannot move the view.
+   */
+  private startViewMovement(raw: string): void {
+    const comma = raw.indexOf(',');
+    if (comma < 0 || raw.indexOf(',', comma + 1) >= 0) {
+      this.start.setStatus(`视角移动参数无效：${raw}`, 'error');
+      return;
+    }
+    const rawX = raw.slice(0, comma);
+    const rawZ = raw.slice(comma + 1);
+    if (!VIEW_ARG.test(rawX) || !VIEW_ARG.test(rawZ)) {
+      this.start.setStatus(`视角移动参数无效：${raw}`, 'error');
+      return;
+    }
+    const x = Number(rawX);
+    const z = Number(rawZ);
+    if (
+      !Number.isFinite(x) || !Number.isFinite(z)
+      || x < -1 || x > 1 || z < -1 || z > 1
+    ) {
+      this.start.setStatus(`视角移动参数无效：${raw}`, 'error');
+      return;
+    }
+    if (
+      !this.session
+      || !this.xr.isPresenting
+      || (this.calibration?.isActive() ?? false)
+    ) {
+      return;
+    }
+    let vx = x;
+    let vz = z;
+    const length = Math.hypot(vx, vz);
+    if (length > 1) {
+      vx /= length;
+      vz /= length;
+    }
+    this.viewVelocityX = vx;
+    this.viewVelocityZ = vz;
+    this.viewExpiresAt = performance.now() + VIEW_TTL_MS;
+  }
+
+  private haltViewMovement(): void {
+    this.viewVelocityX = 0;
+    this.viewVelocityZ = 0;
+    this.viewExpiresAt = 0;
+  }
+
+  private resetViewMovement(): void {
+    this.haltViewMovement();
+    this.viewOffsetX = 0;
+    this.viewOffsetZ = 0;
+    this.applyViewOffset();
+  }
+
+  private applyViewOffset(): void {
+    // Viewpoint moves opposite the content: right (+x) shifts content left,
+    // forward (+z, camera looks down -z) shifts content behind the viewer.
+    this.host.content.position.x = -this.viewOffsetX;
+    this.host.content.position.z = this.viewOffsetZ;
+  }
+
+  private updateViewMovement(dt: number, now: number): void {
+    if (this.viewExpiresAt === 0) {
+      return;
+    }
+    if (
+      now >= this.viewExpiresAt
+      || !this.session
+      || !this.xr.isPresenting
+      || (this.calibration?.isActive() ?? false)
+    ) {
+      this.haltViewMovement();
+      return;
+    }
+    if (dt <= 0) {
+      return;
+    }
+    const step = VIEW_MAX_SPEED * dt;
+    const nextX = this.viewOffsetX + this.viewVelocityX * step;
+    const nextZ = this.viewOffsetZ + this.viewVelocityZ * step;
+    const distance = Math.hypot(nextX, nextZ);
+    if (distance > VIEW_MAX_OFFSET) {
+      // Project onto the 0.45 m circle and drop only the outward component:
+      // the operator can slide along the boundary without bouncing off it.
+      const nx = nextX / distance;
+      const nz = nextZ / distance;
+      this.viewOffsetX = nx * VIEW_MAX_OFFSET;
+      this.viewOffsetZ = nz * VIEW_MAX_OFFSET;
+      const outward = this.viewVelocityX * nx + this.viewVelocityZ * nz;
+      if (outward > 0) {
+        this.viewVelocityX -= outward * nx;
+        this.viewVelocityZ -= outward * nz;
+      }
+    } else {
+      this.viewOffsetX = nextX;
+      this.viewOffsetZ = nextZ;
+    }
+    this.applyViewOffset();
   }
 
   private setControlMode(active: boolean): void {
@@ -671,6 +854,8 @@ export class QuietShoreApp {
       }
       this.start.setStatus(this.strings.controlModeOn, 'ok');
     } else {
+      // Losing the tablet must never leave motion latched on.
+      this.haltViewMovement();
       if (this.session) {
         this.input.setLayers(true, true);
       }
@@ -683,6 +868,10 @@ export class QuietShoreApp {
   private setVirtualPosture(rising: boolean): void {
     if (!this.session || !this.comfort) {
       this.start.setStatus('虚拟起身仅能在训练中使用', 'error');
+      return;
+    }
+    if (this.calibration?.isActive()) {
+      this.start.setStatus('校准中无法调整姿态', 'error');
       return;
     }
     if (!this.comfort.isCalibrated()) {

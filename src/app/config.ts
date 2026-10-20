@@ -5,6 +5,23 @@ interface Bootstrap {
   skipCalibration?: boolean;
   quality?: string | null;
   showHud?: boolean;
+  eyeHeight?: number | string | null;
+}
+
+export const EYE_HEIGHT_DEFAULT = 1.6;
+export const EYE_HEIGHT_MIN = 1.2;
+export const EYE_HEIGHT_MAX = 1.9;
+
+function readEyeHeight(value: unknown): number {
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    return EYE_HEIGHT_DEFAULT;
+  }
+  return Math.min(EYE_HEIGHT_MAX, Math.max(EYE_HEIGHT_MIN, numeric));
 }
 
 export interface AppConfig {
@@ -13,6 +30,7 @@ export interface AppConfig {
   skipCalibration: boolean;
   showPerf: boolean;
   xrScale: number;
+  eyeHeight: number;
   lang: 'zh' | 'en';
   initialScene: SceneId | null;
   spin: boolean;
@@ -38,6 +56,7 @@ export function readConfig(search: string): AppConfig {
     // are explicit A/B tools, not the default patient experience.
     aa: quality !== 'low' && params.get('aa') !== '0',
     xrScale,
+    eyeHeight: readEyeHeight(bootstrap.eyeHeight),
     skipCalibration: bootstrap.skipCalibration ?? params.get('nocal') === '1',
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     lang,

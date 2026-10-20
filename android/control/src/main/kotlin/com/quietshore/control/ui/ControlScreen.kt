@@ -39,8 +39,10 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.Scenes
 import com.quietshore.control.model.ViewMode
+import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.ControlRail
+import com.quietshore.control.ui.components.JoystickPad
 import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.ViewModeToggle
 import com.quietshore.control.ui.components.phaseColor
@@ -119,6 +121,15 @@ fun ControlScreen(
                     Text("控制", color = QuietPalette.TextPrimary)
                 }
             }
+
+            // Read-only heading readout: a corner badge, never a touch target.
+            AngleGauge(
+                pose = state.pose,
+                stale = state.poseStale,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 14.dp, bottom = 14.dp)
+            )
         }
     }
 }
@@ -160,6 +171,13 @@ private fun FullscreenPatientView(
         ) {
             Text("退出全屏", color = QuietPalette.TextPrimary)
         }
+        AngleGauge(
+            pose = state.pose,
+            stale = state.poseStale,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 60.dp, end = 14.dp)
+        )
         ViewModeToggle(
             selected = state.viewMode,
             onSelect = actions.onViewModeChange,
@@ -168,12 +186,22 @@ private fun FullscreenPatientView(
                 .padding(18.dp)
                 .width(320.dp)
         )
-        PoseFreshness(
-            stale = state.poseStale || state.pose == null,
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(18.dp)
-        )
+                .padding(18.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (state.advancedUnlocked) {
+                JoystickPad(
+                    enabled = state.canSteerView,
+                    onVector = actions.onViewMove,
+                    onRelease = actions.onViewStop
+                )
+            }
+            PoseFreshness(stale = state.poseStale || state.pose == null)
+        }
     }
 }
 

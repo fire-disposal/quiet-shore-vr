@@ -337,11 +337,13 @@ internal class BluetoothControl(
             ControlProtocol.RELEASE -> handleRelease(device)
             else -> {
                 val command = ControlProtocol.parseCommand(raw)
-                if (command != null && isController(device)) {
-                    listener.onCommand(command)
-                    "OK:$command"
-                } else {
-                    ControlProtocol.STATUS_CONTROL_REQUIRED
+                when {
+                    command == null || !isController(device) -> ControlProtocol.STATUS_CONTROL_REQUIRED
+                    !ControlProtocol.isAllowedCommand(command) -> ControlProtocol.STATUS_COMMAND_REJECTED
+                    else -> {
+                        listener.onCommand(command)
+                        "OK:$command"
+                    }
                 }
             }
         }

@@ -24,22 +24,45 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.util.ArrayDeque
 import java.util.Locale
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * 前台服务：把 APK 内置的 standalone 页面以只读静态 HTTP 暴露在
  * 127.0.0.1:8130（仅 loopback，不监听局域网）。
  *
  * 静态读取只做 GET/HEAD；控制面是 JSON：
- *   GET  /control    {seq,command,control}
+ *   GET  /control    {seq,command,control}（轮询保留，向后兼容）
+ *   GET  /events     text/event-stream，推送两类事件：
+ *                    event: control  data={seq,command,control,controller}（命令，同 /control）
+ *                    event: state     data={control,controller}（控制权，无 seq/command）
  *   GET  /status     {bluetooth,control}
  *   POST /telemetry  {x,y,z,yaw,pitch} -> BLE telemetry characteristic
  *   POST /state      {scene,session,calibrating,audio} -> BLE state characteristic
  *
+ * /events 连接建立时先发一帧 control（当前快照），紧随一帧 state，页面无需先轮询。
+ * 之后命令只会出现在 control 帧里；控制权变化（CLAIM/RELEASE/断开/停 BLE）
+ * 只发 state 帧，绝不重放上一条命令。
+ *
  * 内容为空或读取失败时返回占位页，保证浏览器永远拿到 HTML 而不是连接错误。
  * 没有目录遍历、没有任意路径写操作。
+ *
+ * 并发不变量（/events 必须不能饿死静态页或轮询）：
+ * - 每个连接一个受限线程；同时最多 [MAX_CLIENTS] 个连接，超出的直接 503 关闭。
+ * - 每个 SSE 订阅占用一个线程，数量另受 [MAX_EVENT_CLIENTS] 限制，
+ *   保证永远有空闲线程服务 /control、/status 与静态资源。
+ * - [eventLock] 只保护订阅者注册表与每订阅者的有界队列；绝不在持锁时做 socket I/O。
+ *   因此 BLE 线程调用 [publishFrame] 不会被慢客户端阻塞。
+ * - 每个被接受的命令只构造一次 JSON 与一次 SSE 帧（共享给所有订阅者）；
+ *   没有订阅者时连 JSON 都不构造。
+ * - 停服务时关闭订阅 socket、唤醒等待者并 shutdown 线程池，不留驻留线程。
  */
 class PortalService : Service() {
     internal companion object {
@@ -59,9 +82,37 @@ class PortalService : Service() {
         const val MAX_LINE_BYTES = 4096
         const val MAX_BODY_BYTES = 64 * 1024
 
+        /** 同时处理的连接上限；多出的连接直接 503 关闭，避免无界线程。 */
+        const val MAX_CLIENTS = 8
+
+        /** SSE 订阅上限，必须明显小于 [MAX_CLIENTS]，轮询/静态页才有线程可用。 */
+        const val MAX_EVENT_CLIENTS = 3
+
+        /** 每订阅者待发帧上限；满了丢最旧的（movement 只关心最新样本）。 */
+        const val EVENT_QUEUE_DEPTH = 32
+        const val EVENT_HEARTBEAT_MS = 15_000L
+
+        /** 停服时等订阅者把最后一帧发出去的排空上限；超时就直接关连接。 */
+        const val EVENT_DRAIN_MS = 100L
+
+        /** 空闲工作线程回收时间；核心线程同样超时，停服务后不会残留。 */
+        const val CLIENT_KEEPALIVE_S = 10L
+
         val FALLBACK_PAGE: ByteArray =
             "<h1>Quiet Shore VR is starting</h1>".toByteArray(StandardCharsets.UTF_8)
         val NOT_FOUND: ByteArray = "not found".toByteArray(StandardCharsets.UTF_8)
+
+        /** 握手 + retry 一次写出；之后每个心跳都复用同一个常量字节数组。 */
+        val EVENT_HANDSHAKE: ByteArray = (
+            "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: text/event-stream\r\n" +
+                "Cache-Control: no-store, no-cache, must-revalidate\r\n" +
+                "Connection: keep-alive\r\n" +
+                "\r\n" +
+                "retry: 1000\n\n"
+            ).toByteArray(StandardCharsets.US_ASCII)
+
+        val EVENT_HEARTBEAT: ByteArray = ": ping\n\n".toByteArray(StandardCharsets.US_ASCII)
 
         const val CONTENT_TYPE_HTML = "text/html; charset=utf-8"
         const val CONTENT_TYPE_JSON = "application/json; charset=utf-8"
@@ -74,6 +125,7 @@ class PortalService : Service() {
         const val ROUTE_BOOTSTRAP = "/bootstrap"
         const val ROUTE_TELEMETRY = "/telemetry"
         const val ROUTE_STATE = "/state"
+        const val ROUTE_EVENTS = "/events"
         const val ROUTE_INDEX = "/"
         const val ROUTE_INDEX_FILE = "/index.html"
     }
@@ -90,8 +142,23 @@ class PortalService : Service() {
     @Volatile
     private var serverThread: Thread? = null
 
+    /** 有界并发执行器：线程数上限 = [MAX_CLIENTS]，空闲超时回收。 */
+    @Volatile
+    private var clients: ThreadPoolExecutor? = null
+
+    private val clientSlots = AtomicInteger(0)
+    private val workerSeq = AtomicInteger(0)
+
     private val pendingControl = AtomicReference<String?>(null)
     private val controlSeq = AtomicInteger(0)
+
+    /** 串行化 HeadsetSettings 的读-改-写，避免并发命令互相覆盖。 */
+    private val settingsLock = Any()
+
+    /** 保护 [eventSinks] 与每个订阅者的有界队列；绝不在此锁内做 socket I/O。 */
+    private val eventLock = ReentrantLock()
+    private val eventSignal = eventLock.newCondition()
+    private val eventSinks = ArrayList<EventSink>(MAX_EVENT_CLIENTS)
 
     @Volatile
     private var controlMode = false
@@ -114,7 +181,13 @@ class PortalService : Service() {
                 }
 
                 override fun onControlMode(active: Boolean) {
+                    val changed = controlMode != active
                     controlMode = active
+                    // CLAIM/RELEASE/断开/停 BLE 都从这里进来：用独立的 state 帧
+                    // 通知订阅者，页面无需轮询也不会重放命令。
+                    if (changed) {
+                        publishStateEvent()
+                    }
                     publishStatus()
                 }
 
@@ -146,6 +219,12 @@ class PortalService : Service() {
         val bluetooth = bluetooth
         bluetooth?.stop()
         this.bluetooth = null
+        if (controlMode) {
+            // stop() 已经回调过一次；但若 BLE 早先已停，这里补发租约失效，
+            // 让 EventSource 页面立刻停止虚拟视角移动。
+            controlMode = false
+            publishStateEvent()
+        }
         PortalStatus.update("stopped", false)
         try {
             sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
@@ -157,6 +236,11 @@ class PortalService : Service() {
         val thread = serverThread
         serverThread = null
         thread?.interrupt()
+        // 先关闭所有 SSE 连接并唤醒等待者，worker 的 finally 才会把线程还回去。
+        closeEventSinks()
+        val workers = clients
+        clients = null
+        workers?.shutdownNow()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -167,13 +251,34 @@ class PortalService : Service() {
             return
         }
         running = true
+        if (clients == null) {
+            // core = max = MAX_CLIENTS：线程按需创建到上限，空闲 10 s 回收。
+            // 队列仅吸收“槽位刚释放、线程尚未归位”的瞬时请求，因此不会排队放大延迟。
+            clients = ThreadPoolExecutor(
+                MAX_CLIENTS,
+                MAX_CLIENTS,
+                CLIENT_KEEPALIVE_S,
+                TimeUnit.SECONDS,
+                ArrayBlockingQueue<Runnable>(MAX_CLIENTS),
+                { task ->
+                    Thread(task, "$THREAD_NAME-${workerSeq.incrementAndGet()}").apply {
+                        isDaemon = true
+                    }
+                }
+            ).apply {
+                allowCoreThreadTimeOut(true)
+            }
+        }
         val thread = Thread({ serveLoop() }, THREAD_NAME)
         thread.isDaemon = true
         serverThread = thread
         thread.start()
     }
 
-    /** 单线程串行处理：页面自包含，浏览器只会发个位数请求。 */
+    /**
+     * 只做 accept 与限额判定，具体请求交给有界线程池；SSE 长连接因此不会
+     * 阻塞静态页或 /control。
+     */
     private fun serveLoop() {
         page = readPage()
         var socket: ServerSocket? = null
@@ -184,7 +289,28 @@ class PortalService : Service() {
             }
             serverSocket = socket
             while (running) {
-                serve(socket.accept())
+                val client = socket.accept()
+                if (clientSlots.incrementAndGet() > MAX_CLIENTS) {
+                    clientSlots.decrementAndGet()
+                    rejectBusy(client)
+                    continue
+                }
+                val executor = clients
+                val accepted = if (executor == null) {
+                    false
+                } else {
+                    try {
+                        executor.execute { serve(client) }
+                        true
+                    } catch (error: RejectedExecutionException) {
+                        false
+                    }
+                }
+                if (!accepted) {
+                    // 执行器已停或线程全忙：关闭该连接，绝不无界排队。
+                    clientSlots.decrementAndGet()
+                    rejectBusy(client)
+                }
             }
         } catch (error: IOException) {
             // 端口被占用或服务正在关闭；通知仍然可用，用户可稍后重试。
@@ -200,6 +326,17 @@ class PortalService : Service() {
             if (serverThread === Thread.currentThread()) {
                 serverThread = null
             }
+        }
+    }
+
+    /** 超出并发上限：给出可读的 503 再断开，避免浏览器干等超时。 */
+    private fun rejectBusy(client: Socket) {
+        try {
+            writeResponse(client, errorResponse(503, "server busy"), head = false)
+        } catch (ignored: IOException) {
+            // 客户端已断开。
+        } finally {
+            closeQuietly(client)
         }
     }
 
@@ -220,6 +357,18 @@ class PortalService : Service() {
             }
             val method = parts[0].uppercase(Locale.US)
             val target = parts[1].substringBefore('?')
+            if (target == ROUTE_EVENTS) {
+                if (method == "GET") {
+                    streamEvents(client)
+                } else {
+                    writeResponse(
+                        client,
+                        methodNotAllowed("GET"),
+                        head = method == "HEAD"
+                    )
+                }
+                return
+            }
             val head = method == "HEAD"
             writeResponse(client, route(method, target, headers, input), head)
         } catch (error: IOException) {
@@ -231,9 +380,219 @@ class PortalService : Service() {
                 // 客户端已断开。
             }
         } finally {
+            clientSlots.decrementAndGet()
             closeQuietly(client)
         }
     }
+
+    /**
+     * SSE 订阅循环。每个订阅独占一个 worker 线程，写 socket 时绝不持有
+     * [eventLock]，所以慢客户端只会拖慢它自己，不会阻塞 dispatchControl。
+     */
+    private fun streamEvents(client: Socket) {
+        val output: OutputStream = try {
+            client.getOutputStream()
+        } catch (error: IOException) {
+            return
+        }
+        val sink = EventSink(client, output)
+        if (!registerEventSink(sink)) {
+            try {
+                writeResponse(client, errorResponse(503, "too many event streams"), head = false)
+            } catch (ignored: IOException) {
+                // 客户端已断开。
+            }
+            return
+        }
+        try {
+            output.write(EVENT_HANDSHAKE)
+            // 首帧与 GET /control 完全同形：客户端一连上就对齐序号与当前命令。
+            // 随后补一帧 state，控制权单独成帧，命令消费方不会被重复触发。
+            offerFrame(sink, controlFrame(controlJson()))
+            offerFrame(sink, stateFrame(stateJson()))
+            output.flush()
+            while (true) {
+                val frame = nextFrame(sink) ?: break
+                output.write(frame)
+                output.flush()
+            }
+        } catch (error: IOException) {
+            // 客户端断开或服务停止；由 finally 注销。
+        } finally {
+            unregisterEventSink(sink)
+        }
+    }
+
+    private fun registerEventSink(sink: EventSink): Boolean {
+        eventLock.lock()
+        try {
+            if (!running || eventSinks.size >= MAX_EVENT_CLIENTS) {
+                return false
+            }
+            eventSinks.add(sink)
+            return true
+        } finally {
+            eventLock.unlock()
+        }
+    }
+
+    private fun unregisterEventSink(sink: EventSink) {
+        eventLock.lock()
+        try {
+            sink.closed = true
+            sink.frames.clear()
+            eventSinks.remove(sink)
+            eventSignal.signalAll()
+        } finally {
+            eventLock.unlock()
+        }
+    }
+
+    /**
+     * 停服务：先给订阅者极小的排空窗口，把已入队的最后一帧（控制权失效）
+     * 写出去，然后标记关闭、关 socket、唤醒所有等待心跳的 worker。
+     */
+    private fun closeEventSinks() {
+        val closing = ArrayList<EventSink>(MAX_EVENT_CLIENTS)
+        val deadline = System.currentTimeMillis() + EVENT_DRAIN_MS
+        eventLock.lock()
+        try {
+            // await 会释放锁，writer 才能取到帧；队列清空即视为已交给写端。
+            while (System.currentTimeMillis() < deadline &&
+                eventSinks.any { it.frames.isNotEmpty() }
+            ) {
+                try {
+                    eventSignal.await(10, TimeUnit.MILLISECONDS)
+                } catch (error: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            for (sink in eventSinks) {
+                sink.closed = true
+                sink.frames.clear()
+                closing.add(sink)
+            }
+            eventSinks.clear()
+            eventSignal.signalAll()
+        } finally {
+            eventLock.unlock()
+        }
+        for (sink in closing) {
+            closeQuietly(sink.socket)
+        }
+    }
+
+    /** 取下一帧：有帧立即返回，空闲到点返回共享心跳，关闭/停服返回 null。 */
+    private fun nextFrame(sink: EventSink): ByteArray? {
+        eventLock.lock()
+        try {
+            val deadline = System.currentTimeMillis() + EVENT_HEARTBEAT_MS
+            while (true) {
+                if (sink.closed) {
+                    return null
+                }
+                // 先排空已入队的帧：停服时那最后一帧（控制权失效）才有机会送达。
+                sink.frames.pollFirst()?.let { return it }
+                if (!running) {
+                    return null
+                }
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0L) {
+                    return EVENT_HEARTBEAT
+                }
+                try {
+                    eventSignal.await(remaining, TimeUnit.MILLISECONDS)
+                } catch (error: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                }
+            }
+        } finally {
+            eventLock.unlock()
+        }
+    }
+
+    private fun offerFrame(sink: EventSink, frame: ByteArray) {
+        eventLock.lock()
+        try {
+            if (sink.closed) {
+                return
+            }
+            enqueueLocked(sink, frame)
+            eventSignal.signalAll()
+        } finally {
+            eventLock.unlock()
+        }
+    }
+
+    /**
+     * 广播一次已接受的命令。没有订阅者时不构造 JSON；有订阅者时整个命令只
+     * 构造一份 JSON 与一份帧字节，所有订阅者共享。
+     */
+    private fun publishControlEvent() {
+        if (!hasEventSinks()) {
+            return
+        }
+        publishFrame(controlFrame(controlJson()))
+    }
+
+    /**
+     * 控制权变更（claim/release/断开/停 BLE）。帧里没有 command，也不推进
+     * seq：订阅者据此独立更新 control，绝不会重放上一条命令。
+     */
+    private fun publishStateEvent() {
+        if (!hasEventSinks()) {
+            return
+        }
+        publishFrame(stateFrame(stateJson()))
+    }
+
+    private fun publishFrame(frame: ByteArray) {
+        eventLock.lock()
+        try {
+            for (sink in eventSinks) {
+                if (!sink.closed) {
+                    enqueueLocked(sink, frame)
+                }
+            }
+            eventSignal.signalAll()
+        } finally {
+            eventLock.unlock()
+        }
+    }
+
+    private fun hasEventSinks(): Boolean {
+        eventLock.lock()
+        try {
+            return eventSinks.isNotEmpty()
+        } finally {
+            eventLock.unlock()
+        }
+    }
+
+    /** 有界队列：满了丢最旧帧（movement 只关心最新样本），绝不阻塞生产者。 */
+    private fun enqueueLocked(sink: EventSink, frame: ByteArray) {
+        if (sink.frames.size >= EVENT_QUEUE_DEPTH) {
+            sink.frames.pollFirst()
+        }
+        sink.frames.addLast(frame)
+    }
+
+    /** 一帧 SSE；data 行是 /control 的同一份 JSON。 */
+    private fun controlFrame(json: JSONObject): ByteArray =
+        ("event: control\ndata: " + json.toString() + "\n\n")
+            .toByteArray(StandardCharsets.UTF_8)
+
+    /** 只描述控制权，没有 seq/command：可安全重复投递，不会触发命令重放。 */
+    private fun stateJson(): JSONObject = JSONObject().apply {
+        put("control", controlMode)
+        put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
+    }
+
+    private fun stateFrame(json: JSONObject): ByteArray =
+        ("event: state\ndata: " + json.toString() + "\n\n")
+            .toByteArray(StandardCharsets.UTF_8)
 
     private fun route(
         method: String,
@@ -287,6 +646,10 @@ class PortalService : Service() {
             return false
         }
         controlSeq.incrementAndGet()
+        // 只有真正写入页面槽位的命令才推送事件：home/allapps/status 不改变页面
+        // 状态，推一份旧命令会让事件消费方重复执行同一条命令。
+        var queued = false
+        var broadcastStatus = true
         when {
             command == "home" -> PortalActions.home(this)
             command == "allapps" -> PortalActions.allApps(this)
@@ -295,35 +658,81 @@ class PortalService : Service() {
             }
             command.startsWith(ControlProtocol.SETTINGS_SKIP_CALIBRATION) -> {
                 val enabled = command.endsWith(":on")
-                HeadsetSettings.save(
-                    this,
-                    HeadsetSettings.read(this).copy(skipCalibration = enabled)
-                )
+                synchronized(settingsLock) {
+                    HeadsetSettings.save(
+                        this,
+                        HeadsetSettings.read(this).copy(skipCalibration = enabled)
+                    )
+                }
             }
             command.startsWith(ControlProtocol.SETTINGS_HUD) -> {
                 val enabled = command.endsWith(":on")
-                HeadsetSettings.save(this, HeadsetSettings.read(this).copy(showHud = enabled))
+                synchronized(settingsLock) {
+                    HeadsetSettings.save(this, HeadsetSettings.read(this).copy(showHud = enabled))
+                }
+            }
+            command.startsWith(ControlProtocol.SETTINGS_EYE_HEIGHT) -> {
+                // The allowlist already range-checks the value; keep the second
+                // gate so an out-of-range height can never reach prefs or the page.
+                val meters = ControlProtocol.parseEyeHeight(command)
+                if (meters == null) {
+                    Log.w(TAG, "rejected eye height: $command")
+                    return false
+                }
+                synchronized(settingsLock) {
+                    HeadsetSettings.save(
+                        this,
+                        HeadsetSettings.read(this).copy(eyeHeight = meters)
+                    )
+                }
+                pendingControl.set(command)
+                queued = true
+            }
+            command.startsWith(ControlProtocol.VIEW_MOVE) -> {
+                // Joystick stream: the newest sample owns the single page slot,
+                // and the page expires it 300 ms after the last repeat. Movement
+                // never changes BLE/status state, so it skips the per-sample
+                // activity broadcast (the SSE push carries it instead).
+                if (ControlProtocol.parseViewMove(command) == null) {
+                    Log.w(TAG, "rejected view move: $command")
+                    return false
+                }
+                pendingControl.set(command)
+                queued = true
+                broadcastStatus = false
             }
             command.startsWith("scene:") -> {
                 val scene = command.substringAfter("scene:").trim()
                 if (scene in HeadsetSettings.SCENE_IDS) {
-                    HeadsetSettings.save(
-                        this,
-                        HeadsetSettings.read(this).copy(sceneId = scene)
-                    )
+                    synchronized(settingsLock) {
+                        HeadsetSettings.save(
+                            this,
+                            HeadsetSettings.read(this).copy(sceneId = scene)
+                        )
+                    }
                     pendingControl.set(command)
+                    queued = true
                 } else {
                     Log.w(TAG, "rejected scene: $scene")
                     return false
                 }
             }
             command == "status" -> Unit
-            else -> pendingControl.set(command)
+            else -> {
+                pendingControl.set(command)
+                queued = true
+            }
         }
-        try {
-            sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
-        } catch (ignored: RuntimeException) {
-            // No visible activity; the holder is still updated by the page poll.
+        if (queued) {
+            // 事件里的 seq 就是这次写入的序号；帧在锁外构造，慢客户端不阻塞 BLE。
+            publishControlEvent()
+        }
+        if (broadcastStatus) {
+            try {
+                sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
+            } catch (ignored: RuntimeException) {
+                // No visible activity; the holder is still updated by the page poll.
+            }
         }
         return true
     }
@@ -352,18 +761,19 @@ class PortalService : Service() {
         return jsonResponse(body)
     }
 
-    private fun controlResponse(): Response {
-        val body = JSONObject()
-        body.put("seq", controlSeq.get())
+    private fun controlResponse(): Response = jsonResponse(controlJson())
+
+    /** /control 与 SSE 事件共用的快照；字段顺序和取值完全一致。 */
+    private fun controlJson(): JSONObject = JSONObject().apply {
+        put("seq", controlSeq.get())
         val command = pendingControl.get()
         if (command == null) {
-            body.put("command", JSONObject.NULL)
+            put("command", JSONObject.NULL)
         } else {
-            body.put("command", command)
+            put("command", command)
         }
-        body.put("control", controlMode)
-        body.put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
-        return jsonResponse(body)
+        put("control", controlMode)
+        put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
     }
 
     private fun bootstrapResponse(): Response = jsonResponse(PortalSession.toJson())
@@ -521,6 +931,7 @@ class PortalService : Service() {
         411 -> "Length Required"
         413 -> "Payload Too Large"
         431 -> "Request Header Fields Too Large"
+        503 -> "Service Unavailable"
         else -> "Internal Server Error"
     }
 
@@ -665,6 +1076,15 @@ class PortalService : Service() {
         val body: ByteArray,
         val allow: String? = null
     )
+
+    /**
+     * 一个 SSE 订阅者。[frames] 只在持有 eventLock 时访问；写入 socket 一律
+     * 在锁外，所以队列深度只影响该订阅者自己的滞后，不会反压命令线程。
+     */
+    private class EventSink(val socket: Socket, val output: OutputStream) {
+        val frames = ArrayDeque<ByteArray>(PortalService.EVENT_QUEUE_DEPTH)
+        var closed = false
+    }
 
     private class HttpError(val status: Int, override val message: String) : RuntimeException(message)
 }

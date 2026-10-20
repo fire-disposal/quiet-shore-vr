@@ -29,7 +29,7 @@
 3. 作为 BLE 外设广播 `QuietShore`，向平板提供 `command` / `status` / `telemetry` / `state` 四个特征。
 4. `PortalActivity` 是可见控制台；应用图标、通知正文和快捷磁贴都先打开它，显示服务、蓝牙和接管状态。
 5. 控制台的“进入训练”是唯一拉起 Firefox Reality 的按钮（3 秒冷却），用显式 Intent 打开 `http://127.0.0.1:8130/?t=<时间戳>`；通知另有“打开控制台/全部应用/返回桌面”。
-6. `BootReceiver` 在重启/更新后恢复服务与通知，但不自动拉起 Firefox。
+6. `BootReceiver` 在重启/更新后恢复服务与通知，并延迟打开头显控制台；不自动拉起 Firefox。
 7. 不修改默认 HOME，不碰厂家数据；卸载 APK 后系统恢复原状。
 
 头显端入口是可见的 `PortalActivity` 控制台；应用图标、通知正文和快捷磁贴都先到这里，不直接跳 Firefox（通知的“全部应用/返回桌面”是直达动作）。业务内容仍在 Web 层；壳负责控制台、离线资产、BLE 外设和回环桥。
@@ -129,6 +129,6 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 - 只监听 `127.0.0.1`；不暴露局域网。回环控制接口没有认证，只是同源页面的桥，不构成安全边界。
 - 不申请不必要的权限；头显保留 `INTERNET`（本地 socket）、`FOREGROUND_SERVICE`、`RECEIVE_BOOT_COMPLETED`、蓝牙与通知权限；平板保留 BLE 扫描/连接与旧系统所需的位置权限。
 - 不修改厂家 HOME、不卸载/清数据、不 root。
-- 应用图标/通知/磁贴只打开 `PortalActivity` 控制台，由控制台的“进入训练”拉起 Firefox；`BootReceiver` 只恢复服务与通知。
+- 应用图标/通知/磁贴只打开 `PortalActivity` 控制台，由控制台的“进入训练”拉起 Firefox；`BootReceiver` 恢复服务/通知并打开头显控制台。
 - 平板退出或链路断开时头显自动释放控制权；服务重启会清空控制者。
 - 卸载 APK 后系统状态不变。

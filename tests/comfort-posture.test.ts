@@ -187,19 +187,36 @@ describe('comfort posture layer', () => {
     expect(state.riseM).toBeCloseTo(0.25, 10);
   });
 
-  it('freezes the posture when stopped', () => {
+  it('decelerates the posture when stopped, then holds it', () => {
     const comfort = makeComfort();
     comfort.setPosture({ pitchDeg: 10, riseM: 1 }, 2000);
     comfort.updatePosture(1);
     comfort.stopPosture();
 
-    const frozen = comfort.getPostureState();
-    expect(frozen.phase).toBe('standing');
-    expect(frozen.progress).toBeCloseTo(0.5, 10);
-    expect(frozen.riseM).toBeCloseTo(0.5, 10);
+    // The stop lands immediately, but the remaining velocity is braked out.
+    const stopped = comfort.getPostureState();
+    expect(stopped.phase).toBe('standing');
+    expect(stopped.progress).toBeCloseTo(0.5, 10);
+    expect(stopped.pitchDeg).toBeCloseTo(5, 10);
+    expect(stopped.riseM).toBeCloseTo(0.5, 10);
+
+    comfort.updatePosture(POSTURE_LIMITS.stopDecelMs / 2000); // half the ramp
+    const braking = comfort.getPostureState();
+    expect(braking.pitchDeg).toBeGreaterThan(5);
+    expect(braking.pitchDeg).toBeLessThan(5.8);
+    expect(braking.riseM).toBeGreaterThan(0.5);
+    expect(braking.riseM).toBeLessThan(0.58);
+    expect(braking.phase).toBe('standing');
+
+    comfort.updatePosture(1);
+    const settled = comfort.getPostureState();
+    // v0 * stopDecelMs / 3: (10 deg * 0.75/s) and (1 m * 0.75/s) over 0.32 s.
+    expect(settled.pitchDeg).toBeCloseTo(5.8, 10);
+    expect(settled.riseM).toBeCloseTo(0.58, 10);
+    expect(settled.progress).toBeCloseTo(0.5, 10);
 
     comfort.updatePosture(10);
-    expect(comfort.getPostureState()).toEqual(frozen);
+    expect(comfort.getPostureState()).toEqual(settled);
   });
 
   it('composes q_posture * q_calibration around the calibration pivot', () => {

@@ -33,13 +33,32 @@ object ControlProtocol {
     const val SETTINGS_SKIP_CALIBRATION: String = "settings:skipcalibration:"
     const val SETTINGS_HUD: String = "settings:hud:"
 
+    /**
+     * Comfort eye height in meters. The headset persists it and replays it to
+     * the page through the launch bootstrap; it is never part of [ControlState].
+     */
+    const val SETTINGS_EYE_HEIGHT: String = "settings:eyeheight:"
+    const val EYE_HEIGHT_MIN: Float = 1.2f
+    const val EYE_HEIGHT_MAX: Float = 1.9f
+    const val EYE_HEIGHT_DEFAULT: Float = 1.6f
+
+    /**
+     * Virtual viewpoint movement. [VIEW_MOVE] carries normalized x/z in
+     * [-1,1]; the pad repeats it at ~10 Hz while held and sends [VIEW_STOP] on
+     * release. The page expires movement 300 ms after the last sample.
+     */
+    const val VIEW_MOVE: String = "view:move:"
+    const val VIEW_STOP: String = "view:stop"
+
     val CAPABILITIES: List<String> = listOf(
         "start", "enter", "preview", "exit", "stop", "pause", "resume",
         "calibrate", "recalibrate", "status", "menu",
         "audio:on", "audio:off", "audio:toggle",
         "scene:<id>", "posture:rise", "posture:lower", "posture:stop",
         "home", "allapps",
-        "settings:skipcalibration:on|off", "settings:hud:on|off"
+        "settings:skipcalibration:on|off", "settings:hud:on|off",
+        "settings:eyeheight:1.2-1.9",
+        "view:move:<x>,<z>", "view:stop"
     )
 
     const val STATUS_CONNECTED: String = "CONNECTED"
@@ -47,6 +66,7 @@ object ControlProtocol {
     const val STATUS_CONTROL_BUSY: String = "CONTROL_BUSY"
     const val STATUS_CONTROL_RELEASED: String = "CONTROL_RELEASED"
     const val STATUS_CONTROL_REQUIRED: String = "CONTROL_REQUIRED"
+    const val STATUS_COMMAND_REJECTED: String = "COMMAND_REJECTED"
 
     fun claimPayload(): ByteArray = CLAIM.toByteArray(StandardCharsets.UTF_8)
 
@@ -61,6 +81,51 @@ object ControlProtocol {
     fun normalize(command: String): String? {
         val normalized = command.trim().lowercase()
         return normalized.takeIf { it.isNotEmpty() && it.length <= 64 && !it.contains('\n') }
+    }
+
+    /** Plain decimal meters only: no sign, exponent or locale-specific comma. */
+    private val EYE_HEIGHT_VALUE = Regex("""\d{1,3}(?:\.\d{1,3})?""")
+
+    /** Plain decimal axis; "NaN", "Infinity" and exponents never match. */
+    private val NORMALIZED_AXIS = Regex("""-?(?:\d+(?:\.\d*)?|\.\d+)""")
+
+    /**
+     * Parses `settings:eyeheight:<meters>` and returns the value only when it
+     * lies inside [EYE_HEIGHT_MIN], [EYE_HEIGHT_MAX]; null rejects the command
+     * before it is persisted or queued for the page.
+     */
+    fun parseEyeHeight(command: String): Float? {
+        if (!command.startsWith(SETTINGS_EYE_HEIGHT)) {
+            return null
+        }
+        val raw = command.substring(SETTINGS_EYE_HEIGHT.length)
+        if (!EYE_HEIGHT_VALUE.matches(raw)) {
+            return null
+        }
+        val meters = raw.toFloatOrNull() ?: return null
+        return meters.takeIf { it.isFinite() && it >= EYE_HEIGHT_MIN && it <= EYE_HEIGHT_MAX }
+    }
+
+    /** Parses `view:move:<x>,<z>`; both axes must be finite and in [-1, 1]. */
+    fun parseViewMove(command: String): ViewMove? {
+        if (!command.startsWith(VIEW_MOVE)) {
+            return null
+        }
+        val parts = command.substring(VIEW_MOVE.length).split(',')
+        if (parts.size != 2) {
+            return null
+        }
+        val x = parseAxis(parts[0]) ?: return null
+        val z = parseAxis(parts[1]) ?: return null
+        return ViewMove(x, z)
+    }
+
+    private fun parseAxis(raw: String): Float? {
+        if (!NORMALIZED_AXIS.matches(raw)) {
+            return null
+        }
+        val value = raw.toFloatOrNull() ?: return null
+        return value.takeIf { it.isFinite() && it >= -1f && it <= 1f }
     }
 
     fun isAllowedCommand(command: String): Boolean {
@@ -89,7 +154,10 @@ object ControlProtocol {
             normalized == "settings:skipcalibration:on" ||
             normalized == "settings:skipcalibration:off" ||
             normalized == "settings:hud:on" ||
-            normalized == "settings:hud:off"
+            normalized == "settings:hud:off" ||
+            parseEyeHeight(normalized) != null ||
+            parseViewMove(normalized) != null ||
+            normalized == VIEW_STOP
     }
 
     fun encodeTelemetry(pose: TelemetryPose): ByteArray =
@@ -146,6 +214,12 @@ data class TelemetryPose(
     val z: Float,
     val yaw: Float,
     val pitch: Float
+)
+
+/** Normalized joystick translation parsed from `view:move:<x>,<z>`. */
+data class ViewMove(
+    val x: Float,
+    val z: Float
 )
 
 data class ControlState(
