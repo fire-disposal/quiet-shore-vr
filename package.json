@@ -1,6 +1,6 @@
 {
   "name": "quiet-shore-vr",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "description": "静岸 · Quiet Shore VR — WebXR training app for PICO G2 4K",

@@ -1338,33 +1338,7 @@ function createWorld(THREE, opts) {
   }
   birds.instanceMatrix.needsUpdate = true;
 
-  /* ------------------------------------------------------------------ *
-   * Gaze targets: three warm stones floating above the water.
-   * ------------------------------------------------------------------ */
-
   var selectables = [];
-  var orbColors = [0xffb347, 0x66ccff, 0x9be36b];
-  var orbBase = [[-2.4, 1.05, -5.2], [0, 1.35, -6.4], [2.4, 1.05, -5.2]];
-  var orbGeo = new THREE.IcosahedronGeometry(0.16, 0);
-  for (si = 0; si < orbBase.length; si++) {
-    var orb = new THREE.Mesh(
-      orbGeo,
-      new THREE.MeshStandardMaterial({
-        color: orbColors[si],
-        emissive: orbColors[si],
-        emissiveIntensity: 0.6,
-        roughness: 0.32,
-        metalness: 0.1
-      })
-    );
-    orb.position.set(orbBase[si][0], orbBase[si][1], orbBase[si][2]);
-    orb.userData.selectable = true;
-    orb.userData.label = 'lake-orb-' + (si + 1);
-    orb.userData.baseY = orbBase[si][1];
-    orb.userData.phase = si * 1.7;
-    world.add(orb);
-    selectables.push(orb);
-  }
 
   /* ------------------------------------------------------------------ *
    * Animation: uniforms and instance matrices only.
@@ -1385,12 +1359,6 @@ function createWorld(THREE, opts) {
     skyUniforms.uTime.value = elapsed;
     windUniforms.uTime.value = elapsed;
     foamUniforms.uTime.value = elapsed;
-
-    for (i = 0; i < selectables.length; i++) {
-      var orb = selectables[i];
-      orb.position.y = orb.userData.baseY + Math.sin(elapsed * 1.05 + orb.userData.phase) * 0.05;
-      /* No idle rotation: gaze-spin owns the selected target's orientation. */
-    }
 
     for (i = 0; i < cloudCount; i++) {
       dummy.position.set(
