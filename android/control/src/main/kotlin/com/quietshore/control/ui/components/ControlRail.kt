@@ -79,6 +79,44 @@ fun ControlRail(
                 }
             }
 
+            RailSection("SUS 量表") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        RailAction(
+                            label = "打开",
+                            icon = Icons.Rounded.PlayArrow,
+                            onClick = actions.onSusOpen,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        )
+                        RailAction(
+                            label = "关闭",
+                            icon = Icons.Rounded.Stop,
+                            onClick = actions.onSusClose,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = actions.onSusPrev,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("上一题") }
+                        TextButton(
+                            onClick = actions.onSusNext,
+                            enabled = connected,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("下一题") }
+                    }
+                    Text(
+                        text = "头显端 10 题 SUS；也可用顶栏页码翻页",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+            }
+
             RailSection("场景") {
                 SceneCards(
                     selectedId = state.control.scene,

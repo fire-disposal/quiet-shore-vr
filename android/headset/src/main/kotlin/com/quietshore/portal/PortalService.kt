@@ -651,6 +651,10 @@ class PortalService : Service() {
         when {
             command == "home" -> PortalActions.home(this)
             command == "allapps" -> PortalActions.allApps(this)
+            command == "sus:open" -> PortalActions.openSus(this)
+            command == "sus:close" -> PortalActions.closeSus(this)
+            command == "sus:next" -> PortalActions.susPage(this, 1)
+            command == "sus:prev" -> PortalActions.susPage(this, -1)
             command == "enter" -> {
                 if (!PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())) {
                     return false

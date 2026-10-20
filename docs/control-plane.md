@@ -129,6 +129,8 @@ ASCII 字符串，通知给所有已连接设备：
 | 命令 | 页面行为 |
 | --- | --- |
 | `enter` | 头显服务直接拉起 Firefox Reality 训练页（仍需患者按一次确认键进入 WebXR） |
+| `sus:open` / `sus:close` | 打开/关闭头显端 SUS 量表页 |
+| `sus:next` / `sus:prev` | 控制端覆写 SUS 当前题页 |
 | `home` | 头显回到系统桌面 |
 | `allapps` | 打开系统全部应用页 |
 | `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |

@@ -35,11 +35,14 @@ internal object PortalActions {
     const val ACTION_ENTER = "com.quietshore.portal.ENTER"
     const val ACTION_ALLAPPS = "com.quietshore.portal.ALLAPPS"
     const val ACTION_HOME = "com.quietshore.portal.HOME"
+    const val ACTION_SUS = "com.quietshore.portal.SUS"
+    const val EXTRA_SUS_DELTA = "susDelta"
 
     /** Launch parameters accepted by the activity, receiver and deep link. */
     const val EXTRA_SCENE = "scene"
     const val EXTRA_SKIP_CALIBRATION = "skipCalibration"
     const val EXTRA_QUALITY = "quality"
+    const val EXTRA_PAGE = "page"
 
     /** 唯一已验证的 WebXR 入口：预装 Firefox Reality 10（Gecko 78）。 */
     private const val FIREFOX_PACKAGE = "org.mozilla.vrbrowser"
@@ -181,6 +184,33 @@ internal object PortalActions {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         launch(app, intent, "未找到默认桌面")
+    }
+
+    fun openSus(context: Context) {
+        showPortalPage(context, "sus")
+    }
+
+    fun closeSus(context: Context) {
+        showPortalPage(context, "settings")
+    }
+
+    fun susPage(context: Context, delta: Int) {
+        val app = applicationContext(context)
+        try {
+            app.sendBroadcast(
+                Intent(ACTION_SUS).setPackage(app.packageName).putExtra(EXTRA_SUS_DELTA, delta)
+            )
+        } catch (ignored: RuntimeException) {
+            // No visible console; the next open will start at the first question.
+        }
+    }
+
+    private fun showPortalPage(context: Context, page: String) {
+        val intent = Intent(context, PortalActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(EXTRA_PAGE, page)
+        }
+        launch(applicationContext(context), intent, "无法打开头显页面")
     }
 
     fun allApps(context: Context) {

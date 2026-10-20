@@ -7,7 +7,7 @@
 | 静岸（头显端） | `com.quietshore.portal` | 控制台 + 前台服务 + BLE 外设 + 本机回环桥 |
 | 静岸控制台（平板端） | `com.quietshore.control` | Compose 控制台 + BLE 中心 + WebView 三维镜像 |
 
-当前版本：**v0.8.6**。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
+当前版本：**v0.8.7**。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
 ## 当前流程
 
@@ -30,6 +30,7 @@
 
 - 简化入口：已选场景 + 单个“看向我”目标 + 按键线框引导。
 - 方向校准、眼高 1.2–1.9 m、虚拟起身/回落、近场重力粒子（当前仅 landscape）。
+- 设置页内置标准 SUS 量表，10 题分页，支持头显顶栏/页内与控制端翻页。
 - 治疗师模式：平板虚拟摇杆做世界平移，300 ms TTL、0.3 m/s、径向 0.45 m。
 - 角度呈现：平板 yaw/pitch 仪表、姿态新鲜度与患者/全局视角。
 - XR 默认 1.25× framebuffer 超采样；`?scale=` 可覆盖。

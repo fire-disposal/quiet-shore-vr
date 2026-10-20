@@ -316,6 +316,22 @@ class ControlViewModel(application: Application) :
         sendCommand("preview")
     }
 
+    fun openSus() {
+        sendCommand("sus:open")
+    }
+
+    fun closeSus() {
+        sendCommand("sus:close")
+    }
+
+    fun susPrev() {
+        sendCommand("sus:prev")
+    }
+
+    fun susNext() {
+        sendCommand("sus:next")
+    }
+
     /**
      * Bedside aid preset: lakeside scene with sound on and the patient view.
      * Never starts a session from the tablet, so the stop key stays with the
