@@ -22,18 +22,25 @@ import android.widget.Switch
 import android.widget.TextView
 
 /**
- * Headset console with three pages: Home, Settings, Help.
+ * Headset console. Four fixed pages: Home, Scenes, Settings, Help.
  *
- * The Activity owns presentation only. Launch parameters live in
- * [HeadsetSettings] and are converted to [LaunchOptions]; BLE and HTTP state
- * remain owned by [PortalService] and exposed through [PortalStatus].
+ * No page scrolls. Scene choice is a first-class page for standalone use;
+ * when a tablet owns control, the page explains that the tablet decides.
  */
 class PortalActivity : Activity() {
     private enum class Page(val label: String) {
         HOME("控制台"),
+        SCENES("场景"),
         SETTINGS("设置"),
         HELP("帮助")
     }
+
+    private data class SceneChoice(
+        val id: String,
+        val name: String,
+        val tagline: String,
+        val tint: Int
+    )
 
     private companion object {
         val BG_TOP: Int = 0xFFF3EFE6.toInt()
@@ -45,17 +52,20 @@ class PortalActivity : Activity() {
         val ACCENT: Int = 0xFF8F4634.toInt()
         val ACCENT_INK: Int = 0xFFF8F3E9.toInt()
         val OK: Int = 0xFF486B58.toInt()
+
+        val SCENES = listOf(
+            SceneChoice("landscape", "湖畔晨岸", "水面、芦苇与清晨的光", 0xFF6F8B7A.toInt()),
+            SceneChoice("ward", "训练病区", "熟悉病房与床旁设备", 0xFF7C8578.toInt()),
+            SceneChoice("bathroom", "暖石浴室", "柔和石材与水声", 0xFFB08A6A.toInt()),
+            SceneChoice("lab", "空间实验", "空间 UI 与边界练习", 0xFF6A7F8C.toInt())
+        )
     }
 
     private lateinit var content: FrameLayout
     private lateinit var nav: LinearLayout
     private lateinit var modeChip: TextView
     private var currentPage = Page.HOME
-    private var settingsPageIndex = 0
-    private var helpPageIndex = 0
     private var settings = HeadsetSettings()
-    private val sceneChips = mutableListOf<TextView>()
-    private val qualityChips = mutableListOf<TextView>()
     private var homeBluetooth: TextView? = null
     private var homeScene: TextView? = null
     private var enterButton: TextView? = null
@@ -116,7 +126,7 @@ class PortalActivity : Activity() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(24), dp(20), dp(24), dp(10))
+            setPadding(dp(24), dp(18), dp(24), dp(10))
         }
         val seal = TextView(this).apply {
             text = "荷"
@@ -133,20 +143,14 @@ class PortalActivity : Activity() {
         }
         titles.addView(label("静岸", 24f, TEXT, Typeface.BOLD, 0f))
         titles.addView(label("QUIET SHORE VR", 9f, ACCENT, Typeface.BOLD, 0.18f))
-        header.addView(
-            titles,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
+        header.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         modeChip = label("独立使用", 12f, MUTED, Typeface.NORMAL, 0f).apply {
             gravity = Gravity.CENTER
             minHeight = dp(32)
             setPadding(dp(12), 0, dp(12), 0)
             background = rounded(SURFACE, 2, BORDER, 1)
         }
-        header.addView(modeChip, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            dp(32)
-        ))
+        header.addView(modeChip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32)))
         root.addView(header, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
@@ -157,19 +161,15 @@ class PortalActivity : Activity() {
         )
 
         content = FrameLayout(this)
-        root.addView(content, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            0,
-            1f
-        ))
+        root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         nav = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(18), dp(8), dp(18), dp(16))
+            setPadding(dp(14), dp(8), dp(14), dp(14))
         }
         for (page in Page.values()) {
-            val item = label(page.label, 14f, MUTED, Typeface.BOLD, 0f).apply {
+            val item = label(page.label, 13f, MUTED, Typeface.BOLD, 0f).apply {
                 gravity = Gravity.CENTER
                 minHeight = dp(48)
                 isClickable = true
@@ -177,8 +177,8 @@ class PortalActivity : Activity() {
                 setOnClickListener { showPage(page) }
             }
             nav.addView(item, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-                marginStart = dp(4)
-                marginEnd = dp(4)
+                marginStart = dp(3)
+                marginEnd = dp(3)
             })
         }
         root.addView(nav, LinearLayout.LayoutParams(
@@ -194,23 +194,18 @@ class PortalActivity : Activity() {
         homeScene = null
         enterButton = null
         homeHint = null
-        sceneChips.clear()
-        qualityChips.clear()
-
         val body = when (page) {
             Page.HOME -> buildHomePage()
+            Page.SCENES -> buildScenesPage()
             Page.SETTINGS -> buildSettingsPage()
             Page.HELP -> buildHelpPage()
         }
         content.removeAllViews()
-        content.addView(
-            body,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.TOP
-            )
-        )
+        content.addView(body, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            Gravity.TOP
+        ))
         refreshStatus()
         updateNav()
     }
@@ -218,8 +213,7 @@ class PortalActivity : Activity() {
     private fun updateNav() {
         for (index in 0 until nav.childCount) {
             val item = nav.getChildAt(index) as TextView
-            val page = Page.values()[index]
-            val selected = page == currentPage
+            val selected = Page.values()[index] == currentPage
             item.setTextColor(if (selected) ACCENT_INK else MUTED)
             item.background = if (selected) {
                 rounded(ACCENT, 2, ACCENT, 0)
@@ -232,63 +226,45 @@ class PortalActivity : Activity() {
     private fun buildHomePage(): View {
         val page = pageColumn()
         page.addView(titleLabel("控制台"))
-        page.addView(
-            label("开始训练或查看当前连接", 13f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(6), 0, dp(20))
-            }
-        )
-
+        page.addView(pageSubtitle("开始训练，或查看当前连接"))
         val card = sectionCard()
-        val serviceRow = LinearLayout(this).apply {
+        val service = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        serviceRow.addView(dot(OK), LinearLayout.LayoutParams(dp(8), dp(8)).apply {
-            marginEnd = dp(8)
-        })
-        serviceRow.addView(label("服务已就绪", 14f, TEXT, Typeface.BOLD, 0f))
-        serviceRow.addView(
-            label("127.0.0.1:8130", 12f, MUTED, Typeface.NORMAL, 0f).apply {
-                gravity = Gravity.END
-            },
+        service.addView(dot(OK), LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginEnd = dp(8) })
+        service.addView(label("服务已就绪", 14f, TEXT, Typeface.BOLD, 0f))
+        service.addView(
+            label("127.0.0.1:8130", 12f, MUTED, Typeface.NORMAL, 0f).apply { gravity = Gravity.END },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
-        card.addView(serviceRow)
-
+        card.addView(service)
         homeBluetooth = label(PortalStatus.description(), 14f, MUTED, Typeface.NORMAL, 0f).apply {
             setPadding(0, dp(12), 0, 0)
         }
         card.addView(homeBluetooth)
-        homeScene = label("当前场景  ${sceneLabel(settings.sceneId)}  更换", 13f, MUTED, Typeface.NORMAL, 0f).apply {
-            setPadding(0, dp(6), 0, 0)
+        homeScene = label("当前场景  ${sceneLabel(settings.sceneId)}   选择", 13f, MUTED, Typeface.NORMAL, 0f).apply {
+            setPadding(0, dp(8), 0, 0)
             isClickable = true
             isFocusable = true
-            setOnClickListener {
-                settingsPageIndex = 0
-                showPage(Page.SETTINGS)
-            }
+            setOnClickListener { showPage(Page.SCENES) }
         }
         card.addView(homeScene)
         page.addView(card)
 
-        val enter = actionButton("进入训练", true) {
-            launchTraining()
-        }
+        val enter = actionButton("进入训练", true) { launchTraining() }
         enterButton = enter
         page.addView(enter, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(60)
         ).apply { topMargin = dp(18) })
-
         homeHint = label("请看向按钮，按下右侧中间确认键", 12f, MUTED, Typeface.NORMAL, 0f).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(10), 0, dp(14))
         }
         page.addView(homeHint)
 
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row.addView(
             actionButton("全部应用", false) { PortalActions.allApps(this) },
             LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(5) }
@@ -301,220 +277,167 @@ class PortalActivity : Activity() {
         return page
     }
 
-    private fun buildSettingsPage(): View = when (settingsPageIndex) {
-        0 -> buildSettingsStartPage()
-        1 -> buildSettingsUsagePage()
-        else -> buildSettingsAboutPage()
-    }
-
-    private fun buildSettingsStartPage(): View {
+    private fun buildScenesPage(): View {
         val page = pageColumn()
-        page.addView(titleLabel("设置"))
-        page.addView(pageSubtitle("启动偏好保存在本机，无需重复设置"))
-        val card = sectionCard()
-        card.addView(sectionLabel("启动"))
-        card.addView(label("默认场景", 15f, TEXT, Typeface.BOLD, 0f).apply {
-            setPadding(0, dp(10), 0, dp(8))
-        })
+        page.addView(titleLabel("场景"))
+        page.addView(pageSubtitle("独立使用时从这里选择。平板接管后由平板决定。"))
+        val lockedByTablet = PortalStatus.isControlActive()
         for (rowIndex in 0 until 2) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for (column in 0 until 2) {
-                val index = rowIndex * 2 + column
-                val id = HeadsetSettings.SCENE_IDS[index]
-                val chip = label(sceneLabel(id), 14f, TEXT, Typeface.BOLD, 0f).apply {
-                    gravity = Gravity.CENTER
-                    minHeight = dp(46)
-                    isClickable = true
-                    isFocusable = true
-                    setOnClickListener {
-                        settings = settings.copy(sceneId = id)
-                        HeadsetSettings.save(this@PortalActivity, settings)
-                        updateSceneChips()
+                val choice = SCENES[rowIndex * 2 + column]
+                val selected = choice.id == settings.sceneId
+                val card = sceneCard(choice, selected)
+                card.isEnabled = !lockedByTablet
+                card.alpha = if (lockedByTablet) 0.55f else 1f
+                if (!lockedByTablet) {
+                    card.setOnClickListener {
+                        settings = settings.copy(sceneId = choice.id)
+                        HeadsetSettings.save(this, settings)
+                        showPage(Page.SCENES)
                     }
                 }
-                sceneChips += chip
-                row.addView(chip, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-                    marginEnd = dp(4)
+                row.addView(card, LinearLayout.LayoutParams(0, dp(136), 1f).apply {
                     marginStart = dp(4)
+                    marginEnd = dp(4)
+                    bottomMargin = dp(8)
                 })
             }
-            card.addView(row, LinearLayout.LayoutParams(
+            page.addView(row, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(6) })
+            ))
         }
-        updateSceneChips()
-
-        card.addView(label("画质", 15f, TEXT, Typeface.BOLD, 0f).apply {
-            setPadding(0, dp(12), 0, dp(8))
-        })
-        val qualityRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for ((index, value) in listOf(HeadsetSettings.QUALITY_HIGH, HeadsetSettings.QUALITY_LOW).withIndex()) {
-            val chip = label(if (value == HeadsetSettings.QUALITY_HIGH) "高画质" else "低画质", 14f, TEXT, Typeface.BOLD, 0f).apply {
-                gravity = Gravity.CENTER
-                minHeight = dp(46)
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    settings = settings.copy(quality = value)
-                    HeadsetSettings.save(this@PortalActivity, settings)
-                    updateQualityChips()
-                }
-            }
-            qualityChips += chip
-            qualityRow.addView(chip, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-                marginEnd = if (index == 0) dp(4) else 0
-                marginStart = if (index == 0) 0 else dp(4)
-            })
-        }
-        card.addView(qualityRow)
-        updateQualityChips()
-        page.addView(card)
-        page.addView(pager(0, 3, onPrev = {}, onNext = {
-            settingsPageIndex = 1
-            showPage(Page.SETTINGS)
-        }))
-        return page
-    }
-
-    private fun buildSettingsUsagePage(): View {
-        val page = pageColumn()
-        page.addView(titleLabel("设置"))
-        page.addView(pageSubtitle("使用偏好与连接"))
-        val card = sectionCard()
-        card.addView(sectionLabel("使用"))
-        card.addView(settingSwitch("跳过方向校准", settings.skipCalibration) {
-            settings = settings.copy(skipCalibration = it)
-            HeadsetSettings.save(this, settings)
-        })
-        card.addView(settingSwitch("显示性能面板", settings.showHud) {
-            settings = settings.copy(showHud = it)
-            HeadsetSettings.save(this, settings)
-        })
-        card.addView(
-            label("平板接管后会自动切到精简开始页", 14f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(10), 0, dp(10))
-            }
-        )
-        card.addView(actionButton("打开蓝牙设置", false) {
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(50)
-        ))
-        page.addView(card)
-        page.addView(pager(1, 3, onPrev = {
-            settingsPageIndex = 0
-            showPage(Page.SETTINGS)
-        }, onNext = {
-            settingsPageIndex = 2
-            showPage(Page.SETTINGS)
-        }))
-        return page
-    }
-
-    private fun buildSettingsAboutPage(): View {
-        val page = pageColumn()
-        page.addView(titleLabel("设置"))
-        page.addView(pageSubtitle("版本与服务"))
-        val card = sectionCard()
-        card.addView(sectionLabel("关于"))
-        card.addView(infoRow("版本", versionName()))
-        card.addView(infoRow("浏览器", "Firefox Reality 10"))
-        card.addView(infoRow("本机服务", "127.0.0.1:8130"))
-        card.addView(infoRow("控制方式", "平板先到先得"))
-        page.addView(card)
-        page.addView(pager(2, 3, onPrev = {
-            settingsPageIndex = 1
-            showPage(Page.SETTINGS)
-        }, onNext = {}))
-        return page
-    }
-
-    private fun buildHelpPage(): View = if (helpPageIndex == 0) {
-        buildHelpStandalonePage()
-    } else {
-        buildHelpTabletPage()
-    }
-
-    private fun buildHelpStandalonePage(): View {
-        val page = pageColumn()
-        page.addView(titleLabel("帮助"))
-        page.addView(pageSubtitle("没有平板时"))
-        val card = sectionCard()
-        card.addView(stepRow("1", "在启动页选择场景"))
-        card.addView(stepRow("2", "看向进入按钮，将准星对准后按右侧中间确认键"))
-        page.addView(card)
-        page.addView(pager(0, 2, onPrev = {}, onNext = {
-            helpPageIndex = 1
-            showPage(Page.HELP)
-        }))
-        return page
-    }
-
-    private fun buildHelpTabletPage(): View {
-        val page = pageColumn()
-        page.addView(titleLabel("帮助"))
-        page.addView(pageSubtitle("平板接管时"))
-        val card = sectionCard()
-        card.addView(stepRow("3", "在平板控制台搜索并连接头显"))
-        card.addView(stepRow("4", "训练中的场景、声音和校准由平板控制"))
-        page.addView(card)
-        val note = sectionCard()
-        note.addView(sectionLabel("控制权"))
-        note.addView(
+        page.addView(
             label(
-                "第一台发送 CLAIM 的平板获得控制。第二台会提示已被占用。平板释放或断开后，头显恢复完整启动页。",
-                14f,
+                if (PortalStatus.isControlActive()) "平板控制中：当前场景由平板同步。"
+                else "当前场景：${sceneLabel(settings.sceneId)}",
+                13f,
                 MUTED,
                 Typeface.NORMAL,
                 0f
             ).apply { setPadding(0, dp(10), 0, 0) }
         )
-        page.addView(note)
-        page.addView(pager(1, 2, onPrev = {
-            helpPageIndex = 0
-            showPage(Page.HELP)
-        }, onNext = {}))
         return page
     }
 
-    private fun pageSubtitle(text: String): TextView =
-        label(text, 14f, MUTED, Typeface.NORMAL, 0f).apply {
-            setPadding(0, dp(6), 0, dp(16))
+    private fun sceneCard(choice: SceneChoice, selected: Boolean): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(12))
+            background = rounded(
+                if (selected) 0xFFF4E9E2.toInt() else SURFACE,
+                4,
+                if (selected) ACCENT else BORDER,
+                if (selected) 2 else 1
+            )
+            isClickable = true
+            isFocusable = true
+            addView(
+                View(this@PortalActivity).apply { setBackgroundColor(choice.tint) },
+                LinearLayout.LayoutParams(dp(28), dp(3)).apply { bottomMargin = dp(10) }
+            )
+            addView(label(choice.name, 20f, TEXT, Typeface.BOLD, 0.02f).apply {
+                typeface = Typeface.create("serif", Typeface.BOLD)
+            })
+            addView(label(choice.tagline, 12f, MUTED, Typeface.NORMAL, 0f).apply {
+                setPadding(0, dp(5), 0, 0)
+            })
+            if (selected) {
+                addView(label("已选", 11f, ACCENT, Typeface.BOLD, 0.08f).apply {
+                    setPadding(0, dp(8), 0, 0)
+                })
+            }
         }
 
-    private fun pager(index: Int, count: Int, onPrev: () -> Unit, onNext: () -> Unit): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(8), 0, 0)
-        }
-        row.addView(
-            pagerButton("上一页", index > 0, onPrev),
-            LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(4) }
+    private fun buildSettingsPage(): View {
+        val page = pageColumn()
+        page.addView(titleLabel("设置"))
+        page.addView(pageSubtitle("启动偏好保存在本机"))
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        val usage = sectionCard()
+        usage.addView(sectionLabel("使用"))
+        usage.addView(settingSwitch("跳过方向校准", settings.skipCalibration) {
+            settings = settings.copy(skipCalibration = it)
+            HeadsetSettings.save(this, settings)
+        })
+        usage.addView(settingSwitch("显示性能面板", settings.showHud) {
+            settings = settings.copy(showHud = it)
+            HeadsetSettings.save(this, settings)
+        })
+        left.addView(usage, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        val connection = sectionCard()
+        connection.addView(sectionLabel("连接"))
+        connection.addView(
+            label("平板接管后场景、声音和校准由平板控制", 13f, MUTED, Typeface.NORMAL, 0f).apply {
+                setPadding(0, dp(8), 0, dp(8))
+            }
         )
-        row.addView(
-            label("${index + 1} / $count", 12f, MUTED, Typeface.NORMAL, 0f).apply {
-                gravity = Gravity.CENTER
-            },
-            LinearLayout.LayoutParams(dp(72), dp(44))
-        )
-        row.addView(
-            pagerButton("下一页", index < count - 1, onNext),
-            LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(4) }
-        )
-        return row
+        connection.addView(actionButton("打开蓝牙设置", false) {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
+        right.addView(connection, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        val about = sectionCard()
+        about.addView(sectionLabel("关于"))
+        about.addView(infoRow("版本", versionName()))
+        about.addView(infoRow("浏览器", "Firefox Reality 10"))
+        about.addView(infoRow("本机服务", "127.0.0.1:8130"))
+        about.addView(infoRow("控制方式", "平板先到先得"))
+        right.addView(about, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        row.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = dp(7)
+        })
+        row.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(7)
+        })
+        page.addView(row, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        return page
     }
 
-    private fun pagerButton(text: String, enabled: Boolean, onClick: () -> Unit): TextView =
-        label(text, 14f, if (enabled) TEXT else MUTED, Typeface.BOLD, 0f).apply {
-            gravity = Gravity.CENTER
-            isEnabled = enabled
-            isClickable = enabled
-            background = rounded(SURFACE, 2, if (enabled) BORDER else SURFACE, 1)
-            setOnClickListener { if (enabled) onClick() }
-        }
+    private fun buildHelpPage(): View {
+        val page = pageColumn()
+        page.addView(titleLabel("帮助"))
+        page.addView(pageSubtitle("独立使用或平板接管"))
+        val steps = sectionCard()
+        steps.addView(stepRow("1", "没有平板时，在场景页选择场景"))
+        steps.addView(stepRow("2", "有平板时，在平板控制台搜索并连接头显"))
+        steps.addView(stepRow("3", "看向进入按钮，将准星对准后按右侧中间确认键"))
+        steps.addView(stepRow("4", "训练中的场景、声音和校准由平板控制"))
+        page.addView(steps)
+
+        val note = sectionCard()
+        note.addView(sectionLabel("控制权"))
+        note.addView(
+            label(
+                "第一台发送 CLAIM 的平板获得控制。第二台会提示已被占用。平板释放或断开后，头显恢复独立场景页。",
+                14f,
+                MUTED,
+                Typeface.NORMAL,
+                0f
+            ).apply { setPadding(0, dp(8), 0, 0) }
+        )
+        page.addView(note)
+        return page
+    }
 
     private fun launchTraining() {
         val launched = PortalActions.enter(this, settings.toLaunchOptions())
@@ -535,37 +458,9 @@ class PortalActivity : Activity() {
         val control = PortalStatus.isControlActive()
         modeChip.text = if (control) "平板控制" else "独立使用"
         modeChip.setTextColor(if (control) ACCENT else MUTED)
-        modeChip.background = rounded(
-            SURFACE,
-            2,
-            if (control) ACCENT else BORDER,
-            1
-        )
+        modeChip.background = rounded(SURFACE, 2, if (control) ACCENT else BORDER, 1)
         homeBluetooth?.text = PortalStatus.description()
-        homeScene?.text = "当前场景  ${sceneLabel(settings.sceneId)}"
-    }
-
-    private fun updateSceneChips() {
-        for ((index, chip) in sceneChips.withIndex()) {
-            val selected = HeadsetSettings.SCENE_IDS[index] == settings.sceneId
-            styleChoice(chip, selected)
-        }
-    }
-
-    private fun updateQualityChips() {
-        for ((index, chip) in qualityChips.withIndex()) {
-            val value = if (index == 0) HeadsetSettings.QUALITY_HIGH else HeadsetSettings.QUALITY_LOW
-            styleChoice(chip, settings.quality == value)
-        }
-    }
-
-    private fun styleChoice(chip: TextView, selected: Boolean) {
-        chip.setTextColor(if (selected) ACCENT_INK else TEXT)
-        chip.background = if (selected) {
-            rounded(ACCENT, 2, ACCENT, 0)
-        } else {
-            rounded(SURFACE, 2, BORDER, 1)
-        }
+        homeScene?.text = "当前场景  ${sceneLabel(settings.sceneId)}   选择"
     }
 
     private fun settingSwitch(text: String, checked: Boolean, onChange: (Boolean) -> Unit): Switch =
@@ -573,8 +468,8 @@ class PortalActivity : Activity() {
             this.text = text
             isChecked = checked
             setTextColor(TEXT)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            minHeight = dp(56)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            minHeight = dp(54)
             buttonTintList = ColorStateList.valueOf(ACCENT)
             setPadding(0, dp(4), 0, dp(4))
             setOnCheckedChangeListener { _, value -> onChange(value) }
@@ -584,7 +479,7 @@ class PortalActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+            setPadding(0, dp(8), 0, dp(8))
         }
         row.addView(label(index, 12f, ACCENT_INK, Typeface.BOLD, 0f).apply {
             gravity = Gravity.CENTER
@@ -597,7 +492,7 @@ class PortalActivity : Activity() {
     private fun infoRow(labelText: String, value: String): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(7), 0, 0)
         }
         row.addView(label(labelText, 13f, MUTED, Typeface.NORMAL, 0f))
         row.addView(
@@ -609,36 +504,31 @@ class PortalActivity : Activity() {
 
     private fun pageColumn(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(24), dp(14), dp(24), dp(24))
+        setPadding(dp(24), dp(14), dp(24), dp(20))
     }
+
+    private fun pageSubtitle(text: String): TextView =
+        label(text, 14f, MUTED, Typeface.NORMAL, 0f).apply {
+            setPadding(0, dp(6), 0, dp(14))
+        }
 
     private fun sectionCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(18), dp(16), dp(18), dp(16))
+        setPadding(dp(18), dp(15), dp(18), dp(15))
         background = rounded(SURFACE, 4, BORDER, 1)
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(14) }
+        ).apply { bottomMargin = dp(12) }
     }
 
-    private fun sectionLabel(text: String): TextView = label(
-        text,
-        11f,
-        ACCENT,
-        Typeface.BOLD,
-        0.12f
-    )
+    private fun sectionLabel(text: String): TextView =
+        label(text, 11f, ACCENT, Typeface.BOLD, 0.12f)
 
-    private fun titleLabel(text: String): TextView = label(
-        text,
-        28f,
-        TEXT,
-        Typeface.NORMAL,
-        0.04f
-    ).apply {
-        typeface = Typeface.create("serif", Typeface.NORMAL)
-    }
+    private fun titleLabel(text: String): TextView =
+        label(text, 28f, TEXT, Typeface.NORMAL, 0.04f).apply {
+            typeface = Typeface.create("serif", Typeface.NORMAL)
+        }
 
     private fun actionButton(text: String, primary: Boolean, onClick: () -> Unit): TextView {
         val button = label(text, 16f, if (primary) ACCENT_INK else TEXT, Typeface.BOLD, 0f).apply {
@@ -692,12 +582,8 @@ class PortalActivity : Activity() {
         "unknown"
     }
 
-    private fun sceneLabel(id: String): String = when (id) {
-        "ward" -> "训练病区"
-        "bathroom" -> "暖石浴室"
-        "lab" -> "空间实验"
-        else -> "湖畔晨岸"
-    }
+    private fun sceneLabel(id: String): String =
+        SCENES.firstOrNull { it.id == id }?.name ?: SCENES[0].name
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
