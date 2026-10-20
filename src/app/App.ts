@@ -425,8 +425,8 @@ export class QuietShoreApp {
     this.start.setStatus(this.strings.entering);
     void unlockAudio();
     try {
-      // Let the busy state paint before Gecko starts the session handoff.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      // Do not await a paint here: requestSession must stay in the same
+      // transient user-activation window as the right-side confirm click.
       const next = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor']
       });
