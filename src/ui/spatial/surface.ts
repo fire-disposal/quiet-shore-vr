@@ -53,7 +53,8 @@ function createPanelTexture(widthMeters: number, heightMeters: number, theme: Sp
 }
 
 function createTextMesh(texture: THREE.Texture, width: number, height: number, renderOrder: number): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(width, height);
+  // Unit geometry: layout writes world-space size via scale.
+  const geometry = new THREE.PlaneGeometry(1, 1);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,

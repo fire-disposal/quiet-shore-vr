@@ -7,7 +7,6 @@ import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneDefinition, SceneHandle } from '../core/scene/contract';
 import { getSceneDefinition, listScenes } from '../scenes/registry';
-import { ResourceRegistry } from '../core/geometry/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { measureObject } from '../core/geometry/budget';
 import { createSpatialLab, type SpatialLabApi } from '../ui/spatial-lab';
@@ -42,7 +41,6 @@ export class QuietShoreApp {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly xr: XRManagerLike;
   private readonly scene = new THREE.Scene();
-  private readonly registry = new ResourceRegistry();
   private readonly pipeline = new FramePipeline();
   private readonly host: SceneHost;
   private readonly input: SpatialInput;
@@ -167,6 +165,7 @@ export class QuietShoreApp {
     this.loadScene(this.sceneId);
     this.start.setSelected(this.sceneId);
     this.start.setAudioLabel(false);
+    this.menu.setAudioEnabled(true);
     this.bind();
     this.start.setStatus(this.strings.checking);
     this.updateHud(performance.now());
@@ -178,7 +177,6 @@ export class QuietShoreApp {
     }
     this.started = true;
     this.lastFrame = 0;
-    this.renderer.setAnimationLoop(this.onFrame);
     void this.detectXR();
   }
 
@@ -241,8 +239,7 @@ export class QuietShoreApp {
     this.disposeScene();
     const handle = this.host.load(definition, {
       quality: this.config.highQuality ? 'high' : 'low',
-      eyeHeight: EYE_HEIGHT,
-      registry: this.registry
+      eyeHeight: EYE_HEIGHT
     });
     this.handle = handle;
     // Wrap the host's content group, not the scene root: floor offset stays on
@@ -364,6 +361,8 @@ export class QuietShoreApp {
       });
       this.session = next;
       await this.xr.setSession(next);
+      this.lastFrame = 0;
+      this.renderer.setAnimationLoop(this.onFrame);
       next.addEventListener('end', () => this.onSessionEnd());
       next.addEventListener('select', () => this.onSelect());
 
@@ -372,7 +371,8 @@ export class QuietShoreApp {
       this.start.setRecalibrateEnabled(true);
       this.host.setFloorOffset(-EYE_HEIGHT);
       this.menu.attach(next);
-      this.menu.setActive(true);
+      this.menu.close();
+      this.menu.setAudioEnabled(!this.audioMuted);
       this.input.setLayers(true, true);
       this.start.setStatus(this.strings.xrReady, 'ok');
 
@@ -381,7 +381,7 @@ export class QuietShoreApp {
           this.handle.root.visible = true;
         }
         this.comfort?.reset();
-        this.menu.setActive(true);
+        this.menu.close();
         this.playSceneAudio();
         this.start.setStatus('已跳过方向校准', 'ok');
       } else {
@@ -401,7 +401,6 @@ export class QuietShoreApp {
     this.session = null;
     this.stopSceneAudio();
     this.menu.attach(null);
-    this.menu.setActive(false);
     this.menu.close();
     this.calibration?.stop();
     this.scene.background = this.savedBackground;
@@ -410,6 +409,7 @@ export class QuietShoreApp {
     }
     this.host.setFloorOffset(0);
     this.comfort?.reset();
+    this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setEnterEnabled(true);
     this.start.setRecalibrateEnabled(false);
@@ -425,7 +425,6 @@ export class QuietShoreApp {
     this.savedBackground = this.scene.background;
     this.scene.background = new THREE.Color(0x000000);
     this.handle.root.visible = false;
-    this.menu.setActive(false);
     this.menu.close();
     this.input.setLayers(false, false);
     this.calibration.start();
@@ -437,7 +436,6 @@ export class QuietShoreApp {
     if (this.handle) {
       this.handle.root.visible = true;
     }
-    this.menu.setActive(this.session !== null);
     this.input.setLayers(true, this.session !== null);
     if (this.session) {
       this.playSceneAudio();
@@ -461,9 +459,12 @@ export class QuietShoreApp {
       this.handle.root.visible = true;
     }
     this.host.setFloorOffset(0);
-    this.menu.setActive(true);
     this.menu.attach(null);
+    this.menu.close();
+    this.menu.setAudioEnabled(!this.audioMuted);
     this.input.setLayers(true, true);
+    this.lastFrame = 0;
+    this.renderer.setAnimationLoop(this.onFrame);
     this.start.setRecalibrateEnabled(false);
     this.start.setStatus(this.strings.modePreview);
     this.updateHud(performance.now());
@@ -478,8 +479,8 @@ export class QuietShoreApp {
     this.stopSceneAudio();
     this.menu.attach(null);
     this.menu.close();
-    this.menu.setActive(false);
     this.host.setFloorOffset(0);
+    this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setStatus(this.strings.modeIdle);
     this.updateHud(performance.now());
@@ -522,6 +523,7 @@ export class QuietShoreApp {
   private toggleAudio(): void {
     this.audioMuted = toggleMuted();
     this.start.setAudioLabel(this.audioMuted);
+    this.menu.setAudioEnabled(!this.audioMuted);
     this.updateHud(performance.now());
   }
 
@@ -609,7 +611,6 @@ export class QuietShoreApp {
     this.input.dispose();
     this.disposeScene();
     this.host.dispose();
-    this.registry.disposeAll();
     this.renderer.setAnimationLoop(null);
     this.renderer.dispose();
   }
