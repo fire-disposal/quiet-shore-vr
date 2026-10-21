@@ -1,6 +1,6 @@
 /*!
- * BathroomScene 1.0.0
- * Procedural quiet home bathroom for Three.js 0.152 (PICO G2 4K / Firefox Reality 10).
+ * BathroomScene 2.0.0
+ * Procedural ward bathroom for Three.js 0.152 (PICO G2 4K / Firefox Reality 10).
  *
  * ES module (ES5 syntax inside). Exports createWorld and VERSION; no globals.
  *
@@ -10,37 +10,42 @@
  *   built.world        THREE.Group containing every mesh and light (floor at local y = 0)
  *   built.update(dt)   cheap animation tick, seconds; allocates nothing
  *   built.selectables  array of 3 Meshes with userData.selectable === true
- *                      (mirror, plant, grab bar)
+ *                      (mirror, grab bar, emergency call unit)
  *   built.dispose()    releases geometries, materials and generated textures
  *
  * The room is authored at real-world scale so WebXR `local` space can be fixed with
  *   world.position.y = -world.userData.eyeHeight;
- * while a 2D preview keeps world.position.y = 0. The user stands at the local
- * origin facing -z: washbasin and mirror ahead on the left, toilet ahead on the
- * right, walk-in shower at the front right.
+ * while a 2D preview keeps world.position.y = 0. The patient stands at the local
+ * origin facing -z: the toilet sits exactly ahead at x = 0, z ~= -0.95, with the
+ * cistern against the back wall. Accessible grab bars flank it, the emergency
+ * call cord hangs to its left, the compact vanity and mirror sit in the back-left
+ * corner, and a curbless wet area with a folding seat runs along the right wall.
  */
-var VERSION = '1.0.0';
-var BG_COLOR = 0x171310;
-var FOG_COLOR = 0x171310;
+var VERSION = '2.0.0';
+var BG_COLOR = 0x1b1d19;
+var FOG_COLOR = 0x1b1d19;
 
 /* 房间尺寸（米） */
 var ROOM_W = 2.8;   /* x 方向 */
 var ROOM_D = 3.0;   /* z 方向 */
 var ROOM_H = 2.55;  /* 层高 */
 
-/* 大规格墙砖：0.6 m 宽 x 1.2 m 高，一张纹理正好一块 */
+/* 浅灰绿墙砖：0.6 m 宽 x 1.2 m 高，一张纹理正好一块 */
 var TILE_W = 0.6;
 var TILE_H = 1.2;
 
-/* 洗手台 */
-var VANITY_X = -0.72;
-var VANITY_Z = -1.24;
-var COUNTER_H = 0.825;
+/* 紧凑壁挂洗手台（后墙左侧） */
+var VANITY_X = -1.08;
+var VANITY_Z = -1.33;
+var COUNTER_H = 0.83;
 
-/* 马桶（面朝 +z，即面向用户） */
-var WC_X = 0.78;
-var WC_Z = -1.05;
-var WATER_Y = 0.452;
+/* 马桶：正对患者，水箱靠后墙，面朝 +z */
+var WC_X = 0;
+var WC_Z = -0.95;
+var WATER_Y = 0.424;
+
+/* 磨砂窗（左墙） */
+var WINDOW_Z = -0.1;
 
 function isNum(v) {
   return typeof v === 'number' && isFinite(v);
@@ -88,122 +93,93 @@ function createCanvasTexture(THREE, width, height, paint, repeat) {
   return tex;
 }
 
-/* 暖米色大砖：一砖一纹理，四周留 2% 缝，表面有轻微色差与矿物斑点 */
+/* 浅鼠尾草大砖：一砖一纹理，窄缝、亚光釉面，色差轻轻可见 */
 function paintTile(ctx, w, h) {
   var rnd = seeded(0x6a3d19);
   var i, g;
-  var padX = Math.max(2, Math.round(w * 0.022));
-  var padY = Math.max(3, Math.round(h * 0.022));
+  var padX = Math.max(2, Math.round(w * 0.015));
+  var padY = Math.max(2, Math.round(h * 0.008));
 
-  /* 缝底色 */
-  ctx.fillStyle = '#b7a897';
+  /* 缝底色：暖灰绿 */
+  ctx.fillStyle = '#b9bfb1';
   ctx.fillRect(0, 0, w, h);
 
-  /* 砖面：竖向缓变，模拟整砖釉面的柔和光泽 */
+  /* 砖面：奶油白到浅鼠尾草，竖向缓变 */
   g = ctx.createLinearGradient(0, padY, 0, h - padY);
-  g.addColorStop(0, '#e7dccb');
-  g.addColorStop(0.45, '#e0d3c0');
-  g.addColorStop(1, '#d7c8b4');
+  g.addColorStop(0, '#eef0e2');
+  g.addColorStop(0.45, '#e4e9d7');
+  g.addColorStop(1, '#d9e0cc');
   ctx.fillStyle = g;
   ctx.fillRect(padX, padY, w - padX * 2, h - padY * 2);
 
-  /* 大面积云状色差 */
-  for (i = 0; i < 26; i++) {
+  /* 大面积云状色差：一点鼠尾草、一点暖白，避免塑料感 */
+  for (i = 0; i < 24; i++) {
     var cx = padX + rnd() * (w - padX * 2);
     var cy = padY + rnd() * (h - padY * 2);
     var rr = 8 + rnd() * w * 0.22;
     var blob = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
-    var dark = rnd() < 0.5;
-    blob.addColorStop(0, dark ? 'rgba(176,158,134,0.10)' : 'rgba(255,250,240,0.12)');
+    var sage = rnd() < 0.55;
+    blob.addColorStop(0, sage ? 'rgba(140,156,128,0.10)' : 'rgba(255,252,240,0.12)');
     blob.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = blob;
     ctx.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
   }
 
-  /* 细矿物斑点 */
-  for (i = 0; i < 520; i++) {
-    ctx.fillStyle = 'rgba(150,132,110,' + (0.03 + rnd() * 0.05).toFixed(3) + ')';
+  /* 细矿物斑点：非常克制，避免成“脏点” */
+  for (i = 0; i < 420; i++) {
+    ctx.fillStyle = 'rgba(118,128,106,' + (0.025 + rnd() * 0.035).toFixed(3) + ')';
     ctx.fillRect(padX + rnd() * (w - padX * 2), padY + rnd() * (h - padY * 2), 1, 1 + rnd());
   }
 
-  /* 砖沿的倒角高光与内侧阴影，让缝有厚度 */
-  ctx.fillStyle = 'rgba(255,255,255,0.42)';
-  ctx.fillRect(padX, padY, w - padX * 2, 2);
-  ctx.fillRect(padX, padY, 2, h - padY * 2);
-  ctx.fillStyle = 'rgba(120,104,86,0.28)';
-  ctx.fillRect(padX, h - padY - 2, w - padX * 2, 2);
-  ctx.fillRect(w - padX - 2, padY, 2, h - padY * 2);
+  /* 砖沿倒角：极轻的高光/阴影，缝不抢画面 */
+  ctx.fillStyle = 'rgba(255,255,250,0.18)';
+  ctx.fillRect(padX, padY, w - padX * 2, 1);
+  ctx.fillRect(padX, padY, 1, h - padY * 2);
+  ctx.fillStyle = 'rgba(96,104,88,0.14)';
+  ctx.fillRect(padX, h - padY - 1, w - padX * 2, 1);
+  ctx.fillRect(w - padX - 1, padY, 1, h - padY * 2);
 }
 
-/* 石材地面：暖灰石灰岩，细颗粒 + 极淡云纹，1 m 见方，可无缝平铺 */
-function paintStone(ctx, w, h) {
+/* 非滑地面：暖灰绿亚光面层，细密防滑骨料，无拼缝，1 m 见方可无缝平铺 */
+function paintFloor(ctx, w, h) {
   var rnd = seeded(0x21b47d);
-  var i, x, y, r, g2;
-  g2 = ctx.createLinearGradient(0, 0, w, h);
-  g2.addColorStop(0, '#cdc3b5');
-  g2.addColorStop(0.5, '#c6bcad');
-  g2.addColorStop(1, '#cbc1b3');
-  ctx.fillStyle = g2;
+  var i;
+  /* 均匀底色：不做过界渐变，1 m 平铺不会出现方块 */
+  ctx.fillStyle = '#98a294';
   ctx.fillRect(0, 0, w, h);
 
-  /* 云状色块（四角重复，保证平铺接缝不突兀） */
-  for (i = 0; i < 40; i++) {
-    x = rnd() * w;
-    y = rnd() * h;
-    r = 14 + rnd() * w * 0.2;
-    var cloud = ctx.createRadialGradient(x, y, 0, x, y, r);
-    cloud.addColorStop(0, rnd() < 0.55 ? 'rgba(160,148,132,0.09)' : 'rgba(240,234,224,0.10)');
-    cloud.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = cloud;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-
-  /* 细颗粒 */
-  for (i = 0; i < 2600; i++) {
-    ctx.fillStyle = 'rgba(120,108,94,' + (0.03 + rnd() * 0.09).toFixed(3) + ')';
+  /* 细密防滑骨料：均匀分布，平铺接缝不显 */
+  for (i = 0; i < 3200; i++) {
+    ctx.fillStyle = 'rgba(78,86,76,' + (0.04 + rnd() * 0.08).toFixed(3) + ')';
     ctx.fillRect(rnd() * w, rnd() * h, 1 + rnd(), 1);
   }
-  for (i = 0; i < 1200; i++) {
-    ctx.fillStyle = 'rgba(255,252,244,' + (0.03 + rnd() * 0.08).toFixed(3) + ')';
+  for (i = 0; i < 1500; i++) {
+    ctx.fillStyle = 'rgba(226,232,220,' + (0.03 + rnd() * 0.06).toFixed(3) + ')';
     ctx.fillRect(rnd() * w, rnd() * h, 1, 1);
-  }
-
-  /* 石脉：短促、走向随机，避免跨越贴图边界 */
-  ctx.lineWidth = 1;
-  for (i = 0; i < 14; i++) {
-    var sx = 12 + rnd() * (w - 24);
-    var sy = 12 + rnd() * (h - 24);
-    var len = 10 + rnd() * 40;
-    var ang = rnd() * Math.PI;
-    ctx.strokeStyle = 'rgba(148,134,118,' + (0.10 + rnd() * 0.12).toFixed(3) + ')';
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
-    ctx.stroke();
   }
 }
 
-/* 暖胡桃木：竖向木纹（v 方向），带细密纹理与少量结疤 */
-function paintWood(ctx, w, h) {
+/* 浅橡木：竖向木纹（v 方向），明亮少结疤，适合病房家具 */
+function paintOak(ctx, w, h) {
   var rnd = seeded(0x4f0c2e);
   var i, x, y;
   var g = ctx.createLinearGradient(0, 0, w, 0);
-  g.addColorStop(0, '#9a6a46');
-  g.addColorStop(0.5, '#a4734d');
-  g.addColorStop(1, '#94643f');
+  g.addColorStop(0, '#cbae84');
+  g.addColorStop(0.5, '#d4b98f');
+  g.addColorStop(1, '#c6a87c');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
-  /* 顺纹长线：沿 y 走，x 上做正弦扰动 */
-  for (i = 0; i < 46; i++) {
+  /* 顺纹长线：沿 y 走，x 上做很轻的正弦扰动 */
+  for (i = 0; i < 40; i++) {
     x = rnd() * w;
-    var amp = 1 + rnd() * 2.4;
-    var freq = 0.02 + rnd() * 0.03;
+    var amp = 0.6 + rnd() * 1.8;
+    var freq = 0.018 + rnd() * 0.028;
     var phase = rnd() * Math.PI * 2;
     ctx.strokeStyle = rnd() < 0.5
-      ? 'rgba(92,58,34,' + (0.10 + rnd() * 0.20).toFixed(3) + ')'
-      : 'rgba(196,150,108,' + (0.08 + rnd() * 0.16).toFixed(3) + ')';
-    ctx.lineWidth = 0.6 + rnd() * 1.5;
+      ? 'rgba(150,118,84,' + (0.08 + rnd() * 0.14).toFixed(3) + ')'
+      : 'rgba(236,216,184,' + (0.07 + rnd() * 0.12).toFixed(3) + ')';
+    ctx.lineWidth = 0.6 + rnd() * 1.2;
     ctx.beginPath();
     for (y = 0; y <= h; y += 4) {
       var px = x + Math.sin(y * freq + phase) * amp;
@@ -216,98 +192,73 @@ function paintWood(ctx, w, h) {
     ctx.stroke();
   }
 
-  /* 结疤 */
-  for (i = 0; i < 3; i++) {
-    var kx = 8 + rnd() * (w - 16);
-    var ky = 8 + rnd() * (h - 16);
-    ctx.strokeStyle = 'rgba(84,52,30,0.22)';
+  /* 少量浅结疤 */
+  for (i = 0; i < 2; i++) {
+    var kx = 10 + rnd() * (w - 20);
+    var ky = 10 + rnd() * (h - 20);
+    ctx.strokeStyle = 'rgba(150,118,82,0.16)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.ellipse(kx, ky, 2 + rnd() * 2.5, 4 + rnd() * 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(kx, ky, 2 + rnd() * 2, 3 + rnd() * 3, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   /* 细木孔 */
-  for (i = 0; i < 900; i++) {
-    ctx.fillStyle = 'rgba(72,46,28,' + (0.02 + rnd() * 0.05).toFixed(3) + ')';
+  for (i = 0; i < 620; i++) {
+    ctx.fillStyle = 'rgba(146,116,84,' + (0.02 + rnd() * 0.04).toFixed(3) + ')';
     ctx.fillRect(rnd() * w, rnd() * h, 1, 1 + rnd() * 2);
   }
 }
 
-/* 防滑垫：暖沙色横纹，四周深色包边 */
-function paintMat(ctx, w, h) {
-  var rnd = seeded(0x3c9e51);
-  var i, y;
-  ctx.fillStyle = '#d3c4ad';
-  ctx.fillRect(0, 0, w, h);
-
-  for (y = 0; y < h; y += 10) {
-    ctx.fillStyle = 'rgba(255,250,240,0.16)';
-    ctx.fillRect(0, y, w, 4);
-    ctx.fillStyle = 'rgba(150,130,104,0.16)';
-    ctx.fillRect(0, y + 6, w, 2);
-  }
-
-  for (i = 0; i < 900; i++) {
-    ctx.fillStyle = 'rgba(120,102,80,' + (0.02 + rnd() * 0.05).toFixed(3) + ')';
-    ctx.fillRect(rnd() * w, rnd() * h, 1 + rnd() * 2, 1);
-  }
-
-  /* 包边 */
-  ctx.strokeStyle = 'rgba(118,100,78,0.5)';
-  ctx.lineWidth = Math.max(3, w * 0.035);
-  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
-}
-
-/* 镜面：不是真反射，而是一张“反射了暖灯与房间”的低成本贴图 */
+/* 镜面：不是真反射，而是一张“反射了浅色房间与暖灯”的低成本贴图 */
 function paintMirror(ctx, w, h) {
   var rnd = seeded(0x77c1a3);
   var i;
   var g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#f8efe2');
-  g.addColorStop(0.32, '#e6dccd');
-  g.addColorStop(0.66, '#c9bfaf');
-  g.addColorStop(1, '#a99f91');
+  g.addColorStop(0, '#f6f6ee');
+  g.addColorStop(0.34, '#e8eadf');
+  g.addColorStop(0.68, '#d4d8ca');
+  g.addColorStop(1, '#b8beb0');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
-  /* 顶部暖灯的光斑 */
-  var bloom = ctx.createRadialGradient(w * 0.5, h * 0.2, 0, w * 0.5, h * 0.2, w * 0.42);
-  bloom.addColorStop(0, 'rgba(255,246,228,0.95)');
-  bloom.addColorStop(0.45, 'rgba(255,240,214,0.35)');
-  bloom.addColorStop(1, 'rgba(255,240,214,0)');
+  /* 镜前灯的光斑（上缘偏中） */
+  var bloom = ctx.createRadialGradient(w * 0.5, h * 0.16, 0, w * 0.5, h * 0.16, w * 0.44);
+  bloom.addColorStop(0, 'rgba(255,248,232,0.92)');
+  bloom.addColorStop(0.45, 'rgba(255,244,222,0.32)');
+  bloom.addColorStop(1, 'rgba(255,244,222,0)');
   ctx.fillStyle = bloom;
   ctx.fillRect(0, 0, w, h);
 
-  /* 对面墙与台面的模糊投影 */
-  ctx.fillStyle = 'rgba(160,146,128,0.18)';
-  ctx.fillRect(0, h * 0.58, w, h * 0.16);
-  ctx.fillStyle = 'rgba(120,106,90,0.14)';
-  ctx.fillRect(0, h * 0.76, w, h * 0.24);
+  /* 对面墙、台面的模糊投影 */
+  ctx.fillStyle = 'rgba(150,158,140,0.16)';
+  ctx.fillRect(0, h * 0.60, w, h * 0.15);
+  ctx.fillStyle = 'rgba(118,126,110,0.12)';
+  ctx.fillRect(0, h * 0.78, w, h * 0.22);
 
-  /* 左右边缘的暗角 */
+  /* 左右边缘暗角 */
   var side = ctx.createLinearGradient(0, 0, w, 0);
-  side.addColorStop(0, 'rgba(60,50,40,0.30)');
-  side.addColorStop(0.08, 'rgba(60,50,40,0)');
-  side.addColorStop(0.92, 'rgba(60,50,40,0)');
-  side.addColorStop(1, 'rgba(60,50,40,0.30)');
+  side.addColorStop(0, 'rgba(58,62,54,0.26)');
+  side.addColorStop(0.08, 'rgba(58,62,54,0)');
+  side.addColorStop(0.92, 'rgba(58,62,54,0)');
+  side.addColorStop(1, 'rgba(58,62,54,0.26)');
   ctx.fillStyle = side;
   ctx.fillRect(0, 0, w, h);
 
-  for (i = 0; i < 220; i++) {
-    ctx.fillStyle = 'rgba(255,255,255,' + (0.02 + rnd() * 0.05).toFixed(3) + ')';
+  for (i = 0; i < 180; i++) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.02 + rnd() * 0.04).toFixed(3) + ')';
     ctx.fillRect(rnd() * w, rnd() * h, 1, 1);
   }
 }
 
-/* 磨砂窗：暖色漫射玻璃，斜向光带与柔光斑 */
+/* 磨砂窗：暖白日光漫射，斜向光带与柔和光斑，背后有模糊绿影 */
 function paintWindow(ctx, w, h) {
   var rnd = seeded(0x5ad0f1);
   var i;
   var g = ctx.createLinearGradient(0, h, 0, 0);
-  g.addColorStop(0, '#f7dcb4');
-  g.addColorStop(0.55, '#ffe6c1');
-  g.addColorStop(1, '#fff3dd');
+  g.addColorStop(0, '#f4dcb8');
+  g.addColorStop(0.55, '#ffeac8');
+  g.addColorStop(1, '#fff7e6');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
@@ -316,35 +267,35 @@ function paintWindow(ctx, w, h) {
   ctx.translate(w * 0.5, h * 0.5);
   ctx.rotate(-0.6);
   for (i = -2; i <= 2; i++) {
-    ctx.fillStyle = 'rgba(255,252,242,' + (0.10 + rnd() * 0.10).toFixed(3) + ')';
+    ctx.fillStyle = 'rgba(255,253,246,' + (0.10 + rnd() * 0.09).toFixed(3) + ')';
     ctx.fillRect(i * w * 0.28 - w * 0.05, -h, w * 0.11, h * 2);
   }
   ctx.restore();
 
-  /* 磨砂颗粒感 */
-  for (i = 0; i < 28; i++) {
+  /* 磨砂玻璃的柔光斑 */
+  for (i = 0; i < 26; i++) {
     var cx = rnd() * w;
     var cy = rnd() * h;
-    var r = w * (0.06 + rnd() * 0.16);
+    var r = w * (0.06 + rnd() * 0.15);
     var dot = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    dot.addColorStop(0, 'rgba(255,255,250,0.30)');
+    dot.addColorStop(0, 'rgba(255,255,250,0.28)');
     dot.addColorStop(1, 'rgba(255,255,250,0)');
     ctx.fillStyle = dot;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
   }
 
-  /* 玻璃后隐约的树影 */
-  for (i = 0; i < 5; i++) {
-    ctx.fillStyle = 'rgba(150,150,110,0.10)';
-    ctx.fillRect(rnd() * w, h * 0.45 + rnd() * h * 0.4, w * (0.1 + rnd() * 0.2), h * 0.1);
+  /* 窗外隐约的树叶影 */
+  for (i = 0; i < 6; i++) {
+    ctx.fillStyle = 'rgba(128,148,108,0.09)';
+    ctx.fillRect(rnd() * w, h * 0.42 + rnd() * h * 0.42, w * (0.10 + rnd() * 0.18), h * 0.09);
   }
 }
 
 /* 接地阴影贴片：一张柔和径向渐变，合并成一个透明批次 */
 function paintShadow(ctx, w, h) {
   var grad = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
-  grad.addColorStop(0, 'rgba(0,0,0,0.66)');
-  grad.addColorStop(0.55, 'rgba(0,0,0,0.30)');
+  grad.addColorStop(0, 'rgba(0,0,0,0.62)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.28)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
@@ -469,7 +420,7 @@ function createWorld(THREE, opts) {
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(BG_COLOR);
-  scene.fog = new THREE.Fog(FOG_COLOR, 5.5, 15);
+  scene.fog = new THREE.Fog(FOG_COLOR, 6, 16);
 
   var world = new THREE.Group();
   world.name = 'bathroom';
@@ -478,20 +429,20 @@ function createWorld(THREE, opts) {
   scene.add(world);
 
   /* ---------------- lights (2 或 3, 无阴影贴图) ---------------- */
-  var hemi = new THREE.HemisphereLight(0xfff0dc, 0x53463b, 0.62);
+  var hemi = new THREE.HemisphereLight(0xfff7e8, 0x4a5045, 0.38);
   hemi.name = 'bathroom-hemi';
   world.add(hemi);
 
-  var warmPoint = new THREE.PointLight(0xffd6a4, 2.2, 7, 2);
+  var warmPoint = new THREE.PointLight(0xffe2bd, 1.25, 6.5, 2);
   warmPoint.name = 'bathroom-warm';
-  warmPoint.position.set(0, 2.28, -0.45);
+  warmPoint.position.set(0, 2.24, -0.35);
   world.add(warmPoint);
 
   if (high) {
     /* 磨砂窗透进来的日光，只在高画质点亮 */
-    var windowLight = new THREE.PointLight(0xffeccb, 1.3, 4.2, 2);
+    var windowLight = new THREE.PointLight(0xffedcf, 0.55, 4.2, 2);
     windowLight.name = 'bathroom-window';
-    windowLight.position.set(-1.08, 1.7, -0.05);
+    windowLight.position.set(-1.02, 1.72, WINDOW_Z);
     world.add(windowLight);
   }
 
@@ -503,9 +454,8 @@ function createWorld(THREE, opts) {
     paintTile,
     true
   );
-  var stoneTex = high ? createCanvasTexture(THREE, 256, 256, paintStone, true) : null;
-  var woodTex = high ? createCanvasTexture(THREE, 128, 128, paintWood, true) : null;
-  var matTex = high ? createCanvasTexture(THREE, 128, 128, paintMat, false) : null;
+  var floorTex = high ? createCanvasTexture(THREE, 256, 256, paintFloor, true) : null;
+  var woodTex = high ? createCanvasTexture(THREE, 128, 128, paintOak, true) : null;
   var mirrorTex = createCanvasTexture(
     THREE,
     high ? 128 : 64,
@@ -525,97 +475,114 @@ function createWorld(THREE, opts) {
   /* ---------------- materials ---------------- */
   var matTile = high
     ? new THREE.MeshStandardMaterial({
-      color: tileTex ? 0xffffff : 0xded2c0,
+      color: tileTex ? 0xffffff : 0xe3e7d9,
       map: tileTex,
-      roughness: 0.38,
-      metalness: 0.02
+      roughness: 0.46,
+      metalness: 0.0
     })
-    : new THREE.MeshLambertMaterial({ color: 0xdbcfbd });
+    : new THREE.MeshLambertMaterial({ color: 0xdfe3d4 });
   matTile.name = 'bathroom-wall-tile';
 
-  var matStone = high
+  var matFloor = high
     ? new THREE.MeshStandardMaterial({
-      color: stoneTex ? 0xffffff : 0xcac0b1,
-      map: stoneTex,
-      roughness: 0.68,
-      metalness: 0.02
+      color: floorTex ? 0xffffff : 0x9aa396,
+      map: floorTex,
+      roughness: 0.86,
+      metalness: 0.0
     })
-    : new THREE.MeshLambertMaterial({ color: 0xc7bdae });
-  matStone.name = 'bathroom-stone';
+    : new THREE.MeshLambertMaterial({ color: 0x98a294 });
+  matFloor.name = 'bathroom-nonslip-floor';
 
   /* 天花朝下，主光吃不均匀，用不受光材质保持干净 */
-  var matCeiling = new THREE.MeshBasicMaterial({ color: 0xe4d9cb });
+  var matCeiling = new THREE.MeshBasicMaterial({ color: 0xe3e6da });
   matCeiling.name = 'bathroom-ceiling';
 
   var matWood = high
     ? new THREE.MeshStandardMaterial({
-      color: woodTex ? 0xffffff : 0x9d6d47,
+      color: woodTex ? 0xffffff : 0xcdb086,
       map: woodTex,
-      roughness: 0.56,
+      roughness: 0.6,
       metalness: 0.0
     })
-    : new THREE.MeshLambertMaterial({ color: 0x9d6d47 });
-  matWood.name = 'bathroom-wood';
+    : new THREE.MeshLambertMaterial({ color: 0xc7aa80 });
+  matWood.name = 'bathroom-oak';
 
   var matCeramic = new THREE.MeshStandardMaterial({
-    color: 0xf7f4ee, roughness: 0.14, metalness: 0.02
+    color: 0xf2f1ea, roughness: 0.17, metalness: 0.02
   });
   matCeramic.name = 'bathroom-ceramic';
 
+  /* 立起的盖板背向暖光：独立材质带一点自发光托底，仍保留釉面高光 */
+  var matLid = new THREE.MeshStandardMaterial({
+    color: 0xf7f5ef,
+    roughness: 0.26,
+    metalness: 0.0,
+    emissive: 0xdcd8cc,
+    emissiveIntensity: 0.28
+  });
+  matLid.name = 'bathroom-toilet-lid';
+
+  /* 无环境贴图时高金属度会发黑：压低 metalness，靠粗糙度做出拉丝感 */
   var matMetal = new THREE.MeshStandardMaterial({
-    color: 0xc9c5bd, roughness: 0.26, metalness: 0.88
+    color: 0xc9cec9, roughness: 0.45, metalness: 0.25
   });
   matMetal.name = 'bathroom-metal';
 
+  /* 可注视扶手单独一份材质：闪烁放大时不会牵动整批金属件 */
+  var matBar = new THREE.MeshStandardMaterial({
+    color: 0xc9cec9, roughness: 0.45, metalness: 0.25
+  });
+  matBar.name = 'bathroom-grab-bar';
+
+  var matSkirt = new THREE.MeshStandardMaterial({
+    color: 0x929a8e, roughness: 0.62, metalness: 0.0
+  });
+  matSkirt.name = 'bathroom-skirting';
+
   var matMirror = new THREE.MeshBasicMaterial({
-    color: mirrorTex ? 0xffffff : 0xcfd3cd,
+    color: mirrorTex ? 0xffffff : 0xdfe3d7,
     map: mirrorTex
   });
   matMirror.name = 'bathroom-mirror';
 
   var matWater = new THREE.MeshStandardMaterial({
-    color: 0x9fb9ba,
-    roughness: 0.06,
-    metalness: 0.05,
+    color: 0xa9c0c0,
+    roughness: 0.08,
+    metalness: 0.04,
     transparent: true,
-    opacity: 0.74,
+    opacity: 0.72,
     depthWrite: false
   });
   matWater.name = 'bathroom-water';
 
   var matLinen = new THREE.MeshStandardMaterial({
-    color: 0xf1e9dc, roughness: 0.95, metalness: 0.0
+    color: 0xdfe2d4, roughness: 0.94, metalness: 0.0
   });
   matLinen.name = 'bathroom-linen';
 
-  var matBathMat = high
-    ? new THREE.MeshStandardMaterial({
-      color: matTex ? 0xffffff : 0xd3c4ad,
-      map: matTex,
-      roughness: 0.94,
-      metalness: 0.0
-    })
-    : new THREE.MeshLambertMaterial({ color: 0xd0c1aa });
-  matBathMat.name = 'bathroom-slip-mat';
-
-  var matPot = new THREE.MeshStandardMaterial({
-    color: 0xb98a6c, roughness: 0.86, metalness: 0.0
+  var matBin = new THREE.MeshStandardMaterial({
+    color: 0x7f8d7c, roughness: 0.72, metalness: 0.0
   });
-  matPot.name = 'bathroom-pot';
+  matBin.name = 'bathroom-bin';
+
+  var matCall = new THREE.MeshStandardMaterial({
+    color: 0xb44f45, roughness: 0.5, metalness: 0.02
+  });
+  matCall.name = 'bathroom-call-unit';
 
   var matLeaves = new THREE.MeshStandardMaterial({
-    color: 0x557a4d,
-    roughness: 0.78,
+    color: 0x6f8a63,
+    roughness: 0.82,
     metalness: 0.0,
     side: THREE.DoubleSide
   });
   matLeaves.name = 'bathroom-plant';
 
-  var matGlow = new THREE.MeshBasicMaterial({ color: 0xffe7c6 });
+  var matGlow = new THREE.MeshBasicMaterial({ color: 0xfff2da });
   matGlow.name = 'bathroom-glow';
 
   var matWindow = new THREE.MeshBasicMaterial({
-    color: windowTex ? 0xffffff : 0xffe8c8,
+    color: windowTex ? 0xffffff : 0xffeed2,
     map: windowTex
   });
   matWindow.name = 'bathroom-window';
@@ -626,7 +593,7 @@ function createWorld(THREE, opts) {
       color: 0x000000,
       map: shadowTex,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.68,
       depthWrite: false
     });
     matShadow.name = 'bathroom-contact-shadow';
@@ -635,7 +602,7 @@ function createWorld(THREE, opts) {
   /* ---------------- shell: floor, tiled walls, ceiling ---------------- */
   var floorBatch = new Batch(THREE);
   floorBatch.plane(ROOM_W, ROOM_D, 0, 0, 0, -Math.PI / 2, 0, ROOM_W, ROOM_D);
-  var floorMesh = floorBatch.build(matStone, 'bathroom-floor');
+  var floorMesh = floorBatch.build(matFloor, 'bathroom-floor');
   if (floorMesh) { world.add(floorMesh); }
 
   var wallBatch = new Batch(THREE);
@@ -659,45 +626,48 @@ function createWorld(THREE, opts) {
   var metal = new Batch(THREE);
   var linen = new Batch(THREE);
   var glow = new Batch(THREE);
+  var bin = new Batch(THREE);
+  var skirt = new Batch(THREE);
 
-  /* ============ 洗手台（后墙左半） ============ */
-  wood.box(1.12, 0.64, 0.46, VANITY_X, 0.46, VANITY_Z);              /* 柜体 */
-  wood.box(1.0, 0.14, 0.36, VANITY_X, 0.07, VANITY_Z - 0.04);        /* 内收踢脚 */
-  wood.box(0.54, 0.28, 0.02, VANITY_X - 0.28, 0.65, VANITY_Z + 0.23); /* 上抽屉面 */
-  wood.box(0.54, 0.28, 0.02, VANITY_X + 0.28, 0.65, VANITY_Z + 0.23);
-  wood.box(0.54, 0.26, 0.02, VANITY_X - 0.28, 0.33, VANITY_Z + 0.23); /* 下柜门 */
-  wood.box(0.54, 0.26, 0.02, VANITY_X + 0.28, 0.33, VANITY_Z + 0.23);
-  metal.box(0.16, 0.012, 0.02, VANITY_X - 0.28, 0.7, VANITY_Z + 0.245);
-  metal.box(0.16, 0.012, 0.02, VANITY_X + 0.28, 0.7, VANITY_Z + 0.245);
-  metal.box(0.014, 0.1, 0.02, VANITY_X - 0.55, 0.4, VANITY_Z + 0.245);
-  metal.box(0.014, 0.1, 0.02, VANITY_X + 0.55, 0.4, VANITY_Z + 0.245);
+  /* ============ 踢脚：一条深鼠尾草灰细带，压住墙地交界 ============ */
+  skirt.box(ROOM_W, 0.08, 0.012, 0, 0.04, -ROOM_D / 2 + 0.006);
+  skirt.box(ROOM_W, 0.08, 0.012, 0, 0.04, ROOM_D / 2 - 0.006);
+  skirt.box(0.012, 0.08, ROOM_D, -ROOM_W / 2 + 0.006, 0.04, 0);
+  skirt.box(0.012, 0.08, ROOM_D, ROOM_W / 2 - 0.006, 0.04, 0);
 
-  /* 石材台面 + 后挡水 */
-  var counter = new Batch(THREE);
-  counter.box(1.18, 0.045, 0.5, VANITY_X, COUNTER_H - 0.0225, VANITY_Z);
-  counter.box(1.18, 0.1, 0.02, VANITY_X, COUNTER_H + 0.05, -ROOM_D / 2 + 0.011);
-  var counterMesh = counter.build(matStone, 'bathroom-counter');
-  if (counterMesh) { world.add(counterMesh); }
+  /* ============ 洗手台（后墙左侧，壁挂式） ============ */
+  wood.box(0.48, 0.34, 0.32, VANITY_X, 0.62, VANITY_Z);               /* 柜体：y 0.45 - 0.79 */
+  wood.box(0.42, 0.26, 0.018, VANITY_X, 0.62, VANITY_Z + 0.17);       /* 柜门 */
+  metal.box(0.14, 0.012, 0.016, VANITY_X, 0.74, VANITY_Z + 0.181);    /* 拉手 */
+  wood.box(0.54, 0.04, 0.37, VANITY_X, COUNTER_H - 0.02, VANITY_Z + 0.015); /* 台面 */
 
-  /* 陶瓷台上盆 + 龙头 */
-  ceramic.cylinder(0.21, 0.152, 0.13, ringSeg, VANITY_X, COUNTER_H + 0.065, VANITY_Z + 0.04);
-  var basinRim = new THREE.TorusGeometry(0.204, 0.011, 6, ringSeg);
-  ceramic.add(basinRim, VANITY_X, COUNTER_H + 0.128, VANITY_Z + 0.04, Math.PI / 2, 0, 0, 1, 1);
-  metal.cylinder(0.018, 0.018, 0.24, ringSeg, VANITY_X, COUNTER_H + 0.25, VANITY_Z - 0.19);
+  /* 陶瓷台上盆 + 墙出龙头 */
+  ceramic.cylinder(0.15, 0.115, 0.095, ringSeg, VANITY_X, COUNTER_H + 0.0475, VANITY_Z + 0.03);
+  var basinRim = new THREE.TorusGeometry(0.145, 0.009, 6, ringSeg);
+  ceramic.add(basinRim, VANITY_X, COUNTER_H + 0.095, VANITY_Z + 0.03, Math.PI / 2, 0, 0, 1, 1);
   metal.add(
-    new THREE.CylinderGeometry(0.014, 0.014, 0.13, 12),
-    VANITY_X, COUNTER_H + 0.365, VANITY_Z - 0.125, Math.PI / 2, 0, 0, 1, 1
+    new THREE.CylinderGeometry(0.016, 0.016, 0.14, 12),
+    VANITY_X, COUNTER_H + 0.17, VANITY_Z - 0.07, Math.PI / 2, 0, 0, 1, 1
   );
-  metal.cylinder(0.012, 0.012, 0.03, 10, VANITY_X, COUNTER_H + 0.35, VANITY_Z - 0.062);
-  metal.box(0.09, 0.016, 0.02, VANITY_X + 0.05, COUNTER_H + 0.37, VANITY_Z - 0.19);
+  metal.cylinder(0.012, 0.012, 0.05, 10, VANITY_X, COUNTER_H + 0.145, VANITY_Z - 0.005);
+  metal.box(0.07, 0.014, 0.02, VANITY_X + 0.04, COUNTER_H + 0.185, VANITY_Z - 0.07);
 
-  /* 镜框（木）+ 镜面 */
-  wood.box(0.98, 0.035, 0.035, VANITY_X, 2.035, -1.482);
-  wood.box(0.98, 0.035, 0.035, VANITY_X, 1.005, -1.482);
-  wood.box(0.035, 1.0, 0.035, VANITY_X - 0.47, 1.52, -1.482);
-  wood.box(0.035, 1.0, 0.035, VANITY_X + 0.47, 1.52, -1.482);
+  /* 皂液瓶 */
+  ceramic.cylinder(0.032, 0.036, 0.12, 14, VANITY_X - 0.22, COUNTER_H + 0.06, VANITY_Z + 0.06);
+  metal.cylinder(0.008, 0.008, 0.05, 8, VANITY_X - 0.22, COUNTER_H + 0.14, VANITY_Z + 0.06);
+  metal.box(0.04, 0.008, 0.012, VANITY_X - 0.205, COUNTER_H + 0.165, VANITY_Z + 0.06);
 
-  var mirrorMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.96), matMirror);
+  /* 台面右侧叠好的手巾：唯一的织物暖点 */
+  linen.box(0.11, 0.045, 0.11, VANITY_X + 0.21, COUNTER_H + 0.0225, VANITY_Z + 0.14);
+  linen.box(0.09, 0.03, 0.09, VANITY_X + 0.21, COUNTER_H + 0.06, VANITY_Z + 0.14);
+
+  /* 镜框（浅橡木）+ 镜面（可注视） */
+  wood.box(0.52, 0.03, 0.03, VANITY_X, 1.17, -1.478);
+  wood.box(0.52, 0.03, 0.03, VANITY_X, 1.87, -1.478);
+  wood.box(0.03, 0.73, 0.03, VANITY_X - 0.245, 1.52, -1.478);
+  wood.box(0.03, 0.73, 0.03, VANITY_X + 0.245, 1.52, -1.478);
+
+  var mirrorMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.68), matMirror);
   mirrorMesh.name = 'bathroom-mirror';
   mirrorMesh.position.set(VANITY_X, 1.52, -1.487);
   mirrorMesh.userData.selectable = true;
@@ -705,194 +675,243 @@ function createWorld(THREE, opts) {
   mirrorMesh.userData.label = 'mirror';
   world.add(mirrorMesh);
 
-  /* 镜前暖光条 */
-  glow.box(0.5, 0.055, 0.018, VANITY_X, 2.075, -1.478);
+  /* 镜前柔光灯条 */
+  glow.box(0.36, 0.045, 0.02, VANITY_X, 1.945, -1.474);
 
-  /* ============ 马桶（后墙右半，面朝 +z） ============ */
-  ceramic.box(0.4, 0.42, 0.2, WC_X, 0.77, -1.39);                   /* 水箱 */
-  ceramic.box(0.43, 0.045, 0.22, WC_X, 1.0025, -1.39);              /* 水箱盖 */
-  ceramic.box(0.28, 0.16, 0.36, WC_X, 0.08, WC_Z - 0.01);           /* 底座 */
+  /* ============ 马桶（后墙正中，面朝 +z，患者正前方） ============ */
+  var baseGeo = new THREE.CylinderGeometry(0.155, 0.13, 0.16, tubeSeg);
+  baseGeo.scale(1, 1, 1.12);
+  ceramic.add(baseGeo, WC_X, 0.08, WC_Z - 0.01, 0, 0, 0, 1, 1);      /* 收腰底座，落地 */
+  var bowlGeo = new THREE.CylinderGeometry(0.188, 0.125, 0.3, tubeSeg);
+  bowlGeo.scale(1, 1, 1.28);
+  ceramic.add(bowlGeo, WC_X, 0.27, WC_Z, 0, 0, 0, 1, 1);
 
-  var bowl = new THREE.CylinderGeometry(0.185, 0.13, 0.3, tubeSeg);
-  bowl.scale(1, 1, 1.25);
-  ceramic.add(bowl, WC_X, 0.3, WC_Z, 0, 0, 0, 1, 1);
+  var bowlRim = new THREE.TorusGeometry(0.176, 0.028, 6, tubeSeg);
+  bowlRim.scale(1, 1.28, 1);
+  ceramic.add(bowlRim, WC_X, 0.425, WC_Z, Math.PI / 2, 0, 0, 1, 1);
 
-  var bowlRim = new THREE.TorusGeometry(0.172, 0.028, 6, tubeSeg);
-  bowlRim.scale(1, 1.25, 1);
-  ceramic.add(bowlRim, WC_X, 0.455, WC_Z, Math.PI / 2, 0, 0, 1, 1);
+  var seat = new THREE.TorusGeometry(0.168, 0.032, 6, tubeSeg);
+  seat.scale(1, 1.28, 1);
+  ceramic.add(seat, WC_X, 0.455, WC_Z, Math.PI / 2, 0, 0, 1, 1);
 
-  var seat = new THREE.TorusGeometry(0.168, 0.036, 6, tubeSeg);
-  seat.scale(1, 1.25, 1);
-  ceramic.add(seat, WC_X, 0.487, WC_Z, Math.PI / 2, 0, 0, 1, 1);
+  /* 座圈外缘的细暗缝：让白色座圈与白色碗体分开 */
+  var seatSeam = new THREE.TorusGeometry(0.199, 0.003, 4, tubeSeg);
+  seatSeam.scale(1, 1.28, 1);
+  skirt.add(seatSeam, WC_X, 0.444, WC_Z, Math.PI / 2, 0, 0, 1, 1);
 
-  /* 立起的盖板，靠在木箱前壁；内水面因此可见 */
-  var lid = new THREE.CylinderGeometry(0.176, 0.176, 0.02, tubeSeg);
-  lid.scale(1, 1, 1.25);
-  ceramic.add(lid, WC_X, 0.75, -1.27, -1.4, 0, 0, 1, 1);
+  /* 立起的盖板：独立网格，带一圈圆边和内侧细缝，避免读成一块灰盘 */
+  var lidBatch = new Batch(THREE);
+  var lidGeo = new THREE.CylinderGeometry(0.176, 0.176, 0.02, tubeSeg);
+  lidGeo.scale(1, 1, 1.28);
+  lidBatch.add(lidGeo, 0, 0, 0, -1.35, 0, 0, 1, 1);
 
-  metal.box(0.05, 0.03, 0.04, WC_X - 0.11, 0.5, -1.29);
-  metal.box(0.05, 0.03, 0.04, WC_X + 0.11, 0.5, -1.29);
+  var lidRimGeo = new THREE.TorusGeometry(0.176, 0.006, 5, tubeSeg);
+  lidRimGeo.rotateX(Math.PI / 2);
+  lidRimGeo.scale(1, 1, 1.28);
+  lidBatch.add(lidRimGeo, 0, 0, 0, -1.35, 0, 0, 1, 1);
 
-  /* 双按键冲水 */
-  metal.cylinder(0.032, 0.032, 0.012, 14, WC_X - 0.05, 1.031, -1.39);
-  metal.cylinder(0.024, 0.024, 0.012, 12, WC_X + 0.06, 1.031, -1.39);
+  var lidMesh = lidBatch.build(matLid, 'bathroom-toilet-lid');
+  lidMesh.position.set(WC_X, 0.7, -1.23);
+  /* 合批网格默认关闭矩阵自更新；盖板有自身位移，需要恢复 */
+  lidMesh.matrixAutoUpdate = true;
+  lidMesh.updateMatrix();
+  world.add(lidMesh);
+
+  /* 盖板正面的细缝：深灰绿椭圆线，给盘面一个内边界 */
+  var lidSeamGeo = new THREE.TorusGeometry(0.152, 0.0025, 4, tubeSeg);
+  lidSeamGeo.rotateX(Math.PI / 2);
+  lidSeamGeo.scale(1, 1, 1.28);
+  lidSeamGeo.translate(0, -0.012, 0);
+  skirt.add(lidSeamGeo, WC_X, 0.7, -1.23, -1.35, 0, 0, 1, 1);
+
+  /* 水箱：降低到病床扶手高度以下，盖板略出挑 */
+  ceramic.box(0.4, 0.38, 0.2, WC_X, 0.79, -1.39);
+  ceramic.box(0.435, 0.035, 0.215, WC_X, 0.9975, -1.385);
+
+  /* 箱盖上的内凹冲水面板 + 双按键：开盖时不遮挡，也打破白箱的空白 */
+  skirt.box(0.24, 0.012, 0.12, WC_X, 1.017, -1.385);
+  metal.cylinder(0.026, 0.026, 0.012, 12, WC_X - 0.05, 1.028, -1.385);
+  metal.cylinder(0.02, 0.02, 0.012, 10, WC_X + 0.05, 1.028, -1.385);
+  /* 箱盖出挑下的细阴影线，让盖沿不再是白上加白 */
+  skirt.box(0.44, 0.006, 0.005, WC_X, 0.978, -1.278);
+
+  metal.box(0.04, 0.03, 0.05, WC_X - 0.1, 0.475, -1.245);
+  metal.box(0.04, 0.03, 0.05, WC_X + 0.1, 0.475, -1.245);
 
   /* 内水面：单独一层，可做极轻的浮动 */
-  var waterGeo = new THREE.CylinderGeometry(0.118, 0.118, 0.004, tubeSeg);
+  var waterGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.004, tubeSeg);
   waterGeo.scale(1, 1, 1.25);
   var waterMesh = new THREE.Mesh(waterGeo, matWater);
   waterMesh.name = 'bathroom-water';
   waterMesh.position.set(WC_X, WATER_Y, WC_Z);
   world.add(waterMesh);
 
-  /* ============ 无障碍扶手（右墙，木质抓握面） ============ */
-  metal.box(0.055, 0.03, 0.03, 1.38, 0.95, -1.16);
-  metal.box(0.055, 0.03, 0.03, 1.38, 0.95, -0.48);
-
-  var railMesh = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.045, 0.72), matWood);
-  railMesh.name = 'bathroom-grab-bar';
-  railMesh.position.set(1.355, 0.95, -0.82);
-  railMesh.userData.selectable = true;
-  railMesh.userData.targetId = 3;
-  railMesh.userData.label = 'grab-bar';
-  world.add(railMesh);
-
-  /* ============ 防滑垫（洗手台前） ============ */
-  var bathMatMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.55), matBathMat);
-  bathMatMesh.name = 'bathroom-slip-mat';
-  bathMatMesh.position.set(-0.7, 0.006, -0.6);
-  bathMatMesh.rotation.x = -Math.PI / 2;
-  world.add(bathMatMesh);
-
-  /* ============ 毛巾（左前墙挂杆，淋浴区之外） ============ */
-  metal.add(
-    new THREE.CylinderGeometry(0.012, 0.012, 0.62, 10),
-    -1.37, 1.3, 0.95, Math.PI / 2, 0, 0, 1, 1
-  );
-  metal.box(0.04, 0.03, 0.03, -1.39, 1.3, 0.66);
-  metal.box(0.04, 0.03, 0.03, -1.39, 1.3, 1.24);
-
-  linen.box(0.05, 0.045, 0.44, -1.36, 1.283, 0.95);
-  linen.box(0.032, 0.56, 0.42, -1.362, 1.0, 0.95);
-
-  if (high) {
-    /* 台面上叠好的手巾 */
-    linen.box(0.26, 0.05, 0.2, VANITY_X - 0.4, COUNTER_H + 0.025, VANITY_Z + 0.03);
-    linen.box(0.22, 0.04, 0.17, VANITY_X - 0.4, COUNTER_H + 0.07, VANITY_Z + 0.03);
+  /* ============ 无障碍扶手：马桶两侧（后墙）============ */
+  /* 左侧扶手进金属批次；右侧单独成网，作为可注视目标 */
+  function addBarParts(batch, cx, cy, cz) {
+    batch.add(new THREE.CylinderGeometry(0.018, 0.018, 0.38, 16), cx, cy, cz, 0, 0, Math.PI / 2, 1, 1);
+    batch.add(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 10), cx - 0.19, cy, cz - 0.034, Math.PI / 2, 0, 0, 1, 1);
+    batch.add(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 10), cx + 0.19, cy, cz - 0.034, Math.PI / 2, 0, 0, 1, 1);
+    batch.add(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 16), cx - 0.19, cy, cz - 0.052, Math.PI / 2, 0, 0, 1, 1);
+    batch.add(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 16), cx + 0.19, cy, cz - 0.052, Math.PI / 2, 0, 0, 1, 1);
   }
 
-  /* ============ 置物架 + 小植物（右后墙） ============ */
-  wood.box(0.7, 0.04, 0.2, 0.8, 1.62, -1.38);
-  metal.box(0.05, 0.12, 0.03, 0.52, 1.55, -1.46);
-  metal.box(0.05, 0.12, 0.03, 1.08, 1.55, -1.46);
+  addBarParts(metal, -0.62, 0.9, -1.415);
 
-  var pot = new Batch(THREE);
-  pot.cylinder(0.078, 0.058, 0.12, 16, 0.95, 1.7, -1.36);
-  pot.cylinder(0.083, 0.08, 0.022, 16, 0.95, 1.766, -1.36);
-  var potMesh = pot.build(matPot, 'bathroom-pot');
-  if (potMesh) { world.add(potMesh); }
+  var barBatch = new Batch(THREE);
+  barBatch.add(new THREE.CylinderGeometry(0.018, 0.018, 0.38, 16), 0, 0, 0, 0, 0, Math.PI / 2, 1, 1);
+  barBatch.add(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 10), -0.19, 0, -0.034, Math.PI / 2, 0, 0, 1, 1);
+  barBatch.add(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 10), 0.19, 0, -0.034, Math.PI / 2, 0, 0, 1, 1);
+  barBatch.add(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 16), -0.19, 0, -0.052, Math.PI / 2, 0, 0, 1, 1);
+  barBatch.add(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 16), 0.19, 0, -0.052, Math.PI / 2, 0, 0, 1, 1);
+  var grabBarMesh = barBatch.build(matBar, 'bathroom-grab-bar');
+  grabBarMesh.position.set(0.62, 0.9, -1.415);
+  /* 合批网格默认关闭矩阵自更新；这个目标有自身位移，需要恢复 */
+  grabBarMesh.matrixAutoUpdate = true;
+  grabBarMesh.updateMatrix();
+  grabBarMesh.userData.selectable = true;
+  grabBarMesh.userData.targetId = 2;
+  grabBarMesh.userData.label = 'grab-bar';
+  world.add(grabBarMesh);
+
+  /* 湿区侧墙的连续扶手（站立与转身用） */
+  metal.add(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 16), 1.355, 0.95, 0.3, Math.PI / 2, 0, 0, 1, 1);
+  metal.add(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 16), 1.383, 0.95, 0.0, 0, 0, Math.PI / 2, 1, 1);
+  metal.add(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 16), 1.383, 0.95, 0.6, 0, 0, Math.PI / 2, 1, 1);
+  metal.add(new THREE.CylinderGeometry(0.014, 0.014, 0.025, 10), 1.371, 0.95, 0.0, 0, 0, Math.PI / 2, 1, 1);
+  metal.add(new THREE.CylinderGeometry(0.014, 0.014, 0.025, 10), 1.371, 0.95, 0.6, 0, 0, Math.PI / 2, 1, 1);
+
+  /* ============ 紧急呼叫（呼叫面板 + 拉绳，位于马桶左侧） ============ */
+  ceramic.box(0.135, 0.18, 0.012, -0.32, 1.34, -1.478);               /* 白色底板 */
+  ceramic.cylinder(0.018, 0.018, 0.014, 12, -0.32, 1.375, -1.452);    /* 呼叫按钮 */
+
+  var callBatch = new Batch(THREE);
+  callBatch.box(0.11, 0.15, 0.016, 0, 0, 0);
+  callBatch.cylinder(0.004, 0.004, 0.52, 6, 0, -0.335, 0.016);
+  callBatch.add(new THREE.CylinderGeometry(0.012, 0.012, 0.15, 10), 0, -0.6, 0.016, 0, 0, Math.PI / 2, 1, 1);
+  var callMesh = callBatch.build(matCall, 'bathroom-call-button');
+  callMesh.position.set(-0.32, 1.34, -1.466);
+  /* 合批网格默认关闭矩阵自更新；这个目标有自身位移，需要恢复 */
+  callMesh.matrixAutoUpdate = true;
+  callMesh.updateMatrix();
+  callMesh.userData.selectable = true;
+  callMesh.userData.targetId = 3;
+  callMesh.userData.label = 'call-button';
+  world.add(callMesh);
+
+  /* ============ 卫生纸架（右侧扶手下方） ============ */
+  metal.box(0.05, 0.09, 0.012, 0.62, 0.62, -1.492);
+  metal.add(new THREE.CylinderGeometry(0.008, 0.008, 0.08, 10), 0.56, 0.62, -1.44, Math.PI / 2, 0, 0, 1, 1);
+  metal.add(new THREE.CylinderGeometry(0.008, 0.008, 0.08, 10), 0.68, 0.62, -1.44, Math.PI / 2, 0, 0, 1, 1);
+  metal.add(new THREE.CylinderGeometry(0.007, 0.007, 0.14, 10), 0.62, 0.62, -1.4, 0, 0, Math.PI / 2, 1, 1);
+  ceramic.add(new THREE.CylinderGeometry(0.052, 0.052, 0.1, 16), 0.62, 0.62, -1.4, 0, 0, Math.PI / 2, 1, 1);
+
+  /* ============ 污物桶（马桶右侧地面） ============ */
+  bin.cylinder(0.105, 0.095, 0.34, ringSeg, 0.52, 0.17, -1.2);
+  bin.cylinder(0.112, 0.108, 0.03, ringSeg, 0.52, 0.355, -1.2);
+  metal.box(0.16, 0.018, 0.05, 0.52, 0.025, -1.06);
+
+  /* ============ 免洗消毒液（左墙，窗边） ============ */
+  ceramic.box(0.075, 0.2, 0.1, -1.3625, 1.1, 0.62);
+  metal.cylinder(0.012, 0.012, 0.06, 10, -1.34, 1.235, 0.62);
+  metal.box(0.06, 0.014, 0.02, -1.31, 1.25, 0.62);
+  ceramic.box(0.06, 0.012, 0.09, -1.34, 0.985, 0.62);
+
+  /* ============ 置物架 + 小植物（右后墙，非交互） ============ */
+  wood.box(0.5, 0.035, 0.18, 1.02, 1.5, -1.4);
+  metal.box(0.03, 0.1, 0.06, 0.86, 1.447, -1.455);
+  metal.box(0.03, 0.1, 0.06, 1.18, 1.447, -1.455);
+
+  ceramic.cylinder(0.06, 0.046, 0.12, 16, 1.02, 1.58, -1.4);
+  ceramic.cylinder(0.064, 0.061, 0.02, 16, 1.02, 1.645, -1.4);
+  ceramic.cylinder(0.03, 0.034, 0.13, 14, 0.87, 1.585, -1.4);
+  ceramic.cylinder(0.024, 0.028, 0.1, 12, 1.17, 1.57, -1.4);
+  metal.cylinder(0.016, 0.016, 0.02, 10, 0.87, 1.66, -1.4);
+  metal.cylinder(0.013, 0.013, 0.018, 10, 1.17, 1.63, -1.4);
 
   /* 叶片：整株合成一张网格，可整体轻摆 */
   var plant = new Batch(THREE);
   var leafRnd = seeded(0x7ab1e5);
   var li;
-  for (li = 0; li < 8; li++) {
-    /* 叶片只朝房间一侧展开：既像植物朝光生长，也不会插进背后墙面 */
-    var ang = Math.PI / 2 + (li - 3.5) * 0.34 + leafRnd() * 0.12;
-    var stemIn = 0.012 + leafRnd() * 0.018;
-    var reach = 0.06 + leafRnd() * 0.05;
+  for (li = 0; li < 9; li++) {
+    /* 叶片朝房间一侧展开：像植物朝光生长，也不插进背后墙面 */
+    var ang = Math.PI / 2 + (li - 4) * 0.32 + leafRnd() * 0.12;
+    var stemIn = 0.01 + leafRnd() * 0.016;
+    var reach = 0.055 + leafRnd() * 0.05;
     plant.cylinder(
-      0.0045, 0.005, 0.12 + leafRnd() * 0.05, 5,
-      Math.cos(ang) * stemIn, 0.065, Math.sin(ang) * stemIn
+      0.004, 0.0045, 0.1 + leafRnd() * 0.05, 5,
+      Math.cos(ang) * stemIn, 0.06, Math.sin(ang) * stemIn
     );
     plant.plane(
-      0.07, 0.14,
-      Math.cos(ang) * reach, 0.175 + leafRnd() * 0.05, Math.sin(ang) * reach,
-      -0.95 - leafRnd() * 0.35, ang,
+      0.065, 0.13,
+      Math.cos(ang) * reach, 0.16 + leafRnd() * 0.045, Math.sin(ang) * reach,
+      -0.95 - leafRnd() * 0.3, ang,
       1, 1
     );
   }
   var leavesMesh = plant.build(matLeaves, 'bathroom-plant-leaves');
-  leavesMesh.position.set(0.95, 1.775, -1.36);
+  leavesMesh.position.set(1.02, 1.65, -1.4);
   /* 这一株要轻摆，必须恢复矩阵自更新（合批网格默认是静态的） */
   leavesMesh.matrixAutoUpdate = true;
   leavesMesh.updateMatrix();
-  leavesMesh.userData.selectable = true;
-  leavesMesh.userData.targetId = 2;
-  leavesMesh.userData.label = 'plant';
   world.add(leavesMesh);
 
-  if (high) {
-    /* 两个陶瓷小瓶 + 金属盖 */
-    ceramic.cylinder(0.032, 0.036, 0.16, 12, 0.55, 1.72, -1.36);
-    ceramic.cylinder(0.026, 0.03, 0.12, 12, 0.66, 1.7, -1.38);
-    metal.cylinder(0.017, 0.017, 0.022, 10, 0.55, 1.81, -1.36);
-    metal.cylinder(0.014, 0.014, 0.018, 10, 0.66, 1.768, -1.38);
-  }
-
   /* ============ 磨砂窗（左墙） ============ */
-  var windowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.05), matWindow);
+  var windowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.0), matWindow);
   windowMesh.name = 'bathroom-frosted-window';
-  windowMesh.position.set(-ROOM_W / 2 + 0.006, 1.6, -0.05);
+  windowMesh.position.set(-ROOM_W / 2 + 0.006, 1.62, WINDOW_Z);
   windowMesh.rotation.y = Math.PI / 2;
   world.add(windowMesh);
 
-  wood.box(0.035, 0.05, 1.05, -ROOM_W / 2 + 0.018, 2.15, -0.05);
-  wood.box(0.035, 0.05, 1.05, -ROOM_W / 2 + 0.018, 1.05, -0.05);
-  wood.box(0.035, 1.15, 0.05, -ROOM_W / 2 + 0.018, 1.6, 0.5);
-  wood.box(0.035, 1.15, 0.05, -ROOM_W / 2 + 0.018, 1.6, -0.6);
-  wood.box(0.09, 0.03, 1.15, -ROOM_W / 2 + 0.045, 1.03, -0.05);
+  wood.box(0.035, 0.05, 1.02, -ROOM_W / 2 + 0.017, 2.145, WINDOW_Z);
+  wood.box(0.035, 0.05, 1.02, -ROOM_W / 2 + 0.017, 1.095, WINDOW_Z);
+  wood.box(0.035, 1.1, 0.05, -ROOM_W / 2 + 0.017, 1.62, WINDOW_Z + 0.47);
+  wood.box(0.035, 1.1, 0.05, -ROOM_W / 2 + 0.017, 1.62, WINDOW_Z - 0.47);
+  wood.box(0.1, 0.035, 1.08, -ROOM_W / 2 + 0.04, 1.075, WINDOW_Z);
 
-  /* ============ 淋浴区（前右）：玻璃隔断 + 花洒 ============ */
-  /* 低画质省掉整块透明玻璃与顶轨：花洒与地漏仍在，透明面是 Adreno 上最贵的填充 */
-  if (high) {
-    /* 玻璃：透明但不用 transmission（Adreno 540 上代价太高） */
-    var matGlass = new THREE.MeshStandardMaterial({
-      color: 0xdff0ef,
-      roughness: 0.08,
-      metalness: 0.0,
-      transparent: true,
-      opacity: 0.17,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-    matGlass.name = 'bathroom-glass';
+  /* ============ 湿区（右前）：线性地漏 + 花洒 + 折叠淋浴椅 ============ */
+  /* 无挡水条：整间地面连续，地漏贴墙 */
+  metal.box(0.06, 0.004, 0.7, 1.2, 0.002, 0.45);
 
-    var glassMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 2.0), matGlass);
-    glassMesh.name = 'bathroom-shower-glass';
-    glassMesh.position.set(0.58, 1.0, 0.62);
-    glassMesh.rotation.y = Math.PI / 2;
-    glassMesh.renderOrder = 2;
-    world.add(glassMesh);
+  metal.add(new THREE.CylinderGeometry(0.012, 0.012, 0.8, 12), 1.368, 1.42, 0.75, 0, 0, 0, 1, 1);
+  metal.box(0.035, 0.03, 0.04, 1.383, 1.82, 0.75);
+  metal.box(0.035, 0.03, 0.04, 1.383, 1.02, 0.75);
+  metal.box(0.03, 0.08, 0.04, 1.34, 1.2, 0.75);
+  metal.cylinder(0.055, 0.045, 0.022, ringSeg, 1.29, 1.28, 0.75);
 
-    metal.add(
-      new THREE.CylinderGeometry(0.013, 0.013, 0.74, 10),
-      0.58, 2.0, 0.62, Math.PI / 2, 0, 0, 1, 1
-    );
-  }
+  /* 折叠淋浴椅：浅橡木条板 + 金属托架 */
+  wood.box(0.34, 0.028, 0.075, 1.22, 0.5, -0.045);
+  wood.box(0.34, 0.028, 0.075, 1.22, 0.5, 0.055);
+  wood.box(0.34, 0.028, 0.075, 1.22, 0.5, 0.155);
+  wood.box(0.34, 0.028, 0.075, 1.22, 0.5, 0.255);
+  metal.box(0.04, 0.12, 0.06, 1.385, 0.42, -0.02);
+  metal.box(0.04, 0.12, 0.06, 1.385, 0.42, 0.22);
 
-  metal.add(
-    new THREE.CylinderGeometry(0.012, 0.012, 0.26, 10),
-    1.28, 2.05, 0.8, 0, 0, Math.PI / 2, 1, 1
-  );
-  metal.cylinder(0.092, 0.092, 0.014, ringSeg, 1.15, 2.035, 0.8);
-  metal.box(0.03, 0.1, 0.16, 1.385, 1.15, 0.8);
-  metal.add(
-    new THREE.CylinderGeometry(0.028, 0.028, 0.03, 12),
-    1.36, 1.15, 0.8, 0, 0, Math.PI / 2, 1, 1
-  );
-  metal.cylinder(0.05, 0.05, 0.006, 14, 1.05, 0.004, 0.95);
+  /* ============ 毛巾杆（右墙，湿区之外） ============ */
+  metal.add(new THREE.CylinderGeometry(0.011, 0.011, 0.36, 10), 1.36, 1.2, 1.15, Math.PI / 2, 0, 0, 1, 1);
+  metal.box(0.03, 0.03, 0.03, 1.383, 1.2, 0.98);
+  metal.box(0.03, 0.03, 0.03, 1.383, 1.2, 1.32);
+  linen.box(0.05, 0.42, 0.28, 1.33, 0.99, 1.15);
+
+  /* ============ 门（前墙右半，转身可见） ============ */
+  wood.box(0.82, 2.02, 0.045, 0.55, 1.01, 1.475);
+  wood.box(0.05, 2.1, 0.03, 0.11, 1.05, 1.478);
+  wood.box(0.05, 2.1, 0.03, 0.99, 1.05, 1.478);
+  wood.box(0.93, 0.05, 0.03, 0.55, 2.1, 1.478);
+  metal.add(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 10), 0.9, 1.03, 1.44);
+  metal.box(0.09, 0.018, 0.018, 0.855, 1.03, 1.443);
 
   /* ============ 顶灯（暖光盘） ============ */
-  metal.cylinder(0.19, 0.19, 0.016, ringSeg, 0, ROOM_H - 0.008, -0.25);
-  glow.cylinder(0.168, 0.168, 0.012, ringSeg, 0, ROOM_H - 0.02, -0.25);
+  metal.cylinder(0.19, 0.19, 0.016, ringSeg, 0, ROOM_H - 0.008, -0.3);
+  glow.cylinder(0.168, 0.168, 0.012, ringSeg, 0, ROOM_H - 0.02, -0.3);
 
   /* ---------------- 接地阴影：单批次透明贴片 ---------------- */
   if (shadowTex) {
     var shadows = new Batch(THREE);
-    shadows.plane(1.4, 0.85, VANITY_X, 0.004, VANITY_Z + 0.02, -Math.PI / 2, 0, 1, 1);
-    shadows.plane(0.72, 0.8, WC_X, 0.004, WC_Z, -Math.PI / 2, 0, 1, 1);
-    shadows.plane(0.6, 0.9, 0.95, 0.004, 1.0, -Math.PI / 2, 0, 1, 1);
+    shadows.plane(0.95, 1.05, WC_X, 0.004, WC_Z - 0.05, -Math.PI / 2, 0, 1, 1);
+    shadows.plane(0.7, 0.5, VANITY_X, 0.004, VANITY_Z + 0.02, -Math.PI / 2, 0, 1, 1);
+    shadows.plane(0.3, 0.3, 0.52, 0.004, -1.2, -Math.PI / 2, 0, 1, 1);
+    shadows.plane(0.45, 0.5, 1.22, 0.004, 0.1, -Math.PI / 2, 0, 1, 1);
     var shadowMesh = shadows.build(matShadow, 'bathroom-contact-shadows');
     if (shadowMesh) {
       shadowMesh.renderOrder = 1;
@@ -911,9 +930,13 @@ function createWorld(THREE, opts) {
   if (linenMesh) { world.add(linenMesh); }
   var glowMesh = glow.build(matGlow, 'bathroom-glow-batch');
   if (glowMesh) { world.add(glowMesh); }
+  var binMesh = bin.build(matBin, 'bathroom-bin-mesh');
+  if (binMesh) { world.add(binMesh); }
+  var skirtMesh = skirt.build(matSkirt, 'bathroom-skirting');
+  if (skirtMesh) { world.add(skirtMesh); }
 
   /* ---------------- 交互目标 ---------------- */
-  var selectables = [mirrorMesh, leavesMesh, railMesh];
+  var selectables = [mirrorMesh, grabBarMesh, callMesh];
 
   /* ---------------- 预算统计（供设备侧核对） ---------------- */
   var triangleCount = 0;
@@ -936,7 +959,7 @@ function createWorld(THREE, opts) {
     triangleCount += tris;
   });
 
-  var textureList = [tileTex, stoneTex, woodTex, matTex, mirrorTex, windowTex, shadowTex];
+  var textureList = [tileTex, floorTex, woodTex, mirrorTex, windowTex, shadowTex];
   var tx;
   for (tx = 0; tx < textureList.length; tx++) {
     if (textureList[tx] && textureList[tx].image) {
@@ -979,10 +1002,10 @@ function createWorld(THREE, opts) {
     clock += dt;
 
     /* 只有角度/位置/透明度变化：每帧零分配 */
-    leavesMesh.rotation.z = Math.sin(clock * 0.85) * 0.028;
-    leavesMesh.rotation.x = Math.sin(clock * 0.53 + 1.1) * 0.016;
-    waterMesh.position.y = WATER_Y + Math.sin(clock * 1.25) * 0.0012;
-    matWater.opacity = 0.74 + Math.sin(clock * 0.9) * 0.04;
+    leavesMesh.rotation.z = Math.sin(clock * 0.85) * 0.026;
+    leavesMesh.rotation.x = Math.sin(clock * 0.53 + 1.1) * 0.015;
+    waterMesh.position.y = WATER_Y + Math.sin(clock * 1.25) * 0.001;
+    matWater.opacity = 0.72 + Math.sin(clock * 0.9) * 0.035;
   }
 
   function dispose() {

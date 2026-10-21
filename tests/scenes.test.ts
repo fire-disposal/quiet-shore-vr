@@ -39,7 +39,7 @@ describe('scene registry', () => {
   it('exposes localized metadata and the stream bed for the bathroom', () => {
     const bathroom = getSceneDefinition('bathroom');
     expect(bathroom).toBeDefined();
-    expect(bathroom?.name).toEqual({ zh: '暖石浴室', en: 'Quiet Bathroom' });
+    expect(bathroom?.name).toEqual({ zh: '病房卫生间', en: 'Ward Bathroom' });
     expect(bathroom?.audio.track).toBe('stream');
 
     const summary = listScenes().find((scene) => scene.id === 'bathroom');
@@ -66,7 +66,7 @@ describe('bathroom scene build', () => {
       expect(handle.selectables).toHaveLength(3);
 
       const labels = handle.selectables.map((selectable) => selectable.userData.label);
-      expect(labels).toEqual(['mirror', 'plant', 'grab-bar']);
+      expect(labels).toEqual(['mirror', 'grab-bar', 'call-button']);
       for (const selectable of handle.selectables) {
         expect(selectable.userData.selectable).toBe(true);
         expect(typeof selectable.userData.targetId).toBe('number');
@@ -80,8 +80,8 @@ describe('bathroom scene build', () => {
 
   it('stays inside the declared quality budgets', () => {
     const cases = [
-      { quality: 'high' as const, drawCalls: 28, triangles: 30000, lights: 3 },
-      { quality: 'low' as const, drawCalls: 20, triangles: 18000, lights: 2 }
+      { quality: 'high' as const, drawCalls: 18, triangles: 7000, lights: 3 },
+      { quality: 'low' as const, drawCalls: 18, triangles: 6000, lights: 2 }
     ];
 
     for (const expected of cases) {
