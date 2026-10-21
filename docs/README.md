@@ -8,7 +8,8 @@
 | --- | --- |
 | `../README.md` | 项目总览、构建、当前限制 |
 | `../TODO.md` | 当前优先级与下一步 |
-| `control-plane.md` | BLE GATT、命令、二进制 state v3、心跳、回环 API |
+| `system-boundaries.md` | 场景/Web/Android 分层、单写者规则、视角动画状态机、BLE/回环集成点 |
+| `control-plane.md` | BLE GATT、命令、二进制 state v5、心跳、回环 API |
 | `control-interaction-spec.md` | 权限、状态机、干预目录、安全包络、验收 |
 | `kiss-review.md` | 已收口项与剩余复杂度 |
 | `virtual-posture.md` | posture/comfort、视觉引导与粒子 |

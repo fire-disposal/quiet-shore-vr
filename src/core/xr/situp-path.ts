@@ -68,6 +68,30 @@ export class SitUpPath {
     );
   }
 
+  /**
+   * Eye height in metres at normalised time `t`, allocation-free. Mirrors
+   * `at(t).position.y` so per-frame telemetry never has to build a pose.
+   */
+  eyeHeightAt(t: number): number {
+    const time = t < 0 ? 0 : t > 1 ? 1 : t;
+    const theta = (Math.PI / 2) * ease(time / this.rotationPortion);
+    return this.eyeHeightFor(time, Math.sin(theta));
+  }
+
+  /** Rise above the supine hip, in metres; what the posture layer reports. */
+  riseAt(t: number): number {
+    const rise = this.eyeHeightAt(t) - this.hipHeight;
+    return rise > 0 ? rise : 0;
+  }
+
+  private eyeHeightFor(time: number, sin: number): number {
+    const rotate = this.rotationPortion;
+    const seatedEyeY = this.hipHeight + this.torsoLength;
+    return time <= rotate
+      ? this.hipHeight + this.torsoLength * sin
+      : seatedEyeY + (this.standEyeHeight - seatedEyeY) * ease((time - rotate) / (1 - rotate));
+  }
+
   /** Virtual camera in the room frame at normalised time `t` in [0, 1]. */
   at(t: number): CameraPose {
     const time = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -76,10 +100,7 @@ export class SitUpPath {
 
     const sin = Math.sin(theta);
     const cos = Math.cos(theta);
-    const seatedEyeY = this.hipHeight + this.torsoLength;
-    const eyeY = time <= rotate
-      ? this.hipHeight + this.torsoLength * sin
-      : seatedEyeY + (this.standEyeHeight - seatedEyeY) * ease((time - rotate) / (1 - rotate));
+    const eyeY = this.eyeHeightFor(time, sin);
     // Scene convention: forward is -Z, so the supine head lies toward +Z.
     const eyeZ = time <= rotate ? this.torsoLength * cos : 0;
 

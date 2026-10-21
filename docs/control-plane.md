@@ -78,11 +78,11 @@ ASCII 字符串，通知给所有已连接设备：
 
 ### 2.4 state
 
-固定 12 字节二进制，小端；第一字节是版本号 `3`：
+固定 13 字节二进制，小端；第一字节是版本号 `5`：
 
 | 偏移 | 字段 | 编码 |
 | --- | --- | --- |
-| 0 | version | `3` |
+| 0 | version | `5` |
 | 1 | scene | `0` landscape / `1` ward / `2` bathroom / `3` lab / `255` unknown |
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
@@ -90,14 +90,18 @@ ASCII 字符串，通知给所有已连接设备：
 | 5 | postureRoll | 度，字节值减 10 |
 | 6 | postureRise | 厘米，0–120 |
 | 7 | postureProgress | 0–100 |
-| 8 | viewX | 厘米偏移 +45，范围 −0.45–0.45 m |
-| 9 | viewZ | 同上 |
+| 8 | viewPitch | **有符号**整数度，−20–+20；正值 = 上仰（患者看到更多天空） |
+| 9 | viewAnim | 0 idle / 1 playing / 2 held；其他值按 idle 处理 |
 | 10 | cueIntensity | 0–100 |
 | 11 | calibrationConfidence | 0–100 |
+| 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe；其他值按 none 处理 |
 
-- 页面通过 `/state` JSON 提供这些字段；头显编码后通知控制者。
-- 旧文本四/五段格式已删除；版本不匹配或长度不为 12 的 state 直接丢弃。
-- 12 字节落在默认 ATT 负载内，不需要 MTU 协商。
+- 页面通过 WS `{"type":"state","data":...}` 提供这些字段；头显编码后通知控制者。
+- `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested`，收到回读后清空。
+- `viewAnim` 只表示页面动画播放器的粗粒度相位（`idle` / `playing` / `held`），页面通过 WS `state` 的 `viewAnim` 字符串上报；未知值按 `idle` 处理。
+- `viewPreset` 是页面最近播放/正在播放的预设 id（`none|up|down|recenter|breathe`），未知值按 `none` 处理；平板只回显，不自行推断。
+- 13 字节仍落在默认 ATT 负载（20 字节）内；v4 及更早的帧因版本/长度不符直接丢弃。
+- 旧文本四/五段格式与 v3、v4 帧均已删除：版本不等于 5 或长度不为 13 的 state 直接丢弃，没有兼容层。
 
 ## 3. 第一台接管
 
@@ -116,7 +120,8 @@ ASCII 字符串，通知给所有已连接设备：
 - 控制者用 BLE 设备地址标识，保存在 `BluetoothControl` 的内存中。
 - `CLAIM` 在通知启用后立即发送；平板等待 `CONTROL_OK` 最多 6 秒，超时断开并提示重新连接。
 - 收到 `CONTROL_BUSY` 后平板主动断开，留在配对页；不会自动重试。
-- 控制者断链或调用 `stop()` 会清空控制者，下一台平板可以直接接管。
+- 控制者 `RELEASE`、写入超时或断链都会清空控制者，下一台平板可以直接接管。
+- 每次租约丢失（`RELEASE` / 20 s 写入超时 / 断链 / 停 BLE）头显只入队**一条** `posture:stop`，让页面冻结起身轨迹；视角俯仰目标保持不变，动画停止但角度不回正。
 - 服务重启同样清空控制权；平板必须重新连接并 `CLAIM`。
 - 通知标题随之变化：“等待平板连接” → “平板控制中，按一次确认键开始”。
 
@@ -124,7 +129,20 @@ ASCII 字符串，通知给所有已连接设备：
 
 ## 4. 控制命令
 
-平板发送前用 `ControlProtocol.isAllowedCommand` 校验，头显再次校验白名单；宿主命令在服务内执行，其余进入页面队列。页面按小写解释：
+平板发送前用 `ControlProtocol.isAllowedCommand` 校验，头显再次校验白名单；宿主命令在服务内执行，其余进入页面队列。页面按小写解释。
+
+BLE 写入语法：
+
+```text
+HELLO <version>          # CONTROL_OK 后一次；头显回 WELCOME <version> <capMask>
+#<seq> <command>         # 离散命令：单调 seq，头显回 ACK <seq> <OK|REJECTED|BUSY>
+view:move:0,<z>          # 连续俯仰：无 seq、无 ACK，只保留最新样本
+PING / RELEASE / CLAIM   # 存活与租约
+```
+
+- 离散命令在头显侧按控制器维护有界去重窗口；重复 seq 只重发原 ACK，不重复执行。
+- `view:move` 使用 no-response 写，离散命令使用 response 写；平板一次只写一条，stop 优先并丢弃待发 pitch。
+- 未完成 HELLO 的控制器发命令会得到 `PROTOCOL_REQUIRED` / ACK `REJECTED`，不会静默执行。
 
 | 命令 | 页面行为 |
 | --- | --- |
@@ -144,38 +162,56 @@ ASCII 字符串，通知给所有已连接设备：
 | `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止 |
 | `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场重力粒子引导开关与强度（当前仅 landscape 场景生效） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
+| `view:move:0,<z>` | 绝对俯仰目标：x 恒为 0，z∈[−1,1] 映射 ±20°，无 TTL；免回执 |
+| `view:stop` | 停止动画并**保持**当前俯仰，不回正 |
+| `view:anim:up\|down\|recenter\|breathe` | 播放页面的固定预设：up/down 相对当前角度 ±10°，recenter 回 0°，breathe 为 6 s 回到起点的曲线；无参数，作为一次性离散命令回 `ACK <seq> OK`，不跨重连重放 |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-`enter`、`home`、`allapps`、`sus:*`、`settings:*`、`scene:<id>` 由头显服务执行；其余命令进入页面队列，并通过 `/events` SSE 立即推送。EventSource 不可用时页面退回 100 ms `/control` 轮询。
+`enter`、`home`、`allapps`、`sus:*`、`settings:*`、`scene:<id>` 由头显服务执行；其余离散命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。`view:move` 只保留最新样本，不等待 ack。
 
 非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 
-## 5. 本地回环 HTTP
+## 5. 本地回环 HTTP 与 WebSocket
 
-`PortalService` 在 `127.0.0.1:8130` 提供只读页面与一个小型控制接口。所有响应都带 `Cache-Control: no-store`，`Connection: close`。
+`PortalService` 在 `127.0.0.1:8130` 提供页面、诊断接口和一个 WebSocket 控制通道。HTTP 响应带 `Cache-Control: no-store`，`Connection: close`。
 
-| 方法 | 路径 | 请求 | 响应 |
-| --- | --- | --- | --- |
-| GET / HEAD | `/`、`/index.html` | — | `text/html`，APK `assets/index.html` |
-| GET / HEAD | `/control` | — | `{"seq":number,"command":string|null,"control":boolean,"controller":string|null}`；兼容/回退 |
-| GET / HEAD | `/status` | — | `{"bluetooth":string,"control":boolean,"controller":string|null,"scene":string,"pendingSeq":number}` |
-| GET / HEAD | `/capabilities` | — | `{"version":1,"commands":[...],"control":boolean}` |
-| GET | `/events` | — | `text/event-stream`；`control` 帧含 seq/command/control/controller，`state` 帧单独推送 CLAIM/RELEASE |
-| POST | `/command` | `{"command":string}` | `{"accepted":true,"seq":number}`；非白名单返回 400 |
-| POST | `/telemetry` | `{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}` | `{"ok":true}` |
-| POST | `/state` | `{"scene":s,"session":b,"calibrating":b,"audio":b,"eyeHeight":n,"posturePitch":n,"postureRoll":n,"postureRise":n,"postureProgress":n,"viewX":n,"viewZ":n,"cueEnabled":b,"cueIntensity":n,"calibrationConfidence":n}` | `{"ok":true}` |
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/ws?since=<seq>` | RFC 6455 控制通道；同源 `http://127.0.0.1:8130`，仅文本帧、JSON、≤8 KiB，无分片/二进制 |
+| GET / HEAD | `/`、`/index.html` | `text/html`，APK `assets/index.html` |
+| GET / HEAD | `/status` | 蓝牙、接管、场景、`pendingSeq`、当前 state 摘要 |
+| GET / HEAD | `/capabilities` | 命令清单与当前控制权 |
+| POST | `/command` | 本地诊断/调试用的命令注入；非白名单返回 400 |
 
-细节：
+`/events`、`/control`、`/state`、`/telemetry` 已删除；页面不再使用 HTTP 轮询或 POST。
 
-- `/control` 的 `seq` 每收到一条 BLE 命令加一；`command` 保留最后一条。页面优先订阅 `/events`，按 `seq` 去重；SSE 断线时才改为 100 ms 轮询 `/control`。
-- `control` 直接反映当前是否有平板持有控制权。
-- `/telemetry` 的字段缺失时按 `0` 处理；非数字或非有限值返回 400。头显服务把它编码成 20 字节并通知控制者。
-- `/state` 的 `audio` 字段表示“是否静音”；`eyeHeight`、posture、view、cue、置信度由页面按 1 Hz 上报。
-- 请求体上限 64 KiB，必须带 `Content-Length`；不支持 `Transfer-Encoding`。
-- 其他方法返回 405；未知路径返回 404。
-- 页面读取失败时返回占位 HTML，而不是连接错误。
+### 5.1 WebSocket 消息
 
-`/control`、`/events`、`/command`、`/capabilities`、`/telemetry`、`/state` 没有认证。它们只绑定 loopback，适用于单设备环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
+服务端 → 页面：
+
+```text
+{"type":"ready","seq":N,"control":bool,"controller":string|null}
+{"type":"cmd","seq":N,"command":"scene:ward","continuous":false}
+{"type":"cmd","seq":N,"command":"view:move:0,0.35","continuous":true}
+{"type":"control","control":bool,"controller":string|null}
+```
+
+页面 → 服务端：
+
+```text
+{"type":"state","data":{scene,session,calibrating,audio,eyeHeight,posturePitch,postureRoll,postureRise,postureProgress,viewPitch,viewAnim,viewPreset,cueEnabled,cueIntensity,calibrationConfidence}}
+{"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
+{"type":"ack","seq":N}
+```
+
+- 连接建立先发 `ready`，随后补发 `seq > since` 的离散命令与最新 `view:move`；`since` 缺失按 `-1`。
+- 离散命令保留到页面 `ack`（≤64 条）；`view:move` 免 ack、只保留最新；`view:anim:*` 只实时投递，不跨重连重放。
+- 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。
+- 服务端每 15 s 发 ping，30 s 无 pong 关闭；页面断线后以指数退避重连并带 `since=lastSeq`。
+- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v5 / 20 B 遥测后 BLE 通知平板。
+- 页面不得再发送 `viewX`/`viewZ`；头显也不会解析它们。
+
+`/ws`、`/command`、`/capabilities` 没有认证，只绑定 loopback，适用于单设备受控环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
 
 ## 6. 头显入口与生命周期
 
@@ -209,7 +245,7 @@ ASCII 字符串，通知给所有已连接设备：
 - **单控制者。** 不支持多平板协作或观察者模式；第二台平板只能等待。
 - **无持久化。** 控制权、最后场景和控制状态都只存在于进程内存；服务重启后平板需重新接管。
 - **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态；平板视图不是逐帧镜像。
-- **state 已固定为 12 字节二进制 v3**，不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃。
+- **state 已固定为 13 字节二进制 v5**（第 8 字节 `viewPitch` 当前角度有符号度，第 9 字节 `viewAnim`：0 idle / 1 playing / 2 held，第 12 字节 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。
 
 ## 9. 排障

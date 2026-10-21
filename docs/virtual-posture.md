@@ -23,16 +23,16 @@ interface VirtualPosture {
   riseM: number;
 }
 
-interface PostureOptions {
-  durationMs: number;
-  easing?: 'linear' | 'ease-in-out';
-}
-
 interface ComfortApi {
-  setPosture(target: VirtualPosture, options: PostureOptions): void;
-  updatePosture(dt: number): VirtualPosture;
+  /** Quintic smootherstep; `durationMs` is clamped to POSTURE_LIMITS. */
+  setPosture(target: VirtualPosture, durationMs: number, maxPitchDeg?: number): void;
+  updatePosture(dt: number): void;
+  /** Brake to rest from the exact current speed; never snaps, never passes the target. */
   stopPosture(): void;
   getPostureState(): PostureState;
+  getPosturePhase(): 'neutral' | 'rising' | 'standing' | 'lowering';
+  getPostureProgress(): number;
+  isPostureMoving(): boolean;
 }
 ```
 
@@ -46,7 +46,8 @@ position = pivot - q_total * pivot + (0, -riseM, 0)
 - `pitchDeg` 让世界围绕视线方向的横向轴缓慢倾斜。
 - `riseM` 让世界向下移动，等效患者在虚拟空间里“升高”。
 - 旋转与位移都围绕校准得到的 pivot，避免患者被瞬移到场景外。
-- 校准重置、会话结束、控制断开时，体位层必须回到 neutral。
+- 校准开始与会话结束时，体位层回到 neutral（立即重置）。控制断开（租约丢失）**不回 neutral**：`stopPosture()` 刹车到当前行程的稳定点并保持，避免患者在世界倾斜中途被推回。
+- 世界变换分三层，各有唯一写者（`src/core/xr/world-shell.ts`）：`world-shell`（视角俯仰，绕眼部）→ `comfort.group`（校准 + 体位，或起身逆变换）→ `host.content`（地板偏移）。场景内容不参与。
 
 符号和轴需要在 PICO 上实测定标；不要凭桌面截图猜正负。
 
@@ -62,13 +63,16 @@ position = pivot - q_total * pivot + (0, -riseM, 0)
 
 不要把 `posture:set:<任意角度>` 暴露给操作员。需要调试时走本地查询参数，不进入患者控制通道。
 
-状态扩展：
+状态扩展（页面 WS `state` → BLE state v5，见 `docs/control-plane.md §2.4`）：
 
 ```text
-scene|session|calib|audio|posture
+scene / session / calibrating / audio / eyeHeight
+posturePitch / postureRoll / postureRise / postureProgress
+viewPitch（当前角度）/ viewAnim（idle|playing|held）/ viewPreset（none|up|down|recenter|breathe）
+cueEnabled / cueIntensity / calibrationConfidence
 ```
 
-`posture` 取值 `neutral / rising / standing / lowering`，controller 显示进度和停止按钮。
+`postureProgress` 为 0–1，controller 显示进度和停止按钮。
 
 ## 4. 控制侧 UX
 
@@ -104,8 +108,15 @@ scene|session|calib|audio|posture
 
 Posture 变换、限幅、缓动和停止减速已实现；近场重力粒子（`src/core/xr/posture-cue.ts`）先只安装在 `landscape` 场景，作为体验验证。控制柄已预留：
 
-- 代码：`window.__app.postureCue`（`setEnabled` / `setIntensity` / `getState`）。
+- 代码：`window.__app.postureCue`（`setEnabled` / `setIntensity` / `update` / `getState`）。
 - BLE：`cue:on`、`cue:off`、`cue:intensity:<0..1>`。
+
+视角俯仰已改由系统级控制器承担（`src/core/xr/view-motion.ts` + `src/core/xr/world-shell.ts`）：
+
+- `view:move:0,<z>`：绝对目标（`z × 20°`），从当前角度平滑重定向，无 TTL。
+- `view:anim:<id>`：目录预设 `up`/`down`（相对 ±10°，clamp ±20°，3.0 s）、`recenter`（绝对 0°，2.4 s）、`breathe`（当前 → +6° → 当前，6.0 s 往返）。
+- `view:stop`：立即保持当前角度（不回正）；校准开始与会话结束归零。
+- WS `state` 回报当前 `viewPitch`（度）、`viewAnim`（`idle|playing|held`）与 `viewPreset`（`none|up|down|recenter|breathe`）。
 
 仍需在 PICO 上确认：
 
@@ -127,7 +138,6 @@ Posture 变换、限幅、缓动和停止减速已实现；近场重力粒子（
 | 轻微俯仰 | 世界 pitch 缓慢增加，中心焦点保持稳定 | 从卧床视角过渡到直立视角 |
 | 视差 | 近处粒子/芦苇移动快，远处山脊几乎不动 | 强化深度和上升感 |
 | 地面参照 | 保留地面线、床边或栈桥边缘，不要全部消失 | 防止失去空间定位 |
-| 轻微视野扩张 | FOV 只在 1-2 度内变化，且与进度同步 | 产生“空间打开”的感觉 |
 | 声音 | 很轻的风声/水声上扬，不做强烈音效 | 辅助方向感 |
 
 不建议：
@@ -140,21 +150,28 @@ Posture 变换、限幅、缓动和停止减速已实现；近场重力粒子（
 
 ### 视觉引导层
 
-`PostureCue` 是应用级模块，但当前只挂到 `landscape` 场景验证；接口按可推广设计：
+`PostureCue` 是应用级模块，当前只挂到 `landscape` 场景验证；实际接口（`src/core/xr/posture-cue.ts`）：
 
 ```ts
-interface PostureCue {
-  update(progress: number, dt: number): void;
-  setVisible(visible: boolean): void;
+interface PostureCueApi {
+  readonly object: THREE.Points;            // 近层
+  readonly layers: readonly THREE.Points[]; // [近层, 远层]
+  setEnabled(enabled: boolean): void;
+  setIntensity(intensity: number): void;    // 0..1
+  setDepth(depth: number): void;            // 0..1，默认 0.5
+  setSpread(spread: number): void;          // 0.5..2
+  update(dt: number, head: THREE.Vector3, flow: number): void;
+  getState(): PostureCueState;              // enabled/flow/intensity/visible/count/depth/spread
   dispose(): void;
 }
 ```
 
-- 粒子使用 `InstancedMesh` 或 `Points`，总量固定，避免每帧分配。
-- 粒子附着在头部参考系附近，透明度随 `progress` 淡入淡出。
+- `flow = +1` 只在**起身过渡真实移动**时由 App 传入；停止、回躺、校准、断链一律 0。`flow <= 0` 当帧冻结粒子位置（不推进、不摆动），亮度按既有 τ 淡出；不存在反向播放。
+- 粒子使用两个 `Points`（近 17 / 远 11），总量固定、种子确定性布局、每帧零分配，每层 1 draw call。
+- 粒子挂在 `scene` 根节点并跟随头部位置，不受世界 shell（视角俯仰 / 校准 / 起身）与地板偏移影响。
 - 不修改患者真实 head pose，只改变视觉流和世界变换。
-- 起身完成后粒子淡出，保留稳定的站立视角；回躺时反向播放。
-- 控制侧提供“视觉引导”开关，默认开启但可关闭；当前先通过 `cue:*` 命令预留，尚未加入平板 UI。
+- 起身完成、停止或断链后粒子淡出，保留稳定的世界视角；不会为“回躺”再播放一次。
+- 控制侧提供“视觉引导”开关，默认开启但可关闭（`cue:on` / `cue:off` / `cue:intensity:<0..1>`），尚未加入平板 UI。
 
 ### 安全节奏
 

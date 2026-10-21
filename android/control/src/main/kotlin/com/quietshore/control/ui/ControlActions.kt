@@ -1,6 +1,7 @@
 package com.quietshore.control.ui
 
 import com.quietshore.control.model.ViewMode
+import com.quietshore.control.protocol.ViewPreset
 
 /** Callbacks the control screen needs; keeps screens free of the ViewModel. */
 data class ControlActions(
@@ -20,9 +21,12 @@ data class ControlActions(
     val onPostureLower: () -> Unit,
     val onPostureStop: () -> Unit,
     val onEyeHeightChange: (Float) -> Unit,
-    val onAdvancedUnlockChange: (Boolean) -> Unit,
-    val onViewMove: (Float, Float) -> Unit,
-    val onViewStop: () -> Unit,
+    /** Absolute pitch target from the slider, in whole degrees (-20..20). */
+    val onPitchChange: (Float) -> Unit,
+    /** Discrete page animation preset (`view:anim:<name>`). */
+    val onViewAnim: (ViewPreset) -> Unit,
+    /** `停止`: freeze the view where it is (`view:stop`, holds pitch). */
+    val onViewPitchStop: () -> Unit,
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
     val onLeave: () -> Unit,

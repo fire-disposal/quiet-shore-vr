@@ -1,5 +1,7 @@
 package com.quietshore.control.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +33,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,11 +49,13 @@ import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.ControlActions
+import com.quietshore.control.ui.theme.ControlMotion
 import com.quietshore.control.ui.theme.QuietPalette
 
 private enum class RailTab(val label: String) {
     TRAIN("训练"),
     SCENE("场景"),
+    VIEW("视角"),
     TOOLS("工具")
 }
 
@@ -228,8 +231,34 @@ fun ControlRail(
                 }
             }
 
-            RailSection("虚拟起身", visible = tab == RailTab.TRAIN) {
+            RailSection("视角俯仰", visible = tab == RailTab.VIEW) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ViewPitchSlider(
+                        degrees = state.viewPitchDegrees,
+                        target = state.control.viewPitch,
+                        anim = state.control.viewAnim,
+                        preset = state.control.viewPreset,
+                        enabled = state.canAdjustView,
+                        onChange = actions.onPitchChange,
+                        onAnim = actions.onViewAnim,
+                        onStop = actions.onViewPitchStop
+                    )
+                    Text(
+                        text = state.viewPitchBlockedReason
+                            ?: "滑动条设定绝对角度；四个预设由页面固定曲线播放，“停止”立即冻结在当前角度。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.canAdjustView) {
+                            QuietPalette.TextSecondary
+                        } else {
+                            QuietPalette.Warning
+                        }
+                    )
+                }
+            }
+
+            RailSection("虚拟起身", visible = tab == RailTab.VIEW) {
                 val postureReady = connected &&
+                    state.controlGranted &&
                     state.control.session &&
                     !state.control.calibrating &&
                     state.control.calibrationConfidence > 0f
@@ -259,6 +288,7 @@ fun ControlRail(
                     Text(
                         text = when {
                             !connected -> "头显未连接"
+                            !state.controlGranted -> "尚未取得控制权"
                             !state.control.session -> "训练开始后可用"
                             state.control.calibrating -> "校准中暂停"
                             state.control.calibrationConfidence <= 0f ->
@@ -272,69 +302,6 @@ fun ControlRail(
                             QuietPalette.Warning
                         }
                     )
-                }
-            }
-
-            RailSection("治疗师模式", visible = tab == RailTab.TOOLS) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = "高级视图控制",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = QuietPalette.TextPrimary
-                            )
-                            Text(
-                                text = "仅治疗师使用，默认关闭",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = QuietPalette.TextSecondary
-                            )
-                        }
-                        Switch(
-                            checked = state.advancedUnlocked,
-                            onCheckedChange = actions.onAdvancedUnlockChange
-                        )
-                    }
-                    if (state.advancedUnlocked) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            JoystickPad(
-                                enabled = state.canSteerView,
-                                onVector = actions.onViewMove,
-                                onRelease = actions.onViewStop
-                            )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = when {
-                                        !connected -> "头显未连接"
-                                        !state.controlGranted -> "尚未取得控制"
-                                        !state.control.session -> "训练开始后可用"
-                                        state.control.calibrating -> "校准中视角已冻结"
-                                        state.poseStale -> "姿态数据过期，暂停平移"
-                                        else -> "按住拖动，松手即停"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = QuietPalette.TextSecondary
-                                )
-                                Text(
-                                    text = "只平移虚拟视点，不改变患者头部姿态",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = QuietPalette.TextSecondary
-                                )
-                            }
-                        }
-                    }
                 }
             }
 
@@ -365,13 +332,23 @@ private fun RailTabs(
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         RailTab.values().forEach { tab ->
             val active = tab == selected
+            // Tint eases between states through ControlMotion, so the whole
+            // rail can be made still from one switch.
+            val container by animateColorAsState(
+                targetValue = if (active) QuietPalette.Primary else QuietPalette.SurfaceRaised,
+                animationSpec = tween(
+                    durationMillis = ControlMotion.duration(ControlMotion.TAB_SWITCH_MS),
+                    easing = ControlMotion.standard
+                ),
+                label = "rail-tab-container"
+            )
             Surface(
                 modifier = Modifier
                     .weight(1f)
                     .height(44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .clickable { onSelect(tab) },
-                color = if (active) QuietPalette.Primary else QuietPalette.SurfaceRaised,
+                color = container,
                 contentColor = if (active) QuietPalette.OnPrimary else QuietPalette.TextSecondary
             ) {
                 Box(contentAlignment = Alignment.Center) {

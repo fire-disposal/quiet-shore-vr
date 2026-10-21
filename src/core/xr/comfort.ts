@@ -86,8 +86,10 @@ export interface VirtualPosture {
   riseM: number;
 }
 
+export type PosturePhase = 'neutral' | 'rising' | 'standing' | 'lowering';
+
 export interface PostureState {
-  phase: 'neutral' | 'rising' | 'standing' | 'lowering';
+  phase: PosturePhase;
   pitchDeg: number;
   rollDeg: number;
   riseM: number;
@@ -191,6 +193,11 @@ export interface ComfortApi {
    */
   stopPosture(): void;
   getPostureState(): PostureState;
+  /**
+   * Phase alone, without building a `PostureState`. Per-frame callers (the
+   * particle flow gate) use this so a 60 Hz loop stays allocation-free.
+   */
+  getPosturePhase(): PostureState['phase'];
   /**
    * Monotonic progress toward the current posture target, 0..1, no
    * allocation. A stopped transition keeps reporting the fraction it reached
@@ -608,6 +615,14 @@ export function createComfort(options: {
     braking = coast > 1e-4;
   }
 
+  /** Allocation-free; `getPostureState` shares the same rule. */
+  function getPosturePhase(): PostureState['phase'] {
+    if (postureActive) {
+      return postureDirection;
+    }
+    return postureEngagement(posture) > 1e-6 ? 'standing' : 'neutral';
+  }
+
   function getPostureState(): PostureState {
     const engaged = postureEngagement(posture) > 1e-6;
     // Progress tracks the target transition. A stopped transition keeps the
@@ -618,7 +633,7 @@ export function createComfort(options: {
         ? Math.min(1, postureElapsedMs / postureDurationMs)
         : 1;
     return {
-      phase: postureActive ? postureDirection : engaged ? 'standing' : 'neutral',
+      phase: getPosturePhase(),
       pitchDeg: posture.pitchDeg,
       rollDeg: posture.rollDeg,
       riseM: posture.riseM,
@@ -732,6 +747,7 @@ export function createComfort(options: {
     updatePosture,
     stopPosture,
     getPostureState,
+    getPosturePhase,
     getPostureProgress,
     isPostureMoving
   };

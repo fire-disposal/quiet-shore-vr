@@ -7,6 +7,7 @@ import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
 import no.nordicsemi.android.ble.BleManager
+import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import java.nio.charset.StandardCharsets
 
 /**
@@ -15,6 +16,12 @@ import java.nio.charset.StandardCharsets
  * The peripheral exposes one writable command characteristic and three
  * notifying characteristics. Telemetry is a fixed 20 byte little endian
  * payload, so no MTU negotiation is required.
+ *
+ * The 10 Hz `view:move` stream is written with `WRITE_TYPE_NO_RESPONSE`; every
+ * discrete command keeps `WRITE_TYPE_DEFAULT` so its ATT response still proves
+ * the headset accepted it. The write type travels with each request instead of
+ * being stored on the shared characteristic, so a move sample can never make a
+ * discrete write fire-and-forget.
  */
 class QuietShoreBleManager(
     context: Context,
@@ -35,6 +42,9 @@ class QuietShoreBleManager(
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
 
+    /** Set once per connection so `CONNECTION_PRIORITY_HIGH` is not re-sent. */
+    private var highPriorityRequested = false
+
     override fun getGattCallback(): BleManager.BleManagerGattCallback =
         object : BleManager.BleManagerGattCallback() {
 
@@ -44,7 +54,6 @@ class QuietShoreBleManager(
             statusCharacteristic = service.getCharacteristic(ControlProtocol.statusUuid)
             telemetryCharacteristic = service.getCharacteristic(ControlProtocol.telemetryUuid)
             stateCharacteristic = service.getCharacteristic(ControlProtocol.stateUuid)
-            commandCharacteristic?.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             return commandCharacteristic != null &&
                 statusCharacteristic != null &&
                 telemetryCharacteristic != null &&
@@ -82,7 +91,13 @@ class QuietShoreBleManager(
                 .add(enableNotifications(status))
                 .add(enableNotifications(telemetry))
                 .add(enableNotifications(state))
-                .done { events.onNotificationsEnabled() }
+                .done {
+                    // Once per connection, after notifications are live: the
+                    // shortest connection interval the headset accepts keeps
+                    // the 10 Hz movement stream and state readback responsive.
+                    requestHighPriority()
+                    events.onNotificationsEnabled()
+                }
                 .fail { _, code -> events.onFailure("启用头显通知失败，错误码 $code") }
                 .enqueue()
         }
@@ -92,7 +107,22 @@ class QuietShoreBleManager(
             statusCharacteristic = null
             telemetryCharacteristic = null
             stateCharacteristic = null
+            highPriorityRequested = false
         }
+    }
+
+    /** Asks for a high connection priority exactly once per connection. */
+    private fun requestHighPriority() {
+        if (highPriorityRequested) {
+            return
+        }
+        highPriorityRequested = true
+        requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
+            .fail { _, _ ->
+                // Some stacks refuse the request; the link stays usable.
+                highPriorityRequested = false
+            }
+            .enqueue()
     }
 
     fun claim() {
@@ -101,22 +131,55 @@ class QuietShoreBleManager(
             events.onFailure("头显尚未就绪")
             return
         }
-        writeCharacteristic(characteristic, ControlProtocol.claimPayload())
+        writeCharacteristic(
+            characteristic,
+            ControlProtocol.claimPayload(),
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        )
             .timeout(WRITE_TIMEOUT_MS)
             .fail { _, code -> events.onFailure("发送接管请求失败，错误码 $code") }
             .enqueue()
     }
 
-    fun writeCommand(command: String) {
+    /**
+     * Writes one command payload and reports completion exactly once.
+     *
+     * The caller ([com.quietshore.control.ble.BleController]) is the single
+     * writer: it keeps one write in flight so a queued pitch sample can never
+     * delay a stop.
+     */
+    fun writeCommand(command: String, onComplete: (Boolean) -> Unit = {}) {
         val characteristic = commandCharacteristic
         if (characteristic == null) {
             events.onFailure("头显尚未就绪")
+            onComplete(false)
             return
         }
-        writeCharacteristic(characteristic, ControlProtocol.commandPayload(command))
-            .timeout(WRITE_TIMEOUT_MS)
-            .fail { _, code -> events.onFailure("发送命令失败，错误码 $code") }
-            .enqueue()
+        // Continuous pitch targets are fire-and-forget: waiting for an ATT
+        // response at 10 Hz would queue samples behind the link interval. Every
+        // discrete command keeps the response so it cannot be silently lost.
+        val continuous = command.startsWith(ControlProtocol.VIEW_MOVE)
+        val request = writeCharacteristic(
+            characteristic,
+            ControlProtocol.commandPayload(command),
+            if (continuous) {
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            } else {
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            }
+        ).timeout(WRITE_TIMEOUT_MS)
+        request.done { onComplete(true) }
+        if (continuous) {
+            // A dropped movement sample is harmless (the next one supersedes
+            // it), so it never raises an operator-visible error.
+            request.fail { _, _ -> onComplete(false) }
+        } else {
+            request.fail { _, code ->
+                events.onFailure("发送命令失败，错误码 $code")
+                onComplete(false)
+            }
+        }
+        request.enqueue()
     }
 
     /** Tells the headset to drop this tablet, then closes the link. */
@@ -126,7 +189,11 @@ class QuietShoreBleManager(
             disconnectQuietly()
             return
         }
-        writeCharacteristic(characteristic, ControlProtocol.releasePayload())
+        writeCharacteristic(
+            characteristic,
+            ControlProtocol.releasePayload(),
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        )
             .timeout(WRITE_TIMEOUT_MS)
             .done { disconnectQuietly() }
             .fail { _, _ -> disconnectQuietly() }

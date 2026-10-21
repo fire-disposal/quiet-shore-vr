@@ -7,23 +7,24 @@
 | 静岸（头显端） | `com.quietshore.portal` | 控制台 + 前台服务 + BLE 外设 + 本机回环桥 |
 | 静岸控制台（平板端） | `com.quietshore.control` | Compose 控制台 + BLE 中心 + WebView 三维镜像 |
 
-当前版本：**v0.8.10**。项目站：<https://qs.205716.xyz>。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
+当前版本：**v0.8.11**（未发布；state v5 / 视角动画目录 / 病房卫生间）。项目站：<https://qs.205716.xyz>。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
 ## 当前流程
 
 1. 头显开机进入 `PortalActivity` 控制台；`PortalService` 绑定 `127.0.0.1:8130` 并广播 BLE 外设 `QuietShore`。
 2. 控制台点“进入训练”拉起 Firefox Reality，打开本地页面；业务参数通过 `window.__QS_BOOTSTRAP__` 注入。
 3. 患者按头显右侧确认键进入 WebXR；平板通过 BLE `CLAIM` 获得唯一控制权。
-4. 平板命令经 BLE → `PortalService` → `/events` SSE → 患者页面；页面用 `/telemetry`、`/state` 回传姿态和业务状态。
-5. 平板断开、心跳超时或患者停止都会释放控制权并停止虚拟运动。
+4. 平板命令经 BLE → `PortalService` → 本机 WebSocket → 患者页面；页面用同一 WS 回传状态与遥测。
+5. 平板断开、心跳超时或患者停止都会释放控制权并停止虚拟起身；视角俯仰目标按契约保持，不回正。
 
 ## 控制面
 
-- **BLE GATT**：命令、状态、20 字节遥测、12 字节二进制 state v3。
+- **BLE GATT**：命令、状态、20 字节遥测、13 字节二进制 state v5（第 8 字节 `viewPitch` 当前角度，第 9 字节 `viewAnim` 相位，第 12 字节 `viewPreset` 预设 id）。
+- **协议握手**：平板在 `CONTROL_OK` 后发 `HELLO 1`，头显回 `WELCOME 1 <caps>`；版本/能力不匹配时平板拒绝驱动并给出具体原因。
 - **第一台接管**：首个 `CLAIM` 胜出；没有 PIN/配对/应用层认证，邻近即可申请控制。
 - **存活检测**：平板每 5 s `PING`，15 s 无 `PONG` 断开；头显 20 s 无控制者写入则释放控制权。
-- **命令边界**：宿主命令 `enter/home/allapps/settings:*/scene:*` 由服务执行；其余进入页面队列。白名单外或语义失败返回 `COMMAND_REJECTED`。
-- **兼容**：旧文本 state 已删除；头显与平板必须同版本。`/control` 100 ms 轮询仅作为 SSE 失败兜底。
+- **命令边界**：离散命令带 `#<seq>`，头显按 `ACK <seq> <OK|REJECTED|BUSY>` 回执并去重；`view:move` 免序号、免回执、只保留最新样本。宿主命令 `enter/home/allapps/settings:*/scene:*` 由服务执行；其余进入页面 WS 队列。
+- **页面链路**：`/ws?since=<seq>` 是唯一页面通道；旧的 `/events` SSE、`/control` 轮询、`/state`、`/telemetry` POST 已删除。头显与平板必须同版本。
 - 协议、命令和边界详见 [`docs/control-plane.md`](docs/control-plane.md)。
 
 ## 患者端能力
@@ -31,7 +32,7 @@
 - 简化入口：已选场景 + 单个“看向我”目标 + 按键线框引导。
 - 方向校准、眼高 1.2–1.9 m、虚拟起身/回落、近场重力粒子（当前仅 landscape）。
 - 设置页内置标准 SUS 量表，10 题分页，支持头显顶栏/页内与控制端翻页。
-- 治疗师模式：平板虚拟摇杆做世界平移，300 ms TTL、0.3 m/s、径向 0.45 m。
+- 视角：系统级视角运动。平板“视角”页签可拖绝对俯仰（±20°、1° 步进）、播放“上仰/下俯/回正/呼吸”四个固定预设、`停止（保持）` 立即冻结当前角度；曲线与时长都在页面，只改世界朝向，不碰相机。
 - 角度呈现：平板 yaw/pitch 仪表、姿态新鲜度与患者/全局视角。
 - XR 默认 1.25× framebuffer 超采样；`?scale=` 可覆盖。
 
@@ -48,7 +49,7 @@ npm run standalone
 cd android && ./gradlew :headset:assembleDebug :control:assembleDebug
 ```
 
-实机侧仍需验证：Firefox Reality 会话、真实 GATT state/心跳、平板摇杆、通知/磁贴、PICO 安装确认页。
+实机侧仍需验证：Firefox Reality 会话、真实 GATT state/心跳、平板视角滑动条、通知/磁贴、PICO 安装确认页。
 
 ## 开机与桌面
 
@@ -76,7 +77,7 @@ cd android && ./gradlew :headset:assembleDebug :control:assembleDebug
 android/protocol   纯 Kotlin：GATT 契约、命令、遥测/state 编解码
 android/headset    头显 APK：控制台、服务、BLE、回环、通知/磁贴
 android/control    平板 APK：Compose、Nordic BLE、WebView
-src/app            患者状态机、SSE/轮询、遥测
+src/app            患者状态机、WebSocket 链路、遥测
 src/core           XR、comfort、spatial、性能
 src/scenes         landscape / ward / bathroom / lab
 src/ui             入口、菜单、校准、字符串

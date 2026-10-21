@@ -81,7 +81,7 @@ PICO 应用图标 / 下拉通知栏 / 快捷磁贴
 ```
 
 - 不修改厂家 HOME，不卸载/改写厂家应用，不 root。
-- `PortalService` 只监听 `127.0.0.1:8130`，提供 `/`、`/index.html`、`/control`、`/status`、`/telemetry`、`/state`。
+- `PortalService` 只监听 `127.0.0.1:8130`，提供 `/`、`/index.html`、`/ws`、`/status`、`/command`。
 - 头显端有可到达的 `PortalActivity` 控制台；应用图标、通知正文和快捷磁贴先打开控制台，不会直接拉起 Firefox。“进入训练”是唯一拉起 Firefox 的按钮，带 3 秒冷却。
 - `BootReceiver` 恢复服务/通知，并延迟打开头显控制台；不自动拉起 Firefox。
 - 平板 `com.quietshore.control` 通过 BLE 接管；没有控制码，先连接并 `CLAIM` 的平板获得控制权。协议见 `docs/control-plane.md`。

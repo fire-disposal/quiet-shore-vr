@@ -62,6 +62,21 @@ class BleController(
     private var pendingConnect: ConnectRequest? = null
     private var awaitingControl = false
 
+    /** One serialized writer: [outbound] decides what goes next. */
+    private val sendLock = Any()
+    private val outbound = CommandQueue()
+    private var writing = false
+    private var nextSeq = 0
+
+    /** Capability mask from WELCOME; 0 until the handshake completes. */
+    private var headsetCapabilities = 0
+
+    /** Non-null when this headset's protocol cannot be driven: block every send. */
+    private var incompatibleReason: String? = null
+
+    /** Sequenced commands written but not yet acknowledged. */
+    private val inFlight = LinkedHashMap<Int, InFlightCommand>()
+
     private var manualClose = false
     private var autoScan = false
     private var reconnectAttempts = 0
@@ -82,7 +97,8 @@ class BleController(
                 closeConnection()
                 return
             }
-            manager?.writeCommand(ControlProtocol.PING)
+            expireInFlight()
+            enqueueCommand(ControlProtocol.PING)
             mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
         }
     }
@@ -115,6 +131,15 @@ class BleController(
         }
         awaitingControl = false
         listener.onControlLost("未获得控制权，请重新连接")
+        closeConnection()
+    }
+
+    /** CONTROL_OK arrived but the headset never answered HELLO. */
+    private val handshakeTimeout = Runnable {
+        if (phase != BlePhase.AUTHENTICATING) {
+            return@Runnable
+        }
+        listener.onError("头显未完成协议握手，请更新头显应用后重试")
         closeConnection()
     }
 
@@ -332,7 +357,11 @@ class BleController(
         cancelReconnect()
         stopScan()
         cancelClaimTimeout()
+        cancelHandshakeTimeout()
         awaitingControl = false
+        // Lease release: nothing queued (especially pitch) may reach the link
+        // after the operator asked to stop.
+        abortCommands()
         val current = manager
         if (current == null) {
             setPhase(BlePhase.DISCONNECTED)
@@ -342,13 +371,186 @@ class BleController(
         current.releaseThenDisconnect()
     }
 
+    /**
+     * Queues one page command.
+     *
+     * Pitch samples coalesce to the newest one, stop commands jump the queue,
+     * and discrete commands are written one at a time and acked by the headset
+     * (`ACK <seq> ...`), so nothing is dropped silently. A headset whose
+     * protocol version or capabilities do not match is never driven at all.
+     */
     fun sendCommand(command: String) {
-        val current = manager
-        if (current == null || !current.isReady) {
-            listener.onError("头显未连接")
+        val blocked = incompatibleReason
+        if (blocked != null) {
+            listener.onError(blocked)
             return
         }
-        current.writeCommand(command)
+        val current = manager
+        val continuous = command.startsWith(ControlProtocol.VIEW_MOVE)
+        if (current == null || !current.isReady || phase != BlePhase.READY) {
+            // Movement samples are disposable; only an operator action deserves
+            // an error message while the link is still settling.
+            if (!continuous) {
+                listener.onError(
+                    if (current == null) "头显未连接" else "正在与头显握手，请稍候"
+                )
+            }
+            return
+        }
+        val capability = ControlProtocol.capabilityFor(command)
+        if (capability != 0 && headsetCapabilities and capability == 0) {
+            listener.onError(
+                "头显固件缺少功能：" +
+                    ControlProtocol.capabilityNames(capability).joinToString(",") +
+                    "，请更新头显应用"
+            )
+            return
+        }
+        enqueueCommand(command)
+    }
+
+    /** Internal frames (HELLO, heartbeat) share the same single writer. */
+    private fun enqueueCommand(command: String) {
+        val accepted = synchronized(sendLock) { outbound.enqueue(command) }
+        if (!accepted) {
+            listener.onError("命令队列已满，请稍后重试")
+            return
+        }
+        mainHandler.post { pump() }
+    }
+
+    /**
+     * Writes at most one command at a time. The completion callback re-enters
+     * the pump, so the queue is the only place that decides ordering.
+     */
+    private fun pump() {
+        var command: String? = null
+        var payload: String? = null
+        var seq = 0
+        synchronized(sendLock) {
+            if (writing) {
+                return
+            }
+            val next = outbound.poll() ?: return
+            writing = true
+            command = next
+            if (ControlProtocol.requiresSequencedAck(next)) {
+                seq = ++nextSeq
+                inFlight[seq] = InFlightCommand(next, SystemClock.elapsedRealtime())
+                payload = ControlProtocol.sequencedCommandPayload(seq, next)
+            } else {
+                payload = next
+            }
+        }
+        val chosen = command ?: return
+        val wire = payload ?: chosen
+        val current = manager
+        if (current == null || !current.isReady) {
+            synchronized(sendLock) { writing = false }
+            return
+        }
+        val acked = seq > 0
+        current.writeCommand(wire) { ok ->
+            synchronized(sendLock) { writing = false }
+            if (!ok) {
+                if (acked) {
+                    synchronized(sendLock) { inFlight.remove(seq) }
+                    listener.onError("发送命令失败：$chosen")
+                }
+            }
+            mainHandler.post { pump() }
+        }
+    }
+
+    /** A dropped pitch sample is disposable; a missing ACK is not. */
+    private fun expireInFlight() {
+        val cutoff = SystemClock.elapsedRealtime() - ACK_TIMEOUT_MS
+        val missing = ArrayList<String>(2)
+        synchronized(sendLock) {
+            val iterator = inFlight.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                if (entry.value.sentAt <= cutoff) {
+                    missing.add(entry.value.command)
+                    iterator.remove()
+                }
+            }
+        }
+        for (command in missing) {
+            listener.onError("头显未确认命令：$command")
+        }
+    }
+
+    private fun handleAck(ack: ControlProtocol.Ack) {
+        // An ACK for a seq that already expired was reported once; ignore it
+        // rather than repeating a stale error.
+        val command = synchronized(sendLock) { inFlight.remove(ack.seq)?.command } ?: return
+        when (ack.result) {
+            ControlProtocol.RESULT_OK -> Unit
+            ControlProtocol.RESULT_BUSY -> listener.onError("头显忙，命令未执行：$command")
+            else -> listener.onError("头显拒绝命令：$command")
+        }
+    }
+
+    private fun handleWelcome(raw: String) {
+        val welcome = ControlProtocol.parseWelcome(raw)
+        if (welcome == null) {
+            failProtocol("头显握手响应无效，请更新头显应用")
+            return
+        }
+        if (welcome.version != ControlProtocol.protocolVersion) {
+            failProtocol(
+                "头显协议版本不兼容（头显 v${welcome.version}，平板 v${ControlProtocol.protocolVersion}），请更新头显应用"
+            )
+            return
+        }
+        val missing = ControlProtocol.CAPABILITIES_MASK and welcome.capabilities.inv()
+        if (missing != 0) {
+            failProtocol(
+                "头显固件缺少功能：" +
+                    ControlProtocol.capabilityNames(missing).joinToString(",") +
+                    "，请更新头显应用"
+            )
+            return
+        }
+        headsetCapabilities = welcome.capabilities
+        incompatibleReason = null
+        cancelClaimTimeout()
+        cancelHandshakeTimeout()
+        cancelReconnect()
+        awaitingControl = false
+        manualClose = false
+        autoScan = false
+        reconnectAttempts = 0
+        setPhase(BlePhase.READY)
+        listener.onControlGranted()
+    }
+
+    /** Keeps the link but refuses to drive it, with a reason the UI can show. */
+    private fun failProtocol(reason: String) {
+        incompatibleReason = reason
+        cancelClaimTimeout()
+        cancelHandshakeTimeout()
+        cancelReconnect()
+        awaitingControl = false
+        // Reconnecting cannot fix a protocol mismatch: stop the loop and let
+        // the operator update the headset app.
+        manualClose = true
+        autoScan = false
+        listener.onError(reason)
+        setPhase(BlePhase.ERROR)
+    }
+
+    /** Lease loss / disconnect: nothing queued may outlive the session. */
+    private fun abortCommands() {
+        synchronized(sendLock) {
+            outbound.clear()
+            inFlight.clear()
+            writing = false
+            nextSeq = 0
+        }
+        headsetCapabilities = 0
+        incompatibleReason = null
     }
 
     fun readSignal() {
@@ -398,6 +600,9 @@ class BleController(
     }
 
     private fun closeManager() {
+        // Every teardown path funnels through here: pending pitch and unacked
+        // commands die with the link so they cannot leak into the next session.
+        abortCommands()
         val current = manager
         manager = null
         try {
@@ -477,9 +682,37 @@ class BleController(
         mainHandler.removeCallbacks(claimTimeout)
     }
 
+    private fun scheduleHandshakeTimeout() {
+        mainHandler.removeCallbacks(handshakeTimeout)
+        mainHandler.postDelayed(handshakeTimeout, HANDSHAKE_TIMEOUT_MS)
+    }
+
+    private fun cancelHandshakeTimeout() {
+        mainHandler.removeCallbacks(handshakeTimeout)
+    }
+
     private fun handleStatus(raw: String) {
         if (raw == ControlProtocol.PONG) {
             lastPongAt = SystemClock.elapsedRealtime()
+            return
+        }
+        if (raw.startsWith("${ControlProtocol.WELCOME} ")) {
+            handleWelcome(raw)
+            return
+        }
+        if (raw.startsWith("${ControlProtocol.ACK} ")) {
+            ControlProtocol.parseAck(raw)?.let(::handleAck)
+            return
+        }
+        if (raw.startsWith(ControlProtocol.STATUS_PROTOCOL_MISMATCH)) {
+            failProtocol(
+                "头显协议版本不兼容（头显 v${raw.substringAfter(' ', "")}，" +
+                    "平板 v${ControlProtocol.protocolVersion}），请更新头显应用"
+            )
+            return
+        }
+        if (raw == ControlProtocol.STATUS_PROTOCOL_REQUIRED) {
+            failProtocol("头显要求先完成协议握手（HELLO），请更新平板应用")
             return
         }
         when (raw) {
@@ -490,8 +723,10 @@ class BleController(
                 manualClose = false
                 autoScan = false
                 reconnectAttempts = 0
-                setPhase(BlePhase.READY)
-                listener.onControlGranted()
+                // Control is not usable until the protocol handshake succeeds:
+                // READY only flips after a matching WELCOME.
+                enqueueCommand(ControlProtocol.helloCommand())
+                scheduleHandshakeTimeout()
             }
 
             ControlProtocol.STATUS_CONTROL_BUSY -> {
@@ -529,6 +764,7 @@ class BleController(
 
     private fun handleDisconnected() {
         cancelClaimTimeout()
+        cancelHandshakeTimeout()
         awaitingControl = false
         closeManager()
         setPhase(BlePhase.DISCONNECTED)
@@ -641,12 +877,22 @@ class BleController(
             }
         }
 
+    /** A discrete command written to the headset and awaiting its ACK. */
+    private class InFlightCommand(val command: String, val sentAt: Long)
+
     private companion object {
         const val HEARTBEAT_INTERVAL_MS = 5_000L
         const val HEARTBEAT_TIMEOUT_MS = 15_000L
         const val SCAN_WINDOW_MS = 12_000L
         const val CONNECT_TIMEOUT_MS = 15_000L
         const val CLAIM_TIMEOUT_MS = 6_000L
+
+        /** HELLO -> WELCOME must finish well inside one watchdog window. */
+        const val HANDSHAKE_TIMEOUT_MS = 4_000L
+
+        /** An unacked discrete command is reported after this long. */
+        const val ACK_TIMEOUT_MS = 8_000L
+
         const val RETRY_DELAY_MS = 250
         const val MAX_RECONNECTS = 3
         const val RECONNECT_DELAY_MS = 700L

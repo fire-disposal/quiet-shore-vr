@@ -11,6 +11,8 @@ import android.util.Log
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.protocol.ViewAnim
+import com.quietshore.control.protocol.ViewPreset
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -24,45 +26,52 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
-import java.util.ArrayDeque
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 
 /**
  * 前台服务：把 APK 内置的 standalone 页面以只读静态 HTTP 暴露在
  * 127.0.0.1:8130（仅 loopback，不监听局域网）。
  *
- * 静态读取只做 GET/HEAD；控制面是 JSON：
- *   GET  /control    {seq,command,control}（轮询保留，向后兼容）
- *   GET  /events     text/event-stream，推送两类事件：
- *                    event: control  data={seq,command,control,controller}（命令，同 /control）
- *                    event: state     data={control,controller}（控制权，无 seq/command）
- *   GET  /status     {bluetooth,control}
- *   POST /telemetry  {x,y,z,yaw,pitch} -> BLE telemetry characteristic
- *   POST /state      {scene,session,calibrating,audio} -> BLE state characteristic
+ * 页面与控制台的唯一实时通道是 WebSocket：
+ *   GET /ws?since=<seq>   RFC 6455，仅文本帧，JSON，单帧上限 8 KiB。
+ *     服务端 -> 页面
+ *       {"type":"ready","seq":N,"control":bool,"controller":string|null}
+ *       {"type":"cmd","seq":N,"command":"...","continuous":bool}
+ *       {"type":"control","control":bool,"controller":string|null}
+ *     页面 -> 服务端
+ *       {"type":"state","data":{scene,session,...,calibrating,audio,...}}
+ *       {"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
+ *       {"type":"ack","seq":N}
+ *   连接建立先发 ready（`seq` 回显客户端的 since，可安全当作去重水位），
+ *   再补 `seq > since` 的未确认命令（离散按序，连续只发最新一个样本）。
+ *   离散命令在被 ack 之前一直保留；`view:move` 不参与 ack，只保留最新样本；
+ *   `view:anim:*` 是一次性事件，不入保留区，重连不重放。
+ *   控制权变化（CLAIM/RELEASE/断开/停 BLE）立即推一条 control 消息。
+ *   每 15 s ping 一次，30 s 没收到 pong 即关闭通道。
  *
- * /events 连接建立时先发一帧 control（当前快照），紧随一帧 state，页面无需先轮询。
- * 之后命令只会出现在 control 帧里；控制权变化（CLAIM/RELEASE/断开/停 BLE）
- * 只发 state 帧，绝不重放上一条命令。
+ * 其余 HTTP 路由只用于诊断/静态资源：
+ *   GET  /status       {bluetooth,control,controller,...,pendingSeq}
+ *   GET  /bootstrap    页面启动数据
+ *   GET  /capabilities 允许的命令列表
+ *   POST /command      本地调试：投递一条白名单命令
+ *   GET  /             静态页面
  *
- * 内容为空或读取失败时返回占位页，保证浏览器永远拿到 HTML 而不是连接错误。
- * 没有目录遍历、没有任意路径写操作。
- *
- * 并发不变量（/events 必须不能饿死静态页或轮询）：
+ * 并发不变量：
  * - 每个连接一个受限线程；同时最多 [MAX_CLIENTS] 个连接，超出的直接 503 关闭。
- * - 每个 SSE 订阅占用一个线程，数量另受 [MAX_EVENT_CLIENTS] 限制，
- *   保证永远有空闲线程服务 /control、/status 与静态资源。
- * - [eventLock] 只保护订阅者注册表与每订阅者的有界队列；绝不在持锁时做 socket I/O。
- *   因此 BLE 线程调用 [publishFrame] 不会被慢客户端阻塞。
- * - 每个被接受的命令只构造一次 JSON 与一次 SSE 帧（共享给所有订阅者）；
- *   没有订阅者时连 JSON 都不构造。
- * - 停服务时关闭订阅 socket、唤醒等待者并 shutdown 线程池，不留驻留线程。
+ *   WebSocket 另受 [MAX_WS_CLIENTS] 限制，每个连接只有一个写线程。
+ * - [wsLock] 只保护订阅者注册表与每人队列；[controlLock] 只保护命令保留区。
+ *   锁序固定 wsLock -> controlLock（从不在持锁时反向获取），且绝不在持锁时做
+ *   任何 socket I/O，所以 BLE 线程写命令不会被慢页面阻塞。
+ * - 每页订阅者的出站队列有界：连续帧互相覆盖，离散帧不会被丢；队列满时先
+ *   丢最旧的连续帧，再丢 ready/control 帧。
+ * - 停服务时先推最后一帧控制权失效，再关闭订阅 socket、唤醒写线程并
+ *   shutdown 线程池，不留驻留线程。
  */
 class PortalService : Service() {
     internal companion object {
@@ -85,47 +94,50 @@ class PortalService : Service() {
         /** 同时处理的连接上限；多出的连接直接 503 关闭，避免无界线程。 */
         const val MAX_CLIENTS = 8
 
-        /** SSE 订阅上限，必须明显小于 [MAX_CLIENTS]，轮询/静态页才有线程可用。 */
-        const val MAX_EVENT_CLIENTS = 3
+        /** 同时存在的控制通道上限；每个通道占用一个读线程和一个写线程。 */
+        const val MAX_WS_CLIENTS = 3
 
-        /** 每订阅者待发帧上限；满了丢最旧的（movement 只关心最新样本）。 */
-        const val EVENT_QUEUE_DEPTH = 32
-        const val EVENT_HEARTBEAT_MS = 15_000L
+        /** 页面只能来自本机静态服务；别的 Origin 一律拒绝。 */
+        const val ORIGIN_PREFIX = "http://127.0.0.1:8130"
 
-        /** 停服时等订阅者把最后一帧发出去的排空上限；超时就直接关连接。 */
-        const val EVENT_DRAIN_MS = 100L
+        /** 单帧上限（文本 JSON）；更大的输入视为坏客户端。 */
+        const val WS_MAX_MESSAGE_BYTES = 8 * 1024
+
+        /**
+         * 每人出站队列上限。离散帧绝不丢，连续帧先互相覆盖再谈淘汰；
+         * 深度大于 [ControlLog.PENDING_DEPTH]，整段保留区总能装下。
+         */
+        const val WS_QUEUE_DEPTH = 96
+
+        const val WS_PING_MS = 15_000L
+
+        /** 超过这个时间没收到 pong 就关闭连接（两次 ping 的宽限）。 */
+        const val WS_PONG_TIMEOUT_MS = 30_000L
+
+        /** 没有 `since` 参数时的水位：补发全部未确认命令。 */
+        const val SINCE_DEFAULT = -1
 
         /** 空闲工作线程回收时间；核心线程同样超时，停服务后不会残留。 */
         const val CLIENT_KEEPALIVE_S = 10L
+
+        val EMPTY_PAYLOAD = ByteArray(0)
 
         val FALLBACK_PAGE: ByteArray =
             "<h1>Quiet Shore VR is starting</h1>".toByteArray(StandardCharsets.UTF_8)
         val NOT_FOUND: ByteArray = "not found".toByteArray(StandardCharsets.UTF_8)
 
-        /** 握手 + retry 一次写出；之后每个心跳都复用同一个常量字节数组。 */
-        val EVENT_HANDSHAKE: ByteArray = (
-            "HTTP/1.1 200 OK\r\n" +
-                "Content-Type: text/event-stream\r\n" +
-                "Cache-Control: no-store, no-cache, must-revalidate\r\n" +
-                "Connection: keep-alive\r\n" +
-                "\r\n" +
-                "retry: 1000\n\n"
-            ).toByteArray(StandardCharsets.US_ASCII)
-
-        val EVENT_HEARTBEAT: ByteArray = ": ping\n\n".toByteArray(StandardCharsets.US_ASCII)
-
         const val CONTENT_TYPE_HTML = "text/html; charset=utf-8"
         const val CONTENT_TYPE_JSON = "application/json; charset=utf-8"
         const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
 
-        const val ROUTE_CONTROL = "/control"
+        /** Page command replayed once whenever the console loses its lease. */
+        const val POSTURE_STOP = "posture:stop"
+
+        const val ROUTE_WS = "/ws"
         const val ROUTE_COMMAND = "/command"
         const val ROUTE_CAPABILITIES = "/capabilities"
         const val ROUTE_STATUS = "/status"
         const val ROUTE_BOOTSTRAP = "/bootstrap"
-        const val ROUTE_TELEMETRY = "/telemetry"
-        const val ROUTE_STATE = "/state"
-        const val ROUTE_EVENTS = "/events"
         const val ROUTE_INDEX = "/"
         const val ROUTE_INDEX_FILE = "/index.html"
     }
@@ -152,16 +164,20 @@ class PortalService : Service() {
     private val clientSlots = AtomicInteger(0)
     private val workerSeq = AtomicInteger(0)
 
-    private val pendingControl = AtomicReference<String?>(null)
+    /**
+     * 页面命令保留区：[ControlLog] 自己不是线程安全的，所有读写都在此锁内。
+     * 绝不在持锁时进入 [wsLock]（锁序永远是 wsLock -> controlLock）。
+     */
+    private val controlLock = Any()
+    private val controlLog = ControlLog()
     private val controlSeq = AtomicInteger(0)
 
     /** 串行化 HeadsetSettings 的读-改-写，避免并发命令互相覆盖。 */
     private val settingsLock = Any()
 
-    /** 保护 [eventSinks] 与每个订阅者的有界队列；绝不在此锁内做 socket I/O。 */
-    private val eventLock = ReentrantLock()
-    private val eventSignal = eventLock.newCondition()
-    private val eventSinks = ArrayList<EventSink>(MAX_EVENT_CLIENTS)
+    /** 保护 [wsSinks] 与每人的出站队列；绝不在此锁内做 socket I/O。 */
+    private val wsLock = ReentrantLock()
+    private val wsSinks = ArrayList<WsSink>(MAX_WS_CLIENTS)
 
     @Volatile
     private var controlMode = false
@@ -184,18 +200,16 @@ class PortalService : Service() {
                 override fun onControlMode(active: Boolean) {
                     val changed = controlMode != active
                     controlMode = active
-                    // CLAIM/RELEASE/断开/停 BLE 都从这里进来：用独立的 state 帧
-                    // 通知订阅者，页面无需轮询也不会重放命令。
+                    // CLAIM/RELEASE/断开/停 BLE 都从这里进来：立即推一条
+                    // control 消息，页面无需轮询就能停下虚拟视角移动。
                     if (changed) {
-                        publishStateEvent()
-                        if (active) {
-                            // Ask the page for a fresh /state snapshot; the
-                            // service just restarted or the tablet may have
-                            // missed the last 1 Hz notification.
-                            pendingControl.set("status")
-                            controlSeq.incrementAndGet()
-                            publishControlEvent()
+                        if (!active) {
+                            // 租约丢失 = 一次停止事件：只入队一条 posture:stop
+                            // （页面端幂等），不重复投递；视角俯仰目标按契约保持
+                            // 最后值，不回正。
+                            dispatchControl(POSTURE_STOP)
                         }
+                        publishControlMessage()
                     }
                     publishStatus()
                 }
@@ -230,9 +244,9 @@ class PortalService : Service() {
         this.bluetooth = null
         if (controlMode) {
             // stop() 已经回调过一次；但若 BLE 早先已停，这里补发租约失效，
-            // 让 EventSource 页面立刻停止虚拟视角移动。
+            // 让页面立刻停止虚拟视角移动。
             controlMode = false
-            publishStateEvent()
+            publishControlMessage()
         }
         PortalStatus.update("stopped", false)
         try {
@@ -245,8 +259,8 @@ class PortalService : Service() {
         val thread = serverThread
         serverThread = null
         thread?.interrupt()
-        // 先关闭所有 SSE 连接并唤醒等待者，worker 的 finally 才会把线程还回去。
-        closeEventSinks()
+        // 先关闭所有控制通道并唤醒写线程，worker 的 finally 才会把线程还回去。
+        closeWsSinks()
         val workers = clients
         clients = null
         workers?.shutdownNow()
@@ -285,8 +299,8 @@ class PortalService : Service() {
     }
 
     /**
-     * 只做 accept 与限额判定，具体请求交给有界线程池；SSE 长连接因此不会
-     * 阻塞静态页或 /control。
+     * 只做 accept 与限额判定，具体请求交给有界线程池；WebSocket 长连接因此
+     * 不会阻塞静态页或 /status。
      */
     private fun serveLoop() {
         page = readPage()
@@ -366,9 +380,13 @@ class PortalService : Service() {
             }
             val method = parts[0].uppercase(Locale.US)
             val target = parts[1].substringBefore('?')
-            if (target == ROUTE_EVENTS) {
+            // `since` is the page's ack watermark: only commands above it are
+            // gap-filled on connect. Missing/invalid means "everything still
+            // pending" (-1), so a fresh page repaints all retained commands.
+            val since = parseSince(parts[1].substringAfter('?', ""))
+            if (target == ROUTE_WS) {
                 if (method == "GET") {
-                    streamEvents(client)
+                    streamWebSocket(client, input, headers, since)
                 } else {
                     writeResponse(
                         client,
@@ -384,7 +402,7 @@ class PortalService : Service() {
             // 客户端提前断开：忽略。
         } catch (error: HttpError) {
             try {
-                writeResponse(client, errorResponse(error.status, error.message ?: "error"), head = false)
+                writeResponse(client, errorResponse(error.status, error.message), head = false)
             } catch (ignored: IOException) {
                 // 客户端已断开。
             }
@@ -394,214 +412,362 @@ class PortalService : Service() {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // WebSocket control channel
+    // ---------------------------------------------------------------------
+
     /**
-     * SSE 订阅循环。每个订阅独占一个 worker 线程，写 socket 时绝不持有
-     * [eventLock]，所以慢客户端只会拖慢它自己，不会阻塞 dispatchControl。
+     * RFC 6455 upgrade, then one reader (this worker thread) and one writer
+     * thread per connection. The reader never writes anything but pong/close
+     * replies; every command goes out through the writer's bounded queue.
      */
-    private fun streamEvents(client: Socket) {
+    private fun streamWebSocket(
+        client: Socket,
+        input: InputStream,
+        headers: Map<String, String>,
+        since: Int
+    ) {
+        val key = headers["sec-websocket-key"]?.trim()
+        val upgrade = headers["upgrade"]?.lowercase(Locale.US)
+        val version = headers["sec-websocket-version"]?.trim()
+        if (key.isNullOrEmpty() || upgrade != "websocket" || version != "13") {
+            writeResponse(client, errorResponse(400, "websocket upgrade required"), head = false)
+            return
+        }
+        val origin = headers["origin"]
+        if (origin != null && !origin.startsWith(ORIGIN_PREFIX)) {
+            writeResponse(client, errorResponse(403, "origin not allowed"), head = false)
+            return
+        }
+        val sink = WsSink(client, since)
+        if (!registerWsSink(sink)) {
+            writeResponse(client, errorResponse(503, "too many control channels"), head = false)
+            return
+        }
         val output: OutputStream = try {
             client.getOutputStream()
         } catch (error: IOException) {
-            return
-        }
-        val sink = EventSink(client, output)
-        if (!registerEventSink(sink)) {
-            try {
-                writeResponse(client, errorResponse(503, "too many event streams"), head = false)
-            } catch (ignored: IOException) {
-                // 客户端已断开。
-            }
+            closeSink(sink)
             return
         }
         try {
-            output.write(EVENT_HANDSHAKE)
-            // 首帧与 GET /control 完全同形：客户端一连上就对齐序号与当前命令。
-            // 随后补一帧 state，控制权单独成帧，命令消费方不会被重复触发。
-            offerFrame(sink, controlFrame(controlJson()))
-            offerFrame(sink, stateFrame(stateJson()))
+            output.write(handshakeResponse(key))
             output.flush()
-            while (true) {
-                val frame = nextFrame(sink) ?: break
-                output.write(frame)
-                output.flush()
+            // The request deadline must be gone or an idle stream dies in 5 s.
+            client.soTimeout = 0
+            Thread({ writerLoop(sink, output) }, "$THREAD_NAME-ws-${workerSeq.incrementAndGet()}").apply {
+                isDaemon = true
+                start()
             }
+            sendGapFill(sink, since)
+            readLoop(sink, input, output)
         } catch (error: IOException) {
-            // 客户端断开或服务停止；由 finally 注销。
+            // Page closed or the service is stopping.
         } finally {
-            unregisterEventSink(sink)
+            closeSink(sink)
         }
     }
 
-    private fun registerEventSink(sink: EventSink): Boolean {
-        eventLock.lock()
-        try {
-            if (!running || eventSinks.size >= MAX_EVENT_CLIENTS) {
-                return false
-            }
-            eventSinks.add(sink)
-            return true
-        } finally {
-            eventLock.unlock()
-        }
-    }
-
-    private fun unregisterEventSink(sink: EventSink) {
-        eventLock.lock()
-        try {
-            sink.closed = true
-            sink.frames.clear()
-            eventSinks.remove(sink)
-            eventSignal.signalAll()
-        } finally {
-            eventLock.unlock()
-        }
-    }
+    private fun handshakeResponse(key: String): ByteArray = WsFrameCodec.handshakeResponse(key)
 
     /**
-     * 停服务：先给订阅者极小的排空窗口，把已入队的最后一帧（控制权失效）
-     * 写出去，然后标记关闭、关 socket、唤醒所有等待心跳的 worker。
+     * Registers the sink and queues `ready` as its very first frame, so no
+     * broadcast can slip in front of the handshake message.
      */
-    private fun closeEventSinks() {
-        val closing = ArrayList<EventSink>(MAX_EVENT_CLIENTS)
-        val deadline = System.currentTimeMillis() + EVENT_DRAIN_MS
-        eventLock.lock()
+    private fun registerWsSink(sink: WsSink): Boolean {
+        wsLock.lock()
         try {
-            // await 会释放锁，writer 才能取到帧；队列清空即视为已交给写端。
-            while (System.currentTimeMillis() < deadline &&
-                eventSinks.any { it.frames.isNotEmpty() }
-            ) {
-                try {
-                    eventSignal.await(10, TimeUnit.MILLISECONDS)
-                } catch (error: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    break
-                }
+            if (!running || wsSinks.size >= MAX_WS_CLIENTS) {
+                return false
             }
-            for (sink in eventSinks) {
-                sink.closed = true
-                sink.frames.clear()
-                closing.add(sink)
-            }
-            eventSinks.clear()
-            eventSignal.signalAll()
+            sink.queue.offer(FrameKind.SNAPSHOT, textFrame(readyJson(sink.since)))
+            wsSinks.add(sink)
+            return true
         } finally {
-            eventLock.unlock()
+            wsLock.unlock()
+        }
+    }
+
+    private fun unregisterWsSink(sink: WsSink) {
+        wsLock.lock()
+        try {
+            wsSinks.remove(sink)
+        } finally {
+            wsLock.unlock()
+        }
+    }
+
+    /** Stops one subscriber: marks it closed, wakes the writer and drops the socket. */
+    private fun closeSink(sink: WsSink) {
+        unregisterWsSink(sink)
+        markClosed(sink)
+        closeQuietly(sink.socket)
+    }
+
+    private fun markClosed(sink: WsSink) {
+        sink.lock.lock()
+        try {
+            sink.closed = true
+            sink.queue.clear()
+            sink.signal.signalAll()
+        } finally {
+            sink.lock.unlock()
+        }
+    }
+
+    /** 停服务：关闭所有控制通道并唤醒写线程。 */
+    private fun closeWsSinks() {
+        val closing = ArrayList<WsSink>(MAX_WS_CLIENTS)
+        wsLock.lock()
+        try {
+            closing.addAll(wsSinks)
+            wsSinks.clear()
+        } finally {
+            wsLock.unlock()
         }
         for (sink in closing) {
+            markClosed(sink)
             closeQuietly(sink.socket)
         }
     }
 
-    /** 取下一帧：有帧立即返回，空闲到点返回共享心跳，关闭/停服返回 null。 */
-    private fun nextFrame(sink: EventSink): ByteArray? {
-        eventLock.lock()
+    private fun writerLoop(sink: WsSink, output: OutputStream) {
+        var lastPingAt = System.currentTimeMillis()
         try {
-            val deadline = System.currentTimeMillis() + EVENT_HEARTBEAT_MS
+            while (true) {
+                val frame = nextFrame(sink, WS_PING_MS)
+                if (sink.closed || !running) {
+                    return
+                }
+                if (frame != null) {
+                    writeFrame(sink, output, frame)
+                }
+                val now = System.currentTimeMillis()
+                if (now - sink.lastPongAt > WS_PONG_TIMEOUT_MS) {
+                    // Page stopped answering pings: the channel is dead, close
+                    // it so the client stops trusting it for control.
+                    closeWith(sink, output, WsFrameCodec.CLOSE_GOING_AWAY)
+                    return
+                }
+                if (now - lastPingAt >= WS_PING_MS) {
+                    writeFrame(sink, output, WsFrameCodec.encode(WsFrameCodec.OP_PING, EMPTY_PAYLOAD))
+                    lastPingAt = now
+                }
+            }
+        } catch (error: IOException) {
+            // Page vanished.
+        } finally {
+            closeSink(sink)
+        }
+    }
+
+    /** 取下一帧：有帧立即返回，空闲到点返回 null，关闭返回 null。 */
+    private fun nextFrame(sink: WsSink, timeoutMs: Long): ByteArray? {
+        sink.lock.lock()
+        try {
+            val deadline = System.currentTimeMillis() + timeoutMs
             while (true) {
                 if (sink.closed) {
                     return null
                 }
-                // 先排空已入队的帧：停服时那最后一帧（控制权失效）才有机会送达。
-                sink.frames.pollFirst()?.let { return it }
-                if (!running) {
-                    return null
-                }
+                sink.queue.pollFirst()?.let { return it }
                 val remaining = deadline - System.currentTimeMillis()
                 if (remaining <= 0L) {
-                    return EVENT_HEARTBEAT
+                    return null
                 }
                 try {
-                    eventSignal.await(remaining, TimeUnit.MILLISECONDS)
+                    sink.signal.await(remaining, TimeUnit.MILLISECONDS)
                 } catch (error: InterruptedException) {
                     Thread.currentThread().interrupt()
                     return null
                 }
             }
         } finally {
-            eventLock.unlock()
+            sink.lock.unlock()
         }
     }
 
-    private fun offerFrame(sink: EventSink, frame: ByteArray) {
-        eventLock.lock()
+    private fun readLoop(sink: WsSink, input: InputStream, output: OutputStream) {
+        while (true) {
+            val frame = try {
+                WsFrameCodec.read(input, WS_MAX_MESSAGE_BYTES) ?: return
+            } catch (error: WsFrameCodec.WsProtocolException) {
+                closeWith(sink, output, error.code)
+                return
+            }
+            when (frame.opcode) {
+                WsFrameCodec.OP_TEXT ->
+                    if (!handleClientText(sink, output, frame.payload)) {
+                        return
+                    }
+                WsFrameCodec.OP_BINARY -> {
+                    closeWith(sink, output, WsFrameCodec.CLOSE_UNSUPPORTED)
+                    return
+                }
+                WsFrameCodec.OP_CLOSE -> {
+                    closeWith(sink, output, WsFrameCodec.CLOSE_NORMAL)
+                    return
+                }
+                WsFrameCodec.OP_PING ->
+                    writeFrame(sink, output, WsFrameCodec.encode(WsFrameCodec.OP_PONG, frame.payload))
+                WsFrameCodec.OP_PONG -> sink.lastPongAt = System.currentTimeMillis()
+                else -> {
+                    closeWith(sink, output, WsFrameCodec.CLOSE_PROTOCOL)
+                    return
+                }
+            }
+        }
+    }
+
+    /** Returns false when the connection must close. */
+    private fun handleClientText(sink: WsSink, output: OutputStream, payload: ByteArray): Boolean {
+        val json = try {
+            JSONObject(String(payload, StandardCharsets.UTF_8))
+        } catch (error: JSONException) {
+            closeWith(sink, output, WsFrameCodec.CLOSE_UNSUPPORTED)
+            return false
+        }
+        when (json.optString("type")) {
+            "state" -> json.optJSONObject("data")?.let(::applyState)
+            "telemetry" -> json.optJSONObject("data")?.let(::applyTelemetry)
+            "ack" -> json.optInt("seq", -1).takeIf { it >= 0 }?.let(::ackCommands)
+            // Unknown message types are ignored: forward compatibility beats a
+            // disconnect when a newer page talks to an older service.
+            else -> Unit
+        }
+        return true
+    }
+
+    private fun closeWith(sink: WsSink, output: OutputStream, code: Int) {
+        markClosed(sink)
+        try {
+            writeFrame(sink, output, WsFrameCodec.encode(WsFrameCodec.OP_CLOSE, WsFrameCodec.closePayload(code)))
+        } catch (ignored: IOException) {
+            // Already gone.
+        } finally {
+            closeQuietly(sink.socket)
+        }
+    }
+
+    private fun writeFrame(sink: WsSink, output: OutputStream, frame: ByteArray) {
+        // The writer thread and the reader's pong/close replies share the socket.
+        synchronized(sink.writeLock) {
+            output.write(frame)
+            output.flush()
+        }
+    }
+
+    /** Sends retained commands the page has not consumed (`seq > since`). */
+    private fun sendGapFill(sink: WsSink, since: Int) {
+        val (pending, continuous) = synchronized(controlLock) {
+            controlLog.pendingSince(since) to controlLog.latestContinuous()
+        }
+        for (entry in pending) {
+            offer(sink, FrameKind.DISCRETE, textFrame(commandJson(entry, isContinuous = false)))
+        }
+        if (continuous != null && continuous.seq > since) {
+            offer(sink, FrameKind.CONTINUOUS, textFrame(commandJson(continuous, isContinuous = true)))
+        }
+    }
+
+    private fun offer(sink: WsSink, kind: FrameKind, frame: ByteArray) {
+        sink.lock.lock()
         try {
             if (sink.closed) {
                 return
             }
-            enqueueLocked(sink, frame)
-            eventSignal.signalAll()
+            sink.queue.offer(kind, frame)
+            sink.signal.signalAll()
         } finally {
-            eventLock.unlock()
+            sink.lock.unlock()
         }
+    }
+
+    private fun broadcastCommand(entry: ControlEntry, isContinuous: Boolean) {
+        if (!hasWsSinks()) {
+            return
+        }
+        publishFrame(
+            if (isContinuous) FrameKind.CONTINUOUS else FrameKind.DISCRETE,
+            textFrame(commandJson(entry, isContinuous))
+        )
     }
 
     /**
-     * 广播一次已接受的命令。没有订阅者时不构造 JSON；有订阅者时整个命令只
-     * 构造一份 JSON 与一份帧字节，所有订阅者共享。
+     * 控制权变更（claim/release/断开/停 BLE）。帧里没有命令，也不推进 seq：
+     * 订阅者据此独立更新 control，绝不会重放上一条命令。
      */
-    private fun publishControlEvent() {
-        if (!hasEventSinks()) {
+    private fun publishControlMessage() {
+        if (!hasWsSinks()) {
             return
         }
-        publishFrame(controlFrame(controlJson()))
-    }
-
-    /**
-     * 控制权变更（claim/release/断开/停 BLE）。帧里没有 command，也不推进
-     * seq：订阅者据此独立更新 control，绝不会重放上一条命令。
-     */
-    private fun publishStateEvent() {
-        if (!hasEventSinks()) {
-            return
+        val json = JSONObject().apply {
+            put("type", "control")
+            put("control", controlMode)
+            put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
         }
-        publishFrame(stateFrame(stateJson()))
+        publishFrame(FrameKind.STATE, textFrame(json))
     }
 
-    private fun publishFrame(frame: ByteArray) {
-        eventLock.lock()
+    private fun publishFrame(kind: FrameKind, frame: ByteArray) {
+        wsLock.lock()
         try {
-            for (sink in eventSinks) {
-                if (!sink.closed) {
-                    enqueueLocked(sink, frame)
-                }
+            for (sink in wsSinks) {
+                offer(sink, kind, frame)
             }
-            eventSignal.signalAll()
         } finally {
-            eventLock.unlock()
+            wsLock.unlock()
         }
     }
 
-    private fun hasEventSinks(): Boolean {
-        eventLock.lock()
+    private fun hasWsSinks(): Boolean {
+        wsLock.lock()
         try {
-            return eventSinks.isNotEmpty()
+            return wsSinks.isNotEmpty()
         } finally {
-            eventLock.unlock()
+            wsLock.unlock()
         }
     }
 
-    /** 有界队列：满了丢最旧帧（movement 只关心最新样本），绝不阻塞生产者。 */
-    private fun enqueueLocked(sink: EventSink, frame: ByteArray) {
-        if (sink.frames.size >= EVENT_QUEUE_DEPTH) {
-            sink.frames.pollFirst()
-        }
-        sink.frames.addLast(frame)
-    }
-
-    /** 一帧 SSE；data 行是 /control 的同一份 JSON。 */
-    private fun controlFrame(json: JSONObject): ByteArray =
-        ("event: control\ndata: " + json.toString() + "\n\n")
-            .toByteArray(StandardCharsets.UTF_8)
-
-    /** 只描述控制权，没有 seq/command：可安全重复投递，不会触发命令重放。 */
-    private fun stateJson(): JSONObject = JSONObject().apply {
+    /**
+     * `seq` echoes the client's watermark, not the newest issued seq: every
+     * command that follows has a greater seq, so a page may safely adopt it as
+     * its dedupe baseline before the gap-fill arrives.
+     */
+    private fun readyJson(since: Int): JSONObject = JSONObject().apply {
+        put("type", "ready")
+        put("seq", since)
         put("control", controlMode)
         put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
     }
 
-    private fun stateFrame(json: JSONObject): ByteArray =
-        ("event: state\ndata: " + json.toString() + "\n\n")
-            .toByteArray(StandardCharsets.UTF_8)
+    private fun commandJson(entry: ControlEntry, isContinuous: Boolean): JSONObject = JSONObject().apply {
+        put("type", "cmd")
+        put("seq", entry.seq)
+        put("command", entry.command)
+        put("continuous", isContinuous)
+    }
+
+    private fun textFrame(json: JSONObject): ByteArray =
+        WsFrameCodec.encode(WsFrameCodec.OP_TEXT, json.toString().toByteArray(StandardCharsets.UTF_8))
+
+    /** Parses the `since` query parameter; anything unusable means [SINCE_DEFAULT]. */
+    private fun parseSince(query: String): Int {
+        if (query.isEmpty()) {
+            return SINCE_DEFAULT
+        }
+        for (pair in query.split('&')) {
+            if (!pair.startsWith("since=")) {
+                continue
+            }
+            return pair.substring("since=".length).toIntOrNull() ?: SINCE_DEFAULT
+        }
+        return SINCE_DEFAULT
+    }
+
+    // ---------------------------------------------------------------------
+    // HTTP routes and command dispatch
+    // ---------------------------------------------------------------------
 
     private fun route(
         method: String,
@@ -609,10 +775,6 @@ class PortalService : Service() {
         headers: Map<String, String>,
         input: InputStream
     ): Response = when (target) {
-        ROUTE_CONTROL ->
-            if (method == "GET" || method == "HEAD") controlResponse()
-            else methodNotAllowed("GET, HEAD")
-
         ROUTE_COMMAND ->
             if (method == "POST") handleCommand(headers, input)
             else methodNotAllowed("POST")
@@ -636,14 +798,6 @@ class PortalService : Service() {
                 methodNotAllowed("GET, HEAD")
             }
 
-        ROUTE_TELEMETRY ->
-            if (method == "POST") handleTelemetry(headers, input)
-            else methodNotAllowed("POST")
-
-        ROUTE_STATE ->
-            if (method == "POST") handleState(headers, input)
-            else methodNotAllowed("POST")
-
         else -> Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
     }
 
@@ -654,9 +808,9 @@ class PortalService : Service() {
             Log.w(TAG, "rejected command: $raw")
             return false
         }
-        controlSeq.incrementAndGet()
-        // 只有真正写入页面槽位的命令才推送事件：home/allapps/status 不改变页面
-        // 状态，推一份旧命令会让事件消费方重复执行同一条命令。
+        val seq = controlSeq.incrementAndGet()
+        // 只有真正写入页面保留区的命令才推送事件：home/allapps/status 不改变
+        // 页面状态，推一份旧命令会让事件消费方重复执行同一条命令。
         var queued = false
         var broadcastStatus = true
         when {
@@ -704,19 +858,17 @@ class PortalService : Service() {
                         HeadsetSettings.read(this).copy(eyeHeight = meters)
                     )
                 }
-                pendingControl.set(command)
                 queued = true
             }
             command.startsWith(ControlProtocol.VIEW_MOVE) -> {
-                // Joystick stream: the newest sample owns the single page slot,
-                // and the page expires it 300 ms after the last repeat. Movement
-                // never changes BLE/status state, so it skips the per-sample
-                // activity broadcast (the SSE push carries it instead).
+                // Slider stream: the newest absolute pitch target owns the
+                // continuous slot and persists there with no TTL. It never
+                // changes BLE/status state, so it skips the per-sample activity
+                // broadcast (the WS push carries it instead).
                 if (ControlProtocol.parseViewMove(command) == null) {
                     Log.w(TAG, "rejected view move: $command")
                     return false
                 }
-                pendingControl.set(command)
                 queued = true
                 broadcastStatus = false
             }
@@ -732,7 +884,6 @@ class PortalService : Service() {
                         return false
                     }
                 }
-                pendingControl.set(command)
                 queued = true
             }
             command.startsWith("scene:") -> {
@@ -744,7 +895,6 @@ class PortalService : Service() {
                             HeadsetSettings.read(this).copy(sceneId = scene)
                         )
                     }
-                    pendingControl.set(command)
                     queued = true
                 } else {
                     Log.w(TAG, "rejected scene: $scene")
@@ -752,23 +902,25 @@ class PortalService : Service() {
                 }
             }
             command == "status" -> Unit
-            else -> {
-                pendingControl.set(command)
-                queued = true
-            }
+            else -> queued = true
         }
         if (queued) {
-            // 事件里的 seq 就是这次写入的序号；帧在锁外构造，慢客户端不阻塞 BLE。
-            publishControlEvent()
+            // 保留区先记录再广播：重连补发永远看得到这条命令。
+            val kind = synchronized(controlLock) { controlLog.record(seq, command) }
+            broadcastCommand(ControlEntry(seq, command), kind == ControlKind.CONTINUOUS)
         }
         if (broadcastStatus) {
             try {
                 sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
             } catch (ignored: RuntimeException) {
-                // No visible activity; the holder is still updated by the page poll.
+                // No visible activity; the holder is still updated by the page.
             }
         }
         return true
+    }
+
+    private fun ackCommands(seq: Int) {
+        synchronized(controlLock) { controlLog.ack(seq) }
     }
 
     private fun handleCommand(headers: Map<String, String>, input: InputStream): Response {
@@ -795,21 +947,6 @@ class PortalService : Service() {
         return jsonResponse(body)
     }
 
-    private fun controlResponse(): Response = jsonResponse(controlJson())
-
-    /** /control 与 SSE 事件共用的快照；字段顺序和取值完全一致。 */
-    private fun controlJson(): JSONObject = JSONObject().apply {
-        put("seq", controlSeq.get())
-        val command = pendingControl.get()
-        if (command == null) {
-            put("command", JSONObject.NULL)
-        } else {
-            put("command", command)
-        }
-        put("control", controlMode)
-        put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
-    }
-
     private fun bootstrapResponse(): Response = jsonResponse(PortalSession.toJson())
 
     private fun statusResponse(): Response {
@@ -825,31 +962,33 @@ class PortalService : Service() {
         body.put("postureProgress", state.postureProgress)
         body.put("posturePitch", state.posturePitch)
         body.put("postureRise", state.postureRise)
+        body.put("viewPitch", state.viewPitch)
+        body.put("viewAnim", state.viewAnim.wire)
+        body.put("viewPreset", state.viewPreset.wire)
         body.put("calibrationConfidence", state.calibrationConfidence)
         body.put("pendingSeq", controlSeq.get())
         return jsonResponse(body)
     }
 
-    private fun handleTelemetry(headers: Map<String, String>, input: InputStream): Response {
-        val json = readJson(headers, input)
+    /** Same decode path the removed `POST /telemetry` used, now fed by `ws.telemetry`. */
+    private fun applyTelemetry(json: JSONObject) {
         val pose = TelemetryPose(
-            x = requireNumber(json, "x"),
-            y = requireNumber(json, "y"),
-            z = requireNumber(json, "z"),
-            yaw = requireNumber(json, "yaw"),
-            pitch = requireNumber(json, "pitch")
+            x = json.optNumber("x"),
+            y = json.optNumber("y"),
+            z = json.optNumber("z"),
+            yaw = json.optNumber("yaw"),
+            pitch = json.optNumber("pitch")
         )
         if (!pose.x.isFinite() || !pose.y.isFinite() || !pose.z.isFinite() ||
             !pose.yaw.isFinite() || !pose.pitch.isFinite()
         ) {
-            throw HttpError(400, "invalid telemetry")
+            return
         }
         bluetooth?.publishTelemetry(pose)
-        return okResponse()
     }
 
-    private fun handleState(headers: Map<String, String>, input: InputStream): Response {
-        val json = readJson(headers, input)
+    /** Same decode path the removed `POST /state` used, now fed by `ws.state`. */
+    private fun applyState(json: JSONObject) {
         val scene = json.optString("scene", ControlState().scene).trim()
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
@@ -866,14 +1005,18 @@ class PortalService : Service() {
             postureRoll = finite("postureRoll", 0f),
             postureRise = finite("postureRise", 0f),
             postureProgress = finite("postureProgress", 0f),
-            viewX = finite("viewX", 0f),
-            viewZ = finite("viewZ", 0f),
+            // 视角俯仰是**当前已应用**的角度（度），不是目标。v3 的
+            // viewX/viewZ 平移字段已删除，页面若仍发送也会被忽略。
+            viewPitch = finite("viewPitch", 0f)
+                .coerceIn(-ControlProtocol.VIEW_PITCH_MAX_DEG, ControlProtocol.VIEW_PITCH_MAX_DEG),
+            // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
+            viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
+            viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),
             cueIntensity = finite("cueIntensity", 1f),
             calibrationConfidence = finite("calibrationConfidence", 0f)
         )
         lastState = state
         bluetooth?.publishState(state)
-        return okResponse()
     }
 
     private fun readJson(headers: Map<String, String>, input: InputStream): JSONObject {
@@ -885,15 +1028,13 @@ class PortalService : Service() {
         }
     }
 
-    private fun requireNumber(json: JSONObject, name: String): Float {
-        val value = json.opt(name)
-        if (value == null || value == JSONObject.NULL) {
+    /** Missing or malformed values fall back to 0 instead of breaking the frame. */
+    private fun JSONObject.optNumber(name: String): Float {
+        val value = opt(name) ?: return 0f
+        if (value == JSONObject.NULL) {
             return 0f
         }
-        if (value !is Number) {
-            throw HttpError(400, "invalid $name")
-        }
-        return value.toFloat()
+        return if (value is Number) value.toFloat() else 0f
     }
 
     private fun readBody(headers: Map<String, String>, input: InputStream): ByteArray {
@@ -982,6 +1123,7 @@ class PortalService : Service() {
     private fun statusText(status: Int): String = when (status) {
         200 -> "OK"
         400 -> "Bad Request"
+        403 -> "Forbidden"
         404 -> "Not Found"
         405 -> "Method Not Allowed"
         411 -> "Length Required"
@@ -993,9 +1135,6 @@ class PortalService : Service() {
 
     private fun jsonResponse(body: JSONObject): Response =
         Response(200, CONTENT_TYPE_JSON, body.toString().toByteArray(StandardCharsets.UTF_8))
-
-    private fun okResponse(): Response =
-        jsonResponse(JSONObject().put("ok", true))
 
     private fun errorResponse(status: Int, message: String): Response {
         val contentType = if (status == 404) CONTENT_TYPE_TEXT else CONTENT_TYPE_JSON
@@ -1134,12 +1273,21 @@ class PortalService : Service() {
     )
 
     /**
-     * 一个 SSE 订阅者。[frames] 只在持有 eventLock 时访问；写入 socket 一律
-     * 在锁外，所以队列深度只影响该订阅者自己的滞后，不会反压命令线程。
+     * 一个 WebSocket 订阅者。[queue] 只在持有 [lock] 时访问；写入 socket 一律
+     * 在锁外（[writeLock] 只串行化真正的写调用），所以队列深度只影响该订阅者
+     * 自己的滞后，不会反压命令线程。
      */
-    private class EventSink(val socket: Socket, val output: OutputStream) {
-        val frames = ArrayDeque<ByteArray>(PortalService.EVENT_QUEUE_DEPTH)
+    private class WsSink(val socket: Socket, val since: Int) {
+        val queue = CoalescingQueue<ByteArray>(WS_QUEUE_DEPTH)
+        val lock = ReentrantLock()
+        val signal = lock.newCondition()
+        val writeLock = Any()
+
+        @Volatile
         var closed = false
+
+        @Volatile
+        var lastPongAt = System.currentTimeMillis()
     }
 
     private class HttpError(val status: Int, override val message: String) : RuntimeException(message)

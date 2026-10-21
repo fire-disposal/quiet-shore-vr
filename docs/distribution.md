@@ -25,7 +25,7 @@
 ### 2.1 头显端 `com.quietshore.portal`（`:headset`）
 
 1. 在 `127.0.0.1:8130` 起一个本地 HTTP 服务：静态页面来自 APK `assets/index.html`（由 `dist/standalone.html` 在构建时复制），另提供控制桥接口。
-2. 同一服务提供 `/control`、`/status`、`/telemetry`、`/state` 回环接口，作为患者页面与 BLE 之间的桥。
+2. 同一服务提供 `/ws`、`/status`、`/command` 回环接口，作为患者页面与 BLE 之间的桥。
 3. 作为 BLE 外设广播 `QuietShore`，向平板提供 `command` / `status` / `telemetry` / `state` 四个特征。
 4. `PortalActivity` 是可见控制台；应用图标、通知正文和快捷磁贴都先打开它，显示服务、蓝牙和接管状态。
 5. 控制台的“进入训练”是唯一拉起 Firefox Reality 的按钮（3 秒冷却），用显式 Intent 打开 `http://127.0.0.1:8130/?t=<时间戳>`；通知另有“打开控制台/全部应用/返回桌面”。
@@ -46,7 +46,7 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 
 ### 2.3 共享契约 `:protocol`
 
-纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、命令白名单、20 字节遥测编解码、`scene|session|calibrating|audio` 状态格式都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
+纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、20 字节遥测编解码、13 字节 state v5 都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
 
 ## 3. 方案矩阵
 

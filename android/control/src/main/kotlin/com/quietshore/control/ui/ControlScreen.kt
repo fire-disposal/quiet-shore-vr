@@ -43,7 +43,6 @@ import com.quietshore.control.model.ViewMode
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.ControlRail
-import com.quietshore.control.ui.components.JoystickPad
 import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.StatusPanel
 import com.quietshore.control.ui.components.ViewModeToggle
@@ -211,13 +210,6 @@ private fun FullscreenPatientView(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (state.advancedUnlocked) {
-                JoystickPad(
-                    enabled = state.canSteerView,
-                    onVector = actions.onViewMove,
-                    onRelease = actions.onViewStop
-                )
-            }
             PoseFreshness(stale = state.poseStale || state.pose == null)
         }
     }

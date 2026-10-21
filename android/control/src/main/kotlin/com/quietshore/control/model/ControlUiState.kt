@@ -4,6 +4,7 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.protocol.ViewPreset
 
 enum class ViewMode(val wire: String, val label: String) {
     PATIENT("patient", "患者视角"),
@@ -32,6 +33,27 @@ object EyeHeight {
     const val MAX: Float = ControlProtocol.EYE_HEIGHT_MAX
     const val DEFAULT: Float = ControlProtocol.EYE_HEIGHT_DEFAULT
     const val STEP: Float = 0.05f
+}
+
+/**
+ * System-level view animation presets exposed by the 视角 tab. The wire enum
+ * lives in the protocol; only the operator-facing labels belong here.
+ */
+object ViewPresets {
+    val all: List<ViewPreset> = listOf(
+        ViewPreset.UP,
+        ViewPreset.DOWN,
+        ViewPreset.RECENTER,
+        ViewPreset.BREATHE
+    )
+
+    fun label(preset: ViewPreset): String = when (preset) {
+        ViewPreset.UP -> "上仰"
+        ViewPreset.DOWN -> "下俯"
+        ViewPreset.RECENTER -> "回正"
+        ViewPreset.BREATHE -> "呼吸"
+        ViewPreset.NONE -> "未选择"
+    }
 }
 
 object Scenes {
@@ -68,8 +90,12 @@ data class ControlUiState(
     val eyeHeightRequested: Float = EyeHeight.DEFAULT,
     /** True once the headset confirmed the last requested eye height. */
     val eyeHeightConfirmed: Boolean = false,
-    /** Explicit therapist gate: reveals the virtual view joystick. Never persisted. */
-    val advancedUnlocked: Boolean = false,
+    /**
+     * In-flight absolute pitch target in degrees. Non-null only while the
+     * slider is ahead of the headset readback, so the thumb never jumps back
+     * between a local change and the next state notification.
+     */
+    val viewPitchRequested: Float? = null,
     val rssi: Int? = null,
     val notice: String? = null,
     val error: String? = null,
@@ -84,14 +110,21 @@ data class ControlUiState(
         get() = !phase.isBusy && phase != BlePhase.SCANNING
 
     /**
-     * Virtual view translation is only valid while this tablet owns control of
-     * a running, calibrated, not-recalibrating session with live telemetry.
-     * A stopped session means the patient owns the view again.
+     * Why the pitch slider and sit-up controls are unavailable, or null when
+     * they may be used. The page holds the pitch target itself, so this gate is
+     * about authority and safety, not about telemetry liveness.
      */
-    val canSteerView: Boolean
-        get() = phase == BlePhase.READY &&
-            controlGranted &&
-            control.session &&
-            !control.calibrating &&
-            !poseStale
+    val viewPitchBlockedReason: String?
+        get() = when {
+            phase != BlePhase.READY -> "头显未连接"
+            !controlGranted -> "尚未取得控制权"
+            !control.session -> "训练开始后可用"
+            control.calibrating -> "校准中视角已冻结"
+            else -> null
+        }
+
+    val canAdjustView: Boolean get() = viewPitchBlockedReason == null
+
+    /** Slider position: the in-flight request wins over the headset readback. */
+    val viewPitchDegrees: Float get() = viewPitchRequested ?: control.viewPitch
 }

@@ -30,9 +30,13 @@ import java.util.concurrent.CopyOnWriteArraySet
 /**
  * BLE peripheral for the tablet console.
  *
- * command   write       CLAIM / RELEASE / <command>
+ * command   write       CLAIM / RELEASE / HELLO <v> / #<seq> <cmd> / <cmd>
+ *                       (`view:move:*` stays unsequenced and ack-free)
  * status    read/notify "CONNECTED", "CONTROL_OK", "CONTROL_BUSY",
- *                       "CONTROL_RELEASED", "CONTROL_REQUIRED", "OK:<cmd>"
+ *                       "CONTROL_RELEASED", "CONTROL_REQUIRED",
+ *                       "WELCOME <v> <caps>", "ACK <seq> <OK|REJECTED|BUSY>",
+ *                       "PROTOCOL_REQUIRED", "PROTOCOL_MISMATCH <v>",
+ *                       "OK:<cmd>" (legacy unsequenced commands)
  * telemetry read/notify 20 bytes LE float32: x, y, z, yaw, pitch
  * state     read/notify "scene|session|calib|audio"
  *
@@ -64,6 +68,9 @@ internal class BluetoothControl(
         const val STATE_ADVERTISING = "advertising"
         const val WATCHDOG_INTERVAL_MS = 5_000L
         const val CONTROLLER_TIMEOUT_MS = 20_000L
+
+        /** Bounded dedupe window: enough for every realistic retry burst. */
+        const val SEQ_MEMO_DEPTH = 32
     }
 
     private val appContext: Context = context.applicationContext ?: context
@@ -72,6 +79,13 @@ internal class BluetoothControl(
 
     @Volatile
     private var controller: String? = null
+
+    /** Controller address that completed HELLO, and the version it announced. */
+    private var handshakeAddress: String? = null
+    private var handshakeVersion = 0
+
+    /** `seq -> result` memo so a retried discrete command is not executed twice. */
+    private val seqResults = LinkedHashMap<Int, String>(16)
 
     private val watchdogHandler = Handler(Looper.getMainLooper())
     @Volatile
@@ -86,6 +100,7 @@ internal class BluetoothControl(
                 synchronized(controlLock) {
                     if (controller == active) {
                         controller = null
+                        resetProtocolStateLocked()
                     }
                 }
                 listener.onControlMode(false)
@@ -310,6 +325,20 @@ internal class BluetoothControl(
     /** BLE address of the pad that currently owns the console, if any. */
     fun controllerAddress(): String? = synchronized(controlLock) { controller }
 
+    /** A new owner always starts from a clean handshake and seq window. */
+    private fun resetProtocolStateLocked() {
+        handshakeAddress = null
+        handshakeVersion = 0
+        seqResults.clear()
+    }
+
+    private fun rememberSeqLocked(seq: Int, result: String) {
+        seqResults[seq] = result
+        while (seqResults.size > SEQ_MEMO_DEPTH) {
+            seqResults.remove(seqResults.keys.first())
+        }
+    }
+
     private fun touchController() {
         lastControllerActivity = android.os.SystemClock.elapsedRealtime()
     }
@@ -325,11 +354,15 @@ internal class BluetoothControl(
         val changed = synchronized(controlLock) {
             val current = controller
             if (current == null || current == address) {
+                if (current == null) {
+                    resetProtocolStateLocked()
+                }
                 controller = address
                 current == null
             } else if (current !in connected) {
                 // The old controller is no longer on any live GATT link
                 // (BLE random address rotated or the pad process restarted).
+                resetProtocolStateLocked()
                 controller = address
                 true
             } else {
@@ -353,6 +386,7 @@ internal class BluetoothControl(
         val released = synchronized(controlLock) {
             if (controller == address) {
                 controller = null
+                resetProtocolStateLocked()
                 true
             } else {
                 false
@@ -368,47 +402,156 @@ internal class BluetoothControl(
 
     private fun handleWrite(device: BluetoothDevice, requestId: Int, value: ByteArray) {
         val raw = String(value, StandardCharsets.UTF_8).trim()
-        val reply = when (raw) {
-            ControlProtocol.CLAIM -> handleClaim(device)
-            ControlProtocol.RELEASE -> handleRelease(device)
-            ControlProtocol.PING -> {
+        when {
+            raw.startsWith(ControlProtocol.HELLO) -> {
+                handleHello(device, requestId, raw)
+                return
+            }
+            raw == ControlProtocol.CLAIM -> {
+                replyWrite(device, requestId, handleClaim(device))
+                return
+            }
+            raw == ControlProtocol.RELEASE -> {
+                replyWrite(device, requestId, handleRelease(device))
+                return
+            }
+            raw == ControlProtocol.PING -> {
                 if (!isController(device)) {
-                    ControlProtocol.STATUS_CONTROL_REQUIRED
+                    replyWrite(device, requestId, ControlProtocol.STATUS_CONTROL_REQUIRED)
                 } else {
                     touchController()
-                    ControlProtocol.PONG
+                    replyWrite(device, requestId, ControlProtocol.PONG)
                 }
-            }
-            else -> {
-                val command = ControlProtocol.parseCommand(raw)
-                when {
-                    command == null || !isController(device) -> ControlProtocol.STATUS_CONTROL_REQUIRED
-                    !ControlProtocol.isAllowedCommand(command) -> ControlProtocol.STATUS_COMMAND_REJECTED
-                    else -> {
-                        touchController()
-                        if (!listener.onCommand(command)) {
-                            ControlProtocol.STATUS_COMMAND_REJECTED
-                        } else if (command.startsWith(ControlProtocol.VIEW_MOVE)) {
-                            // 10 Hz stream: keep the GATT write response but
-                            // spend no status notification per sample.
-                            if (requestId != 0) {
-                                sendResponse(
-                                    device,
-                                    requestId,
-                                    BluetoothGatt.GATT_SUCCESS,
-                                    0,
-                                    ByteArray(0)
-                                )
-                            }
-                            return
-                        } else {
-                            "OK:$command"
-                        }
-                    }
-                }
+                return
             }
         }
-        replyWrite(device, requestId, reply)
+        handleCommandWrite(device, requestId, raw)
+    }
+
+    /**
+     * `HELLO <version>` -> `WELCOME <headsetVersion> <capabilities>`.
+     *
+     * The headset always answers with its own version so a tablet can detect a
+     * mismatch and refuse to drive the console with a specific reason instead
+     * of guessing why commands stop working.
+     */
+    private fun handleHello(device: BluetoothDevice, requestId: Int, raw: String) {
+        val version = ControlProtocol.parseHello(raw)
+        val address = addressOf(device)
+        when {
+            version == null ->
+                replyWrite(device, requestId, ControlProtocol.STATUS_COMMAND_REJECTED)
+            address == null || !isController(device) ->
+                replyWrite(device, requestId, ControlProtocol.STATUS_CONTROL_REQUIRED)
+            else -> {
+                synchronized(controlLock) {
+                    handshakeAddress = address
+                    handshakeVersion = version
+                    // A fresh handshake starts a fresh dedupe window.
+                    seqResults.clear()
+                }
+                replyWrite(device, requestId, ControlProtocol.welcomeCommand())
+            }
+        }
+    }
+
+    /**
+     * Discrete command path.
+     *
+     * Seqs make delivery explicit: the result of every discrete command is
+     * reported as `ACK <seq> <OK|REJECTED|BUSY>` and duplicates inside the
+     * bounded window re-send the original result without executing twice.
+     * `view:move` stays seq-free and ack-free (latest sample wins).
+     */
+    private fun handleCommandWrite(device: BluetoothDevice, requestId: Int, raw: String) {
+        val sequenced = ControlProtocol.parseSequencedCommand(raw)
+        val command = ControlProtocol.parseCommand(sequenced?.command ?: raw)
+        val address = addressOf(device)
+        if (command == null) {
+            replyWrite(device, requestId, ControlProtocol.STATUS_CONTROL_REQUIRED)
+            return
+        }
+        if (address == null || !isController(device)) {
+            // An unprivileged writer learns why: BUSY at command level for a
+            // sequenced command, the legacy lease error otherwise.
+            if (sequenced != null) {
+                replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_BUSY)
+            } else {
+                replyWrite(device, requestId, ControlProtocol.STATUS_CONTROL_REQUIRED)
+            }
+            return
+        }
+        touchController()
+
+        val continuous = command.startsWith(ControlProtocol.VIEW_MOVE)
+        val handshake = synchronized(controlLock) {
+            if (handshakeAddress == address) handshakeVersion else 0
+        }
+        if (handshake == 0) {
+            // Never execute silently before HELLO.
+            when {
+                continuous -> respondOnly(device, requestId)
+                sequenced != null -> replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
+                else -> replyWrite(device, requestId, ControlProtocol.STATUS_PROTOCOL_REQUIRED)
+            }
+            return
+        }
+        if (handshake != ControlProtocol.protocolVersion) {
+            when {
+                continuous -> respondOnly(device, requestId)
+                sequenced != null -> replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
+                else -> replyWrite(device, requestId, ControlProtocol.statusProtocolMismatch())
+            }
+            return
+        }
+        if (!ControlProtocol.isAllowedCommand(command)) {
+            if (sequenced != null) {
+                replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
+            } else {
+                replyWrite(device, requestId, ControlProtocol.STATUS_COMMAND_REJECTED)
+            }
+            return
+        }
+        if (continuous) {
+            // 10 Hz stream: keep the GATT write response but spend no status
+            // notification per sample.
+            listener.onCommand(command)
+            respondOnly(device, requestId)
+            return
+        }
+        if (sequenced != null) {
+            val remembered = synchronized(controlLock) { seqResults[sequenced.seq] }
+            if (remembered != null) {
+                // Duplicate delivery: re-ack the original result, do not run.
+                replyAck(device, requestId, sequenced.seq, remembered)
+                return
+            }
+            val accepted = listener.onCommand(command)
+            val result = if (accepted) ControlProtocol.RESULT_OK else ControlProtocol.RESULT_REJECTED
+            synchronized(controlLock) { rememberSeqLocked(sequenced.seq, result) }
+            replyAck(device, requestId, sequenced.seq, result)
+            return
+        }
+        // Legacy unsequenced discrete command (older tablet): keep `OK:<cmd>`.
+        val accepted = listener.onCommand(command)
+        replyWrite(
+            device,
+            requestId,
+            if (accepted) "OK:$command" else ControlProtocol.STATUS_COMMAND_REJECTED
+        )
+    }
+
+    private fun replyAck(device: BluetoothDevice, requestId: Int, seq: Int, result: String) {
+        replyWrite(device, requestId, ControlProtocol.ackPayload(seq, result))
+    }
+
+    /** GATT-level success for a request that must not produce a status frame. */
+    private fun respondOnly(device: BluetoothDevice, requestId: Int) {
+        if (requestId == 0) {
+            // WRITE_TYPE_NO_RESPONSE: the ATT layer expects no reply at all.
+            return
+        }
+        sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, ByteArray(0))
     }
 
     private fun replyWrite(device: BluetoothDevice, requestId: Int, reply: String) {
@@ -473,6 +616,7 @@ internal class BluetoothControl(
                 val released = synchronized(controlLock) {
                     if (controller == address) {
                         controller = null
+                        resetProtocolStateLocked()
                         true
                     } else {
                         false

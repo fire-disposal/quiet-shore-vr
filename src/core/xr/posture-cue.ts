@@ -3,11 +3,14 @@ import * as THREE from 'three';
 export interface PostureCueState {
   enabled: boolean;
   intensity: number;
-  progress: number;
   visible: boolean;
   count: number;
-  /** False while the posture is at rest or braking; the flow dims out. */
-  moving: boolean;
+  /**
+   * Last accepted flow, clamped to 0–1. +1 only while a rising transition is
+   * actually moving; 0 at rest, while braking, during a lowering transition
+   * and whenever the lease is gone.
+   */
+  flow: number;
   /** Far-layer separation factor, 0–1. */
   depth: number;
   /** Horizontal radius multiplier for both layers. */
@@ -20,14 +23,17 @@ export interface PostureCueApi {
   /** Near layer first, far layer second. Both are scene-scoped. */
   readonly layers: readonly THREE.Points[];
   setEnabled(enabled: boolean): void;
-  /** Feed comfort's isPostureMoving(): false dims the flow out, true ramps it back. */
-  setMoving(moving: boolean): void;
   setIntensity(intensity: number): void;
   /** 0 pushes the far layer inward, 1 spreads it out. Default 0.5. */
   setDepth(depth: number): void;
   /** 0.5–2 horizontal radius multiplier. Default 1. */
   setSpread(spread: number): void;
-  update(dt: number, progress: number, head: THREE.Vector3): void;
+  /**
+   * `flow` is +1 only while a rising transition is actually moving; any other
+   * value (including a lowering transition) freezes the motes in place and
+   * fades the cloud out with the existing τ. `progress` only shapes the fade.
+   */
+  update(dt: number, head: THREE.Vector3, flow: number): void;
   getState(): PostureCueState;
   dispose(): void;
 }
@@ -51,11 +57,7 @@ const NEAR_OPACITY = 0.34;
 const FAR_OPACITY = 0.18;
 const MIN_ALPHA = 0.004;
 const MAX_STEP = 0.05;
-/** Time constant for the stop fade; ~95 % gone after 0.84 s. */
-const STOP_FADE_TAU = 0.28;
-/** Time constant for resuming; slower so a restart never pops back on. */
-const GROW_TAU = 0.35;
-/** Descent limiter on the displayed alpha; kills retarget pops, not rises. */
+/** Descent limiter on the displayed alpha; kills intensity pops. */
 const LIT_TAU = 0.15;
 /** Peak lateral sway. Sway angular rate stays well under 1 deg/s. */
 const SWAY_RAD = 0.045;
@@ -70,9 +72,10 @@ interface LayerSpec {
   readonly speedMax: number;
   readonly size: number;
   readonly opacity: number;
-  readonly fadePower: number;
-  /** 0 keeps the fade time-symmetric; 1 drifts it toward the late half. */
-  readonly fadeSkew: number;
+  /** Attack time constant while flow is +1; a restart never pops back on. */
+  readonly growTau: number;
+  /** Release time constant once flow drops to 0; ~95 % gone in 3τ. */
+  readonly fadeTau: number;
 }
 
 /**
@@ -89,8 +92,9 @@ const NEAR_LAYER: LayerSpec = {
   speedMax: 0.034,
   size: NEAR_SIZE,
   opacity: NEAR_OPACITY,
-  fadePower: 1.8,
-  fadeSkew: 0.25
+  // The near band leads: it arrives first and leaves first.
+  growTau: 0.5,
+  fadeTau: 0.28
 };
 
 const FAR_LAYER: LayerSpec = {
@@ -102,8 +106,9 @@ const FAR_LAYER: LayerSpec = {
   speedMax: 0.018,
   size: FAR_SIZE,
   opacity: FAR_OPACITY,
-  fadePower: 2.9,
-  fadeSkew: 0.85
+  // The far backdrop lags the near band in and lingers longer on release.
+  growTau: 1,
+  fadeTau: 0.45
 };
 
 interface CueLayer {
@@ -120,8 +125,10 @@ interface CueLayer {
   readonly yMin: number;
   readonly ySpan: number;
   readonly opacity: number;
-  readonly fadePower: number;
-  readonly skew: number;
+  readonly growTau: number;
+  readonly fadeTau: number;
+  /** 0–1 envelope of this layer; rises with flow and decays without it. */
+  level: number;
 }
 
 /** Small, allocation-free deterministic PRNG (mulberry32). */
@@ -138,8 +145,9 @@ function createRandom(seed: number): () => number {
 
 /**
  * Near-field downward motes for the virtual-rise illusion. The cloud follows
- * the head position but lives in world space, so comfort rotation and view
- * translation never drag the particles with the scene. Two concentric layers
+ * the head position but lives in world space, so comfort rotation, the sit-up
+ * pose and the operator pitch never drag the particles with the scene. Two
+ * concentric layers
  * (near: faster, larger, brighter; far: slower, smaller, dimmer) give the
  * drift a sense of depth without moving the viewpoint. Lateral sway around
  * each mote's seeded column replaces wrap-around drift, so a mote never
@@ -245,8 +253,9 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
       yMin: spec.yMin,
       ySpan: spec.ySpan,
       opacity: spec.opacity,
-      fadePower: spec.fadePower,
-      skew: spec.fadeSkew
+      growTau: spec.growTau,
+      fadeTau: spec.fadeTau,
+      level: 0
     };
   }
 
@@ -258,18 +267,16 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
   options.scene.add(far.points);
 
   let enabled = true;
-  let moving = true;
+  let flow = 0;
   let intensity = 1;
-  let progress = 0;
   let visible = false;
   let depth = 0.5;
   let spread = 1;
   let disposed = false;
   let elapsed = 0;
-  // Level eases stop / resume; lit tracks the envelope product with an
-  // instant rise and a rate-limited fall, so a retarget (progress snapping
-  // back to 0) dims over LIT_TAU instead of popping off in one frame.
-  let level = 1;
+  // Each layer eases its own envelope: the near band leads, the far one lags
+  // in and lingers out. `lit` follows the product with an instant rise and a
+  // rate-limited fall, so an intensity change dims over LIT_TAU, never pops.
   let nearLit = 0;
   let farLit = 0;
 
@@ -289,10 +296,6 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
     enabled = next;
   }
 
-  function setMoving(next: boolean): void {
-    moving = next;
-  }
-
   function setIntensity(next: number): void {
     intensity = Number.isFinite(next) ? Math.max(0, Math.min(1, next)) : 1;
   }
@@ -305,14 +308,6 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
   function setSpread(next: number): void {
     spread = Number.isFinite(next) ? Math.max(0.5, Math.min(2, next)) : 1;
     applyForm();
-  }
-
-  function envelope(progressValue: number, power: number, skew: number): number {
-    // The linear skew makes each layer asymmetric in time: the far layer comes
-    // in later and lingers longer. Both layers still reach zero at progress 0
-    // and 1, so the cue never pops at the ends of the rise.
-    const wave = Math.sin(Math.PI * Math.max(0, Math.min(1, progressValue)));
-    return wave ** power * (1 - skew + skew * progressValue);
   }
 
   function stepLayer(layer: CueLayer, dt: number, time: number, motion: number): void {
@@ -341,24 +336,26 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
     layer.position.needsUpdate = true;
   }
 
-  function update(dt: number, nextProgress: number, head: THREE.Vector3): void {
+  function update(dt: number, head: THREE.Vector3, nextFlow: number): void {
     if (disposed) return;
-    progress = Number.isFinite(nextProgress) ? Math.max(0, Math.min(1, nextProgress)) : 0;
+    // Negative flow is reserved for a future descent cue and reads as 0 here:
+    // lowering must never produce downward flow.
+    flow = Number.isFinite(nextFlow) ? Math.max(0, Math.min(1, nextFlow)) : 0;
+    // `cue:off` fades the cloud out even while the posture keeps rising.
+    const rising = enabled && flow > 0;
 
     const fadeDt = Number.isFinite(dt) && dt > 0 ? dt : 0;
-    const levelTarget = enabled && moving ? 1 : 0;
     if (fadeDt > 0) {
-      level +=
-        (levelTarget - level) *
-        (1 - Math.exp(-fadeDt / (levelTarget > level ? GROW_TAU : STOP_FADE_TAU)));
+      easeLevel(near, rising, fadeDt);
+      easeLevel(far, rising, fadeDt);
     } else {
       // dt 0 is a hard reset, which is what teardown and scene swaps want.
-      level = levelTarget;
+      near.level = rising ? 1 : 0;
+      far.level = rising ? 1 : 0;
     }
 
-    const strength = level * intensity;
-    const nearTarget = envelope(progress, near.fadePower, near.skew) * strength * near.opacity;
-    const farTarget = envelope(progress, far.fadePower, far.skew) * strength * far.opacity;
+    const nearTarget = near.level * intensity * near.opacity;
+    const farTarget = far.level * intensity * far.opacity;
     const ease = fadeDt > 0 ? Math.exp(-fadeDt / LIT_TAU) : 0;
     nearLit = nearTarget < nearLit ? nearTarget + (nearLit - nearTarget) * ease : nearTarget;
     farLit = farTarget < farLit ? farTarget + (farLit - farTarget) * ease : farTarget;
@@ -374,16 +371,25 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
 
     points.position.copy(head);
     far.points.position.copy(head);
-    if (fadeDt === 0) return;
+    // Flow 0 freezes the motes exactly where they are: no vertical advance and
+    // no sway while the cloud fades out with the existing τ.
+    if (fadeDt === 0 || !rising) return;
 
     const step = Math.min(fadeDt, MAX_STEP);
     elapsed += step;
-    stepLayer(near, step, elapsed, strength);
-    stepLayer(far, step, elapsed, strength);
+    stepLayer(near, step, elapsed, flow * near.level);
+    stepLayer(far, step, elapsed, flow * far.level);
+  }
+
+  /** One exponential envelope per band; the far band uses longer τs. */
+  function easeLevel(layer: CueLayer, rising: boolean, dt: number): void {
+    const target = rising ? 1 : 0;
+    const tau = rising ? layer.growTau : layer.fadeTau;
+    layer.level += (target - layer.level) * (1 - Math.exp(-dt / tau));
   }
 
   function getState(): PostureCueState {
-    return { enabled, moving, intensity, progress, visible, count, depth, spread };
+    return { enabled, flow, intensity, visible, count, depth, spread };
   }
 
   function dispose(): void {
@@ -401,7 +407,6 @@ export function createPostureCue(options: PostureCueOptions): PostureCueApi {
     object: points,
     layers: [points, far.points],
     setEnabled,
-    setMoving,
     setIntensity,
     setDepth,
     setSpread,

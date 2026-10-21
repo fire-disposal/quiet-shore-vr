@@ -37,25 +37,27 @@ import {
   toggleMuted,
   unlockAudio
 } from '../audio/audio';
-import { RemoteControl } from './remote-control';
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { readStoredShowPerf, storeShowPerf } from './preferences';
-import { TelemetrySender } from './telemetry';
+import { PortalLink, stateFromSnapshot } from './portal-link';
+import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
+import {
+  createViewMotionController,
+  presetCode,
+  type ViewMotionControllerApi
+} from '../core/xr/view-motion';
+import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
+import { parseViewAnim, parseViewMove } from './view-command';
 
 const MAX_DT = 0.25;
-/** Operator view movement: bounded virtual translation, never the XR camera. */
-const VIEW_MAX_SPEED = 0.3; // m/s at full joystick deflection
-const VIEW_MAX_OFFSET = 0.45; // m radial, from the session origin
-const VIEW_TTL_MS = 300; // no intent update → stop within this window
 // Sit-up performance: the confirm key toggles between the supine frame and
 // the standing frame; 12 s spreads the rotation over a tolerable ramp.
 const SITUP_DURATION_MS = 12000;
 const LONG_PRESS_MS = 600;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
 const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
-const VIEW_ARG = /^-?\d+(?:\.\d+)?$/;
 
 export class QuietShoreApp {
   private readonly config: AppConfig;
@@ -71,22 +73,44 @@ export class QuietShoreApp {
   private readonly menu: XrMenuApi;
   private readonly lab: SpatialLabApi;
   private readonly hud: SpatialHud;
-  private readonly remote: RemoteControl;
-  private readonly telemetry: TelemetrySender;
+  private readonly link: PortalLink;
+  private linkOnline = false;
   private readonly renderMonitor = new RenderMonitor();
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private readonly viewMotion: ViewMotionControllerApi;
+  private readonly snapshot = new SceneSnapshot();
+  private readonly snapshotInput: SceneSnapshotInput = {
+    sceneId: '',
+    loaded: false,
+    session: false,
+    calibrating: false,
+    calibrated: false,
+    audioMuted: false,
+    eyeHeight: 0,
+    confidence: 0,
+    sitUp: null,
+    sitUpT: 0,
+    sitUpTarget: 0,
+    sitUpMoving: false,
+    posture: null,
+    viewPitchDeg: 0,
+    viewPitchTargetDeg: 0,
+    viewAnim: 'idle',
+    viewPreset: 'none',
+    floorOffset: 0,
+    cueFlow: 0,
+    cueEnabled: false,
+    cueIntensity: 0
+  };
   private controlMode = false;
 
   private eyeHeight: number;
-  private viewVelocityX = 0;
-  private viewVelocityZ = 0;
-  private viewOffsetX = 0;
-  private viewOffsetZ = 0;
-  private viewExpiresAt = 0;
+  private cueFlow = 0;
 
   private sceneId: SceneId;
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
+  private shell: WorldShellApi | null = null;
   private calibration: Calibration | null = null;
   private postureCueState: PostureCueApi | null = null;
   private sitUpPath: SitUpPath | null = null;
@@ -193,11 +217,11 @@ export class QuietShoreApp {
       theme: DEFAULT_SPATIAL_THEME
     });
     this.hud = new SpatialHud(this.scene, DEFAULT_SPATIAL_THEME);
-    this.remote = new RemoteControl(
+    // One socket carries commands in and state/telemetry out; there is no
+    // second transport to keep in sync.
+    this.link = new PortalLink(
       (command) => this.handleRemoteCommand(command),
-      (active) => this.setControlMode(active)
-    );
-    this.telemetry = new TelemetrySender(
+      (active) => this.setControlMode(active),
       () => {
         this.headEuler.setFromQuaternion(this.headPose.quaternion, 'YXZ');
         return {
@@ -208,35 +232,21 @@ export class QuietShoreApp {
           pitch: this.headEuler.x
         };
       },
-      () => {
-        const posture = this.comfort?.getPostureState();
-        const cue = this.postureCueState?.getState();
-        const remap = this.comfort?.getState().remap;
-        const sitUp = this.sitUpMode && this.sitUpPath
-          ? this.sitUpPath.at(this.sitUpT)
-          : null;
-        return {
-          scene: this.sceneId,
-          session: this.session !== null,
-          calibrating: this.calibration?.isActive() ?? false,
-          audio: this.audioMuted,
-          eyeHeight: this.eyeHeight,
-          posturePitch: sitUp && this.sitUpPath
-            ? -90 * Math.min(1, this.sitUpT / this.sitUpPath.rotationPortion)
-            : posture?.pitchDeg ?? 0,
-          postureRoll: posture?.rollDeg ?? 0,
-          postureRise: sitUp && this.sitUpPath
-            ? Math.min(1.2, Math.max(0, sitUp.position.y - this.sitUpPath.hipHeight))
-            : posture?.riseM ?? 0,
-          postureProgress: this.sitUpMode ? this.sitUpT : posture?.progress ?? 0,
-          viewX: this.viewOffsetX,
-          viewZ: this.viewOffsetZ,
-          cueEnabled: cue?.enabled ?? false,
-          cueIntensity: cue?.intensity ?? 0,
-          calibrationConfidence: remap?.confidence ?? 0
-        };
-      }
+      // One collected snapshot feeds the state payload; no caller re-derives
+      // posture or view numbers.
+      () => stateFromSnapshot(this.captureSnapshot()),
+      // The state payload carries no motion flag; the sit-up performance is
+      // the only motion source that has to be reported from outside it.
+      () => this.sitUpMoving,
+      (status) => this.handleLinkStatus(status)
     );
+    // View motion is a system capability: it owns pitch, presets, hold and
+    // reset, and pushes the applied angle into whichever world shell is bound.
+    this.viewMotion = createViewMotionController({
+      sink: {
+        setPitch: (deg: number) => this.shell?.setPitch(deg)
+      }
+    });
 
     this.pipeline.add({
       id: 'scene-update',
@@ -248,14 +258,6 @@ export class QuietShoreApp {
           this.focusedSelectable.rotation.y += dt * 1.6;
         }
       }
-    });
-    this.pipeline.add({
-      id: 'view-movement',
-      phase: 'simulation',
-      order: 5,
-      // Translate scene content, never the XR camera: head pose stays the
-      // patient's own, and comfort calibration keeps working on its wrapper.
-      run: (dt: number, now: number) => this.updateViewMovement(dt, now)
     });
     this.pipeline.add({
       id: 'spatial-layout',
@@ -273,27 +275,30 @@ export class QuietShoreApp {
       }
     });
     this.pipeline.add({
-      id: 'spatial-input',
+      id: 'world-motion',
       phase: 'render',
       order: 0,
       run: (dt: number, now: number) => {
+        // The sit-up performance supersedes the calibrated comfort frame; only
+        // one of them may write the world shell's base layer.
         if (this.sitUpMode) {
           this.updateSitUp(dt);
         } else {
           this.comfort?.updatePosture(dt);
         }
-        if (this.postureCueState) {
-          const progress = this.sitUpMode
-            ? this.sitUpT
-            : this.comfort?.getPostureProgress() ?? 0;
-          this.postureCueState.setMoving(
-            this.sitUpMode
-              ? this.sitUpMoving
-              : this.comfort?.isPostureMoving() ?? false
-          );
-          this.postureCueState.update(dt, progress, this.headPose.position);
-        }
+        this.cueFlow = this.computeCueFlow();
+        this.postureCueState?.update(dt, this.headPose.position, this.cueFlow);
         this.input.update(dt, now, this.headPose);
+      }
+    });
+    this.pipeline.add({
+      id: 'view-motion',
+      phase: 'render',
+      order: 1,
+      // Easing lives in the controller; the shell only composes transforms.
+      run: (dt: number) => {
+        this.viewMotion.update(dt);
+        this.shell?.update(this.headPose.position);
       }
     });
     this.pipeline.add({
@@ -319,8 +324,7 @@ export class QuietShoreApp {
     }
     this.started = true;
     this.lastFrame = 0;
-    this.remote.start();
-    this.telemetry.start();
+    this.link.start();
     void this.detectXR();
   }
 
@@ -385,9 +389,13 @@ export class QuietShoreApp {
       eyeHeight: this.eyeHeight
     });
     this.handle = handle;
-    // Wrap the host's content group, not the scene root: floor offset stays on
-    // content and survives the comfort rotation.
+    // World shell order: view pitch -> base (comfort/sit-up) -> content
+    // (floor). Wrapping the host's content group, not the scene root, keeps the
+    // floor offset on content and survives both rotations.
     this.comfort = createComfort({ scene: this.scene, world: this.host.content });
+    this.shell = createWorldShell({ scene: this.scene, base: this.comfort.group });
+    // Rebind, do not re-animate: the controller keeps its pitch and state.
+    this.shell.setPitch(this.viewMotion.getPitchDeg());
     this.disposePostureCue();
     if (id === 'landscape') {
       this.postureCueState = createPostureCue({ scene: this.scene });
@@ -428,6 +436,9 @@ export class QuietShoreApp {
     this.calibration?.dispose();
     this.calibration = null;
     if (this.comfort) {
+      // Unwrap the shell first: it re-hangs the base group on the scene.
+      this.shell?.dispose();
+      this.shell = null;
       this.comfort.reset();
       this.scene.remove(this.comfort.group);
       this.comfort.group.remove(this.host.content);
@@ -580,6 +591,12 @@ export class QuietShoreApp {
 
   private onSessionEnd(): void {
     this.session = null;
+    // A patient stop freezes first, then the end-of-session reset zeroes the
+    // pitch: stop never eases and never recenters on its own.
+    if (this.patientStopped) {
+      this.viewMotion.stop();
+    }
+    this.viewMotion.reset();
     this.sitUpMode = false;
     this.sitUpReady = false;
     this.sitUpPath = null;
@@ -595,10 +612,12 @@ export class QuietShoreApp {
     if (this.handle) {
       this.handle.root.visible = true;
     }
-    this.resetViewMovement();
     this.host.setFloorOffset(0);
     this.comfort?.reset();
-    this.postureCueState?.update(0, 0, this.headPose.position);
+    // Drop the sit-up base pose so the reset comfort frame is what remains.
+    this.shell?.setBasePose(null);
+    this.shell?.update(this.headPose.position);
+    this.postureCueState?.update(0, this.headPose.position, 0);
     this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setEnterEnabled(true);
@@ -608,7 +627,7 @@ export class QuietShoreApp {
       this.patientStopped ? this.strings.patientStop : this.strings.sessionEnded
     );
     this.patientStopped = false;
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -624,8 +643,10 @@ export class QuietShoreApp {
     this.sitUpT = 0;
     this.sitUpTarget = 0;
     this.sitUpMoving = false;
-    // Calibration starts from the session origin: no residual operator offset.
-    this.resetViewMovement();
+    // Calibration starts level: the operator's pitch correction is dropped and
+    // the sit-up base pose is released so comfort owns the world again.
+    this.viewMotion.reset();
+    this.shell?.setBasePose(null);
     // A running posture transition must not keep advancing through the
     // capture. setPosture supersedes it and heads for neutral; the API's
     // 1 s floor runs while the scene is hidden.
@@ -637,7 +658,7 @@ export class QuietShoreApp {
     this.input.setLayers(false, false);
     this.calibration.start();
     this.syncLab();
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -671,7 +692,7 @@ export class QuietShoreApp {
       result.ok ? this.strings.calibrationDone : `${this.strings.calibrationFailed}：${result.reason ?? 'unknown'}`,
       result.ok ? 'ok' : 'error'
     );
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -739,6 +760,8 @@ export class QuietShoreApp {
     if (normalized === this.sceneId && this.handle) {
       storeScene(this.sceneId);
       this.start.setScene(this.sceneName(this.sceneId));
+      // Re-selecting the current scene is still an accepted command; the link
+      // refreshes the tablet readback for it.
       return;
     }
     this.loadScene(normalized);
@@ -749,7 +772,7 @@ export class QuietShoreApp {
     this.start.setStatus(
       `${this.strings.sceneSelectedStatus}${getSceneDefinition(normalized)?.name[this.config.lang] ?? normalized}`
     );
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
   }
 
   private handleRemoteCommand(raw: string): void {
@@ -766,12 +789,17 @@ export class QuietShoreApp {
       return;
     }
     if (command.startsWith('view:move:')) {
-      this.startViewMovement(command.slice('view:move:'.length));
+      this.applyViewTarget(command.slice('view:move:'.length));
+      return;
+    }
+    if (command.startsWith('view:anim:')) {
+      this.playViewAnim(command.slice('view:anim:'.length));
       return;
     }
     if (command === 'view:stop') {
-      this.haltViewMovement();
-      this.start.setStatus('已停止视角移动', 'ok');
+      // Hold, never recenter: only `view:anim:recenter` returns to 0°.
+      this.viewMotion.stop();
+      this.start.setStatus('已保持当前视角', 'ok');
       return;
     }
     if (command.startsWith('cue:intensity:')) {
@@ -821,9 +849,8 @@ export class QuietShoreApp {
         this.postureCueState?.setEnabled(false);
         return;
       case 'status':
-        // Force a fresh /state POST after a new BLE controller claims, so the
-        // tablet is not left with the service's default snapshot.
-        this.telemetry.sendStateNow();
+        // The link refreshes the readback after every discrete command, so a
+        // newly claiming controller is never left with a stale snapshot.
         return;
       case 'start':
         this.start.setStatus(this.strings.remoteStartNeedsGesture, 'ok');
@@ -866,107 +893,56 @@ export class QuietShoreApp {
   }
 
   /**
-   * `view:move:<x>,<z>`: normalized intent, resent at ~10 Hz while held.
-   * Every accepted update refreshes the TTL; invalid or out-of-session
-   * commands are ignored so a stuck tablet cannot move the view.
+   * `view:move:<x>,<z>`: absolute pitch target (z × 20°), resent at ≤10 Hz
+   * while the operator drags. `x` must be 0; there is no translation channel.
+   * Invalid frames are rejected whole and out-of-session frames are ignored so
+   * a stuck tablet cannot move the view.
    */
-  private startViewMovement(raw: string): void {
-    const comma = raw.indexOf(',');
-    if (comma < 0 || raw.indexOf(',', comma + 1) >= 0) {
-      this.start.setStatus(`视角移动参数无效：${raw}`, 'error');
+  private applyViewTarget(raw: string): void {
+    const target = parseViewMove(raw);
+    if (target === null) {
+      this.start.setStatus(`视角参数无效：${raw}`, 'error');
       return;
     }
-    const rawX = raw.slice(0, comma);
-    const rawZ = raw.slice(comma + 1);
-    if (!VIEW_ARG.test(rawX) || !VIEW_ARG.test(rawZ)) {
-      this.start.setStatus(`视角移动参数无效：${raw}`, 'error');
+    if (!this.viewCommandsAllowed()) {
       return;
     }
-    const x = Number(rawX);
-    const z = Number(rawZ);
-    if (
-      !Number.isFinite(x) || !Number.isFinite(z)
-      || x < -1 || x > 1 || z < -1 || z > 1
-    ) {
-      this.start.setStatus(`视角移动参数无效：${raw}`, 'error');
-      return;
-    }
-    if (
-      !this.session
-      || !this.xr.isPresenting
-      || (this.calibration?.isActive() ?? false)
-    ) {
-      return;
-    }
-    let vx = x;
-    let vz = z;
-    const length = Math.hypot(vx, vz);
-    if (length > 1) {
-      vx /= length;
-      vz /= length;
-    }
-    this.viewVelocityX = vx;
-    this.viewVelocityZ = vz;
-    this.viewExpiresAt = performance.now() + VIEW_TTL_MS;
+    this.viewMotion.setTarget(target);
   }
 
-  private haltViewMovement(): void {
-    this.viewVelocityX = 0;
-    this.viewVelocityZ = 0;
-    this.viewExpiresAt = 0;
-  }
-
-  private resetViewMovement(): void {
-    this.haltViewMovement();
-    this.viewOffsetX = 0;
-    this.viewOffsetZ = 0;
-    this.applyViewOffset();
-  }
-
-  private applyViewOffset(): void {
-    // Viewpoint moves opposite the content: right (+x) shifts content left,
-    // forward (+z, camera looks down -z) shifts content behind the viewer.
-    this.host.content.position.x = -this.viewOffsetX;
-    this.host.content.position.z = this.viewOffsetZ;
-  }
-
-  private updateViewMovement(dt: number, now: number): void {
-    if (this.viewExpiresAt === 0) {
+  /** `view:anim:<name>`: fixed one-shot presets only. */
+  private playViewAnim(raw: string): void {
+    const name = parseViewAnim(raw);
+    if (!name) {
+      this.start.setStatus(`未知视角动画：${raw}`, 'error');
       return;
     }
-    if (
-      now >= this.viewExpiresAt
-      || !this.session
-      || !this.xr.isPresenting
-      || (this.calibration?.isActive() ?? false)
-    ) {
-      this.haltViewMovement();
+    if (!this.viewCommandsAllowed()) {
+      this.start.setStatus('当前无法播放视角动画', 'error');
       return;
     }
-    if (dt <= 0) {
+    this.viewMotion.play(name);
+  }
+
+  /** Rejected during calibration and whenever the patient is not in XR. */
+  private viewCommandsAllowed(): boolean {
+    return this.session !== null
+      && this.xr.isPresenting
+      && !(this.calibration?.isActive() ?? false);
+  }
+
+  /**
+   * Socket faults are visible to the operator: a drop after a working link
+   * reads as the tablet link being gone. The motion halt itself is owned by
+   * the link (it resets control mode) and by setControlMode below.
+   */
+  private handleLinkStatus(status: 'open' | 'closed'): void {
+    const wasOnline = this.linkOnline;
+    this.linkOnline = status === 'open';
+    if (status === 'open' || !wasOnline) {
       return;
     }
-    const step = VIEW_MAX_SPEED * dt;
-    const nextX = this.viewOffsetX + this.viewVelocityX * step;
-    const nextZ = this.viewOffsetZ + this.viewVelocityZ * step;
-    const distance = Math.hypot(nextX, nextZ);
-    if (distance > VIEW_MAX_OFFSET) {
-      // Project onto the 0.45 m circle and drop only the outward component:
-      // the operator can slide along the boundary without bouncing off it.
-      const nx = nextX / distance;
-      const nz = nextZ / distance;
-      this.viewOffsetX = nx * VIEW_MAX_OFFSET;
-      this.viewOffsetZ = nz * VIEW_MAX_OFFSET;
-      const outward = this.viewVelocityX * nx + this.viewVelocityZ * nz;
-      if (outward > 0) {
-        this.viewVelocityX -= outward * nx;
-        this.viewVelocityZ -= outward * nz;
-      }
-    } else {
-      this.viewOffsetX = nextX;
-      this.viewOffsetZ = nextZ;
-    }
-    this.applyViewOffset();
+    this.start.setStatus(this.strings.controlModeOff, 'error');
   }
 
   private setControlMode(active: boolean): void {
@@ -982,16 +958,18 @@ export class QuietShoreApp {
       }
       this.start.setStatus(this.strings.controlModeOn, 'ok');
     } else {
-      // Losing the tablet must never leave motion latched on: stop both the
-      // operator view nudge and any posture transition (brake, never snap).
-      this.haltViewMovement();
+      // Losing the tablet must never leave motion latched on. Freeze the view
+      // where it is (no recenter: the pitch target is held), brake the comfort
+      // posture and stop the sit-up performance at its current angle.
+      this.viewMotion.stop();
       this.comfort?.stopPosture();
+      this.stopSitUp();
       if (this.session) {
         this.input.setLayers(true, true);
       }
       this.start.setStatus(this.strings.controlModeOff);
     }
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -1036,29 +1014,31 @@ export class QuietShoreApp {
     this.applySitUpTransform();
   }
 
-  /** Invert the virtual camera path into the world shell. */
+  /**
+   * Invert the virtual camera path into the world shell's base layer. The
+   * shell keeps this separate from the view pitch, so the two never overwrite
+   * each other and neither writes a transform directly from here.
+   */
   private applySitUpTransform(): void {
-    if (!this.sitUpMode || !this.sitUpPath || !this.sitUpReference || !this.comfort) {
+    if (!this.sitUpMode || !this.sitUpPath || !this.sitUpReference || !this.shell) {
       return;
     }
     const camera = this.sitUpPath.at(this.sitUpT);
-    const world = this.sitUpPath.worldFor(this.sitUpReference, camera);
-    this.comfort.group.quaternion.copy(world.quaternion);
-    this.comfort.group.position.copy(world.position);
+    this.shell.setBasePose(this.sitUpPath.worldFor(this.sitUpReference, camera));
   }
 
   private applyAudioMuted(next: boolean): void {
     setAudioMuted(next);
     this.audioMuted = next;
     this.menu.setAudioEnabled(!next);
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
   private toggleAudio(): void {
     this.audioMuted = toggleMuted();
     this.menu.setAudioEnabled(!this.audioMuted);
-    this.telemetry.sendStateNow();
+    this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
@@ -1184,10 +1164,11 @@ export class QuietShoreApp {
     if (!visible) {
       return;
     }
+    const state = this.captureSnapshot();
     const definition = getSceneDefinition(this.sceneId);
-    const calibrationState = this.calibration?.isActive()
+    const calibrationState = state.calibrating
       ? '校准中'
-      : this.comfort?.isCalibrated()
+      : state.calibrated
         ? '校准✓'
         : '未校准';
     const mode = this.xr.isPresenting
@@ -1214,13 +1195,62 @@ export class QuietShoreApp {
     this.hud.setStats(this.fps, summary);
   }
 
+  /**
+   * Flow gate for the near-field cue: +1 only while a rising transition is
+   * actually moving. Lowering, braking, stop, calibration and lease loss all
+   * report 0, which freezes the motes and fades them with the cue's own τ.
+   */
+  private computeCueFlow(): number {
+    if (this.calibration?.isActive() ?? false) {
+      return 0;
+    }
+    if (this.sitUpMode) {
+      if (!this.sitUpMoving) {
+        return 0;
+      }
+      return this.sitUpTarget > this.sitUpT ? 1 : 0;
+    }
+    const comfort = this.comfort;
+    if (!comfort || !comfort.isPostureMoving()) {
+      return 0;
+    }
+    return comfort.getPosturePhase() === 'rising' ? 1 : 0;
+  }
+
+  /** Collect the facts telemetry, the HUD and command handlers all read. */
+  private captureSnapshot(): SceneSnapshot {
+    const input = this.snapshotInput;
+    input.sceneId = this.sceneId;
+    input.loaded = this.handle !== null;
+    input.session = this.session !== null;
+    input.calibrating = this.calibration?.isActive() ?? false;
+    input.calibrated = this.comfort?.isCalibrated() ?? false;
+    input.audioMuted = this.audioMuted;
+    input.eyeHeight = this.eyeHeight;
+    input.confidence = this.comfort?.getState().remap?.confidence ?? 0;
+    input.sitUp = this.sitUpMode ? this.sitUpPath : null;
+    input.sitUpT = this.sitUpT;
+    input.sitUpTarget = this.sitUpTarget;
+    input.sitUpMoving = this.sitUpMoving;
+    input.posture = this.comfort?.getPostureState() ?? null;
+    input.viewPitchDeg = this.viewMotion.getPitchDeg();
+    input.viewPitchTargetDeg = this.viewMotion.getTargetDeg();
+    input.viewAnim = this.viewMotion.getStateName();
+    input.viewPreset = presetCode(this.viewMotion.getPresetId());
+    input.floorOffset = this.host.floor;
+    input.cueFlow = this.cueFlow;
+    const cue = this.postureCueState?.getState();
+    input.cueEnabled = cue?.enabled ?? false;
+    input.cueIntensity = cue?.intensity ?? 0;
+    return this.snapshot.capture(input);
+  }
+
   get postureCue(): PostureCueApi | null {
     return this.postureCueState;
   }
 
   dispose(): void {
-    this.remote.stop();
-    this.telemetry.stop();
+    this.link.stop();
     this.stopSceneAudio();
     disposeAudio();
     this.menu.dispose();

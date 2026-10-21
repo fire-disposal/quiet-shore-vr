@@ -12,9 +12,11 @@ import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.DiscoveredDevice
 import com.quietshore.control.model.EyeHeight
 import com.quietshore.control.model.ViewMode
+import com.quietshore.control.model.ViewPresets
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.protocol.ViewPreset
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +30,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 class ControlViewModel(application: Application) :
@@ -59,17 +60,16 @@ class ControlViewModel(application: Application) :
     /** Last eye height actually written to the headset; NaN means nothing sent yet. */
     private var lastEyeHeightSent = Float.NaN
 
-    private var viewJob: Job? = null
-    private var viewX = 0f
-    private var viewZ = 0f
-    private var viewSending = false
+    /** Debounces slider samples; the newest one wins. */
+    private var viewPitchJob: Job? = null
+    /** Last pitch actually written to the link; NaN means nothing sent yet. */
+    private var lastViewPitchSent = Float.NaN
+    /** Monotonic time of that write, used to keep the stream at ≤10 Hz. */
+    private var lastViewPitchSentAt = 0L
 
     private var eyeHeightJob: Job? = null
     /** First state after a connection seeds the stepper from the headset. */
     private var eyeHeightSynced = false
-
-    /** One-shot commands win over movement for a moment; the pad must re-engage. */
-    private var viewSuppressedUntil = 0L
 
     init {
         refreshBluetoothState()
@@ -124,6 +124,7 @@ class ControlViewModel(application: Application) :
             return
         }
         eyeHeightSynced = false
+        lastViewPitchSent = Float.NaN
         _uiState.update {
             it.copy(
                 selectedAddress = address,
@@ -144,7 +145,7 @@ class ControlViewModel(application: Application) :
     }
 
     fun disconnect() {
-        stopView()
+        cancelViewPitchRequest()
         ble.disconnect()
     }
 
@@ -158,13 +159,12 @@ class ControlViewModel(application: Application) :
     }
 
     fun leaveControl() {
-        stopView()
+        cancelViewPitchRequest()
         ble.disconnect()
         _uiState.update {
             it.copy(
                 sessionActive = false,
                 controlGranted = false,
-                advancedUnlocked = false,
                 poseStale = true,
                 notice = null
             )
@@ -227,73 +227,102 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    /** Explicit therapist gate. Turning it off always stops any running nudge. */
-    fun setAdvancedUnlocked(unlocked: Boolean) {
-        if (!unlocked) {
-            stopView()
+    /**
+     * Absolute pitch target in degrees, rounded to whole degrees and clamped to
+     * ±[ControlProtocol.VIEW_PITCH_MAX_DEG]. The slider moves instantly; the
+     * newest sample is written after [VIEW_PITCH_DEBOUNCE_MS] and never more
+     * often than [VIEW_PITCH_MIN_INTERVAL_MS], so a drag emits at most 10
+     * writes per second and never leaves a repeat loop running.
+     */
+    fun setViewPitch(degrees: Float) {
+        val value = degrees.roundToInt()
+            .coerceIn(-VIEW_PITCH_MAX_DEG, VIEW_PITCH_MAX_DEG)
+            .toFloat()
+        val blocked = _uiState.value.viewPitchBlockedReason
+        if (blocked != null) {
+            _uiState.update { it.copy(error = blocked) }
+            return
         }
-        _uiState.update { it.copy(advancedUnlocked = unlocked) }
+        _uiState.update { it.copy(viewPitchRequested = value, error = null) }
+        viewPitchJob?.cancel()
+        viewPitchJob = viewModelScope.launch {
+            delay(VIEW_PITCH_DEBOUNCE_MS)
+            // Hard cap on the send rate: the debounce alone can still fire
+            // faster than the ~10 Hz the wire contract allows.
+            val early = VIEW_PITCH_MIN_INTERVAL_MS -
+                (SystemClock.elapsedRealtime() - lastViewPitchSentAt)
+            if (early > 0) {
+                delay(early)
+            }
+            if (_uiState.value.viewPitchBlockedReason != null) {
+                return@launch
+            }
+            if (value == lastViewPitchSent) {
+                return@launch
+            }
+            lastViewPitchSent = value
+            lastViewPitchSentAt = SystemClock.elapsedRealtime()
+            ble.sendCommand(pitchCommand(value))
+        }
     }
 
     /**
-     * Latest stick vector from the therapist pad, normalized to [-1, 1] where
-     * +x is view right and +z is view forward. One coroutine owns the ~10 Hz
-     * repeat so a lost pointer can never leave the page moving.
+     * Plays one of the page's fixed-duration animations. Nothing is repeated
+     * and no timing crosses the wire: the page owns the curve and the tablet
+     * only reads the phase back through `state.viewAnim`.
      */
-    fun moveView(x: Float, z: Float) {
-        val state = _uiState.value
-        if (!state.advancedUnlocked || !state.canSteerView) {
+    fun playViewAnim(preset: ViewPreset) {
+        if (preset == ViewPreset.NONE) {
             return
         }
-        if (SystemClock.elapsedRealtime() < viewSuppressedUntil) {
+        val blocked = _uiState.value.viewPitchBlockedReason
+        if (blocked != null) {
+            _uiState.update { it.copy(error = blocked) }
             return
         }
-        val clampedX = x.coerceIn(-1f, 1f)
-        val clampedZ = z.coerceIn(-1f, 1f)
-        // Inside the dead zone the loop keeps ticking with zeros: the view
-        // stands still without a stop/start write pair on every sample.
-        if (hypot(clampedX, clampedZ) < VIEW_DEAD_ZONE) {
-            viewX = 0f
-            viewZ = 0f
-        } else {
-            viewX = clampedX
-            viewZ = clampedZ
+        viewPitchJob?.cancel()
+        viewPitchJob = null
+        // The animation owns the motion now; drop the manual request so the
+        // slider follows the page's 1 Hz readback instead of fighting it.
+        lastViewPitchSent = Float.NaN
+        _uiState.update {
+            it.copy(
+                viewPitchRequested = null,
+                error = null,
+                notice = ViewPresets.label(preset) + "已发送"
+            )
         }
-        if (viewJob?.isActive == true) {
-            return
-        }
-        viewJob = viewModelScope.launch {
-            while (isActive) {
-                val current = _uiState.value
-                if (!current.advancedUnlocked || !current.canSteerView) {
-                    // Permission vanished mid-stream: the page must not coast.
-                    haltViewMovement()
-                    break
-                }
-                if (SystemClock.elapsedRealtime() < viewSuppressedUntil) {
-                    break
-                }
-                viewSending = true
-                ble.sendCommand(moveCommand(viewX, viewZ))
-                delay(VIEW_REPEAT_MS)
-            }
-        }
+        ble.sendCommand(ControlProtocol.VIEW_ANIM + preset.wire)
     }
 
-    /** Stops the repeat and tells the page to hold still. Safe to call anytime. */
-    fun stopView() {
-        viewJob?.cancel()
-        viewJob = null
-        viewX = 0f
-        viewZ = 0f
-        haltViewMovement()
+    /** `停止`: freezes the current pitch in place. It never recenters. */
+    fun stopViewPitch() {
+        val blocked = _uiState.value.viewPitchBlockedReason
+        if (blocked != null) {
+            _uiState.update { it.copy(error = blocked) }
+            return
+        }
+        viewPitchJob?.cancel()
+        viewPitchJob = null
+        lastViewPitchSent = Float.NaN
+        _uiState.update {
+            it.copy(viewPitchRequested = null, error = null, notice = "视角已停止")
+        }
+        ble.sendCommand(ControlProtocol.VIEW_STOP)
     }
 
-    private fun haltViewMovement() {
-        if (viewSending && _uiState.value.phase == BlePhase.READY) {
-            ble.sendCommand(ControlProtocol.VIEW_STOP)
-        }
-        viewSending = false
+    /**
+     * Drops any pending sample and lets the slider follow the headset readback
+     * again. Deliberately does not send `view:stop`: a lost lease or a dropped
+     * link holds the last pitch target by contract, it never recenters.
+     */
+    fun cancelViewPitchRequest() {
+        viewPitchJob?.cancel()
+        viewPitchJob = null
+        // Forget the last write too: after a reconnect the page may sit at a
+        // different angle, so the next identical drag must still reach it.
+        lastViewPitchSent = Float.NaN
+        _uiState.update { it.copy(viewPitchRequested = null) }
     }
 
     fun selectScene(sceneId: String) {
@@ -366,10 +395,6 @@ class ControlViewModel(application: Application) :
             _uiState.update { it.copy(error = "头显未连接") }
             return
         }
-        // The page keeps only the newest command, so a held joystick would
-        // otherwise swallow this one. Stop moving and unlatch the pad briefly.
-        stopView()
-        viewSuppressedUntil = SystemClock.elapsedRealtime() + VIEW_SUPPRESS_MS
         ble.sendCommand(normalized)
         _uiState.update { state ->
             val control = if (normalized.startsWith("scene:")) {
@@ -411,12 +436,11 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlBusy(reason: String) {
-        stopView()
+        cancelViewPitchRequest()
         _uiState.update {
             it.copy(
                 controlGranted = false,
                 sessionActive = false,
-                advancedUnlocked = false,
                 error = reason,
                 poseStale = true
             )
@@ -424,11 +448,11 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlLost(reason: String) {
-        stopView()
+        // 租约丢失：只取消本地采样，俯仰目标按契约保持在头显侧，不回正。
+        cancelViewPitchRequest()
         _uiState.update {
             it.copy(
                 controlGranted = false,
-                advancedUnlocked = false,
                 error = reason,
                 poseStale = true
             )
@@ -436,7 +460,8 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onDisconnected() {
-        stopView()
+        cancelViewPitchRequest()
+        lastViewPitchSent = Float.NaN
         eyeHeightJob?.cancel()
         eyeHeightJob = null
         lastPoseAt = 0L
@@ -447,7 +472,6 @@ class ControlViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 controlGranted = false,
-                advancedUnlocked = false,
                 eyeHeightConfirmed = false,
                 poseStale = true,
                 rssi = null,
@@ -463,23 +487,35 @@ class ControlViewModel(application: Application) :
 
     override fun onControlState(state: ControlState) {
         // The patient stopped, the headset left the session, or a calibration
-        // now owns the pose: the tablet must not keep nudging the view.
-        if (!state.session || state.calibrating) {
-            stopView()
+        // now owns the pose. The page resets its pitch target to 0 on both
+        // transitions, so only the local request is dropped here.
+        val resetView = !state.session || state.calibrating
+        if (resetView) {
+            cancelViewPitchRequest()
+            lastViewPitchSent = Float.NaN
         }
         val syncEyeHeight = !eyeHeightSynced && lastEyeHeightSent.isNaN()
         if (syncEyeHeight) {
             eyeHeightSynced = true
         }
-        _uiState.update {
+        _uiState.update { current ->
+            // Once the headset readback reaches the requested degree the local
+            // request is settled and the slider follows the headset again.
+            val pending = if (resetView) {
+                null
+            } else {
+                current.viewPitchRequested?.takeIf {
+                    abs(state.viewPitch - it) > VIEW_PITCH_READBACK_EPSILON
+                }
+            }
+            val next = current.copy(control = state, viewPitchRequested = pending)
             if (syncEyeHeight) {
-                it.copy(
-                    control = state,
+                next.copy(
                     eyeHeightRequested = state.eyeHeight,
                     eyeHeightConfirmed = true
                 )
             } else {
-                it.copy(control = state)
+                next
             }
         }
     }
@@ -489,10 +525,6 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onStatus(raw: String) {
-        // High-frequency joystick writes must not churn the notice state.
-        if (raw.startsWith(OK_PREFIX + ControlProtocol.VIEW_MOVE)) {
-            return
-        }
         if (raw.startsWith(OK_PREFIX + ControlProtocol.SETTINGS_EYE_HEIGHT)) {
             val confirmedValue = ControlProtocol.parseEyeHeight(raw.removePrefix(OK_PREFIX))
             _uiState.update { state ->
@@ -518,7 +550,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onCleared() {
-        stopView()
+        cancelViewPitchRequest()
         eyeHeightJob?.cancel()
         eyeHeightJob = null
         ble.close()
@@ -533,20 +565,29 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    /** Wire format is fixed by the page: lowercase decimals, never comma decimals. */
-    private fun moveCommand(x: Float, z: Float): String =
-        ControlProtocol.VIEW_MOVE + String.format(Locale.US, "%.2f,%.2f", x, z)
+    /**
+     * `view:move:0,<z>`: x must stay zero (pitch-only), z is the absolute
+     * target normalized by ±20°. Lowercase decimals, never comma decimals.
+     */
+    private fun pitchCommand(degrees: Float): String =
+        ControlProtocol.VIEW_MOVE +
+            String.format(Locale.US, "0,%.2f", degrees / ControlProtocol.VIEW_PITCH_MAX_DEG)
 
     private companion object {
         const val TICK_MS = 500L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
-        /** ~10 Hz; the page expires movement 300 ms after the last update. */
-        const val VIEW_REPEAT_MS = 100L
-        const val VIEW_DEAD_ZONE = 0.08f
 
-        /** One-shot commands win over the page's single command slot for a moment. */
-        const val VIEW_SUPPRESS_MS = 600L
+        /** Collapse slider samples: only the newest value survives a burst. */
+        const val VIEW_PITCH_DEBOUNCE_MS = 70L
+
+        /** Contract: at most ~10 Hz while dragging, nothing while idle. */
+        const val VIEW_PITCH_MIN_INTERVAL_MS = 100L
+
+        /** The wire carries whole degrees, so a half-degree readback is settled. */
+        const val VIEW_PITCH_READBACK_EPSILON = 0.51f
+
+        val VIEW_PITCH_MAX_DEG: Int = ControlProtocol.VIEW_PITCH_MAX_DEG.toInt()
 
         /** Collapse fast stepper taps into a single eye height write. */
         const val EYE_HEIGHT_DEBOUNCE_MS = 300L
