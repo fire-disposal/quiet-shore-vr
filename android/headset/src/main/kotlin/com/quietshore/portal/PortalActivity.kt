@@ -75,7 +75,7 @@ class PortalActivity : Activity() {
         val SCENES = listOf(
             SceneChoice("landscape", "湖畔晨岸", "水面、芦苇与清晨的光", 0xFF6F8B7A.toInt()),
             SceneChoice("ward", "训练病区", "熟悉病房与床旁设备", 0xFF7C8578.toInt()),
-            SceneChoice("bathroom", "暖石浴室", "柔和石材与水声", 0xFFB08A6A.toInt()),
+            SceneChoice("bathroom", "病房卫生间", "马桶居中，扶手与呼叫绳在伸手可及处", 0xFF8A9B86.toInt()),
             SceneChoice("lab", "空间实验", "空间 UI 与边界练习", 0xFF6A7F8C.toInt())
         )
     }

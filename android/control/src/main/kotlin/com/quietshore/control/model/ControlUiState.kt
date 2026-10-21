@@ -60,7 +60,7 @@ object Scenes {
     val all: List<SceneOption> = listOf(
         SceneOption("landscape", "湖畔"),
         SceneOption("ward", "训练病区"),
-        SceneOption("bathroom", "浴室"),
+        SceneOption("bathroom", "病房卫生间"),
         SceneOption("lab", "实验")
     )
 
