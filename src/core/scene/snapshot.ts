@@ -26,6 +26,10 @@ export interface SceneSnapshotInput {
   calibrated: boolean;
   audioMuted: boolean;
   eyeHeight: number;
+  /** Applied world rotation (shell x base), Euler XYZ degrees. */
+  worldYawDeg: number;
+  worldPitchDeg: number;
+  worldRollDeg: number;
   confidence: number;
   /** Sit-up performance driving the world, or null when comfort owns it. */
   sitUp: SitUpPath | null;
@@ -62,6 +66,10 @@ export class SceneSnapshot {
   calibrated = false;
   audioMuted = false;
   eyeHeight = 0;
+  /** Total world rotation as applied to scene content, Euler XYZ degrees. */
+  appliedWorldYawDeg = 0;
+  appliedWorldPitchDeg = 0;
+  appliedWorldRollDeg = 0;
   sitUpActive = false;
   sitUpT = 0;
   sitUpMoving = false;
@@ -93,6 +101,9 @@ export class SceneSnapshot {
     this.calibrated = input.calibrated;
     this.audioMuted = input.audioMuted;
     this.eyeHeight = input.eyeHeight;
+    this.appliedWorldYawDeg = input.worldYawDeg;
+    this.appliedWorldPitchDeg = input.worldPitchDeg;
+    this.appliedWorldRollDeg = input.worldRollDeg;
     this.lookYawDeg = input.lookYawDeg;
     this.lookYawTargetDeg = input.lookYawTargetDeg;
     this.upGazeDeg = input.upGazeDeg;

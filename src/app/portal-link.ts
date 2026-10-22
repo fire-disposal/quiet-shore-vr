@@ -26,6 +26,10 @@ export interface StateSnapshot {
   calibrating: boolean;
   audio: boolean;
   eyeHeight: number;
+  /** Applied world rotation, Euler XYZ degrees; the mirror's inverse offset. */
+  worldYaw: number;
+  worldPitch: number;
+  worldRoll: number;
   posturePitch: number;
   postureRoll: number;
   postureRise: number;
@@ -94,6 +98,9 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     calibrating: snapshot.calibrating,
     audio: snapshot.audioMuted,
     eyeHeight: snapshot.eyeHeight,
+    worldYaw: snapshot.appliedWorldYawDeg,
+    worldPitch: snapshot.appliedWorldPitchDeg,
+    worldRoll: snapshot.appliedWorldRollDeg,
     posturePitch: snapshot.worldPitchDeg,
     postureRoll: snapshot.worldRollDeg,
     postureRise: snapshot.postureRiseM,

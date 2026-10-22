@@ -21,6 +21,9 @@ function neutralInput(): SceneSnapshotInput {
     calibrated: true,
     audioMuted: false,
     eyeHeight: 1.7,
+    worldYawDeg: -12,
+    worldPitchDeg: 8,
+    worldRollDeg: -3,
     confidence: 0.62,
     sitUp: null,
     sitUpT: 0,
@@ -148,6 +151,9 @@ describe('scene snapshot', () => {
     // The wire carries the measurement, not a clamp: 33° is a real reading.
     expect(payload.posturePitch).toBe(33);
     expect(payload.postureRoll).toBeCloseTo(-4, 6);
+    expect(payload.worldYaw).toBe(-12);
+    expect(payload.worldPitch).toBe(8);
+    expect(payload.worldRoll).toBe(-3);
     expect(payload.viewAnim).toBe('playing');
     expect(payload.viewPreset).toBe('breathe');
     expect(payload.eyeHeight).toBe(1.7);
@@ -172,7 +178,10 @@ describe('scene snapshot', () => {
         'viewAnim',
         'viewPitch',
         'viewPreset',
-        'viewYaw'
+        'viewYaw',
+        'worldYaw',
+        'worldPitch',
+        'worldRoll'
       ].sort()
     );
   });

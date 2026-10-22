@@ -255,12 +255,12 @@ GET /ws?since=42   （RFC 6455，文本帧 JSON）
 
 ### 7.3 保持不变
 
-- **`ControlState` 为 15 字节二进制 v7**：`[4]`/`[5]` 是**测得**的世界俯仰/横滚有符号整度（起身到位为 +90），`[8]` 是**当前已应用**的 `viewPitch` 有符号整数度，`[9]` 是 `viewAnim`（0 idle / 1 playing / 2 held），`[12]` 是 `viewPreset`（0 none / 1 up / 2 down / 3 recenter / 4 breathe），`[13..14]` 是小端 int16 的 `viewYaw`（−180..180，+ = 左转）。`viewX`/`viewZ` 已删除。版本不等于 7 或长度不是 15 的帧直接丢弃，不提供旧版本兼容层。
+- **`ControlState` 为 20 字节二进制 v8**：`[4]`/`[5]` 是**测得**的世界俯仰/横滚有符号整度（起身到位为 +90），`[8]` 是**当前已应用**的 `viewPitch` 有符号整数度，`[9]` 是 `viewAnim`（0 idle / 1 playing / 2 held），`[12]` 是 `viewPreset`（0 none / 1 up / 2 down / 3 recenter / 4 breathe），`[13..14]` 是小端 int16 的 `viewYaw`（−180..180，+ = 左转），`[15..16]`/`[17..18]` 是实际世界 yaw/pitch int16，`[19]` 是世界 roll int8，让镜像复现患者最终视角。`viewX`/`viewZ` 已删除。版本不等于 8 或长度不是 20 的帧直接丢弃，不提供旧版本兼容层。
 - `telemetry` 仍是 20 字节 `x,y,z,yaw,pitch`；因此平板**无法**显示 roll（只在头显状态行）。
 - 一步校准下 `calibrationConfidence`（state byte 11）只有两种取值：校准成功 `1`（100）、未校准 `0`；历史上的两姿态置信度不再产生。
 - `status` 语义不变：`OK:<cmd>` 只表示“头显服务已接收”，`view:orient` 免回执。
 - 已知缺口：平板无法回读持久化眼高，重连后 `EyeHeightStepper` 只能显示进程内最后确认值或默认 1.70（标注“未确认”）。回读需要新增特性或状态字段，列入 P4。
-- `ControlProtocol.stateMaxBytes = 15`、`stateVersion = 7`；15 字节仍落在默认 ATT 负载（20 字节）内。新增字段需要新版本号，并同步两端。
+- `ControlProtocol.stateMaxBytes = 20`、`stateVersion = 8`；20 字节仍落在默认 ATT 负载（20 字节）内。新增字段需要新版本号，并同步两端。
 
 ### 7.4 患者视角录像（本地能力，不过 BLE）
 
@@ -307,7 +307,7 @@ renderer.domElement.captureStream(30)
 
 | 层 | 文件 | 需要的变化 |
 | --- | --- | --- |
-| 协议 | `android/protocol/.../ControlProtocol.kt` | `SETTINGS_EYE_HEIGHT`、`EYE_HEIGHT_MIN/MAX/DEFAULT`、`parseEyeHeight()`；`VIEW_ORIENT`、`VIEW_STOP`、`VIEW_ANIM`、`VIEW_PITCH_MAX_DEG`、`VIEW_YAW_MAX_DEG`、`parseViewOrient()`、`parseViewAnim()`；`ViewAnim` / `ViewPreset` / `ViewOrientation`；`HELLO/WELCOME/ACK` 与 `#<seq>` 语法；`stateVersion = 7`、15 字节，`posturePitch`/`postureRoll`/`viewPitch`/`viewYaw`/`viewAnim`/`viewPreset` 编解码（度数字段为有符号整数，不做语义夹紧） |
+| 协议 | `android/protocol/.../ControlProtocol.kt` | `SETTINGS_EYE_HEIGHT`、`EYE_HEIGHT_MIN/MAX/DEFAULT`、`parseEyeHeight()`；`VIEW_ORIENT`、`VIEW_STOP`、`VIEW_ANIM`、`VIEW_PITCH_MAX_DEG`、`VIEW_YAW_MAX_DEG`、`parseViewOrient()`、`parseViewAnim()`；`ViewAnim` / `ViewPreset` / `ViewOrientation`；`HELLO/WELCOME/ACK` 与 `#<seq>` 语法；`stateVersion = 8`、20 字节，`posturePitch`/`postureRoll`/`viewPitch`/`viewYaw`/`viewAnim`/`viewPreset` 编解码（度数字段为有符号整数，不做语义夹紧） |
 | 头显 | `HeadsetSettings.kt`、`PortalActions.kt`（LaunchOptions）、`PortalSession.kt` | `eyeHeight` 持久化（`settings.eyeHeight`）与 bootstrap 注入 |
 | 头显 | `PortalService.kt`、`ControlLog.kt`、`WsFrameCodec.kt` | `/ws` 服务端；ack 保留区（离散 ≤64、最新 continuous）；WS `state`/`telemetry` 解码；`/status` 暴露 state 摘要；租约丢失入队一条 `posture:stop` |
 | 头显 | `BluetoothControl.kt` | `HELLO/WELCOME` 门控；`#<seq>` 解析、有界去重、`ACK <seq> <result>`；`view:orient` 免回执 |

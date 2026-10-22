@@ -1009,6 +1009,10 @@ class PortalService : Service() {
             viewPitch = finite("viewPitch", 0f),
             // 视角偏航：+ = 患者视线向左（与世界层符号相反，页面已换算）。
             viewYaw = finite("viewYaw", 0f),
+            // 实际写入场景内容的世界旋转（外壳 × 基座），供镜像复现患者视角。
+            worldYaw = finite("worldYaw", 0f),
+            worldPitch = finite("worldPitch", 0f),
+            worldRoll = finite("worldRoll", 0f),
             // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
             viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
             viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),

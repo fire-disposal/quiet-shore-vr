@@ -18,7 +18,7 @@
 | 优先级 | 位置 | 问题 | 建议 |
 | --- | --- | --- | --- |
 | P0 | `PortalService.kt` | 约 1300 行，HTTP/WebSocket/GATT/设置/命令路由混在一个类 | 拆成 `LoopbackHttpServer`、`WsEventHub`、`CommandRouter`；先拆纯函数，不动线程模型 |
-| P1 | 平板眼高 / state | state 已是 15 字节 v7；旧帧直接丢弃 | 仍需实机确认 GATT 通知长度、MTU 与解析 |
+| P1 | 平板眼高 / state | state 已是 20 字节 v7；旧帧直接丢弃 | 仍需实机确认 GATT 通知长度、MTU 与解析 |
 | P1 | 能力清单 | `WELCOME` 已带 capability mask，但 HTTP `CAPABILITIES` 仍是字符串 | 让两端只依赖 mask；诊断清单保留为展示 |
 | P1 | 页面命令 | `start` 只提示，不是真正启动；`cue` 只在 landscape 生效 | 返回明确的 `NOT_READY` / `UNSUPPORTED`，不要静默成功 |
 | P2 | `Comfort` | 重映射、posture、减速、状态查询都集中在一个闭包对象 | 保留 API，内部拆纯计算模块；先加测试再拆 |

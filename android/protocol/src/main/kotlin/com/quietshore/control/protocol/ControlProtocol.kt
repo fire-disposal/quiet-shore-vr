@@ -22,8 +22,8 @@ object ControlProtocol {
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
-    const val stateMaxBytes: Int = 15
-    const val stateVersion: Int = 7
+    const val stateMaxBytes: Int = 20
+    const val stateVersion: Int = 8
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -408,11 +408,11 @@ object ControlProtocol {
     private val SCENE_IDS = listOf("landscape", "ward", "bathroom", "lab")
 
     /**
-     * 15-byte state frame, little endian:
+     * 20-byte state frame, little endian:
      *
      * | byte | field |
      * | --- | --- |
-     * | 0 | version (7) |
+     * | 0 | version (8) |
      * | 1 | scene index |
      * | 2 | flags |
      * | 3 | eye height (cm) |
@@ -426,6 +426,9 @@ object ControlProtocol {
      * | 11 | calibrationConfidence (%) |
      * | 12 | viewPreset |
      * | 13–14 | viewYaw — signed int16 degrees, + = view turned left |
+     * | 15–16 | worldYaw — signed int16 degrees, applied shell × base |
+     * | 17–18 | worldPitch — signed int16 degrees |
+     * | 19 | worldRoll — signed int8 degrees |
      *
      * The degree fields carry whatever the page measured. This layer only
      * guarantees the bit width: the envelope is enforced once, in the page
@@ -453,6 +456,9 @@ object ControlProtocol {
         buffer.put((state.calibrationConfidence * 100f).roundToInt().coerceIn(0, 100).toByte())
         buffer.put(state.viewPreset.code.toByte())
         buffer.putShort(state.viewYaw.roundToInt().coerceIn(-32768, 32767).toShort())
+        buffer.putShort(state.worldYaw.roundToInt().coerceIn(-32768, 32767).toShort())
+        buffer.putShort(state.worldPitch.roundToInt().coerceIn(-32768, 32767).toShort())
+        buffer.put(state.worldRoll.roundToInt().coerceIn(-128, 127).toByte())
         return buffer.array()
     }
 
@@ -474,6 +480,9 @@ object ControlProtocol {
         val confidence = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val viewPreset = ViewPreset.fromCode(buffer.get().toInt() and 0xFF)
         val viewYaw = buffer.short.toInt().toFloat()
+        val worldYaw = buffer.short.toInt().toFloat()
+        val worldPitch = buffer.short.toInt().toFloat()
+        val worldRoll = buffer.get().toInt().toFloat()
         if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
         return ControlState(
             scene = if (sceneIndex < SCENE_IDS.size) SCENE_IDS[sceneIndex] else SCENE_IDS[0],
@@ -488,6 +497,9 @@ object ControlProtocol {
             postureProgress = postureProgress,
             viewPitch = viewPitch,
             viewYaw = viewYaw,
+            worldYaw = worldYaw,
+            worldPitch = worldPitch,
+            worldRoll = worldRoll,
             viewAnim = viewAnim,
             cueIntensity = cueIntensity,
             calibrationConfidence = confidence,
@@ -566,7 +578,7 @@ data class ControlState(
     val postureRise: Float = 0f,
     val postureProgress: Float = 0f,
     /**
-     * **Currently applied** view pitch in degrees, -20..20; positive looks up.
+     * **Currently applied** view pitch in degrees, -90..90; positive looks up.
      * It is not the requested target: a smooth retarget or animation reports
      * intermediate values here.
      */
@@ -576,6 +588,10 @@ data class ControlState(
      * patient's view left. Same "applied, not requested" rule as [viewPitch].
      */
     val viewYaw: Float = 0f,
+    /** Applied world rotation (shell × base), Euler XYZ degrees. */
+    val worldYaw: Float = 0f,
+    val worldPitch: Float = 0f,
+    val worldRoll: Float = 0f,
     /** Coarse animation phase reported by the page; see [ViewAnim]. */
     val viewAnim: ViewAnim = ViewAnim.IDLE,
     /** Preset the page last played (or is playing); see [ViewPreset]. */

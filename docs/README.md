@@ -9,9 +9,9 @@
 | `../README.md` | 项目总览、构建、当前限制 |
 | `../TODO.md` | 当前优先级与下一步 |
 | `system-boundaries.md` | 场景/Web/Android 分层、单写者规则、视角动画状态机、BLE/回环集成点、本地录像边界 |
-| `control-plane.md` | BLE GATT、命令、二进制 state v7、扫描即连接与链路恢复、回环 API |
+| `control-plane.md` | BLE GATT、命令、二进制 state v8、扫描即连接与链路恢复、回环 API |
 | `control-interaction-spec.md` | 权限、状态机、干预目录（一步校准、6 s 注视）、安全包络、患者视角录像、验收 |
-| `rotation-contract.md` | 唯一角度契约：L0–L3 分层、双通道口径（偏航/俯仰）、已删除的第二真相、迁移状态、双侧 golden vectors、state v7 编码 |
+| `rotation-contract.md` | 唯一角度契约：L0–L3 分层、双通道口径（偏航/俯仰）、已删除的第二真相、迁移状态、双侧 golden vectors、state v8 编码 |
 | `kiss-review.md` | 已收口项与剩余复杂度 |
 | `virtual-posture.md` | 一步校准的世界帧、posture/comfort 当前数学与 6 s 起身逆变换；两姿态重映射标注为历史 |
 | `motion-polish.md` | 镜头动画、失重感、粒子/停止安全审计（含起身过渡与确认键单一职责） |

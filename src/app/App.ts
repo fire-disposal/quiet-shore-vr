@@ -79,6 +79,8 @@ export class QuietShoreApp {
   private linkOnline = false;
   private readonly renderMonitor = new RenderMonitor();
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private readonly worldQuat = new THREE.Quaternion();
+  private readonly worldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   private readonly viewMotion: ViewMotionControllerApi;
   private readonly snapshot = new SceneSnapshot();
   private readonly snapshotInput: SceneSnapshotInput = {
@@ -89,6 +91,9 @@ export class QuietShoreApp {
     calibrated: false,
     audioMuted: false,
     eyeHeight: 0,
+    worldYawDeg: 0,
+    worldPitchDeg: 0,
+    worldRollDeg: 0,
     confidence: 0,
     sitUp: null,
     sitUpT: 0,
@@ -1117,6 +1122,17 @@ export class QuietShoreApp {
     input.calibrated = this.comfort?.isCalibrated() ?? false;
     input.audioMuted = this.audioMuted;
     input.eyeHeight = this.eyeHeight;
+    // The mirror must see the same world the patient sees: shell (view) times
+    // base (comfort calibration or sit-up inverse), not just the head pose.
+    if (this.shell) {
+      this.worldQuat.copy(this.shell.group.quaternion).multiply(this.shell.base.quaternion);
+    } else {
+      this.worldQuat.identity();
+    }
+    this.worldEuler.setFromQuaternion(this.worldQuat, 'XYZ');
+    input.worldYawDeg = THREE.MathUtils.radToDeg(this.worldEuler.y);
+    input.worldPitchDeg = THREE.MathUtils.radToDeg(this.worldEuler.x);
+    input.worldRollDeg = THREE.MathUtils.radToDeg(this.worldEuler.z);
     const comfortState = this.comfort?.getState();
     input.confidence = comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0);
     input.sitUp = this.sitUpMode ? this.sitUpPath : null;

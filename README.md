@@ -7,7 +7,7 @@
 | 静岸（头显端） | `com.quietshore.portal` | 控制台 + 前台服务 + BLE 外设 + 本机回环桥 |
 | 静岸控制台（平板端） | `com.quietshore.control` | Compose 控制台 + BLE 中心 + WebView 三维镜像 |
 
-当前版本：**v0.8.11**（未发布；state v7 / 视角偏航 / 病房卫生间）。项目站：<https://qs.205716.xyz>。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
+当前版本：**v0.8.11**（未发布；state v8 / 视角偏航 / 病房卫生间）。项目站：<https://qs.205716.xyz>。下一步重点见根目录 [`TODO.md`](TODO.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
 ## 当前流程
 
@@ -20,7 +20,7 @@
 
 ## 控制面
 
-- **BLE GATT**：命令、状态、20 字节遥测、15 字节二进制 state v7（第 4/5 字节是相对校准帧测得的世界俯仰/横滚，第 8 字节 `viewPitch`，第 9 字节 `viewAnim` 相位，第 12 字节 `viewPreset` 预设 id，第 13–14 字节 `viewYaw` int16 偏航）。
+- **BLE GATT**：命令、状态、20 字节遥测、20 字节二进制 state v8（第 4/5 字节是相对校准帧测得的世界俯仰/横滚，第 8 字节 `viewPitch`，第 9 字节 `viewAnim` 相位，第 12 字节 `viewPreset` 预设 id，第 13–14 字节 `viewYaw` int16 偏航）。
 - **协议握手**：平板在 `CONTROL_OK` 后发 `HELLO 1`，头显回 `WELCOME 1 <caps>`；版本/能力不匹配时平板拒绝驱动并给出具体原因。
 - **第一台接管**：首个 `CLAIM` 胜出；没有 PIN/配对/应用层认证，邻近即可申请控制。
 - **重连**：平板扫描到第一台广播 `QuietShore` 的头显就自动连接，没有设备列表或配对卡；冷启动直接连上次地址。链路中断按 0.8/1.6/3.2 s 退避重连 3 次，期间显示“重连中”，失败后回到配对页；`CONTROL_BUSY` 不重试。头显在断开、广告失败或蓝牙重新打开后自动恢复广播。

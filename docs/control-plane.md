@@ -88,11 +88,11 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 
 ### 2.4 state
 
-固定 15 字节二进制，小端；第一字节是版本号 `7`：
+固定 20 字节二进制，小端；第一字节是版本号 `8`：
 
 | 偏移 | 字段 | 编码 |
 | --- | --- | --- |
-| 0 | version | `7` |
+| 0 | version | `8` |
 | 1 | scene | `0` landscape / `1` ward / `2` bathroom / `3` lab / `255` unknown |
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
@@ -106,13 +106,16 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 | 11 | calibrationConfidence | 0–100 |
 | 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe；其他值按 none 处理 |
 | 13–14 | viewYaw | **有符号** int16 小端，度；+ = 患者视线左转 |
+| 15–16 | worldYaw | **有符号** int16 小端：实际写入场景内容的世界偏航（外壳 × 基座） |
+| 17–18 | worldPitch | **有符号** int16 小端：实际世界俯仰 |
+| 19 | worldRoll | **有符号** int8：实际世界横滚 |
 
 - 页面通过 WS `{"type":"state","data":...}` 提供这些字段；头显编码后通知控制者。
 - `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested` / `viewYawRequested`，收到回读后清空。
 - `viewAnim` 只表示页面动画播放器的粗粒度相位（`idle` / `playing` / `held`），页面通过 WS `state` 的 `viewAnim` 字符串上报；未知值按 `idle` 处理。
 - `viewPreset` 是页面最近播放/正在播放的预设 id（`none|up|down|recenter|breathe`），未知值按 `none` 处理；平板只回显，不自行推断。
-- 15 字节仍落在默认 ATT 负载（20 字节）内；版本不等于 7 或长度不为 15 的帧直接丢弃。
-- 四个度数字段（byte 4 / 5 / 8 / 13–14）只做位宽检查：越界值不会被静默夹紧，口径见 `docs/rotation-contract.md`。
+- 20 字节仍落在默认 ATT 负载（20 字节）内；版本不等于 8 或长度不为 20 的帧直接丢弃。
+- 所有角度字段（byte 4 / 5 / 8 / 13–18 / 19）只做位宽检查：越界值不会被静默夹紧，口径见 `docs/rotation-contract.md`。
 - 旧文本格式与 v6 及更早的二进制帧均已删除，没有兼容层。
 
 ## 3. 第一台接管
@@ -228,7 +231,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 - 离散命令保留到页面 `ack`（≤64 条）；`view:orient` 免 ack、只保留最新；`view:anim:*` 只实时投递，不跨重连重放。
 - 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。
 - 服务端每 15 s 发 ping，30 s 无 pong 关闭；页面断线后以指数退避重连并带 `since=lastSeq`。
-- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v7 / 20 B 遥测后 BLE 通知平板。
+- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v8 / 20 B 遥测后 BLE 通知平板。
 - 页面不得再发送 `viewX`/`viewZ`；头显也不会解析它们。
 
 `/ws`、`/command`、`/capabilities` 没有认证，只绑定 loopback，适用于单设备受控环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
@@ -268,7 +271,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 - **单头显假设。** 扫描不提供设备列表：屏幕上同时有第二台广播 `QuietShore` 的头显时，会连上先被扫描到的那台。
 - **控制页布局。** 浮动浅色顶栏常驻；左下角底部是患者/全局切换与全屏入口，其上方是只读角度仪表；右侧控制栏在 ≥1000 dp 常驻、窄屏默认收起并从顶栏展开，视角页签含虚拟起身区块；重连/录制提示条叠在顶栏下方。
 - **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态；平板视图不是逐帧镜像。
-- **state 已固定为 15 字节二进制 v7**（byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
+- **state 已固定为 20 字节二进制 v8**（byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16，byte 15–18 为实际世界 yaw/pitch int16、byte 19 为世界 roll int8，供镜像复现最终视角），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。
 
 ## 9. 排障

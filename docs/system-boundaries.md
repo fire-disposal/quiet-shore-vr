@@ -111,11 +111,11 @@ held --play / slider--> playing            （从当前角度继续）
 
 ### 3.2 状态特征（头显 → 平板）
 
-页面 WS `state`（静止 1 Hz / 运动中 5 Hz）→ 头显 `ControlState` → state v7（15 字节）：
+页面 WS `state`（静止 1 Hz / 运动中 5 Hz）→ 头显 `ControlState` → state v8（20 字节）：
 
 | 字节 | 字段 | 编码 |
 | ---: | --- | --- |
-| 0 | version | `7` |
+| 0 | version | `8` |
 | 1 | scene | 0 landscape / 1 ward / 2 bathroom / 3 lab / 255 unknown |
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
@@ -129,8 +129,11 @@ held --play / slider--> playing            （从当前角度继续）
 | 11 | calibrationConfidence | 0–100 |
 | 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe |
 | 13–14 | viewYaw | **有符号 int16** 小端，−180–+180（+ = 视线左转） |
+| 15–16 | worldYaw | **有符号 int16**：实际世界偏航（外壳 × 基座） |
+| 17–18 | worldPitch | **有符号 int16**：实际世界俯仰 |
+| 19 | worldRoll | **有符号 int8**：实际世界横滚 |
 
-- 版本不等于 7、长度不为 15 的帧直接丢弃；四个度数字段只做位宽检查，不静默夹紧。
+- 版本不等于 8、长度不为 20 的帧直接丢弃；所有角度字段只做位宽检查，不静默夹紧。
 - `viewAnim` / `viewPreset` 的未知值按 idle / none 处理（字段容错）。
 - 平板不自行推断状态；按钮只发命令，显示只读 state。
 - `viewX`/`viewZ` 已删除，不提供旧版本兼容层。
@@ -160,7 +163,7 @@ held --play / slider--> playing            （从当前角度继续）
 
 ## 4. 变更规则
 
-1. 新增视角预设 = 三层同改：`view-motion.ts` 目录、`ControlProtocol` 白名单/`ViewPreset`、平板 UI；state v7 的 preset code / 新增 `viewYaw` 需要新版本号；同版本 APK 一起升级。
+1. 新增视角预设 = 三层同改：`view-motion.ts` 目录、`ControlProtocol` 白名单/`ViewPreset`、平板 UI；state v8 的 preset code / 新增 `viewYaw` 需要新版本号；同版本 APK 一起升级。
 2. 新增场景只实现 `SceneDefinition`/`SceneHandle`；不得引入视角/会话/BLE 依赖。
 3. Android 不新增动画参数命令；需要新曲线时先改目录与协议，不接受任意 duration/amplitude。
 4. 旧 state/命令格式不保留兼容层；版本不匹配直接拒绝。

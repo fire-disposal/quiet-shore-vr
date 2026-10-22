@@ -65,7 +65,7 @@ interface ComfortApi {
 - 平板“视角”页签的 `缓慢起身` / `回躺` / `停止并保持` 与患者短按确认键等价（头显内没有菜单，确认键只有这一个动作）。平板的门控是已连接 + 已取得租约 + 会话中 + 未在校准中 + `calibrationConfidence > 0`。
 - 不要把 `posture:set:<任意角度>` 暴露给操作员。需要调试时走本地查询参数，不进入患者控制通道。
 - 头显在每次租约丢失时入队一条 `posture:stop`；`stop` 冻结在当前进度。
-- 状态字段（页面 WS `state` → BLE state v7，见 `control-plane.md §2.4`）包含 `posturePitch / postureRoll / postureRise / postureProgress`，平板 StatusPanel 显示姿态进度、起身高度与姿态俯仰。
+- 状态字段（页面 WS `state` → BLE state v8，见 `control-plane.md §2.4`）包含 `posturePitch / postureRoll / postureRise / postureProgress`，平板 StatusPanel 显示姿态进度、起身高度与姿态俯仰。
 
 ## 4. 历史：两姿态校准与 pivot 重映射
 

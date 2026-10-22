@@ -14,7 +14,7 @@ import kotlin.math.abs
  */
 class StateFrameTest {
     @Test
-    fun `state frame is 15 bytes with signed degree angles`() {
+    fun `state frame is 20 bytes with signed degree angles`() {
         val state = ControlState(
             scene = "ward",
             session = true,
@@ -26,6 +26,9 @@ class StateFrameTest {
             postureRise = 1.2f,
             postureProgress = 1f,
             viewPitch = -20f,
+            worldYaw = -35f,
+            worldPitch = 12f,
+            worldRoll = -7f,
             viewYaw = -90f,
             viewAnim = ViewAnim.PLAYING,
             viewPreset = ViewPreset.BREATHE,
@@ -34,7 +37,7 @@ class StateFrameTest {
         )
         val bytes = ControlProtocol.encodeState(state)
 
-        assertEquals(15, bytes.size)
+        assertEquals(20, bytes.size)
         assertEquals(ControlProtocol.stateVersion, bytes[0].toInt())
         assertEquals(-90, bytes[4].toInt())
         assertEquals(-10, bytes[5].toInt())
@@ -48,6 +51,9 @@ class StateFrameTest {
         assertEquals(-10f, decoded.postureRoll)
         assertEquals(-20f, decoded.viewPitch)
         assertEquals(-90f, decoded.viewYaw)
+        assertEquals(-35f, decoded.worldYaw)
+        assertEquals(12f, decoded.worldPitch)
+        assertEquals(-7f, decoded.worldRoll)
         assertEquals(1.2f, decoded.postureRise)
         assertEquals("ward", decoded.scene)
         assertEquals(ViewPreset.BREATHE, decoded.viewPreset)

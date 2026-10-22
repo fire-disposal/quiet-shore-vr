@@ -169,7 +169,9 @@ class ControllerWebViewHost(
         evaluate(
             "window.qsControl.onState(" +
                 "${string(state.scene)},${state.session},${state.calibrating}," +
-                "${state.audioMuted},${number(state.eyeHeight)});" +
+                "${state.audioMuted},${number(state.eyeHeight)}," +
+                "${number(state.worldYaw)},${number(state.worldPitch)}," +
+                "${number(state.worldRoll)});" +
                 "window.qsControl.onPosture(" +
                 "${number(state.posturePitch)},${number(state.postureRoll)}," +
                 "${number(state.postureRise)},${number(state.postureProgress)})"

@@ -107,7 +107,7 @@ any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 
 滑动条 `view:orient:<yaw>,<pitch>`（绝对度数，±180°/±90°）是**连续重定向**：每次重定向都从当前朝向继续，采用 0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 硬速率上限的指数逼近，因此 10 Hz 拖动不会因为“每帧重启一次固定时长缓动”而迟滞，也不会因为把滑动条点到端点而甩动世界。
 
-状态回报：WS `state` 的 `viewPitch` / `viewYaw` 是**当前已生效角度**（有符号度），`viewAnim` 为 `idle|playing|held`，`viewPreset` 为 `none|up|down|recenter|breathe`。state v7（Android 编码，15 字节）携带两个角度、相位与预设 id；页面只发送字符串，不参与字节布局。`viewX`/`viewZ` 已删除。
+状态回报：WS `state` 的 `viewPitch` / `viewYaw` 是**当前已生效角度**（有符号度），`viewAnim` 为 `idle|playing|held`，`viewPreset` 为 `none|up|down|recenter|breathe`。state v8（Android 编码，20 字节）携带两个角度、相位与预设 id；页面只发送字符串，不参与字节布局。`viewX`/`viewZ` 已删除。
 
 ## 2. “场景相机动画”在本应用里能指什么
 

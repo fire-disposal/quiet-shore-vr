@@ -21,7 +21,10 @@ interface ControllerApi {
     session: boolean,
     calibrating: boolean,
     audioMuted: boolean,
-    eyeHeight: number
+    eyeHeight: number,
+    worldYaw: number,
+    worldPitch: number,
+    worldRoll: number
   ): void;
   onPosture(worldPitchDeg: number, worldRollDeg: number, riseM: number, progress: number): void;
   onBleState(state: string): void;
@@ -64,11 +67,14 @@ const host = new SceneHost(scene);
 const camera = new THREE.PerspectiveCamera(64, 1, 0.04, 400);
 camera.rotation.order = 'YXZ';
 
-const pose: Pose = { x: 0, y: 1.7, z: 0.4, yaw: 0, pitch: 0 };
+const pose: Pose = { x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0 };
 let sceneId = 'landscape';
 let viewMode: ViewMode = 'global';
 let eyeHeight = 1.7;
 let builtEyeHeight = 0;
+let worldOffsetYawDeg = 0;
+let worldOffsetPitchDeg = 0;
+let worldOffsetRollDeg = 0;
 let session = false;
 let calibrating = false;
 let audioMuted = false;
@@ -88,30 +94,22 @@ const marker = createPatientMarker();
 scene.add(marker);
 const target = new THREE.Vector3();
 
-/** Eye height of the schematic bust; arrows must leave the visor, not the crown. */
-const MARKER_EYE_Y = 1.55;
-const MARKER_EYE_Z = -0.125;
+/** Eye height of the schematic figure; arrows must leave the visor, not the crown. */
+const MARKER_EYE_Y = 1.6;
+const MARKER_EYE_Z = -0.12;
 
-/** Thin unlit ray used for gaze; ArrowHelper's hairline reads poorly at 4 m. */
-function createGazeRig(name: string, color: number, length: number, radius: number): THREE.Group {
+/** Blocky unlit ray: box shaft plus box tip, matching the figure's language. */
+function createGazeRig(name: string, color: number, length: number, width: number): THREE.Group {
   const rig = new THREE.Group();
   rig.name = name;
   rig.position.set(0, MARKER_EYE_Y, MARKER_EYE_Z);
 
   const material = new THREE.MeshBasicMaterial({ color, toneMapped: false });
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, length, 8),
-    material
-  );
-  shaft.rotation.x = -Math.PI / 2;
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(width, width, length), material);
   shaft.position.z = -length / 2;
   rig.add(shaft);
 
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(radius * 4.5, 0.075, 12),
-    material
-  );
-  tip.rotation.x = -Math.PI / 2;
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(width * 4.5, width * 4.5, 0.07), material);
   tip.position.z = -length;
   rig.add(tip);
 
@@ -122,13 +120,56 @@ function createPatientMarker(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'patient-marker';
 
-  // Soft ground shadow plus footprint ring: gives the bust a stable anchor.
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const cloth = new THREE.MeshStandardMaterial({
+    color: 0x3f7168,
+    emissive: 0x0d2622,
+    emissiveIntensity: 0.28,
+    roughness: 0.78,
+    metalness: 0.03
+  });
+  const pants = new THREE.MeshStandardMaterial({
+    color: 0x263c38,
+    emissive: 0x081412,
+    emissiveIntensity: 0.2,
+    roughness: 0.86
+  });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xe8cfae, roughness: 0.82 });
+  const headset = new THREE.MeshStandardMaterial({
+    color: 0x1a2523,
+    roughness: 0.45,
+    metalness: 0.2
+  });
+  const visorMat = new THREE.MeshStandardMaterial({
+    color: 0x0a1210,
+    emissive: 0x0a1210,
+    emissiveIntensity: 0.5,
+    roughness: 0.3
+  });
+
+  function block(
+    material: THREE.Material,
+    width: number,
+    height: number,
+    depth: number,
+    x: number,
+    y: number,
+    z = 0
+  ): THREE.Mesh {
+    const mesh = new THREE.Mesh(box, material);
+    mesh.scale.set(width, height, depth);
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+    return mesh;
+  }
+
+  // Ground anchor: soft shadow, thin gold ring and a forward chevron.
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.52, 32),
+    new THREE.CircleGeometry(0.46, 28),
     new THREE.MeshBasicMaterial({
-      color: 0x1b2725,
+      color: 0x101c1a,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.28,
       depthWrite: false
     })
   );
@@ -137,11 +178,11 @@ function createPatientMarker(): THREE.Group {
   group.add(shadow);
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.4, 0.45, 48),
+    new THREE.RingGeometry(0.32, 0.36, 40),
     new THREE.MeshBasicMaterial({
       color: 0xe0bb78,
       transparent: true,
-      opacity: 0.62,
+      opacity: 0.6,
       side: THREE.DoubleSide
     })
   );
@@ -149,107 +190,74 @@ function createPatientMarker(): THREE.Group {
   ring.position.y = 0.012;
   group.add(ring);
 
-  // Small floor chevron marks the patient's forward direction.
   const chevronShape = new THREE.Shape();
-  chevronShape.moveTo(0, 0.09);
-  chevronShape.lineTo(0.07, -0.04);
+  chevronShape.moveTo(0, 0.08);
+  chevronShape.lineTo(0.06, -0.035);
   chevronShape.lineTo(0, -0.005);
-  chevronShape.lineTo(-0.07, -0.04);
+  chevronShape.lineTo(-0.06, -0.035);
   chevronShape.closePath();
   const chevron = new THREE.Mesh(
     new THREE.ShapeGeometry(chevronShape),
     new THREE.MeshBasicMaterial({ color: 0xe0bb78, transparent: true, opacity: 0.8 })
   );
   chevron.rotation.x = -Math.PI / 2;
-  chevron.position.set(0, 0.014, -0.56);
+  chevron.position.set(0, 0.014, -0.46);
   group.add(chevron);
 
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x4f8f84,
-    emissive: 0x0e2a26,
-    emissiveIntensity: 0.35,
-    roughness: 0.72,
-    metalness: 0.04
-  });
+  // Block figure: feet -> legs -> hips -> torso -> shoulders -> arms -> head.
+  block(pants, 0.13, 0.06, 0.24, -0.11, 0.03, -0.05);
+  block(pants, 0.13, 0.06, 0.24, 0.11, 0.03, -0.05);
+  block(pants, 0.12, 0.76, 0.14, -0.11, 0.41, 0);
+  block(pants, 0.12, 0.76, 0.14, 0.11, 0.41, 0);
+  block(pants, 0.34, 0.14, 0.2, 0, 0.82, 0);
+  block(cloth, 0.34, 0.24, 0.2, 0, 0.97, 0);
+  block(cloth, 0.42, 0.32, 0.22, 0, 1.24, 0);
+  block(cloth, 0.52, 0.1, 0.22, 0, 1.41, 0);
+  block(cloth, 0.1, 0.3, 0.12, -0.29, 1.23, 0);
+  block(cloth, 0.1, 0.3, 0.12, 0.29, 1.23, 0);
+  block(cloth, 0.09, 0.28, 0.1, -0.3, 0.99, -0.02);
+  block(cloth, 0.09, 0.28, 0.1, 0.3, 0.99, -0.02);
+  block(skin, 0.1, 0.1, 0.1, -0.3, 0.82, -0.02);
+  block(skin, 0.1, 0.1, 0.1, 0.3, 0.82, -0.02);
+  block(skin, 0.1, 0.09, 0.1, 0, 1.47, 0);
 
-  // Seated bust: rounded torso and shoulders, no stick-figure limbs.
-  const torso = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.22, 0.45, 6, 18),
-    bodyMaterial
-  );
-  torso.position.y = 0.98;
-  torso.scale.z = 0.78;
-  group.add(torso);
-
-  const shoulders = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.085, 0.36, 5, 14),
-    bodyMaterial
-  );
-  shoulders.rotation.z = Math.PI / 2;
-  shoulders.position.set(0, 1.35, 0);
-  shoulders.scale.z = 0.9;
-  group.add(shoulders);
-
-  const neck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.055, 0.062, 0.1, 14),
-    new THREE.MeshStandardMaterial({ color: 0xf1dcc0, roughness: 0.8 })
-  );
-  neck.position.y = 1.43;
-  group.add(neck);
-
-  // Head + headset rotate together around the eye line; arrows stay separate
-  // so the virtual gaze can lag behind the applied world rotation.
+  // Head + headset rotate around the eye line; arrows stay separate.
   const head = new THREE.Group();
   head.name = 'patient-head';
   head.position.set(0, MARKER_EYE_Y, 0);
   group.add(head);
 
-  const skull = new THREE.Mesh(
-    new THREE.SphereGeometry(0.105, 24, 18),
-    new THREE.MeshStandardMaterial({ color: 0xf1dcc0, roughness: 0.78 })
-  );
-  skull.scale.z = 1.05;
+  const skull = new THREE.Mesh(box, skin);
+  skull.scale.set(0.19, 0.22, 0.19);
   head.add(skull);
 
-  const shell = new THREE.Mesh(
-    new THREE.BoxGeometry(0.25, 0.145, 0.12),
-    new THREE.MeshStandardMaterial({
-      color: 0x1b2725,
-      roughness: 0.5,
-      metalness: 0.15
-    })
-  );
-  shell.position.set(0, 0.005, -0.055);
+  const shell = new THREE.Mesh(box, headset);
+  shell.scale.set(0.24, 0.14, 0.08);
+  shell.position.set(0, 0.01, -0.09);
   head.add(shell);
 
-  const visor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.2, 0.075, 0.012),
-    new THREE.MeshStandardMaterial({
-      color: 0x0b1211,
-      emissive: 0x0b1211,
-      emissiveIntensity: 0.35,
-      roughness: 0.25
-    })
-  );
-  visor.position.set(0, 0.005, -0.119);
+  const visor = new THREE.Mesh(box, visorMat);
+  visor.scale.set(0.18, 0.07, 0.012);
+  visor.position.set(0, 0.01, -0.135);
   head.add(visor);
 
-  const strap = new THREE.Mesh(
-    new THREE.TorusGeometry(0.112, 0.012, 8, 28),
-    new THREE.MeshStandardMaterial({ color: 0x2a3533, roughness: 0.8 })
-  );
-  strap.rotation.x = Math.PI / 2;
-  strap.position.y = 0.005;
-  head.add(strap);
+  const strapLeft = new THREE.Mesh(box, headset);
+  strapLeft.scale.set(0.02, 0.12, 0.16);
+  strapLeft.position.set(-0.115, 0.01, 0);
+  head.add(strapLeft);
+  const strapRight = new THREE.Mesh(box, headset);
+  strapRight.scale.set(0.02, 0.12, 0.16);
+  strapRight.position.set(0.115, 0.01, 0);
+  head.add(strapRight);
 
   // Actual gaze (gold) and perceived gaze (teal) leave the same eye point.
-  const gaze = createGazeRig('gaze-rig', 0xe0bb78, 0.62, 0.0055);
+  const gaze = createGazeRig('gaze-rig', 0xe0bb78, 0.62, 0.012);
   group.add(gaze);
-  const virtualGaze = createGazeRig('virtual-gaze-rig', 0x7fc8b8, 0.72, 0.0045);
+  const virtualGaze = createGazeRig('virtual-gaze-rig', 0x7fc8b8, 0.72, 0.01);
   group.add(virtualGaze);
 
-  const glow = new THREE.PointLight(0x7fc8b8, 0.45, 2.8, 1.8);
-  glow.position.set(0, 1.25, 0);
+  const glow = new THREE.PointLight(0x7fc8b8, 0.4, 2.6, 1.8);
+  glow.position.set(0, 1.2, 0);
   group.add(glow);
 
   return group;
@@ -279,10 +287,27 @@ function updateMarker(): void {
   marker.visible = viewMode === 'global' && session;
 }
 
+const cameraHeadEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const cameraHeadQuat = new THREE.Quaternion();
+const cameraWorldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
+const cameraWorldQuat = new THREE.Quaternion();
+
 function updateCamera(): void {
   if (viewMode === 'patient') {
     camera.position.set(pose.x, pose.y, pose.z);
-    camera.rotation.set(pose.pitch, pose.yaw, 0, 'YXZ');
+    // The patient sees scene content rotated by the world shell. Undo that
+    // rotation on the mirror camera, otherwise calibration/view/sit-up offsets
+    // are invisible here and the two views diverge.
+    cameraHeadEuler.set(pose.pitch, pose.yaw, 0, 'YXZ');
+    cameraHeadQuat.setFromEuler(cameraHeadEuler);
+    cameraWorldEuler.set(
+      degToRad(worldOffsetPitchDeg),
+      degToRad(worldOffsetYawDeg),
+      degToRad(worldOffsetRollDeg),
+      'XYZ'
+    );
+    cameraWorldQuat.setFromEuler(cameraWorldEuler).invert();
+    camera.quaternion.copy(cameraHeadQuat).multiply(cameraWorldQuat);
     return;
   }
   target.set(pose.x, 1.08, pose.z);
@@ -511,16 +536,31 @@ window.qsControl = {
     updateMarker();
     updateCamera();
   },
-  onState(nextScene, nextSession, nextCalibrating, nextAudioMuted, nextEyeHeight) {
+  onState(
+    nextScene,
+    nextSession,
+    nextCalibrating,
+    nextAudioMuted,
+    nextEyeHeight,
+    nextWorldYaw,
+    nextWorldPitch,
+    nextWorldRoll
+  ) {
     session = nextSession;
     calibrating = nextCalibrating;
     audioMuted = nextAudioMuted;
     if (Number.isFinite(nextEyeHeight)) {
       eyeHeight = Math.min(1.9, Math.max(1.2, nextEyeHeight));
     }
+    if ([nextWorldYaw, nextWorldPitch, nextWorldRoll].every(Number.isFinite)) {
+      worldOffsetYawDeg = nextWorldYaw;
+      worldOffsetPitchDeg = nextWorldPitch;
+      worldOffsetRollDeg = nextWorldRoll;
+    }
     loadScene(nextScene);
     host.setFloorOffset(session ? -eyeHeight : 0);
     updateMarker();
+    updateCamera();
     const legend = document.getElementById('view-legend');
     if (legend) {
       legend.hidden = !session;
@@ -693,6 +733,6 @@ window.setTimeout(() => {
       Math.sin(demo * 0.5) * 0.55,
       Math.sin(demo * 0.23) * 0.06
     );
-    window.qsControl.onState(sceneId, true, false, false, 1.7);
+    window.qsControl.onState(sceneId, true, false, false, 1.7, 0, 0, 0);
   }, 80);
 }, 700);
