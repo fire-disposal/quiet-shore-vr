@@ -1,28 +1,44 @@
-# 远程虚拟体位注入
+# 校准帧与虚拟体位
 
-## 1. 现有链路
+本文描述患者端世界变换的当前实现：一步校准得到的中立（站立）帧、`Comfort` 的当前数学，以及校准成功后接管世界底座的 6 s 起身/回躺路径。协议字段以 `control-plane.md` 与 `control-interaction-spec.md` 为准。
+
+## 1. 当前链路
 
 ```text
-头显 pose
-  -> Calibration 采集天花板/脚尖两个方向
-  -> remapFromPoses 生成校准四元数与 pivot
-  -> Comfort.group 变换世界内容
-  -> 场景内容随 group 旋转/位移
+头显 pose（一帧）
+  -> Calibration 采集“看向正前方 + 保持静止”
+  -> Comfort.calibrate(pose) 把这一帧设为中立帧
+  -> onCalibrationResult 以仰卧为起点创建 SitUpPath，sitUpMode/sitUpReady = true
+  -> WorldShell.setBasePose(worldFor(head, path.at(t))) 接管 comfort.group 所在槽位
+  -> 场景内容随底座旋转/位移；短按确认键在 t=0 与 t=1 之间切换
 ```
 
 关键点：`Comfort` 变换的是 `world` 容器，不是 XR 相机。相机始终使用真实头显 pose，这对患者安全很重要。
 
-## 2. 注入位置
+一步校准的判据（`src/ui/calibration.ts`）：视线方向偏离 6° 以内累计 1.2 s → 2 s 倒计时 → 落一帧，调用 `comfort.calibrate(pose)` 并置 `mode = 'single'`、`calibrated = true`。患者在头显里看到的是头锁校准卡（0.8 m、标题“看向正前方，保持舒适”）与一条进度条；采集期间场景隐藏。校准成功后页面立刻进入起身模式并停在仰卧起点（`t = 0`），等患者按键。
 
-不要改相机，也不要把偏移写进场景坐标。给 `Comfort` 增加一个**虚拟体位层**：
+为什么只有一步：PICO G2 4K 是 3DoF，位置分量不随头动变化。第二次采样（旧方案的“脚尖”）既难在卧床姿态下做到，两次采样的 `pivot` 距离又会远小于阈值，夹角也不可靠——两点基座在 3DoF 上不可辨识。一次性把患者当下的舒适朝向认作站立参考系，是唯一稳定且可复现的定义。
+
+## 2. 当前数学
+
+```text
+q_total  = q_posture * q_calibration      （posture 在左，因为它在校准帧内表达）
+position = aroundPivot(q_total, p0) - (0, riseM, 0)
+
+起身期间：
+base = worldFor(head, camera)             （SitUpPath 逆变换，不再走上面的 comfort 组合）
+```
+
+- `q_calibration`：`q0`，即校准那一帧的头显朝向；`p0` 是同一帧的位置。当前没有第二次采样，`p0` 就是患者头部当时的位置，世界绕这一点旋转——患者不会被瞬移出场景。
+- `q_posture`：体位层（`worldPitchDeg` / `worldRollDeg`）。患者流程只在**校准开始**时把它归 neutral；起身由 `SitUpPath` 的逆变换承担，不经过体位层。
+- `riseM`：世界向下移动的米数，等效患者“升高”。
+- 校准开始与会话结束时底座回到 neutral / comfort 帧；控制断开（租约丢失）**不回 neutral**：`posture:stop` 把起身冻结在当前进度，避免患者在世界倾斜中途被推回。
+- 世界变换分三层，各有唯一写者（`src/core/xr/world-shell.ts`）：`world-shell`（视角俯仰，绕眼部）→ `comfort.group`（校准 + 体位，或起身逆变换，二选一）→ `host.content`（地板偏移）。场景内容不参与。
+- 平板 state 的 `posturePitch` / `postureRoll` 是**相对校准帧**测得的世界倾角：起身到位约 +90°/0°，`postureRise` 是当前起身高度。
+
+### 2.1 体位层 API（保留；患者流程只在校准开始时归 neutral）
 
 ```ts
-interface VirtualPosture {
-  worldPitchDeg: number;
-  worldRollDeg: number;
-  riseM: number;
-}
-
 interface ComfortApi {
   /** Quintic smootherstep; `durationMs` is clamped to POSTURE_LIMITS. */
   setPosture(target: VirtualPosture, durationMs: number, maxPitchDeg?: number): void;
@@ -36,121 +52,51 @@ interface ComfortApi {
 }
 ```
 
-世界变换组合：
-
-```text
-q_total = q_posture * q_calibration
-position = pivot - q_total * pivot + (0, -riseM, 0)
-```
-
-- `worldPitchDeg` 让世界围绕视线方向的横向轴缓慢倾斜（正值 = 世界绕 +X 上倾，患者看到更多地面）。
-- `riseM` 让世界向下移动，等效患者在虚拟空间里“升高”。
-- 旋转与位移都围绕校准得到的 pivot，避免患者被瞬移到场景外。
-- 校准开始与会话结束时，体位层回到 neutral（立即重置）。控制断开（租约丢失）**不回 neutral**：`stopPosture()` 刹车到当前行程的稳定点并保持，避免患者在世界倾斜中途被推回。
-- 世界变换分三层，各有唯一写者（`src/core/xr/world-shell.ts`）：`world-shell`（视角俯仰，绕眼部）→ `comfort.group`（校准 + 体位，或起身逆变换）→ `host.content`（地板偏移）。场景内容不参与。
-
-符号和轴需要在 PICO 上实测定标；不要凭桌面截图猜正负。
+限幅、缓动（quintic smootherstep，峰值 1.875× 平均）、刹车到静止都已实现并有测试。完整的 90° 起身不走这一层，而是 `SitUpPath` 的逆变换；体位层用于小角度微调与归位。符号和轴仍需在 PICO 上实测定标；不要凭桌面截图猜正负。
 
 ## 3. 控制协议
 
-命令必须白名单化，建议高层语义，不开放任意角度：
-
 | 命令 | 行为 |
 | --- | --- |
-| `posture:rise` | 缓慢进入站立视角 |
-| `posture:lower` | 缓慢回到卧床视角 |
-| `posture:stop` | 立即停止插值并保持当前值 |
+| `posture:rise` | 缓慢进入站立视角（播放头推向 1） |
+| `posture:lower` | 缓慢回到卧床视角（播放头推向 0） |
+| `posture:stop` | 立即停止插值并保持当前值（不回弹） |
 
-不要把 `posture:set:<任意角度>` 暴露给操作员。需要调试时走本地查询参数，不进入患者控制通道。
+- 平板“视角”页签的 `缓慢起身` / `回躺` / `停止并保持` 与患者短按确认键等价（头显内没有菜单，确认键只有这一个动作）。平板的门控是已连接 + 已取得租约 + 会话中 + 未在校准中 + `calibrationConfidence > 0`。
+- 不要把 `posture:set:<任意角度>` 暴露给操作员。需要调试时走本地查询参数，不进入患者控制通道。
+- 头显在每次租约丢失时入队一条 `posture:stop`；`stop` 冻结在当前进度。
+- 状态字段（页面 WS `state` → BLE state v7，见 `control-plane.md §2.4`）包含 `posturePitch / postureRoll / postureRise / postureProgress`，平板 StatusPanel 显示姿态进度、起身高度与姿态俯仰。
 
-状态扩展（页面 WS `state` → BLE state v7，见 `docs/control-plane.md §2.4`）：
+## 4. 历史：两姿态校准与 pivot 重映射
 
-```text
-scene / session / calibrating / audio / eyeHeight
-posturePitch / postureRoll / postureRise / postureProgress
-viewPitch（当前角度）/ viewAnim（idle|playing|held）/ viewPreset（none|up|down|recenter|breathe）
-cueEnabled / cueIntensity / calibrationConfidence
-```
+早期方案要求患者先看天花板、再看脚尖，用两次采样构造“上/前”基座，`remapFromPoses` 输出四元数与 pivot，再按门限混合：
 
-`postureProgress` 为 0–1，controller 显示进度和停止按钮。
+- 夹角 <15° 或 >165°、或 pivot 间距 <0.005 m → `poses-too-similar`；
+- `confidence = sin(angle) < 0.35` → `low-confidence`；
+- 通过后按 `weight = clamp(strength × confidence, 0, 0.85)` 向 identity 混合，并用 `appliedWeight = min(weight, 120° / rawAngle)` 封顶。
 
-## 4. 控制侧 UX
+这套代码（`calibrateTwo` / `remapFromPoses` / `REMAP_LIMITS`）仍在仓库里，只对显式调试调用有效；3DoF 上头显位置不变，痛点（第二步不可达、pivot 不可辨识）无法通过调参解决，因此已从患者流程移除。平板上的 `calibrationConfidence` 现在只有 1（成功）与 0（未校准）两种取值。
 
-- 只在控制权已接管、会话进行中、校准完成后启用。
-- 使用按住/长按或明确的两段式按钮，不做一次点击瞬间起身。
-- 默认时长 10 到 20 秒，最大角速度受限。
-- 松开按钮默认是停止，不是自动回躺；回躺需要单独操作。
-- 始终显示“虚拟起身视角”而不是“起身”，避免暗示患者真的站起来了。
-- 显示患者当前真实状态：卧床、头显佩戴、校准已完成。
-- 任何异常断开立即停止插值。
+## 5. 起身过渡与视觉引导
 
-## 5. 安全与体验
-
-- 患者卧床，前庭觉与视觉可能冲突；运动必须慢、可中止、默认不可用。
-- 不使用快速俯仰或瞬移。
-- 起身过程中保留地平线和地面参照物，避免失去空间定位。
-- 首次使用建议从 0.3 到 0.5 的 riseM 和较小 pitch 开始，再逐步增加。
-- 不能在未校准、未进入 XR 或患者未佩戴头显时运行。
-
-## 6. 代码落点
-
-| 层 | 文件 | 改动 |
-| --- | --- | --- |
-| 变换 | `src/core/xr/comfort.ts` | 保存校准 q/pivot，增加 posture 插值和组合 |
-| 应用 | `src/app/App.ts` | 每帧调用 `comfort.updatePosture(dt)`；重置时机 |
-| 协议 | `android/protocol` | 增加 posture 命令与 state 字段 |
-| 头显 | `BluetoothControl` / `PortalService` | 转发高层命令 |
-| Web | `App.handleRemoteCommand` | 调用 comfort API，不直接改相机 |
-| 平板 | `ControlRail` | 按住/停止/回躺，显示进度 |
-| 测试 | `tests/comfort` | 组合顺序、easing、reset、校准后取消 |
-
-## 7. 当前状态
-
-Posture 变换、限幅、缓动和停止减速已实现；近场重力粒子（`src/core/xr/posture-cue.ts`）先只安装在 `landscape` 场景，作为体验验证。控制柄已预留：
-
-- 代码：`window.__app.postureCue`（`setEnabled` / `setIntensity` / `update` / `getState`）。
-- BLE：`cue:on`、`cue:off`、`cue:intensity:<0..1>`。
-
-视角俯仰已改由系统级控制器承担（`src/core/xr/view-motion.ts` + `src/core/xr/world-shell.ts`）：
-
-- `view:orient:<yaw>,<pitch>`：绝对朝向（度），从当前朝向平滑重定向，无 TTL。
-- `view:anim:<id>`：目录预设 `up`/`down`（相对当前俯仰 ±10°，clamp ±90°，3.0 s）、`recenter`（俯仰 2.4 s 归零，偏航按距离均速展开）、`breathe`（当前 → +6° → 当前，6.0 s 往返）。
-- `view:stop`：立即保持当前角度（不回正）；校准开始与会话结束归零。
-- WS `state` 回报当前 `viewPitch`（度）、`viewAnim`（`idle|playing|held`）与 `viewPreset`（`none|up|down|recenter|breathe`）。
-
-仍需在 PICO 上确认：
-
-1. 粒子密度、亮度和下方流速是否造成眩晕。
-2. riseM 与场景地面的视觉比例。
-3. 10 到 20 秒速度下的眩晕反馈。
-4. 校准 pivot 与站立偏移组合后是否出现边缘穿帮。
-5. 粒子是否只在 `landscape` 保留，或推广到 `ward`；推广前先保持单一场景对照。
-
-
-## 8. 视觉方向错觉与失重感
-
-不要用快速相机位移制造“站起来”。采用**光流 + 视差 + 地平线**的视觉前庭暗示：
+起身/回躺是 6 s 的过渡，旋转为主、粒子流补失重感。**患者本体不动，世界动**：`SitUpPath` 让世界相对头部反向运动，视觉上从卧床过渡到站立高度。
 
 | 线索 | 做法 | 目的 |
 | --- | --- | --- |
 | 近场光流 | 20-40 个低透明度尘埃/叶片粒子，围绕头部缓慢向下漂 | 让身体感觉在上升 |
-| 世界下沉 | `Comfort` 的 riseM 让地面参照缓慢下移 | 产生站立高度变化 |
+| 世界下沉 | 逆变换让地面参照缓慢下移 | 产生站立高度变化 |
 | 轻微俯仰 | 世界 pitch 缓慢增加，中心焦点保持稳定 | 从卧床视角过渡到直立视角 |
 | 视差 | 近处粒子/芦苇移动快，远处山脊几乎不动 | 强化深度和上升感 |
 | 地面参照 | 保留地面线、床边或栈桥边缘，不要全部消失 | 防止失去空间定位 |
 | 声音 | 很轻的风声/水声上扬，不做强烈音效 | 辅助方向感 |
 
-不建议：
+不建议：快速俯仰、突然抬高、镜头抖动；中心视野剧烈流动或旋转；全屏暗角/闪光/强 FOV 变化；用“失重”暗示患者真的离开床面；在患者未校准、未进入 XR 或未佩戴头显时运行。
 
-- 快速俯仰、突然抬高、镜头抖动。
-- 中心视野剧烈流动或旋转。
-- 全屏暗角、闪光、强 FOV 变化。
-- 用“失重”暗示患者真的离开床面。
-- 在患者未校准、未进入 XR 或未佩戴头显时运行。
+节奏建议（重新调参时的基线）：0–20% 确认阶段几乎不动，只淡入提示；20–80% 主过渡；80–100% 粒子淡出、保留稳定视角。任何断开、停止、校准重置都立即中止并保持当前姿态，不自动回弹。
 
-### 视觉引导层
+## 6. 近场粒子层（`PostureCue`）
 
-`PostureCue` 是应用级模块，当前只挂到 `landscape` 场景验证；实际接口（`src/core/xr/posture-cue.ts`）：
+`PostureCue` 是应用级模块（`src/core/xr/posture-cue.ts`），在四个场景共用，挂在 `scene` 根节点并跟随头部位置，不受世界 shell 与地板偏移影响：
 
 ```ts
 interface PostureCueApi {
@@ -166,19 +112,26 @@ interface PostureCueApi {
 }
 ```
 
-- `flow = +1` 只在**起身过渡真实移动**时由 App 传入；停止、回躺、校准、断链一律 0。`flow <= 0` 当帧冻结粒子位置（不推进、不摆动），亮度按既有 τ 淡出；不存在反向播放。
-- 粒子使用两个 `Points`（近 17 / 远 11），总量固定、种子确定性布局、每帧零分配，每层 1 draw call。
-- 粒子挂在 `scene` 根节点并跟随头部位置，不受世界 shell（视角俯仰 / 校准 / 起身）与地板偏移影响。
-- 不修改患者真实 head pose，只改变视觉流和世界变换。
-- 起身完成、停止或断链后粒子淡出，保留稳定的世界视角；不会为“回躺”再播放一次。
-- 控制侧提供“视觉引导”开关，默认开启但可关闭（`cue:on` / `cue:off` / `cue:intensity:<0..1>`），尚未加入平板 UI。
+- `flow` 只在**起身过渡真实移动**时由 App 传入 +1；停止、回躺、校准、断链一律 0。`flow <= 0` 当帧冻结粒子位置（不推进、不摆动），亮度按既有 τ 淡出（近 0.28 s / 远 0.45 s）；不存在反向播放。
+- 两个 `Points`（近 17 / 远 11），总量固定、种子确定性布局、每帧零分配，每层 1 draw call。
+- 控制柄：`window.__app.postureCue`（`setEnabled` / `setIntensity` / `update` / `getState`）与 BLE `cue:on`、`cue:off`、`cue:intensity:<0..1>`；平板 UI 不提供开关。
 
-### 安全节奏
+## 7. 代码落点
 
-建议分三段：
+| 层 | 文件 | 当前行为 |
+| --- | --- | --- |
+| 变换 | `src/core/xr/comfort.ts` | 保存校准帧 `q0`/`p0`，`calibrate(pose)` 单帧生效；posture 插值与组合仍在 |
+| 校准 UI | `src/ui/calibration.ts` | 6° / 1.2 s / 2 s 倒计时；头锁校准卡与进度条；失败不覆盖旧校准 |
+| 起身 | `src/core/xr/situp-path.ts`、`situp-run.ts`、`App.setVirtualPosture/applySitUpTransform` | 校准成功后以仰卧为起点创建路径；6 s 播放头；停止/失权冻结 |
+| 应用 | `src/app/App.ts` | 每帧推进起身与体位；校准开始归 neutral；租约丢失停止过渡；确认键短按切换起身/回躺 |
+| 视觉引导 | `src/core/xr/posture-cue.ts` | 应用级粒子层；`flow` 门控 |
+| 协议 | `android/protocol` | `posture:rise/lower/stop` 在白名单 |
+| 平板 | `ControlRail.kt`、`StatusPanel.kt`、`ControlViewModel.kt` | 虚拟起身区块与姿态进度/起身高度/姿态俯仰读数 |
 
-1. 0-20%：确认阶段，几乎不动，只淡入视觉提示。
-2. 20-80%：主过渡，10-20 秒，缓慢 pitch + riseM + 向下粒子流。
-3. 80-100%：稳定阶段，粒子淡出，保留轻微悬浮感。
+## 8. 仍需在 PICO 上确认
 
-任何断开、停止、校准重置都立即中止并保持当前姿态，不自动回弹。
+1. 一步校准在真实床旁的可复现性：患者能否在 1.2 s 内稳定到 6° 以内，场景是否读作“直立”。
+2. 校准成功后从仰卧起点开始的观感：确认键短按起身是否自然，平板按钮与患者按键是否一致。
+3. 起身 90°、6 s（旋转段 4.2 s，峰值 ≈40 °/s）的耐受；若嫌“太温和”或反胃，调 `SITUP_DURATION_MS`。
+4. 粒子密度、亮度与下方流速是否造成眩晕；`CUE_IDLE_FLOW` / `CUE_FULL_DEG_PER_S` 按观感调。
+5. 站立参照场景（`lab` / 直立光室）在地面网格、光柱与缓慢尘埃下的眩晕反馈。

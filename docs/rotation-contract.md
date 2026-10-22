@@ -21,6 +21,8 @@
 
 L0/L1 不含时间、缓动策略、业务名词、世界对象；时间线由 L2 持有，只通过 L1 原语推进。
 
+当前患者流程的口径：校准是一步（`Comfort.calibrate(pose)`，单帧即中立帧），没有 pivot 重映射；校准成功后以仰卧为起点创建 `SitUpPath`，起身/回躺是 6 s 的逆变换，由 `situp-run.ts` 推进、`WorldShell.setBasePose` 写入底座。
+
 ## 1 收束前的三条病变
 
 | # | 病变 | 实例 | 后果 |

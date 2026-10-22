@@ -95,15 +95,26 @@ fun RecordingNotice(
         RecordingPhase.SAVED -> Surface(
             modifier = modifier,
             shape = RoundedCornerShape(14.dp),
-            color = QuietPalette.Success.copy(alpha = 0.16f),
-            contentColor = QuietPalette.Success
+            color = QuietPalette.Background.copy(alpha = 0.96f),
+            contentColor = QuietPalette.TextPrimary
         ) {
             Row(
-                modifier = Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(QuietPalette.Success)
+                )
+                Spacer(Modifier.width(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("患者视角录像已保存", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "患者视角录像已保存",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = QuietPalette.TextPrimary
+                    )
                     Text(
                         text = "${formatDuration(state.recordingElapsedMs)} · " +
                             formatSize(state.recordingBytes),
@@ -124,21 +135,29 @@ fun RecordingNotice(
         RecordingPhase.FAILED -> Surface(
             modifier = modifier,
             shape = RoundedCornerShape(14.dp),
-            color = QuietPalette.Danger.copy(alpha = 0.14f),
-            contentColor = QuietPalette.Danger
+            color = QuietPalette.Background.copy(alpha = 0.96f),
+            contentColor = QuietPalette.TextPrimary
         ) {
             Row(
-                modifier = Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(QuietPalette.Danger)
+                )
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = state.recordingError ?: "录像失败",
                     style = MaterialTheme.typography.titleSmall,
+                    color = QuietPalette.Danger,
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(Modifier.width(14.dp))
                 TextButton(onClick = onDismiss) {
-                    Text("关闭", color = QuietPalette.Danger)
+                    Text("关闭", color = QuietPalette.TextSecondary)
                 }
             }
         }

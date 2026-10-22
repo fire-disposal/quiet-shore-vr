@@ -15,8 +15,6 @@ import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
 import { getSceneDefinition } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
-import { createSpatialLab, type SpatialLabApi } from '../ui/spatial-lab';
-import { createXrMenu, type XrMenuApi } from '../ui/xr-menu';
 import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
 import { Calibration } from '../ui/calibration';
@@ -62,7 +60,6 @@ const SITUP_DURATION_MS = 6000;
 const CUE_FULL_DEG_PER_S = 40;
 /** Floor of the cue flow during a rising transition, so motion starts at once. */
 const CUE_IDLE_FLOW = 0.25;
-const LONG_PRESS_MS = 600;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
 const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
 
@@ -77,8 +74,6 @@ export class QuietShoreApp {
   private readonly pipeline = new FramePipeline();
   private readonly host: SceneHost;
   private readonly input: SpatialInput;
-  private readonly menu: XrMenuApi;
-  private readonly lab: SpatialLabApi;
   private readonly hud: SpatialHud;
   private readonly link: PortalLink;
   private linkOnline = false;
@@ -143,10 +138,7 @@ export class QuietShoreApp {
   private selectableOffs: Array<() => void> = [];
   private focusedSelectable: THREE.Object3D | null = null;
   private flashTimers = new Set<number>();
-  private selectStartAt = 0;
   private selectEndHandled = false;
-  private selectLongHandled = false;
-  private selectLongTimer: number | null = null;
   private selectCount = 0;
   private showPerf: boolean;
   private audioMuted = false;
@@ -198,37 +190,12 @@ export class QuietShoreApp {
     this.xr = this.renderer.xr as unknown as XRManagerLike;
 
     this.host = new SceneHost(this.scene);
-    this.input = new SpatialInput(this.camera, this.scene, DEFAULT_SPATIAL_THEME);
-    this.menu = createXrMenu({
-      scene: this.scene,
-      camera: this.camera,
-      input: this.input,
-      strings: this.strings,
-      theme: DEFAULT_SPATIAL_THEME,
-      onAction: (action) => {
-        if (action === 'recalibrate') {
-          if (this.session) {
-            this.beginCalibration();
-          } else {
-            this.start.setStatus(this.strings.recalibrateNeedsSession, 'error');
-          }
-        } else if (action === 'audio') {
-          this.toggleAudio();
-        } else if (action === 'exit') {
-          if (this.session) {
-            void this.session.end();
-          } else {
-            this.exitAll();
-          }
-        }
-      }
-    });
-    this.lab = createSpatialLab({
-      scene: this.scene,
-      camera: this.camera,
-      input: this.input,
-      theme: DEFAULT_SPATIAL_THEME
-    });
+    this.input = new SpatialInput(
+      this.camera,
+      this.scene,
+      DEFAULT_SPATIAL_THEME,
+      this.strings.dwellHint
+    );
     this.hud = new SpatialHud(this.scene, DEFAULT_SPATIAL_THEME);
     // One socket carries commands in and state/telemetry out; there is no
     // second transport to keep in sync.
@@ -279,11 +246,8 @@ export class QuietShoreApp {
       phase: 'layout',
       order: 0,
       run: (dt: number, now: number) => {
-        this.menu.update(this.headPose, dt, now);
-        this.lab.update(this.headPose, dt, now);
         this.hud.setVisible(
-          this.showPerf && !this.controlMode && !this.menu.isOpen()
-            && (this.xr.isPresenting || this.previewing)
+          this.showPerf && !this.controlMode && (this.xr.isPresenting || this.previewing)
         );
         this.hud.update(this.headPose, dt, now);
         this.calibration?.update(dt, now, this.headPose);
@@ -327,7 +291,6 @@ export class QuietShoreApp {
 
     this.loadScene(this.sceneId);
     this.start.setScene(this.sceneName(this.sceneId));
-    this.menu.setAudioEnabled(true);
     this.bind();
     this.start.setStatus(this.strings.checking);
     this.updateHud(performance.now());
@@ -381,12 +344,7 @@ export class QuietShoreApp {
     });
 
     window.addEventListener('keydown', (event) => {
-      if (event.key === 'm' || event.key === 'M') {
-        this.menu.toggle();
-        event.preventDefault();
-      } else if (event.key === 'Escape') {
-        this.menu.close();
-      } else if (event.key === 'Enter' || event.key === ' ') {
+      if (event.key === 'Enter' || event.key === ' ') {
         this.onSelectShort();
       }
     });
@@ -436,7 +394,6 @@ export class QuietShoreApp {
     this.sceneId = id;
     storeScene(id);
     this.start.setScene(this.sceneName(id));
-    this.syncLab();
   }
 
   private disposePostureCue(): void {
@@ -446,7 +403,6 @@ export class QuietShoreApp {
 
   private disposeScene(): void {
     this.disposePostureCue();
-    this.lab.setActive(false);
     this.unregisterSelectables();
     this.calibration?.dispose();
     this.calibration = null;
@@ -475,7 +431,7 @@ export class QuietShoreApp {
       const off = this.input.register({
         object,
         layer: 'scene',
-        dwellTime: 1.2,
+        dwellTime: 6,
         onFocus: (focused: boolean) => {
           if (focused) {
             this.focusedSelectable = object;
@@ -506,13 +462,6 @@ export class QuietShoreApp {
       this.flashTimers.delete(timer);
     }, 180);
     this.flashTimers.add(timer);
-  }
-
-  private syncLab(): void {
-    const active = this.sceneId === 'lab'
-      && (this.previewing || this.xr.isPresenting)
-      && !(this.calibration?.isActive() ?? false);
-    this.lab.setActive(active);
   }
 
   private sceneName(id: string): string {
@@ -570,14 +519,10 @@ export class QuietShoreApp {
       this.start.showStage();
       this.start.setEnterEnabled(false);
       this.host.setFloorOffset(-this.eyeHeight);
-      this.menu.attach(next);
-      this.menu.close();
-      this.menu.setAudioEnabled(!this.audioMuted);
       if (this.controlMode) {
         this.input.setLayers(false, false);
       }
       this.input.setLayers(true, true);
-      this.syncLab();
       this.start.setStatus('');
 
       if (this.config.skipCalibration) {
@@ -585,7 +530,6 @@ export class QuietShoreApp {
           this.handle.root.visible = true;
         }
         this.comfort?.reset();
-        this.menu.close();
         this.startSceneAudio();
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
@@ -619,8 +563,6 @@ export class QuietShoreApp {
     this.sitUpMotion.reset();
     this.sitUpBase0.identity();
     this.stopSceneAudio();
-    this.menu.attach(null);
-    this.menu.close();
     this.calibration?.stop();
     this.scene.background = this.savedBackground;
     if (this.handle) {
@@ -636,7 +578,6 @@ export class QuietShoreApp {
     this.start.showStart();
     this.start.setEnterEnabled(true);
     this.input.setLayers(true, true);
-    this.syncLab();
     this.start.setStatus(
       this.patientStopped ? this.strings.patientStop : this.strings.sessionEnded
     );
@@ -670,10 +611,8 @@ export class QuietShoreApp {
     this.savedBackground = this.scene.background;
     this.scene.background = new THREE.Color(0x000000);
     this.handle.root.visible = false;
-    this.menu.close();
     this.input.setLayers(false, false);
     this.calibration.start();
-    this.syncLab();
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
@@ -685,8 +624,9 @@ export class QuietShoreApp {
     }
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     if (result.ok) {
-      // Hold the world at the supine frame; the world transform is applied by
-      // the sit-up path only after the patient presses the confirm key.
+      // Start supine and let the patient press the confirm key to rise. The
+      // sit-up path owns the world base while it is active; comfort.q0 stays
+      // the fallback frame when the animation is reset.
       this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
       this.sitUpReference = {
         position: this.headPose.position.clone(),
@@ -695,15 +635,12 @@ export class QuietShoreApp {
       this.sitUpMotion.reset();
       this.sitUpMode = true;
       this.sitUpReady = true;
-      // The frame the performance starts from: telemetry measures the applied
-      // base against it instead of re-deriving an angle from progress.
       this.sitUpBase0.copy(
         this.sitUpPath.worldFor(this.sitUpReference, this.sitUpPath.at(0)).quaternion
       );
       this.host.setFloorOffset(0);
       this.applySitUpTransform();
     }
-    this.syncLab();
     if (this.session) {
       this.startSceneAudio();
     }
@@ -727,14 +664,10 @@ export class QuietShoreApp {
       this.handle.root.visible = true;
     }
     this.host.setFloorOffset(0);
-    this.menu.attach(null);
-    this.menu.close();
-    this.menu.setAudioEnabled(!this.audioMuted);
     this.input.setLayers(true, true);
     this.lastFrame = 0;
     this.renderer.setAnimationLoop(this.onFrame);
     this.start.setStatus(this.strings.modePreview);
-    this.syncLab();
     this.updateHud(performance.now());
   }
 
@@ -745,13 +678,10 @@ export class QuietShoreApp {
     }
     this.previewing = false;
     this.stopSceneAudio();
-    this.menu.attach(null);
-    this.menu.close();
     this.host.setFloorOffset(0);
     this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setStatus(this.strings.modeIdle);
-    this.syncLab();
     this.updateHud(performance.now());
   }
 
@@ -971,7 +901,6 @@ export class QuietShoreApp {
     this.controlMode = active;
     document.body.classList.toggle('control-mode', active);
     if (active) {
-      this.menu.close();
       if (this.session) {
         this.input.setLayers(false, false);
       }
@@ -1039,14 +968,12 @@ export class QuietShoreApp {
   private applyAudioMuted(next: boolean): void {
     setAudioMuted(next);
     this.audioMuted = next;
-    this.menu.setAudioEnabled(!next);
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
   private toggleAudio(): void {
     this.audioMuted = toggleMuted();
-    this.menu.setAudioEnabled(!this.audioMuted);
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
@@ -1063,17 +990,7 @@ export class QuietShoreApp {
   }
 
   private onSelectStart(): void {
-    this.selectStartAt = performance.now();
     this.selectEndHandled = false;
-    this.selectLongHandled = false;
-    if (this.selectLongTimer != null) {
-      window.clearTimeout(this.selectLongTimer);
-    }
-    this.selectLongTimer = window.setTimeout(() => {
-      this.selectLongTimer = null;
-      this.selectLongHandled = true;
-      this.onSelectLong();
-    }, LONG_PRESS_MS);
   }
 
   private onSelectEnd(): void {
@@ -1081,66 +998,25 @@ export class QuietShoreApp {
       return;
     }
     this.selectEndHandled = true;
-    if (this.selectLongTimer != null) {
-      window.clearTimeout(this.selectLongTimer);
-      this.selectLongTimer = null;
-    }
-    if (this.selectLongHandled) {
-      return;
-    }
-    if (performance.now() - this.selectStartAt < LONG_PRESS_MS) {
-      this.onSelectShort();
-    }
+    this.onSelectShort();
   }
 
   /** Firefox emits `select` after `selectend`; this is only a fallback. */
   private onSelectFallback(): void {
-    if (this.selectEndHandled) {
-      return;
-    }
-    this.selectEndHandled = true;
-    if (this.selectLongTimer != null) {
-      window.clearTimeout(this.selectLongTimer);
-      this.selectLongTimer = null;
-    }
-    if (!this.selectLongHandled) {
-      this.onSelectShort();
-    }
+    this.onSelectEnd();
   }
 
-  private onSelectLong(): void {
-    if (this.session || this.previewing) {
-      this.menu.toggle();
-    }
-  }
-
+  /**
+   * The only in-headset click action: toggle the sit-up animation. Scene
+   * targets are still chosen by 6 s gaze dwell, and there is no web menu.
+   */
   private onSelectShort(): void {
-    if (this.menu.isOpen()) {
-      this.input.select();
-      if (!this.input.getFocused()) {
-        this.menu.close();
-      }
+    if (!this.session || !this.sitUpReady || (this.calibration?.isActive() ?? false)) {
       return;
     }
-    if (this.input.getFocused()) {
-      this.input.select();
-      return;
-    }
-    if (
-      this.session
-      && this.sitUpReady
-      && !(this.calibration?.isActive() ?? false)
-    ) {
-      // Patient confirm key drives the sit-up in both standalone and guided
-      // mode; the emergency stop now lives in the long-press menu.
-      const rising = this.sitUpMotion.target < 0.5;
-      this.sitUpMotion.setTarget(rising ? 1 : 0);
-      this.start.setStatus(rising ? '正在坐起' : '正在回躺', 'ok');
-      return;
-    }
-    if (this.session || this.previewing) {
-      this.menu.open();
-    }
+    const rising = this.sitUpMotion.target < 0.5;
+    this.sitUpMotion.setTarget(rising ? 1 : 0);
+    this.start.setStatus(rising ? '正在坐起' : '正在回躺', 'ok');
   }
 
   private onFrame = (): void => {
@@ -1167,7 +1043,6 @@ export class QuietShoreApp {
 
   private updateHud(_now: number): void {
     const visible = this.showPerf
-      && !this.menu.isOpen()
       && (this.xr.isPresenting || this.previewing);
     this.hud.setVisible(visible);
     if (!visible) {
@@ -1242,7 +1117,8 @@ export class QuietShoreApp {
     input.calibrated = this.comfort?.isCalibrated() ?? false;
     input.audioMuted = this.audioMuted;
     input.eyeHeight = this.eyeHeight;
-    input.confidence = this.comfort?.getState().remap?.confidence ?? 0;
+    const comfortState = this.comfort?.getState();
+    input.confidence = comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0);
     input.sitUp = this.sitUpMode ? this.sitUpPath : null;
     input.sitUpT = this.sitUpMotion.t;
     input.sitUpTarget = this.sitUpMotion.target;
@@ -1278,8 +1154,6 @@ export class QuietShoreApp {
     this.link.stop();
     this.stopSceneAudio();
     disposeAudio();
-    this.menu.dispose();
-    this.lab.dispose();
     this.hud.dispose();
     this.input.dispose();
     this.disposeScene();

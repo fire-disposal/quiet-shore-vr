@@ -33,10 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.DiscoveredDevice
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.LoadingDots
-import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.theme.QuietPalette
 
 @Composable
@@ -47,7 +45,6 @@ fun PairingScreen(
     permissionRequested: Boolean,
     onScan: () -> Unit,
     onStopScan: () -> Unit,
-    onConnect: (String) -> Unit,
     onCancelConnect: () -> Unit,
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit
@@ -84,7 +81,6 @@ fun PairingScreen(
                     permissionRequested = permissionRequested,
                     onScan = onScan,
                     onStopScan = onStopScan,
-                    onConnect = onConnect,
                     onCancelConnect = onCancelConnect,
                     onEnableBluetooth = onEnableBluetooth,
                     onOpenSettings = onOpenSettings,
@@ -109,7 +105,6 @@ fun PairingScreen(
                     permissionRequested = permissionRequested,
                     onScan = onScan,
                     onStopScan = onStopScan,
-                    onConnect = onConnect,
                     onCancelConnect = onCancelConnect,
                     onEnableBluetooth = onEnableBluetooth,
                     onOpenSettings = onOpenSettings,
@@ -191,7 +186,6 @@ private fun PairingCard(
     permissionRequested: Boolean,
     onScan: () -> Unit,
     onStopScan: () -> Unit,
-    onConnect: (String) -> Unit,
     onCancelConnect: () -> Unit,
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -296,7 +290,6 @@ private fun PairingCard(
 
             if (state.phase == BlePhase.IDLE &&
                 state.scanAttempted &&
-                state.devices.isEmpty() &&
                 bluetoothEnabled &&
                 permissionsGranted
             ) {
@@ -305,29 +298,6 @@ private fun PairingCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = QuietPalette.TextSecondary
                 )
-            }
-
-            state.lastDeviceAddress?.let { address ->
-                LastDeviceRow(
-                    address = address,
-                    enabled = state.canConnect && bluetoothEnabled && permissionsGranted,
-                    onConnect = { onConnect(address) }
-                )
-            }
-
-            if (state.devices.isNotEmpty()) {
-                Text(
-                    text = "已找到的头显",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = QuietPalette.TextSecondary
-                )
-                state.devices.take(6).forEach { device ->
-                    DeviceRow(
-                        device = device,
-                        enabled = state.canConnect,
-                        onConnect = { onConnect(device.address) }
-                    )
-                }
             }
 
         }
@@ -394,92 +364,6 @@ private fun StatusLine(
         )
         TextButton(onClick = onAction) {
             Text(actionLabel, color = QuietPalette.TextSecondary)
-        }
-    }
-}
-
-/** One-tap reconnect to the headset used last time, without a scan. */
-@Composable
-private fun LastDeviceRow(
-    address: String,
-    enabled: Boolean,
-    onConnect: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = QuietPalette.SurfaceRaised
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "上次连接的头显",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = QuietPalette.TextPrimary
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "尾号 ${address.takeLast(4).uppercase()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
-            TextButton(onClick = onConnect, enabled = enabled) {
-                Text("直接连接", color = QuietPalette.Primary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceRow(
-    device: DiscoveredDevice,
-    enabled: Boolean,
-    onConnect: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = QuietPalette.SurfaceRaised
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "静岸头显",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = QuietPalette.TextPrimary
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "尾号 ${device.shortAddress}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = "${device.rssi} dBm",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
-                    )
-                }
-            }
-            SignalBars(rssi = device.rssi)
-            Spacer(Modifier.width(18.dp))
-            Button(
-                onClick = onConnect,
-                enabled = enabled,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.height(48.dp)
-            ) {
-                Text("连接")
-            }
         }
     }
 }

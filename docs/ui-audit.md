@@ -1,5 +1,7 @@
 # UI 审计：草稿 `~/dev/VR` 的经验与局限
 
+> 历史文档。文中的两步校准（天花板/脚尖）、1.2 s 注视停留与四模式面板 lab 均已被现状取代：校准改为一步（正前方 + 静止），注视停留统一 6 s，`lab` 改为站立参照场景。当前事实见 `control-interaction-spec.md`、`virtual-posture.md`、`spatial-ui.md`。
+
 审计对象是草稿实现，不是新库目标。证据来自 `src/styles.css`、`src/index.html`、`src/ui/*.ts`、`src/vr/gaze.ts`、`src/vr/calibration.ts` 与 `README.md` 的实机结论。
 
 ## 1. 现有视觉语言

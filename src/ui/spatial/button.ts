@@ -75,16 +75,24 @@ export class SpatialButton {
   private readonly texture: THREE.CanvasTexture;
   private readonly geometry: THREE.PlaneGeometry;
   private readonly material: THREE.MeshBasicMaterial;
+  private readonly barGeometry: THREE.PlaneGeometry;
+  private readonly barMaterial: THREE.MeshBasicMaterial;
+  private readonly bar: THREE.Mesh;
   private readonly theme: SpatialTheme;
+  private readonly width: number;
+  private readonly height: number;
   private label: string;
   private focused = false;
   private pressed = false;
   private enabled = true;
+  private progress = 0;
   private pressTimer = 0;
 
   constructor(options: SpatialButtonOptions) {
     this.theme = options.theme;
     this.label = options.label;
+    this.width = options.width;
+    this.height = options.height;
     this.canvas = document.createElement('canvas');
     this.canvas.width = 512;
     this.canvas.height = 128;
@@ -113,11 +121,28 @@ export class SpatialButton {
     this.mesh.renderOrder = options.renderOrder ?? 1001;
     this.object.add(this.mesh);
 
+    // Flat bar inside the lower edge; no texture upload while dwelling.
+    this.barGeometry = new THREE.PlaneGeometry(1, 0.018);
+    this.barMaterial = new THREE.MeshBasicMaterial({
+      color: options.theme.accent,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+    this.bar = new THREE.Mesh(this.barGeometry, this.barMaterial);
+    this.bar.renderOrder = (options.renderOrder ?? 1001) + 1;
+    this.bar.position.set(0, -options.height / 2 + 0.03, 0.002);
+    this.bar.visible = false;
+    this.object.add(this.bar);
+
     this.interactable = {
       object: this.mesh,
       layer: 'ui',
       dwellTime: options.dwellTime ?? 0,
+      progressDisplay: 'self',
       onFocus: (focused: boolean) => this.setFocused(focused),
+      onProgress: (progress: number) => this.setProgress(progress),
       onSelect: () => this.activate()
     };
 
@@ -129,6 +154,8 @@ export class SpatialButton {
       return;
     }
     this.focused = focused;
+    // The focused fill is the accent color, so the dwell bar must invert.
+    this.barMaterial.color.set(focused ? this.theme.accentText : this.theme.accent);
     this.draw();
   }
 
@@ -150,6 +177,21 @@ export class SpatialButton {
 
   setPose(x: number, y: number, z = 0): void {
     this.object.position.set(x, y, z);
+  }
+
+  private setProgress(progress: number): void {
+    const value = Math.max(0, Math.min(1, progress));
+    if (value === this.progress) {
+      return;
+    }
+    this.progress = value;
+    const barWidth = Math.max(0.02, this.width - 0.09);
+    this.bar.visible = value > 0.001;
+    if (!this.bar.visible) {
+      return;
+    }
+    this.bar.scale.x = Math.max(0.0001, barWidth * value);
+    this.bar.position.x = -barWidth / 2 + (barWidth * value) / 2;
   }
 
   private activate(): void {
@@ -190,5 +232,8 @@ export class SpatialButton {
     this.geometry.dispose();
     this.material.dispose();
     this.texture.dispose();
+    this.object.remove(this.bar);
+    this.barGeometry.dispose();
+    this.barMaterial.dispose();
   }
 }

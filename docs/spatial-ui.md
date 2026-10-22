@@ -2,19 +2,21 @@
 
 ## 1. 目标
 
-菜单、校准卡、场景标签、调试面板不再各自计算 pose/raycast/renderOrder。所有空间面板共享：
+校准卡、HUD、场景标签与注视准星不再各自计算 pose/raycast/renderOrder。所有空间面板共享：
 
 - 一个 `SpatialAnchor`（只拥有 transform）
 - 一个 `SpatialSurface`（面板/文本/按钮）
 - 一个 `SpatialInput`（唯一 raycaster、焦点、dwell、准星）
 - 一套 `SpatialTheme`（颜色/字体/圆角/间距）
 
+头显内**没有 WebXR 菜单**：没有菜单面板、没有长按手势、没有 `m` 快捷键。患者界面只剩校准卡、性能 HUD 与场景可注视目标；重新校准、声音、结束训练都由平板操作。确认键只有一个动作——已校准且会话中短按切换起身/回躺。
+
 ## 2. 四种模式
 
 | 模式 | 行为 | 适用 | 不适用 |
 | --- | --- | --- | --- |
-| `summoned` | 召唤时按头部朝向计算一次位置，随后冻结在世界 | 菜单、对话框、短任务 | 需要持续跟随的提示 |
-| `head-locked` | 每帧跟随头部；可阻尼 | 校准卡、瞬时 toast | 长期常驻、阅读任务 |
+| `summoned` | 召唤时按头部朝向计算一次位置，随后冻结在世界 | “召唤一次、停在原处”的面板（当前无使用者） | 需要持续跟随的提示 |
+| `head-locked` | 每帧跟随头部；可阻尼 | 校准卡、HUD、瞬时 toast | 长期常驻、阅读任务 |
 | `world-locked` | 固定世界 pose | 场景锚点、固定标签 | 用户移动后需要重新阅读的内容 |
 | `world-billboard` | 固定世界位置，绕 Y 轴朝向用户（默认） | 场景热点标签 | 需要保持空间朝向的物体 |
 
@@ -51,7 +53,7 @@
 
 - 面板背景：CanvasTexture（圆角、边框、阴影），plane 尺寸 = 调用者给的米制宽高。
 - 标题/正文：`TextTexture`，512×128 / 512×256，POT，CJK sans，2x 字号；只在文案变化时重绘。
-- 按钮：`SpatialButton`，每个按钮一张 512×128 canvas；焦点/按下/禁用三态。
+- 按钮：`SpatialButton`，每个按钮一张 512×128 canvas；焦点/按下/禁用三态。当前只有 `Calibration` 使用 surface，且不添加按钮。
 - 所有材质 `depthTest:false`、`depthWrite:false`、`toneMapped:false`；`renderOrder` 递增。
 - `dispose()` 释放面板/文本/按钮的 geometry/material/texture。
 
@@ -59,29 +61,32 @@
 
 `src/ui/spatial/input.ts`：
 
-- 构造时创建唯一 reticle（RingGeometry）。
-- `register(interactable)`：`layer: 'ui' | 'scene'`；UI 优先，未命中 UI 再命中 scene；返回取消函数。
+- 构造时创建唯一 reticle（RingGeometry），以及暗色 dwell 底环与亮色进度弧。
+- `register(interactable)`：`layer: 'ui' | 'scene'`；UI 优先，未命中 UI 再命中 scene；返回取消函数。当前唯一的调用者是场景可注视目标（`layer: 'scene'`，`dwellTime = 6`），UI 层没有注册对象。
 - `update(dt, now, head)`：
   - 从 head（或 camera）生成 ray；一次 `intersectObjects`；
   - 命中第一个 `enabled` 的 interactable；
   - 焦点变化调用 `onFocus`；
   - `dwellTime > 0` 时推进 `onProgress`，满 1 调用 `onSelect` 并 latch；
-  - reticle 跟随命中点并朝向 head。
-- `select()`：确认键；立即触发当前焦点项。
-- `setLayers(ui, scene)`：菜单打开时 UI 开、scene 关；关闭恢复。
-- `dispose()`：移除 reticle，释放 geometry/material，取消所有焦点。
+  - reticle 跟随命中点并朝向 head；底环 + 进度弧同步显示停留进度，提示 `保持注视 6 秒以选择`。
+- `select()`：保留的“立即触发当前焦点项”入口；菜单移除后当前没有调用者（确认键只切起身）。
+- `setLayers(ui, scene)`：按会话/控制状态整层开关（校准与 2D 预览会同时关掉两层）。
+- `dispose()`：移除 reticle 与弧，释放 geometry/material，取消所有焦点。
 
-**禁止**：每个菜单/标签自建 Raycaster；每个面板自建 reticle；在 `update` 里 new 数组/对象。
+**禁止**：每个标签自建 Raycaster；每个面板自建 reticle；在 `update` 里 new 数组/对象。
 
-## 7. 菜单
+## 7. 已移除：头显内菜单
 
-`src/ui/xr-menu.ts`：
+早期 `src/ui/xr-menu.ts` 提供的“继续 / 重新校准 / 声音 / 退出训练”面板、`m` 键切换、`Esc` 关闭与长按召唤已全部删除，代码不再引用。原因：3DoF 下用视线+确认键在菜单里做多步选择误触率高，而这些动作本来就是操作员的职责。
 
-- `SpatialAnchor('summoned', distance 1.25, minPitch -12, maxPitch 28)`。
-- `SpatialSurface` 标题 + 四个按钮：继续、重新校准、声音开关、退出训练。
-- 打开时 `input.setLayers(true, false)`；关闭恢复。
-- 按钮 `dwellTime=0`，用确认键；场景 selectable 用 1.2s dwell。
-- 2D 键盘：`m` 切换，`Esc` 关闭，`Enter/Space` 确认。
+替代路径：
+
+| 原来在头显菜单里 | 现在 |
+| --- | --- |
+| 重新校准 | 平板发 `calibrate` / `recalibrate` |
+| 声音开关 | 平板发 `audio:on/off/toggle` |
+| 退出训练 | 平板发 `exit` / `stop`，或患者退出 WebXR / 摘下头显 |
+| 继续 / 关闭菜单 | 不存在这个概念；确认键只切起身 |
 
 ## 8. 舒适性规则
 
@@ -89,19 +94,19 @@
 - `summoned` 距离 1.15–1.35m；`y` 夹紧，避免头顶/脚下。
 - 面板进场/退场应使用 120–180ms 缩放/透明度；减少动效模式下只做透明度。
 - 不使用 full billboard 承载长文本。
-- 准星/焦点颜色对比 ≥ 4.5:1；按钮命中区至少 2° 视角。
+- 准星/焦点颜色对比 ≥ 4.5:1；命中区至少 2° 视角。
 - 校准卡距离 0.8m；若真机辐辏不适，提高到 1.0m 并减小面板。
 
-## 9. 性能信息栏与实验场景
+## 9. 性能信息栏与场景
 
 - `SpatialHud` 是 head-locked 横条，位于视角上方（distance 1.5 / heightOffset 0.56），只在 2D 预览/XR 中显示。
-- 进入场景前勾选“显示性能面板”才显示；菜单打开时自动隐藏，避免遮挡标题。
+- 进入场景前勾选“显示性能面板”才显示；校准采集期间自动隐藏，避免遮挡。
 - 内容：FPS + 模式/场景/校准/画质/三角形/draw call/声音；用 CanvasTexture 低频率更新。
-- `lab` 是正式场景：环境 + 四模式面板 + 控制台（重新布置 / 隐藏面板）；不再依赖 debug 开关。
+- `lab` 当前是站立参照场景（`直立光室` / Upright Light Chamber）：地面网格与雾、垂直光柱与顶晕、缓慢上升的远近尘埃、3 个可注视碑体；早期“四模式面板 + 控制台”的实验界面已移除。
 
 ## 10. 验收
 
-- 菜单、校准、lab 四种模式均通过 `SpatialAnchor`，没有复制 pose 代码。
-- 同一帧只有一个 raycaster；菜单打开时场景不被重复命中。
-- 面板开关 50 次后 geometry/material/texture 计数回到基线。
-- 2D 预览键盘可用；XR 确认键可打开/关闭菜单。
+- 校准卡与 HUD 都通过 `SpatialAnchor`，没有复制 pose 代码；`lab` 不提供面板交互。
+- 同一帧只有一个 raycaster；没有 UI 层目标时场景目标仍可命中。
+- 场景目标在 6 s 连续注视后触发一次，视线离开立即清零且不重复触发。
+- 2D 预览键盘可用；头显确认键不再打开任何面板，只切换起身/回躺。

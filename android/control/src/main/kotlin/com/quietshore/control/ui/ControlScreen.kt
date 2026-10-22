@@ -90,6 +90,9 @@ fun ControlScreen(
         var controlsOpen by rememberSaveable { mutableStateOf(!compact) }
         var infoOpen by rememberSaveable { mutableStateOf(false) }
         val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
+        // Banners and notices live in the same top band as the rail; inset
+        // them so the rail cannot cover their recovery actions.
+        val railOverlayInset = if (controlsOpen) railWidth + 14.dp else 0.dp
 
         Box(Modifier.fillMaxSize()) {
             viewportContent(Modifier.fillMaxSize())
@@ -113,7 +116,7 @@ fun ControlScreen(
                         .align(Alignment.TopStart)
                         .padding(
                             start = if (compact) 10.dp else 16.dp,
-                            top = if (compact) 62.dp else 72.dp
+                            top = if (compact) 78.dp else 82.dp
                         )
                         .width(if (compact) 300.dp else 360.dp)
                 )
@@ -126,7 +129,10 @@ fun ControlScreen(
                     onLeave = actions.onLeave,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = if (compact) 62.dp else 72.dp)
+                        .padding(
+                            top = if (compact) 78.dp else 82.dp,
+                            end = railOverlayInset
+                        )
                 )
             } else if (offline) {
                 DisconnectedBanner(
@@ -134,7 +140,10 @@ fun ControlScreen(
                     onLeave = actions.onLeave,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = if (compact) 62.dp else 72.dp)
+                        .padding(
+                            top = if (compact) 78.dp else 82.dp,
+                            end = railOverlayInset
+                        )
                 )
             }
 
@@ -144,19 +153,10 @@ fun ControlScreen(
                     actions = actions,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(top = if (compact) 62.dp else 72.dp, end = 14.dp, bottom = 14.dp)
+                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
                         .width(railWidth)
                         .fillMaxHeight()
                 )
-            } else if (compact) {
-                TextButton(
-                    onClick = { controlsOpen = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                ) {
-                    Text("控制", color = QuietPalette.TextPrimary)
-                }
             }
 
             // Patient/global mirror mode plus the fullscreen entry. This is
@@ -167,7 +167,7 @@ fun ControlScreen(
                 onFullscreen = { actions.onFullscreenChange(true) },
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 86.dp)
+                    .padding(start = 14.dp, bottom = 14.dp)
             )
 
             RecordingNotice(
@@ -177,8 +177,9 @@ fun ControlScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(
-                        top = (if (compact) 62.dp else 72.dp) +
-                            if (reconnecting || offline) 58.dp else 0.dp
+                        top = (if (compact) 78.dp else 82.dp) +
+                            if (reconnecting || offline) 58.dp else 0.dp,
+                        end = railOverlayInset
                     )
             )
 
@@ -188,7 +189,7 @@ fun ControlScreen(
                 stale = state.poseStale,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 14.dp)
+                    .padding(start = 14.dp, bottom = 84.dp)
             )
         }
     }
@@ -252,19 +253,26 @@ private fun FullscreenPatientView(
                 accent = phaseColor(state.phase)
             )
         }
-        Row(
+        Surface(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            shape = RoundedCornerShape(50),
+            color = QuietPalette.Background.copy(alpha = 0.92f),
+            contentColor = QuietPalette.TextPrimary
         ) {
-            RecordingChip(
-                state = state,
-                onStart = actions.onStartRecording,
-                onStop = actions.onStopRecording
-            )
-            TextButton(onClick = { actions.onFullscreenChange(false) }) {
-                Text("退出全屏", color = QuietPalette.TextPrimary)
+            Row(
+                modifier = Modifier.padding(start = 8.dp, end = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RecordingChip(
+                    state = state,
+                    onStart = actions.onStartRecording,
+                    onStop = actions.onStopRecording
+                )
+                TextButton(onClick = { actions.onFullscreenChange(false) }) {
+                    Text("退出全屏", color = QuietPalette.TextPrimary)
+                }
             }
         }
         AngleGauge(
@@ -272,7 +280,7 @@ private fun FullscreenPatientView(
             stale = state.poseStale,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 64.dp, end = 14.dp)
+                .padding(top = 78.dp, end = 14.dp)
         )
         ViewModeToggle(
             selected = state.viewMode,
@@ -314,20 +322,24 @@ private fun ControlTopBar(
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit
 ) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = if (compact) 10.dp else 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        shape = RoundedCornerShape(14.dp),
+        color = QuietPalette.Background.copy(alpha = 0.92f),
+        contentColor = QuietPalette.TextPrimary
     ) {
-        Surface(
-            modifier = Modifier.clickable { onToggleInfo() },
-            shape = RoundedCornerShape(4.dp),
-            color = QuietPalette.Background.copy(alpha = 0.82f),
-            contentColor = QuietPalette.TextPrimary
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                modifier = Modifier
+                    .clickable { onToggleInfo() }
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -335,19 +347,21 @@ private fun ControlTopBar(
                     style = MaterialTheme.typography.titleMedium,
                     color = QuietPalette.TextPrimary
                 )
-                Spacer(Modifier.width(if (compact) 8.dp else 14.dp))
-                Text(
-                    text = "静岸头显",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.TextSecondary
-                )
-                if (!compact && state.deviceSuffix.isNotEmpty()) {
-                    Spacer(Modifier.width(8.dp))
+                if (!compact) {
+                    Spacer(Modifier.width(12.dp))
                     Text(
-                        text = "尾号 ${state.deviceSuffix}",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "静岸头显",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = QuietPalette.TextSecondary
                     )
+                    if (state.deviceSuffix.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "尾号 ${state.deviceSuffix}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.TextSecondary
+                        )
+                    }
                 }
                 Spacer(Modifier.width(if (compact) 8.dp else 12.dp))
                 SignalBars(rssi = state.rssi)
@@ -360,22 +374,25 @@ private fun ControlTopBar(
                     color = QuietPalette.TextSecondary
                 )
             }
-        }
-        Spacer(Modifier.weight(1f))
-        RecordingChip(
-            state = state,
-            onStart = onStartRecording,
-            onStop = onStopRecording
-        )
-        TextButton(onClick = onToggleControls) {
-            Text(if (controlsOpen) "收起" else "控制", color = QuietPalette.TextPrimary)
-        }
-        TextButton(
-            onClick = onDisconnect,
-            enabled = state.phase.isConnected,
-            colors = ButtonDefaults.textButtonColors(contentColor = QuietPalette.TextSecondary)
-        ) {
-            Text("断开")
+            Spacer(Modifier.weight(1f))
+            RecordingChip(
+                state = state,
+                onStart = onStartRecording,
+                onStop = onStopRecording
+            )
+            TextButton(onClick = onToggleControls) {
+                Text(if (controlsOpen) "收起" else "控制", color = QuietPalette.TextPrimary)
+            }
+            TextButton(
+                onClick = onDisconnect,
+                enabled = state.phase.isConnected,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = QuietPalette.TextSecondary,
+                    disabledContentColor = QuietPalette.Outline
+                )
+            ) {
+                Text("断开")
+            }
         }
     }
 }

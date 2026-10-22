@@ -16,18 +16,10 @@ export interface Strings {
   sceneSwitchBlocked: string;
   operator: string;
   debug: string;
-  lab: string;
-  audioOn: string;
-  audioOff: string;
+
   recalibrate: string;
   exit: string;
-  menuTitle: string;
-  menuContinue: string;
-  menuRecalibrate: string;
-  menuAudio: string;
-  menuExit: string;
-  calibrationCeiling: string;
-  calibrationToes: string;
+  calibrationForward: string;
   calibrationHold: string;
   calibrationStable: string;
   calibrationRecording: string;
@@ -38,11 +30,6 @@ export interface Strings {
   skippedCalibration: string;
   recalibrateNeedsSession: string;
   waitingHead: string;
-  labTitle: string;
-  labSummoned: string;
-  labHeadLocked: string;
-  labWorldLocked: string;
-  labBillboard: string;
   close: string;
   modeIdle: string;
   modePreview: string;
@@ -50,6 +37,7 @@ export interface Strings {
   hudCalibration: string;
   hudFps: string;
   hudSelect: string;
+  dwellHint: string;
   hudQuality: string;
   hudAudio: string;
   hudTriangles: string;
@@ -79,18 +67,10 @@ export const ZH: Strings = {
   sceneSwitchBlocked: '请先退出 VR 会话再切换场景',
   operator: '操作员',
   debug: '显示诊断信息',
-  lab: '空间 UI 实验',
-  audioOn: '声音: 开',
-  audioOff: '声音: 关',
+
   recalibrate: '重新校准',
   exit: '退出',
-  menuTitle: '菜单',
-  menuContinue: '继续训练',
-  menuRecalibrate: '重新校准',
-  menuAudio: '声音开关',
-  menuExit: '结束训练',
-  calibrationCeiling: '① 看向天花板',
-  calibrationToes: '② 看向脚尖方向',
+  calibrationForward: '看向正前方，保持舒适',
   calibrationHold: '保持不动，等待记录',
   calibrationStable: '很好，保持住…',
   calibrationRecording: '正在记录',
@@ -101,11 +81,6 @@ export const ZH: Strings = {
   skippedCalibration: '已跳过方向校准',
   recalibrateNeedsSession: '请在训练中重新校准',
   waitingHead: '等待头显姿态…',
-  labTitle: '空间 UI 实验',
-  labSummoned: '召唤后锁定',
-  labHeadLocked: '跟随视角',
-  labWorldLocked: '锁定世界',
-  labBillboard: '世界 + 朝向用户',
   close: '关闭',
   modeIdle: '待机',
   modePreview: '2D 预览',
@@ -113,6 +88,7 @@ export const ZH: Strings = {
   hudCalibration: '校准',
   hudFps: 'FPS',
   hudSelect: '注视选择',
+  dwellHint: '保持注视 6 秒以选择',
   hudQuality: '画质',
   hudAudio: '声音',
   hudTriangles: '三角面',
@@ -142,18 +118,10 @@ export const EN: Strings = {
   sceneSwitchBlocked: 'Exit the VR session before switching scenes',
   operator: 'Operator',
   debug: 'Show diagnostics',
-  lab: 'Spatial UI lab',
-  audioOn: 'Sound: on',
-  audioOff: 'Sound: off',
+
   recalibrate: 'Recalibrate',
   exit: 'Exit',
-  menuTitle: 'Menu',
-  menuContinue: 'Continue training',
-  menuRecalibrate: 'Recalibrate',
-  menuAudio: 'Toggle sound',
-  menuExit: 'End training',
-  calibrationCeiling: '① Look at the ceiling',
-  calibrationToes: '② Look toward your toes',
+  calibrationForward: 'Look straight ahead, stay comfortable',
   calibrationHold: 'Hold still until recorded',
   calibrationStable: 'Good, keep still…',
   calibrationRecording: 'Recording',
@@ -164,11 +132,6 @@ export const EN: Strings = {
   skippedCalibration: 'Direction calibration skipped',
   recalibrateNeedsSession: 'Recalibrate during training',
   waitingHead: 'Waiting for head pose…',
-  labTitle: 'Spatial UI lab',
-  labSummoned: 'Summoned, then locked',
-  labHeadLocked: 'Head-locked',
-  labWorldLocked: 'World-locked',
-  labBillboard: 'World + billboard',
   close: 'Close',
   modeIdle: 'Idle',
   modePreview: '2D preview',
@@ -176,6 +139,7 @@ export const EN: Strings = {
   hudCalibration: 'Calibration',
   hudFps: 'FPS',
   hudSelect: 'Selections',
+  dwellHint: 'Keep looking for 6 s to select',
   hudQuality: 'Quality',
   hudAudio: 'Sound',
   hudTriangles: 'Triangles',

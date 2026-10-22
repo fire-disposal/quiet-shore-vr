@@ -15,7 +15,6 @@ import android.os.SystemClock
 import android.os.Looper
 import android.os.ParcelUuid
 import android.provider.Settings
-import com.quietshore.control.model.DiscoveredDevice
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
@@ -36,7 +35,6 @@ class BleController(
 
     interface Listener {
         fun onPhase(phase: BlePhase)
-        fun onDevices(devices: List<DiscoveredDevice>)
         fun onControlGranted()
         fun onControlBusy(reason: String)
         fun onControlLost(reason: String)
@@ -56,8 +54,9 @@ class BleController(
         appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val adapter: BluetoothAdapter? get() = bluetoothManager?.adapter
 
-    private val found = LinkedHashMap<String, DiscoveredDevice>()
     private var scanCallback: ScanCallback? = null
+    /** First matching advertisement already scheduled a connection. */
+    private var scanConnectPending = false
     private var phase = BlePhase.IDLE
 
     private var manager: QuietShoreBleManager? = null
@@ -182,8 +181,7 @@ class BleController(
             return
         }
 
-        found.clear()
-        listener.onDevices(emptyList())
+        scanConnectPending = false
 
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -203,19 +201,15 @@ class BleController(
                 if (!serviceMatch && !nameMatch) {
                     return
                 }
-                if (autoScan) {
-                    autoScan = false
-                    mainHandler.post { connectInternal(address) }
+                // One headset, one pad: connect the moment the advertised
+                // QuietShore device appears instead of making the operator
+                // pick it from a list.
+                if (scanConnectPending) {
                     return
                 }
-                val discovered = DiscoveredDevice(address, result.rssi)
-                mainHandler.post {
-                    val previous = found[address]
-                    if (previous == null || previous.rssi != discovered.rssi) {
-                        found[address] = discovered
-                        listener.onDevices(found.values.sortedByDescending { it.rssi })
-                    }
-                }
+                scanConnectPending = true
+                autoScan = false
+                mainHandler.post { connectInternal(address) }
             }
 
             override fun onScanFailed(errorCode: Int) {

@@ -2,6 +2,8 @@
 
 范围：患者端 XR 会话中的运动动机（motion）。目标是把“像在移动”的表达收束成**世界动、相机不动**，并把失重粒子从“效果”降级为**可中止的过渡提示**。本文只描述当前事实与可实施的下一步；不回写历史方案。
 
+当前落地状态：校准是一步（正前方 + 静止，直接落一帧），成功后页面以仰卧为起点进入 6 s 起身路径；头显确认键只有一个动作——已校准且会话中短按切换起身/回躺，其余状态不响应。头显内没有 WebXR 菜单，场景目标仍由 6 s 注视停留选中。
+
 ## 0. 结论
 
 1. **XR 相机由会话拥有，应用永不写它。** three r152 在每帧渲染前把 XR 视图位姿覆写进 `camera`，并据投影矩阵反推 `camera.fov`（`node_modules/three/src/renderers/webxr/WebXRManager.js:552-590`）。写相机或被覆盖，或造成视图与投影不一致。
@@ -9,7 +11,7 @@
 3. **粒子只服务 posture 过渡**，不做常驻环境流；停止、回躺、断链、校准都必须收敛到不可见（指数淡出：近带 τ=0.28 s、远带 τ=0.45 s，完全不可见 ≈2 s，不硬切）。
 4. 双带粒子已落地并收口（近 17 / 远 11；角速度 ≤8.9°/s；近亮度 0.34；静止淡出；无横向重生跳变）。**已修**：`update(dt, head, flow)` 取代了进度驱动，`flow = +1` 只在起身过渡真实移动时成立；停止/回躺/断链当帧冻结位置并按既有 τ 淡出，回躺不再产生向下流（见 §3.4、§4 S1）。
 5. posture 缓动改为 quintic smootherstep 后，峰值速度是平均值的 1.875×（`POSTURE_EASE_PEAK`）：起身 0.45 m/14 s 的峰值 0.060 m/s、回躺 0.45 m/12 s 的峰值 0.070 m/s，都超过 `POSTURE_RATE` 的 0.05 m/s。合规修法是拉长 App 预设（≥ `travel × 1.875 / 0.05`），不是改 comfort 内部。
-6. `docs/virtual-posture.md §8` 的“轻微视野扩张 1–2°”在 XR 中**不可实现**，已从该文档删除，不进入实现。
+6. 旧版 `virtual-posture.md` 的“轻微视野扩张 1–2°”在 XR 中**不可实现**，已从该文档删除，不进入实现。
 7. 视角修正从“世界平移”改为**世界俯仰**，并收进一个系统级控制器：`ViewMotionController` 拥有预设目录（`up/down/recenter/breathe`）、目标、缓动、播放状态、保持与重置；`WorldShell` 只把角度组合成变换。App 里不再有逐帧视角数学，也没有模块直接写 `comfort.group`（见 §1.4）。
 
 ## 1. 现状清单
@@ -19,12 +21,12 @@
 ```text
 scene
 ├── world-shell              view pitch：绕眼部（head position）旋转，pos = eye - R*eye；由 ViewMotionController 给角度
-│   └── comfort.group        q_total = q_posture * q_calibration；position = pivot - q_total*pivot - (0,riseM,0)
-│       │                    起身表演期间改由 shell.setBasePose(worldFor(head, camera)) 写入同一槽位
+│   └── comfort.group        q_total = q_posture * q_calibration；position = aroundPivot(q_total, p0) - (0,riseM,0)
+│       │                    单帧校准：p0/q0 就是采集点；起身期间改由 shell.setBasePose(worldFor(head, camera)) 写同一槽位
 │       └── host.content     floorOffset(-eyeHeight)；不再有 viewOffset
 │           └── handle.root  场景自有内容（landscape / ward / ...）
 ├── posture-cue (2×Points)  近/远两层直接挂在 scene 根上：不受 shell / comfort / content 任何变换影响
-└── spatial anchors          XR 菜单、HUD、校准卡
+└── spatial anchors          HUD、校准卡
 ```
 
 `posture-cue` 挂在根节点是**必须保持的不变量**：一旦移进 `comfort` 或 `content`，会与世界变换叠加成双重运动，且 comfort 的 pitch 会让近场点云倾斜。
@@ -45,12 +47,12 @@ scene
 | --- | --- | --- | --- | --- |
 | XR 相机归属 | `core/xr/renderer.ts:createRenderer`、`core/xr/pose.ts:readHeadPose` | `xr.enabled`、`setReferenceSpaceType('local')`；每帧从 `xr.getCamera()` 读世界位姿到 `headPose` | 相机 | 3DoF，位置近似恒定；`camera.position.set(0, eyeHeight, 3.2)` 只服务 2D 预览 |
 | 世界变换外壳 | `core/xr/world-shell.ts`、`App.loadScene`、`core/scene/host.ts` | shell 包住 `comfort.group`，comfort 包住 `host.content`；`content.y = -eyeHeight`；换场景时重建 shell 并重贴当前角度，不重新动画 | 世界 | 相机不入场，层级即安全边界；App 不再直接写任何 group |
-| 校准重映射 | `core/xr/comfort.ts:calibrateTwo/updatePosture` | `remapDurationMs` 200–4000，默认 900；smoothstep；`weight ≤0.85`、旋转 ≤120° | 世界旋转/位移 | 失败保留旧帧 |
-| 姿态过渡 | `core/xr/situp-path.ts:SitUpPath` + `core/xr/situp-run.ts` | 髋部 0.45 m、躯干 0.55 m、站立眼高 1.70 m；旋转段占 70%（90°，峰值 ≈40 °/s），后 30% 抬升到眼高；`worldFor(head)` 自动反演镜头→世界；确认键短按坐起/回躺，长按菜单；播放头 6 s | 世界 | `situp-run` 持有进度/目标/停止；`App.setVirtualPosture` 只转发命令 |
-| 平板视角朝向 | `core/xr/view-motion.ts:ViewMotionController`、`core/xr/world-shell.ts` | `view:orient:<yaw>,<pitch>` = 绝对朝向（±180°/±90°）；滑动条重定向用 0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 上限；预设 `up|down|recenter|breathe` 固定曲线，recenter 同时归零偏航；`view:stop` 立即冻结 | 世界（shell 层，两轴取负） | 无平移、无 TTL、无 roll；App 只解析命令并转发 |
-| 空间 UI | `core/spatial/anchor.ts`、`placement.ts` | 菜单 `summoned`（1.25 m，世界锁定，仅召唤时计算）；HUD `head-locked`（1.5 m，damping 0.06 s）；校准 `head-locked`（0.8 m，damping 0） | UI | 头锁只用于短时面板 |
-| 场景环境循环 | `scenes/*/…js:update` | landscape：水面/天空/风/泡沫 `uTime`，云/雾/鸟 `InstancedMesh`；ward：心电纹理 0.09/s、屏幕 2.6 s 切换、秒针；bathroom：叶片 ±0.028 rad、水面 ±0.0012 m；lab：0.35 rad/s | 世界内容 | 全部 `dt ≤0.1` |
-| 重力粒子 | `core/xr/posture-cue.ts:createPostureCue` | 双 `Points`：近 17（r 0.22–0.46 m、size 0.0095、opacity 0.34、0.020–0.034 m/s、`growTau` 0.5 / `fadeTau` 0.28），远 11（r 0.40–1.10 m、size 0.0075、opacity 0.18、0.010–0.018 m/s、`growTau` 1.0 / `fadeTau` 0.45）；横向摆动 ±0.045 rad；`depth`/`spread` 缩放；`flow` 门控；种子 PRNG；`dt ≤0.05` | 近场点云（2 draw call） | 仅 `landscape` 安装；`scene` 根下的两层；`flow=0` 当帧冻结位置；`dt=0` 时硬复位 |
+| 一步校准 | `ui/calibration.ts:Calibration`、`core/xr/comfort.ts:calibrate` | 6° 容差、1.2 s 稳定、2 s 倒计时 → `comfort.calibrate(pose)` 把该帧设为中立帧；无过渡、直接落帧；`q_total = q_posture * q0`，绕采集点旋转 | 世界旋转 | 失败（无有效姿态）保留旧帧；`calibrateTwo` / `remapFromPoses` 保留但不再被调用 |
+| 姿态过渡 | `core/xr/situp-path.ts:SitUpPath` + `core/xr/situp-run.ts` | 髋部 0.45 m、躯干 0.55 m、站立眼高 1.70 m；旋转段占 70%（90°，峰值 ≈40 °/s），后 30% 抬升到眼高；`worldFor(head)` 自动反演镜头→世界；播放头 6 s；患者短按确认键（已校准 + 会话中）或平板虚拟起身区块触发 | 世界 | `situp-run` 持有进度/目标/停止；`App.setVirtualPosture` 只转发命令 |
+| 平板视角朝向 | `core/xr/view-motion.ts:ViewMotionController`、`core/xr/world-shell.ts` | `view:orient:<yaw>,<pitch>` = 绝对朝向（±180°/±90°）；滑动条重定向用 0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 上限；预设 `up\|down\|recenter\|breathe` 固定曲线，recenter 同时归零偏航；`view:stop` 立即冻结 | 世界（shell 层，两轴取负） | 无平移、无 TTL、无 roll；App 只解析命令并转发 |
+| 空间 UI | `core/spatial/anchor.ts`、`placement.ts` | 校准卡 `head-locked`（0.8 m，damping 0）；HUD `head-locked`（1.5 m，damping 0.06 s）；头显内没有菜单面板 | UI | 头锁只用于短时面板 |
+| 场景环境循环 | `scenes/*/…js:update` | landscape：水面/天空/风/泡沫 `uTime`，云/雾/鸟 `InstancedMesh`；ward：心电纹理 0.09/s、屏幕 2.6 s 切换、秒针；bathroom：叶片 ±0.028 rad、水面 ±0.0012 m；lab（直立光室）：地面环 0.02–0.05 rad/s、顶晕 0.04 rad/s、光柱与碑体光晕正弦呼吸、暖/冷/近三层尘埃沿 y 缓慢上浮 | 世界内容 | 全部 `dt ≤0.1` |
+| 重力粒子 | `core/xr/posture-cue.ts:createPostureCue` | 双 `Points`：近 17（r 0.22–0.46 m、size 0.0095、opacity 0.34、0.020–0.034 m/s、`growTau` 0.5 / `fadeTau` 0.28），远 11（r 0.40–1.10 m、size 0.0075、opacity 0.18、0.010–0.018 m/s、`growTau` 1.0 / `fadeTau` 0.45）；横向摆动 ±0.045 rad；`depth`/`spread` 缩放；`flow` 门控；种子 PRNG；`dt ≤0.05` | 近场点云（2 draw call） | 应用级，四个场景共用；`flow=+1` 只在上行起身过渡；`flow=0` 当帧冻结位置 |
 | 调试自旋 | `App.ts` pipeline `scene-update` | `?spin=1` 时聚焦物体以 1.6 rad/s 绕 Y 旋转 | 物体 | 仅调试，不面向患者 |
 
 ### 1.3 每帧顺序（`App.onFrame` + `FramePipeline`）
@@ -113,22 +115,22 @@ any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 | --- | --- | --- | --- | --- |
 | A. 真·相机动画（平移/旋转/震动） | 相机 | 被 XR 视图位姿每帧覆写；写 `camera.matrix` 只会被覆盖或打架 | 不一致：患者本体不动，前庭无输入 | **禁止** |
 | B. 世界变换 | 场景内容 | `world-shell`（视角俯仰）、`Comfort.group`（pitch/rise/校准）、`host.content`（floor） | 一致：人不动、世界动，是唯一可解释的运动 | **唯一允许的“相机感”** |
-| C. 投影变化（FOV / zoom / 透视畸变） | 投影矩阵 | `camera.projectionMatrix` 与 `camera.fov` 每帧由 XR 视图重算 | 属于相机层，且与真实前庭不符 | **禁止**（同时删除 `virtual-posture.md §8` 的 FOV 行） |
+| C. 投影变化（FOV / zoom / 透视畸变） | 投影矩阵 | `camera.projectionMatrix` 与 `camera.fov` 每帧由 XR 视图重算 | 属于相机层，且与真实前庭不符 | **禁止**（旧版 `virtual-posture.md` 的 FOV 行已删除） |
 | D. 近场视差（点云相对头部反向/滞后位移） | 近场层 | 可用，但位移本身会“泳动”（swim） | 部分一致：由患者自己的头动驱动 | 本切片**不做**；要做须 ≤0.015 m、仅过渡期、≥0.8 m |
-| E. 头锁 UI | 面板 | `SpatialAnchor` head-locked + damping | 不是运动错觉，但近距离拖拽感明显 | 限 1.5 m 内、短时；菜单保持 `summoned` 世界锁定 |
+| E. 头锁 UI | 面板 | `SpatialAnchor` head-locked + damping | 不是运动错觉，但近距离拖拽感明显 | 限 1.5 m 内、短时；头显内没有菜单面板 |
 
 ### 2.1 3DoF 边界
 
 - PICO G2 4K 只有 3DoF：头显只报告朝向，`local` 空间里位置近似为原点。患者**无法**通过自己的位移获得视差，所以“相机平移”既不会被追踪，也不会被前庭验证。
 - 因此“像在移动”的合法来源只有两种：**世界相对患者的位移**（rise / pull-back）和**近场光流**（粒子、视差梯度）。
-- 世界变换必须绕校准 pivot 进行（已实现），否则患者会被“瞬移”出场景。
+- 世界变换必须绕校准帧的采集点进行（已实现，`aroundPivot` 用单帧 `p0`），否则患者会被“瞬移”出场景。
 - 地平线必须保持水平：landscape 中 `rollDeg` 应恒为 0。±10° roll 只适合有明确重力参照的 ward，作为场景实验参数，不在平板暴露。
 
 ### 2.2 Firefox Reality 10 / Gecko 78 约束
 
 - 唯一可用的 WebXR 入口；`xrCompatible` 必须在上下文创建时设置（`renderer.ts` 已处理）。
 - 会话退出约 26 s，退出过程中不要销毁场景或改运动状态。
-- XR 内没有滚动与浮层；任何“运动提示”文案只能走 HUD/菜单/平板。
+- XR 内没有滚动与浮层；任何“运动提示”文案只能走 HUD/平板（头显内没有菜单）。
 - `prefers-reduced-motion` 在 2D 入口可用（`ui/gaze-guide.ts`、`styles.css`），但**不能**假定 XR 会话里可靠；降低动效必须走显式开关（`?motion=low` 或 `cue:off`）。
 - Adreno 540 + 双 eye：粒子的每帧 buffer 上传是可用预算内的小项（28×3 floats）；两层各 1 draw call，不要再加第三层或逐粒子 sprite。
 
@@ -137,7 +139,7 @@ any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 | 框架 | 允许的对象 | 当前实现 | 约束 |
 | --- | --- | --- | --- |
 | 头锁（head-locked） | 短时面板：HUD、校准卡 | `SpatialAnchor` mode `head-locked`，damping 0–0.06 s | 距离 ≤1.5 m；不得承载场景内容；不得常驻 |
-| 召唤后世界锁定（summoned） | XR 菜单 | 召唤时算一次位姿，之后冻结 | 患者转头再回来看仍在原处 |
+| 召唤后世界锁定（summoned） | 目前无对象（原 XR 菜单已移除） | `SpatialAnchor` 保留该模式 | 仅当将来需要“召唤一次、之后停在原处”的面板时使用 |
 | 世界锁定（world-locked） | 场景、粒子、投影面 | `handle.root`、`PostureCue` | 只能被 comfort/content 的有界变换移动 |
 | 近场视差层 | 粒子（已存在） | 位置跟随头部，朝向不跟随 | 只允许低速下落，不允许按头动反向位移 |
 
@@ -186,7 +188,7 @@ any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 | 淡出（近 / 远） | 指数 τ=0.28 s / 0.45 s（95%：0.84 s / 1.35 s） | 保持 | ≥0.6 s 可见衰减 | `dt=0` 时硬复位；`flow=0` 当帧冻结位置 |
 | 完成时 | `flow=0` → 淡出 | 保持 | — | 与 `phase=standing` / 起身到达目标一致 |
 | 垂直跨度 | 近 0.95 / 远 1.6 m | 保持 | — | 与速度匹配 |
-| 重生 | 只 `y += span`，x/z 连续摆动 | 保持 | 单帧 `|Δx|,|Δz| < 0.005 m` | 已无横向跳变 |
+| 重生 | 只 `y += span`，x/z 连续摆动 | 保持 | 单帧 `\|Δx\|,\|Δz\| < 0.005 m` | 已无横向跳变 |
 | dt 上限 | 0.05 s | 0.05 s | 0.05 s | 掉帧不得加速 |
 
 ### 3.4 触发 / 停止语义
@@ -271,7 +273,7 @@ return comfort.getPosturePhase() === 'rising' ? 1 : 0;
 
 13. 起身 30 s 全程无恶心、无“被推走”感；90° 重定向出现不适即延长时长或回退到小角度预设。
 14. `posture:stop` 后近场在 ≤1 s 内静止并淡出；回躺无反向流。
-15. 粒子不遮挡菜单/HUD 文本，不穿过栈桥与地面，`spread` 拉满时仍不进入背景山体。
+15. 粒子不遮挡 HUD 文本，不穿过栈桥与地面，`spread` 拉满时仍不进入背景山体。
 16. 帧率与关闭粒子时无差异（HUD p95 不上升）。
 17. 患者中途摘戴头显、断链、校准重置后，粒子与姿态都在 1 s 内收口。
 
@@ -381,7 +383,7 @@ WS `state` 由 `stateFromSnapshot` 输出固定字段：`viewPitch`（当前角�
 3. **不做 FOV/zoom/透视动画**：XR 每帧覆写投影，且属于相机层。
 4. **不做相机震动、头部摆动（head bob）、运动模糊、全屏暗角、闪光**。
 5. **不做地平线倾斜**：landscape `roll` 恒 0。
-6. **不把头锁层当场景**：菜单保持 `summoned`；不新增跟随头部的世界元素（天空盒、粒子场跟随旋转也不行）。
+6. **不把头锁层当场景**：不新增跟随头部的世界元素（天空盒、粒子场跟随旋转也不行）；头显内没有菜单，也不需要 summoned 面板。
 7. **不做常驻环境粒子/环境漂移**：粒子只在 posture 过渡出现。
 8. **不为“更明显”而调高**：不加数量、不放大尺寸、不提 opacity、不在中央视野加密。
 9. **不在运行时重写 x/z**：随机重排与绕轴旋转都是瞬移；重生只加 y。

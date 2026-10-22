@@ -11,6 +11,15 @@ const RETICLE_ORDER = 4000;
 const RETICLE_OFFSET = 0.012;
 /** Guard against tab-restore spikes triggering a dwell instantly. */
 const MAX_DWELL_STEP = 0.25;
+/** Dwell ring: large enough to read at arm's length, small enough not to hide UI. */
+const ARC_INNER = 0.026;
+const ARC_OUTER = 0.034;
+/** Sprite hint sits below the dwell ring, clear of the target label. */
+const HINT_OFFSET = 0.168;
+const HINT_WIDTH = 0.38;
+const HINT_HEIGHT = 0.092;
+/** Default Chinese hint; the app can pass a localized string. */
+const DEFAULT_HINT = '保持注视以选择';
 
 const EMPTY_HITS: THREE.Intersection[] = [];
 
@@ -56,6 +65,17 @@ export class SpatialInput {
 
   private readonly reticleGeometry: THREE.RingGeometry;
   private readonly reticleMaterial: THREE.MeshBasicMaterial;
+  private readonly arcGeometry: THREE.RingGeometry;
+  private readonly arcMaterial: THREE.ShaderMaterial;
+  private readonly arc: THREE.Mesh;
+  private readonly trackGeometry: THREE.RingGeometry;
+  private readonly trackMaterial: THREE.MeshBasicMaterial;
+  private readonly track: THREE.Mesh;
+  private readonly hintText: string;
+  private readonly hintOffset = new THREE.Vector3();
+  private hint: THREE.Sprite | null = null;
+  private hintTexture: THREE.CanvasTexture | null = null;
+  private hintMaterial: THREE.SpriteMaterial | null = null;
 
   private uiLayer = true;
   private sceneLayer = true;
@@ -65,10 +85,16 @@ export class SpatialInput {
   private latched = false;
   private disposed = false;
 
-  constructor(camera: THREE.Camera, scene: THREE.Scene, theme: SpatialTheme = DEFAULT_SPATIAL_THEME) {
+  constructor(
+    camera: THREE.Camera,
+    scene: THREE.Scene,
+    theme: SpatialTheme = DEFAULT_SPATIAL_THEME,
+    hintText: string = DEFAULT_HINT
+  ) {
     this.camera = camera;
     this.scene = scene;
     this.theme = theme;
+    this.hintText = hintText;
 
     this.raycaster.far = MAX_RAY_DISTANCE;
 
@@ -89,6 +115,63 @@ export class SpatialInput {
     this.reticle.frustumCulled = false;
     this.reticle.matrixAutoUpdate = true;
     scene.add(this.reticle);
+
+    // A shader arc fills clockwise while the gaze stays on a dwell target.
+    this.arcGeometry = new THREE.RingGeometry(ARC_INNER, ARC_OUTER, 48, 1);
+    this.arcMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uProgress: { value: 0 },
+        uColor: { value: new THREE.Color(theme.accentText) }
+      },
+      vertexShader: [
+        'varying vec2 vUv;',
+        'void main() {',
+        '  vUv = uv;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'varying vec2 vUv;',
+        'uniform float uProgress;',
+        'uniform vec3 uColor;',
+        'void main() {',
+        '  vec2 p = vUv - vec2(0.5);',
+        '  float angle = atan(p.x, p.y);',
+        '  if (angle < 0.0) angle += 6.28318530718;',
+        '  if (angle / 6.28318530718 > uProgress) discard;',
+        '  gl_FragColor = vec4(uColor, 1.0);',
+        '}'
+      ].join('\n'),
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false
+    });
+    this.arc = new THREE.Mesh(this.arcGeometry, this.arcMaterial);
+    this.arc.name = 'spatial-reticle-dwell';
+    this.arc.renderOrder = RETICLE_ORDER + 1;
+    this.arc.visible = false;
+    this.arc.frustumCulled = false;
+    scene.add(this.arc);
+
+    // Dark track keeps the light arc readable on both panels and scenery.
+    this.trackGeometry = new THREE.RingGeometry(ARC_INNER - 0.002, ARC_OUTER + 0.002, 48, 1);
+    this.trackMaterial = new THREE.MeshBasicMaterial({
+      color: 0x20251f,
+      transparent: true,
+      opacity: 0.38,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false
+    });
+    this.track = new THREE.Mesh(this.trackGeometry, this.trackMaterial);
+    this.track.name = 'spatial-reticle-dwell-track';
+    this.track.renderOrder = RETICLE_ORDER;
+    this.track.visible = false;
+    this.track.frustumCulled = false;
+    scene.add(this.track);
   }
 
   /** Registers a target and returns an idempotent unregister function. */
@@ -203,6 +286,7 @@ export class SpatialInput {
 
     this.setFocus(entry, dt);
     this.positionReticle(hit);
+    this.syncDwellFeedback();
   }
 
   /**
@@ -215,10 +299,15 @@ export class SpatialInput {
       return;
     }
     this.dwell = 0;
-    this.progress = 0;
+    this.progress = 1;
     this.latched = true;
+    const ring = target.interactable.progressDisplay !== 'self';
+    this.arcMaterial.uniforms.uProgress.value = 1;
+    this.arc.visible = ring && this.reticle.visible;
+    this.track.visible = ring && this.reticle.visible;
     target.interactable.onProgress?.(1);
     target.interactable.onSelect?.();
+    this.syncDwellFeedback();
   }
 
   dispose(): void {
@@ -233,6 +322,20 @@ export class SpatialInput {
     this.scene.remove(this.reticle);
     this.reticleGeometry.dispose();
     this.reticleMaterial.dispose();
+    this.scene.remove(this.arc);
+    this.arcGeometry.dispose();
+    this.arcMaterial.dispose();
+    this.scene.remove(this.track);
+    this.trackGeometry.dispose();
+    this.trackMaterial.dispose();
+    if (this.hint) {
+      this.scene.remove(this.hint);
+      this.hint = null;
+    }
+    this.hintTexture?.dispose();
+    this.hintTexture = null;
+    this.hintMaterial?.dispose();
+    this.hintMaterial = null;
   }
 
   private unregister(target: RegisteredTarget): void {
@@ -338,6 +441,13 @@ export class SpatialInput {
     if (this.reticle) {
       this.reticle.visible = false;
     }
+    this.arc.visible = false;
+    this.track.visible = false;
+    this.arcMaterial.uniforms.uProgress.value = 0;
+    this.reticleMaterial.opacity = 0.92;
+    if (this.hint) {
+      this.hint.visible = false;
+    }
   }
 
   private positionReticle(hit: THREE.Intersection | null): void {
@@ -350,7 +460,97 @@ export class SpatialInput {
     this.lookProbe.position.copy(this.reticle.position);
     this.lookProbe.lookAt(this.origin);
     this.reticle.quaternion.copy(this.lookProbe.quaternion);
-    const scale = this.progress > 0 ? 1 + this.progress * 0.55 : 1;
+    const scale = this.progress > 0 ? 1 + this.progress * 0.35 : 1;
     this.reticle.scale.setScalar(scale);
+
+    this.arc.position.copy(this.reticle.position);
+    this.arc.quaternion.copy(this.reticle.quaternion);
+    this.track.position.copy(this.reticle.position);
+    this.track.quaternion.copy(this.reticle.quaternion);
+  }
+
+  /** Keeps the arc and the instructional sprite in sync with focus/dwell. */
+  private syncDwellFeedback(): void {
+    const dwelling = this.focusTarget !== null &&
+      this.reticle.visible &&
+      (this.focusTarget.interactable.dwellTime ?? 0) > 0;
+    const selfDrawn = dwelling &&
+      (this.focusTarget?.interactable.progressDisplay ?? 'reticle') === 'self';
+    const ring = dwelling && !selfDrawn;
+    // Buttons already show focus through their fill; a dot over the label
+    // just obscures the words.
+    this.reticleMaterial.opacity = selfDrawn ? 0 : 0.92;
+    this.track.visible = ring;
+    this.arc.visible = ring && this.progress > 0.001;
+    this.arcMaterial.uniforms.uProgress.value = this.progress;
+
+    if (!dwelling) {
+      if (this.hint) {
+        this.hint.visible = false;
+      }
+      return;
+    }
+    this.ensureHint();
+    const hint = this.hint;
+    if (!hint) {
+      return;
+    }
+    // Far scene targets would make the label unreadable; the arc still shows.
+    const readable = this.origin.distanceTo(this.reticle.position) <= 4;
+    hint.visible = !this.latched && readable;
+    if (!hint.visible) {
+      return;
+    }
+    this.hintOffset.set(0, -HINT_OFFSET, 0).applyQuaternion(this.reticle.quaternion);
+    hint.position.copy(this.reticle.position).add(this.hintOffset);
+  }
+
+  /** Created on first use so headless tests never need a DOM canvas. */
+  private ensureHint(): void {
+    if (this.hint || typeof document === 'undefined') {
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+    ctx.clearRect(0, 0, 512, 128);
+    const radius = 28;
+    ctx.beginPath();
+    ctx.moveTo(18 + radius, 16);
+    ctx.arcTo(494, 16, 494, 112, radius);
+    ctx.arcTo(494, 112, 18, 112, radius);
+    ctx.arcTo(18, 112, 18, 16, radius);
+    ctx.arcTo(18, 16, 494, 16, radius);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(32, 37, 31, 0.86)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = this.theme.accent;
+    ctx.stroke();
+    ctx.fillStyle = '#f8f3e9';
+    ctx.font = `600 48px ${this.theme.fontFamily}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.hintText, 256, 65);
+
+    this.hintTexture = new THREE.CanvasTexture(canvas);
+    this.hintTexture.colorSpace = THREE.SRGBColorSpace;
+    this.hintMaterial = new THREE.SpriteMaterial({
+      map: this.hintTexture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    });
+    this.hint = new THREE.Sprite(this.hintMaterial);
+    this.hint.name = 'spatial-dwell-hint';
+    this.hint.scale.set(HINT_WIDTH, HINT_HEIGHT, 1);
+    this.hint.renderOrder = RETICLE_ORDER + 2;
+    this.hint.visible = false;
+    this.scene.add(this.hint);
   }
 }

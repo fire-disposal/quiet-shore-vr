@@ -12,6 +12,10 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -58,6 +62,14 @@ class PortalActivity : Activity() {
         val OK: Int = 0xFF486B58.toInt()
 
         val NAV_PAGES = listOf(Page.HOME, Page.SCENES, Page.SETTINGS, Page.HELP)
+
+        val SUS_OPTION_LABELS = listOf(
+            "非常不同意",
+            "不同意",
+            "一般",
+            "同意",
+            "非常同意"
+        )
 
         val SUS_STATEMENTS = listOf(
             "我愿意经常使用这个系统。",
@@ -643,26 +655,36 @@ class PortalActivity : Activity() {
         val buttons = arrayOfNulls<TextView>(5)
         for (value in 1..5) {
             val selected = susAnswers[index] == value
-            val button = label(value.toString(), 17f, if (selected) ACCENT_INK else MUTED, Typeface.BOLD, 0f).apply {
+            val button = label(value.toString(), 17f, if (selected) ACCENT_INK else MUTED, Typeface.NORMAL, 0f).apply {
                 gravity = Gravity.CENTER
-                minHeight = dp(52)
+                minHeight = dp(56)
                 isClickable = true
                 isFocusable = true
                 background = if (selected) rounded(ACCENT, 3, ACCENT, 0) else rounded(SURFACE, 3, BORDER, 1)
+                val content = SpannableString("$value\n${SUS_OPTION_LABELS[value - 1]}")
+                content.setSpan(
+                    RelativeSizeSpan(0.62f),
+                    2,
+                    content.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                content.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    0,
+                    1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                text = content
+                setLineSpacing(dp(2).toFloat(), 1f)
                 setOnClickListener { setSusAnswer(index, value) }
             }
             buttons[value - 1] = button
-            scale.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+            scale.addView(button, LinearLayout.LayoutParams(0, dp(60), 1f).apply {
                 if (value > 1) marginStart = dp(6)
             })
         }
         susButtons = buttons.map { it!! }.toTypedArray()
         card.addView(scale)
-        card.addView(
-            label("1 = 非常不同意    ·    5 = 非常同意", 10f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(8), 0, 0)
-            }
-        )
         page.addView(card)
         susScoreText = label(
             if (susAnswers.all { it > 0 }) susScoreText?.text?.toString() ?: "完成 10 题后显示 SUS 得分"

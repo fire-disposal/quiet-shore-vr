@@ -136,7 +136,7 @@ adb shell am start -a android.intent.action.VIEW \
 ## 6. 性能与画质
 
 - 默认高画质：`?quality=high`；低画质：`?quality=low`，同时关闭 AA、降低帧缓冲缩放。
-- 无阴影贴图、无后处理；landscape/ward/bathroom 的预算见 `docs/geometry-contracts.md`。
+- 无阴影贴图、无后处理；landscape/ward/bathroom 的预算见 `docs/geometry-contracts.md`；`lab`（直立光室）以地面网格、光柱、顶晕与三层尘埃为主，预算在实机确认（TODO P0）。
 - 若真机掉帧：默认保留高清和 AA；掉帧时先 `?quality=low` 或 `?scale=0.85`，再评估 `?aa=0`；不要引入后处理来“补偿”。
 - Firefox Reality 的 `MAX_TEXTURE_SIZE` 16384；程序化纹理均为 POT。
 
@@ -153,5 +153,5 @@ adb shell am start -a android.intent.action.VIEW \
 ## 8. 代码侧与实机侧边界
 
 - CI 验证 TypeScript/单测/Web bundle/两个 APK 的 debug 构建；不验证头显姿态、镜头畸变、实际帧率、通知栏可见性、BLE 接管。
-- 实机验证项：进入会话、3DoF 头动、右侧确认手势、校准、退出、通知/磁贴、音频解锁、场景切换、空间 UI 四种模式、平板接管/释放/第二台 busy。
+- 实机验证项：进入会话、3DoF 头动、右侧确认手势、一步校准（正前方 + 静止）、确认键单一职责（仅切换起身/回躺）、起身/回躺轨迹、6 s 注视选择、站立参照场景 `lab`（直立光室）、退出、通知/磁贴、音频解锁、场景切换、平板接管/释放/自动连接/第二台 busy。
 - 本文只记录已调查事实；新增实机结论应更新本文件，而不是散落在提交说明里。

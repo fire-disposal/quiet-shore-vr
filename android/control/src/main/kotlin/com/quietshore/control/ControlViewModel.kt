@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import com.quietshore.control.ble.BleController
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.DiscoveredDevice
 import com.quietshore.control.model.EyeHeight
 import com.quietshore.control.model.RecordingPhase
 import com.quietshore.control.model.ViewMode
@@ -126,7 +125,6 @@ class ControlViewModel(application: Application) :
         }
         _uiState.update {
             it.copy(
-                devices = emptyList(),
                 scanAttempted = true,
                 error = null,
                 notice = null,
@@ -645,10 +643,6 @@ class ControlViewModel(application: Application) :
                 notice = "连接中断，正在重连（$attempt/$max）"
             )
         }
-    }
-
-    override fun onDevices(devices: List<DiscoveredDevice>) {
-        _uiState.update { it.copy(devices = devices) }
     }
 
     override fun onControlGranted() {

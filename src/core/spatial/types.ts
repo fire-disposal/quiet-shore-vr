@@ -47,6 +47,8 @@ export interface SpatialInteractable {
   layer?: SpatialLayer;
   enabled?: boolean;
   dwellTime?: number;
+  /** `self` means the target draws its own progress (buttons); default is the reticle ring. */
+  progressDisplay?: 'self' | 'reticle';
   onFocus?: (focused: boolean) => void;
   onSelect?: () => void;
   onProgress?: (progress: number) => void;

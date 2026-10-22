@@ -163,7 +163,6 @@ fun ControlApp(viewModel: ControlViewModel) {
             permissionRequested = permissionRequested,
             onScan = onScan,
             onStopScan = viewModel::stopScan,
-            onConnect = viewModel::connect,
             onCancelConnect = viewModel::cancelConnect,
             onEnableBluetooth = onEnableBluetooth,
             onOpenSettings = onOpenSettings

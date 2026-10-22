@@ -80,53 +80,60 @@ const marker = createPatientMarker();
 scene.add(marker);
 const target = new THREE.Vector3();
 
+/** Eye height of the schematic bust; arrows must leave the visor, not the crown. */
+const MARKER_EYE_Y = 1.55;
+const MARKER_EYE_Z = -0.125;
+
+/** Thin unlit ray used for gaze; ArrowHelper's hairline reads poorly at 4 m. */
+function createGazeRig(name: string, color: number, length: number, radius: number): THREE.Group {
+  const rig = new THREE.Group();
+  rig.name = name;
+  rig.position.set(0, MARKER_EYE_Y, MARKER_EYE_Z);
+
+  const material = new THREE.MeshBasicMaterial({ color, toneMapped: false });
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, length, 8),
+    material
+  );
+  shaft.rotation.x = -Math.PI / 2;
+  shaft.position.z = -length / 2;
+  rig.add(shaft);
+
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(radius * 4.5, 0.075, 12),
+    material
+  );
+  tip.rotation.x = -Math.PI / 2;
+  tip.position.z = -length;
+  rig.add(tip);
+
+  return rig;
+}
+
 function createPatientMarker(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'patient-marker';
 
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x7fc8b8,
-    emissive: 0x153f38,
-    emissiveIntensity: 0.7,
-    roughness: 0.55,
-    metalness: 0.05
-  });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.27, 0.9, 18), bodyMaterial);
-  body.position.y = 0.9;
-  group.add(body);
-
-  // The headset is a box, not a head: show the device's actual orientation.
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.34, 0.22, 0.28),
-    new THREE.MeshStandardMaterial({
-      color: 0xf1dcc0,
-      emissive: 0x3b2d22,
-      emissiveIntensity: 0.35,
-      roughness: 0.7
+  // Soft ground shadow plus footprint ring: gives the bust a stable anchor.
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.52, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x1b2725,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false
     })
   );
-  head.name = 'headset-head';
-  head.position.y = 1.54;
-  group.add(head);
-
-  const visor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.28, 0.1, 0.02),
-    new THREE.MeshStandardMaterial({
-      color: 0x14201e,
-      emissive: 0x0b1211,
-      emissiveIntensity: 0.2,
-      roughness: 0.35
-    })
-  );
-  visor.position.set(0, 0, -0.145);
-  head.add(visor);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.002;
+  group.add(shadow);
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.36, 0.46, 40),
+    new THREE.RingGeometry(0.4, 0.45, 48),
     new THREE.MeshBasicMaterial({
       color: 0xe0bb78,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.62,
       side: THREE.DoubleSide
     })
   );
@@ -134,30 +141,107 @@ function createPatientMarker(): THREE.Group {
   ring.position.y = 0.012;
   group.add(ring);
 
-  const arrow = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 0, -1),
-    new THREE.Vector3(0, 1.64, 0),
-    0.85,
-    0xe0bb78,
-    0.24,
-    0.12
+  // Small floor chevron marks the patient's forward direction.
+  const chevronShape = new THREE.Shape();
+  chevronShape.moveTo(0, 0.09);
+  chevronShape.lineTo(0.07, -0.04);
+  chevronShape.lineTo(0, -0.005);
+  chevronShape.lineTo(-0.07, -0.04);
+  chevronShape.closePath();
+  const chevron = new THREE.Mesh(
+    new THREE.ShapeGeometry(chevronShape),
+    new THREE.MeshBasicMaterial({ color: 0xe0bb78, transparent: true, opacity: 0.8 })
   );
-  arrow.name = 'gaze-arrow';
-  group.add(arrow);
+  chevron.rotation.x = -Math.PI / 2;
+  chevron.position.set(0, 0.014, -0.56);
+  group.add(chevron);
 
-  const virtualArrow = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 0, -1),
-    new THREE.Vector3(0, 1.64, 0),
-    0.95,
-    0x7fc8b8,
-    0.24,
-    0.12
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4f8f84,
+    emissive: 0x0e2a26,
+    emissiveIntensity: 0.35,
+    roughness: 0.72,
+    metalness: 0.04
+  });
+
+  // Seated bust: rounded torso and shoulders, no stick-figure limbs.
+  const torso = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.22, 0.45, 6, 18),
+    bodyMaterial
   );
-  virtualArrow.name = 'virtual-gaze-arrow';
-  group.add(virtualArrow);
+  torso.position.y = 0.98;
+  torso.scale.z = 0.78;
+  group.add(torso);
 
-  const glow = new THREE.PointLight(0x7fc8b8, 0.55, 2.6, 1.8);
-  glow.position.set(0, 1.2, 0);
+  const shoulders = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.085, 0.36, 5, 14),
+    bodyMaterial
+  );
+  shoulders.rotation.z = Math.PI / 2;
+  shoulders.position.set(0, 1.35, 0);
+  shoulders.scale.z = 0.9;
+  group.add(shoulders);
+
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.062, 0.1, 14),
+    new THREE.MeshStandardMaterial({ color: 0xf1dcc0, roughness: 0.8 })
+  );
+  neck.position.y = 1.43;
+  group.add(neck);
+
+  // Head + headset rotate together around the eye line; arrows stay separate
+  // so the virtual gaze can lag behind the applied world rotation.
+  const head = new THREE.Group();
+  head.name = 'patient-head';
+  head.position.set(0, MARKER_EYE_Y, 0);
+  group.add(head);
+
+  const skull = new THREE.Mesh(
+    new THREE.SphereGeometry(0.105, 24, 18),
+    new THREE.MeshStandardMaterial({ color: 0xf1dcc0, roughness: 0.78 })
+  );
+  skull.scale.z = 1.05;
+  head.add(skull);
+
+  const shell = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 0.145, 0.12),
+    new THREE.MeshStandardMaterial({
+      color: 0x1b2725,
+      roughness: 0.5,
+      metalness: 0.15
+    })
+  );
+  shell.position.set(0, 0.005, -0.055);
+  head.add(shell);
+
+  const visor = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 0.075, 0.012),
+    new THREE.MeshStandardMaterial({
+      color: 0x0b1211,
+      emissive: 0x0b1211,
+      emissiveIntensity: 0.35,
+      roughness: 0.25
+    })
+  );
+  visor.position.set(0, 0.005, -0.119);
+  head.add(visor);
+
+  const strap = new THREE.Mesh(
+    new THREE.TorusGeometry(0.112, 0.012, 8, 28),
+    new THREE.MeshStandardMaterial({ color: 0x2a3533, roughness: 0.8 })
+  );
+  strap.rotation.x = Math.PI / 2;
+  strap.position.y = 0.005;
+  head.add(strap);
+
+  // Actual gaze (gold) and perceived gaze (teal) leave the same eye point.
+  const gaze = createGazeRig('gaze-rig', 0xe0bb78, 0.62, 0.0055);
+  group.add(gaze);
+  const virtualGaze = createGazeRig('virtual-gaze-rig', 0x7fc8b8, 0.72, 0.0045);
+  group.add(virtualGaze);
+
+  const glow = new THREE.PointLight(0x7fc8b8, 0.45, 2.8, 1.8);
+  glow.position.set(0, 1.25, 0);
   group.add(glow);
 
   return group;
@@ -166,23 +250,23 @@ function createPatientMarker(): THREE.Group {
 function updateMarker(): void {
   marker.position.set(pose.x, 0, pose.z);
   marker.rotation.y = pose.yaw;
-  // Yaw is the marker body; pitch must show on the gaze arrow, otherwise the
-  // global view looks level while the patient is looking up or down.
-  const head = marker.getObjectByName('headset-head');
+  // Yaw is the marker body; pitch must show on the head and gaze rays,
+  // otherwise the global view looks level while the patient looks up or down.
+  const head = marker.getObjectByName('patient-head');
   if (head) {
     head.rotation.x = pose.pitch;
   }
-  const arrow = marker.getObjectByName('gaze-arrow');
-  if (arrow) {
-    arrow.rotation.x = pose.pitch;
+  const gaze = marker.getObjectByName('gaze-rig');
+  if (gaze) {
+    gaze.rotation.x = pose.pitch;
   }
-  const virtualArrow = marker.getObjectByName('virtual-gaze-arrow');
-  if (virtualArrow) {
+  const virtualGaze = marker.getObjectByName('virtual-gaze-rig');
+  if (virtualGaze) {
     // The base layer applies worldPitchDeg (a measured rotation, not a
     // requested one). Content moves with the world, so the patient's perceived
     // pitch is the head pitch minus it — see docs/rotation-contract.md §4.
-    virtualArrow.rotation.x = pose.pitch - degToRad(worldPitchDeg);
-    virtualArrow.position.y = 1.64 + postureRiseM;
+    virtualGaze.rotation.x = pose.pitch - degToRad(worldPitchDeg);
+    virtualGaze.position.y = MARKER_EYE_Y + postureRiseM;
   }
   marker.visible = viewMode === 'global' && session;
 }

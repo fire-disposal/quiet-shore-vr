@@ -23,12 +23,16 @@ Scene modules (three.js)
   纯内容：美术、材质、局部环境循环、可注视目标、释放
 ```
 
+校准只有一步：`Comfort.calibrate(pose)` 把采集到的那一帧朝向当作中立（站立）帧，场景随之直立。世界变换因此是 `q_total = q_posture * q_calibration`，绕采集点旋转；没有两姿态 pivot 重映射（`comfort.calibrateTwo` 仅为历史/调试保留，患者流程不调用）。校准成功后，起身路径 `SitUpPath` 以仰卧为起点接管 `comfort.group` 所在的 base 槽位，由 `WorldShell.setBasePose` 写入逆变换；起身/回躺结束或 `posture:stop` 后回到 comfort 帧。
+
+场景只提供内容：`landscape` / `ward` / `bathroom`，以及站立参照场景 `lab`（直立光室）——地面网格与雾、垂直光柱与顶晕、缓慢上升的远近尘埃、3 个可注视碑体。
+
 ### 1.1 职责与禁止依赖
 
 | 层 | 负责 | 不得负责 / 不得依赖 |
 | --- | --- | --- |
 | Scene | 场景内容、材质、环境动画、selectables、`dispose` | 视角/相机动画、会话/租约、BLE、命令名、状态字节、运动优先级 |
-| Web system (`App`) | 会话/租约门控、患者停止、校准生命周期、命令解析与路由、快照收集 | 具体缓动/动画状态机（交给 `ViewMotionController`）、场景 id 分支 |
+| Web system (`App`) | 会话/租约门控、患者停止、校准生命周期（一步采集）、起身过渡调度（`SitUpPath`/`situp-run`）、命令解析与路由、快照收集、患者侧注视选择（6 s） | 具体缓动/动画状态机（交给 `ViewMotionController`）、场景 id 分支 |
 | `ViewMotionController` | 预设目录、当前/目标俯仰、播放/保持/复位、`viewAnim`/`viewPreset` 状态 | three.js、场景模块、BLE 字节、会话/租约判断 |
 | `WorldShell` | 每层唯一写者、变换顺序、绕眼点的俯仰组合 | 缓动、状态机、优先级、场景内容 |
 | Android headset | BLE/回环传输、白名单与语法校验、宿主命令、state 编码、租约存活 | 动画曲线/时长/幅度、场景知识、替代页面做运动决策 |
@@ -41,6 +45,8 @@ Scene modules (three.js)
 - `host.content`：只由 `SceneHost.setFloorOffset` 写（y 轴）。
 - `handle.root`：场景内容；除调试自旋外不写变换。
 - 相机：任何代码都不写 XR 相机位姿；2D 预览除外。
+
+头显确认键只有一个动作：已校准且会话中短按切换起身/回躺，其余状态（未校准、校准中、无会话、2D 预览）直接忽略。头显内没有 WebXR 菜单，也没有长按行为；场景目标仍由 6 s 注视停留选中，重新校准/声音/结束训练全部来自平板。
 
 ## 2. 视角动画（系统级能力）
 
@@ -97,6 +103,7 @@ held --play / slider--> playing            （从当前角度继续）
 | 页面连续 | `view:orient:<yaw>,<pitch>` | `/ws` 最新样本槽 | **免 seq/回执**，no-response 写 |
 
 - 离散命令线格式 `#<seq> <command>`；`view:orient` 保持原样。白名单在 `ControlProtocol.isAllowedCommand`。
+- `posture:rise/lower/stop` 是患者/平板都在用的干预：页面把它们映射到 `setVirtualPosture`，`posture:stop` 也用于租约丢失时的冻结。
 - 平板一次只写一条：stop 优先并丢弃待发的 `view:orient`，离散 FIFO 不丢；朝向只保留最新样本。
 - `view:orient:<yaw>,<pitch>` 恰好两个整度分量；偏航 ±180°、俯仰 ±90°，任一分量越界整条拒绝。
 - `view:anim` 只接受 `up|down|recenter|breathe`；`none` 仅用于状态，不接受播放；不跨重连重放。

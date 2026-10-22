@@ -296,7 +296,7 @@ fun ControlRail(
                             state.control.calibrating -> "校准中暂停"
                             state.control.calibrationConfidence <= 0f ->
                                 "请先在头显完成方向校准"
-                            else -> "仅训练中可用。患者确认键仍可立即停止。"
+                            else -> "患者短按确认键也可起身；长按打开菜单。"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (postureReady) {

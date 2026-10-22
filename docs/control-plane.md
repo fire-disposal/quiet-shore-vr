@@ -30,7 +30,7 @@
 | 遥测 `telemetry` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000004` | Read / Notify |
 | 状态快照 `state` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000005` | Read / Notify |
 
-平板广泛扫描，在回调里按服务 UUID 或设备名 `QuietShore` 匹配（部分协议栈的扫描记录不带 128-bit UUID）；只显示匹配的设备。BLE 外设创建失败时，通知会显示 `蓝牙不可用` / `蓝牙未开启`，不会进入“等待平板连接”。
+平板广泛扫描，在回调里按服务 UUID 或设备名 `QuietShore` 匹配（部分协议栈的扫描记录不带 128-bit UUID）；匹配到第一台就自动连接——没有设备列表、没有选择步骤，也没有“上次设备”快捷卡。BLE 外设创建失败时，通知会显示 `蓝牙不可用` / `蓝牙未开启`，不会进入“等待平板连接”。
 
 ### 2.1 command
 
@@ -97,7 +97,7 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
 | 4 | posturePitch | **有符号**整数度：测得的世界倾角（0 → +90 为起身） |
-| 5 | postureRoll | **有符号**整数度：测得的世界倾角 |
+| 5 | postureRoll | **有符号**整数度：测得的世界横滚 |
 | 6 | postureRise | 厘米，0–120 |
 | 7 | postureProgress | 0–100 |
 | 8 | viewPitch | **有符号**整数度，−90–+90（页面是唯一夹紧点）；正值 = 上仰（患者看到更多天空） |
@@ -141,7 +141,7 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 
 - 头显在链路断开、广告启动失败、蓝牙关闭后重新打开时都会恢复可连接广播；8 s 广播看门狗负责发现协议栈静默停播。
 - 蓝牙关闭不退出服务：`ACTION_STATE_CHANGED` 收到 `STATE_ON` 后重建 GATT server 与广播，不需要重启头显应用。
-- 平板保存上次头显地址（`quiet-shore-control/lastDeviceAddress`），冷启动自动连接；失败后配对页仍提供“直接连接”和重新搜索。
+- 平板保存上次头显地址（`quiet-shore-control/lastDeviceAddress`），冷启动直接尝试连接；失败后停在配对页，只能“搜索头显/重新搜索”。
 - 非主动断链按 0.8 / 1.6 / 3.2 s 退避重连 3 次，期间 `BlePhase.RECONNECTING`、界面显示“重连中”；用尽后回到 `DISCONNECTED` 并提示重新搜索。`CONTROL_BUSY` 不重试，直接回配对页。
 - 重复 `CLAIM` 会刷新头显侧的 20 s 租约看门狗，避免重连中的平板被旧计时器释放。
 
@@ -176,11 +176,11 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
 | `scene:<id>` | 持久化场景；页面在线时同步切换（会话中仍拒绝） |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
-| `calibrate` / `recalibrate` | 重新校准；训练中可用 |
+| `calibrate` / `recalibrate` | 重新校准（一步：正前方 + 保持静止）；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 设置/切换静音 |
 | `exit` / `stop` | 结束训练、退出会话 |
-| `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止 |
-| `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场重力粒子引导开关与强度（当前仅 landscape 场景生效） |
+| `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止：平板“视角”页签的虚拟起身区块与患者短按确认键都走这三条命令；`stop` 立即冻结在当前进度 |
+| `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场粒子层开关与强度（应用级，四个场景共用；`flow` 只在上行起身过渡时为正） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `view:orient:<yaw>,<pitch>` | 绝对朝向（度）：yaw ±180（+ = 左转）、pitch ±90（+ = 上仰），无 TTL；免回执 |
 | `view:stop` | 停止动画并**保持**当前朝向，不回正 |
@@ -250,12 +250,13 @@ PING / RELEASE / CLAIM   # 存活与租约
 ## 7. 平板控制台流程
 
 1. 启动 `MainActivity`，请求蓝牙/位置权限。
-2. 按服务 UUID 扫描 12 秒；列表按 RSSI 排序。
-3. 连接所选设备，超时 15 秒，失败重试 2 次。
-4. 启用 `status`、`telemetry`、`state` 的通知，然后写 `CLAIM`。
-5. 收到 `CONTROL_OK` 进入控制页；收到 `CONTROL_BUSY` 关闭连接并停留在配对页。
+2. 已存 `lastDeviceAddress` 时直接连接（冷启动一次尝试，失败即停在配对页）。
+3. 否则扫描最多 12 秒；匹配到第一台广播 `QuietShore`（服务 UUID 或设备名）就自动连接，没有设备列表、没有选择步骤。
+4. 连接超时 15 秒；启用 `status`、`telemetry`、`state` 的通知，然后写 `CLAIM`。
+5. 收到 `CONTROL_OK` 进入控制页；收到 `CONTROL_BUSY` 关闭连接并停留在配对页（提示“头显正被另一台平板控制”，不重试）。
 6. 控制页每 3 秒读一次 RSSI；姿态超过 1.5 秒未更新会标记为过期。
-7. “断开”先写 `RELEASE` 再断链；直接退出应用让链路断开，头显同样会释放控制。
+7. 非主动断链按 0.8 / 1.6 / 3.2 s 退避重连 3 次，界面显示“重连中 n/3”；用尽后回配对页，只能重新搜索。
+8. “断开”先写 `RELEASE` 再断链；直接退出应用让链路断开，头显同样会释放控制。
 
 平板 WebView 加载 `https://appassets.androidplatform.net/assets/controller.html`，不加载头显的 loopback 页面。页面命令通过 `QuietShoreBridge.send(command)` 回到原生层，再由 BLE 发出；原生层通过 `window.qsControl` 注入姿态、状态、连接阶段和授权结果。
 
@@ -263,7 +264,9 @@ PING / RELEASE / CLAIM   # 存活与租约
 
 - **邻近即授权。** 没有身份校验，任何能运行控制台 APK 且在范围内的平板都能在空闲时接管。当前只适合一台头显配一台平板的专用环境。
 - **单控制者。** 不支持多平板协作或观察者模式；第二台平板只能等待。
-- **无持久化。** 控制权、最后场景和控制状态都只存在于进程内存；服务重启后平板需重新接管。
+- **无持久化。** 控制权（租约）、当前场景与状态都只存在于进程内存；服务重启后平板需重新接管。平板只在本地存上次头显地址，用于冷启动直连。
+- **单头显假设。** 扫描不提供设备列表：屏幕上同时有第二台广播 `QuietShore` 的头显时，会连上先被扫描到的那台。
+- **控制页布局。** 浮动浅色顶栏常驻；左下角底部是患者/全局切换与全屏入口，其上方是只读角度仪表；右侧控制栏在 ≥1000 dp 常驻、窄屏默认收起并从顶栏展开，视角页签含虚拟起身区块；重连/录制提示条叠在顶栏下方。
 - **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态；平板视图不是逐帧镜像。
 - **state 已固定为 15 字节二进制 v7**（byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。

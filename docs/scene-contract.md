@@ -26,7 +26,7 @@ interface SceneAudio {
 }
 ```
 
-`SceneSummary` 是菜单和控制器可见的轻量元数据；`build` 只在真正加载场景时调用。
+`SceneSummary` 是平板场景卡与控制台可见的轻量元数据；`build` 只在真正加载场景时调用。
 
 ## 2. 音频归属
 
@@ -68,8 +68,8 @@ interface SceneHandle {
 
 边界：
 
-- `root` 只包含场景内容，不包含 App 的相机、菜单、HUD 或控制对象。
-- 场景可以返回 selectables，但不能决定注视逻辑、菜单状态或会话流程。
+- `root` 只包含场景内容，不包含 App 的相机、HUD、准星或控制对象。
+- 场景可以返回 selectables，但不能决定注视逻辑、命中优先级或会话流程。
 - `settings` 只描述 background/fog。
 - `dispose` 只释放场景拥有的资源。
 - `update` 不读写 App 的会话状态，不做网络或 BLE。
@@ -79,7 +79,7 @@ interface SceneHandle {
 ```text
 registry -> SceneDefinition
              |
-             +-- metadata/audio (菜单与控制台可直接读取)
+             +-- metadata/audio (平板场景卡与控制台可直接读取)
              |
              +-- build(ctx) -> SceneHandle -> SceneHost
                                       |
@@ -103,7 +103,7 @@ registry -> SceneDefinition
 以下字段属于候选扩展，当前不强制实现，避免空抽象：
 
 - `capabilities`：是否支持注视选择、校准、远程场景切换等。
-- `interaction`：场景自有交互描述，但不接管 App 菜单。
+- `interaction`：场景自有交互描述，但不接管 App 的准星与注视判定。
 - `telemetry`：场景特有的只读指标，仍通过统一遥测通道上报。
 - `preload`：在进入前加载资源，不执行渲染。
 

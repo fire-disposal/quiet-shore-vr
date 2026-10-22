@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | P0 | 停止优先权、单租约授权、命令白名单、范围校验、运动 TTL、故障禁用 | 必须随 v0.8 首发 | 任一安全用例失败即阻塞发布 |
 | P1 | 眼高输入（1.2–1.9 m）、只读角度呈现 | 与 P0 同版 | 眼高经 bootstrap 到页面；角度只读 |
-| P2 | 舒适重映射优化：置信度门限、失败不覆盖旧校准、操作员可见结果 | 与 P0 同版 | 低置信度重映射被拒绝 |
+| P2 | 一步舒适校准：正前方 + 静止即中立帧、失败不覆盖旧校准、操作员可见结果 | 与 P0 同版 | 采集失败保留旧校准；状态行不谎报成功 |
 | P3 | 平板系统级视角运动（绝对偏航/俯仰 + 固定预设动画） | 同版但可独立回退 | 断链/失控保持当前角度；`view:stop` 立即冻结 |
 | P4 | 审计持久化、眼高回读、姿态字段上链路 | 不承诺 | 需要协议扩展，另开切片 |
 
@@ -20,7 +20,7 @@
 
 | 角色 | 载体 | 身份边界 |
 | --- | --- | --- |
-| 患者 | 头显（右侧确认键、XR 菜单、摘下头显） | 无租约、无命令；拥有**无条件停止权** |
+| 患者 | 头显（右侧确认键、退出 WebXR、摘下头显） | 无租约、无命令；拥有**无条件停止权** |
 | 照护者 / 治疗师（操作员） | 平板 `ControlScreen` | 持有 BLE 租约的任意平板；邻近即授权，不区分权限层级 |
 
 | 干预 | 患者 | 操作员（租约持有者） |
@@ -30,9 +30,12 @@
 | 场景、声音 | — | 可用（会话中拒绝换场景） |
 | 眼高 | — | 1.20–1.90 m，0.05 步进 |
 | 视角朝向（偏航/俯仰滑动条 + 上仰/下俯/回正/呼吸/停止） | — | 可用 |
-| 姿态预设（起身 / 回躺 / 停止） | 停止可用 | 可用 |
+| 姿态预设（起身 / 回躺 / 停止并保持） | 短按确认键等价（仅已校准 + 会话中） | 可用（`posture:rise/lower/stop`） |
+| 注视选择（场景目标，6 s 停留） | 可用 | — |
+| 确认键 | 唯一动作：短按切换起身/回躺；其余情况无响应 | — |
 | 视角动画（`view:anim:*`，四个预设） | — | 可用（系统级预设，与场景无关） |
-| 方向校准 | 可用（头显内） | 触发校准 |
+| 方向校准（一步：正前方 + 保持静止） | —（进入会话即自动开始，除非设置跳过） | 可再次触发（`calibrate` / `recalibrate`） |
+| 声音 / 结束训练 / 重新校准 | — | 仅平板（头显内没有菜单） |
 | 释放租约 / 断开 | — | 可用 |
 
 硬规则：
@@ -52,7 +55,7 @@
 ```text
 idle ──扫描/连接──▶ paired ──CLAIM/CONTROL_OK──▶ claimed
 claimed ──场景已加载且会话未开始──▶ scene-confirmed
-scene-confirmed ──患者确认键（WebXR）──▶ active
+scene-confirmed ──患者进入 WebXR（浏览器内确认/点按）──▶ active
 active ──calibrate──▶ calibrating ──成功/失败──▶ active
 active ──pause/stop/患者停止/租约丢失──▶ paused-stopped
 任意 ──断链/ERROR/遥测过期/渲染进程崩溃──▶ fault
@@ -75,7 +78,7 @@ fault/paused-stopped ──重新接管且患者重新进入──▶ claimed/ac
 - 视角朝向：`READY` + `controlGranted` + `active` + 未在校准中；不依赖遥测新鲜度（目标是绝对量，不是速度）。
 - 姿态：`active` + 已校准；`POSTURE_LIMITS` 硬限。
 - 眼高：`claimed` 及以上；`calibrating` 时禁用。
-- 校准：`active`；开始时立即把视角朝向归 0°/0°，并把姿态重定向到 neutral（受 `POSTURE_LIMITS.minDurationMs` 约束，≤1 s 到位）；期间拒绝姿态、眼高与视角命令。
+- 校准：`active`；开始时立即把视角朝向归 0°/0°，并把姿态重定向到 neutral（受 `POSTURE_LIMITS.minDurationMs` 约束，≤1 s 到位）；期间拒绝姿态、眼高与视角命令。一步采集：视线偏离 6° 内累计 1.2 s 稳定 + 2 s 倒计时后落一帧。
 
 故障判定：姿态超过 1.5 s 未更新（沿用现有 `poseStale`）、`ERROR`、`onRenderProcessGone`、页面重载（WS 重连后重新同步状态）。`/ws` 断开等同控制通道故障：页面立即冻结运动、显示故障并指数退避重连；没有 SSE/轮询回退。任何故障都**冻结当前朝向**，不做自动回中，避免二次运动。
 
@@ -86,26 +89,27 @@ fault/paused-stopped ──重新接管且患者重新进入──▶ claimed/ac
 | 场景 | `scene:<id>` | `landscape / ward / bathroom / lab` | 立即切换，无过渡 | 会话中拒绝并回显原场景 | 记录 id |
 | 声音 | `audio:on / off / toggle` | 二值 | 立即 | 断开保持最后值 | 记录目标值 |
 | 眼高 | `settings:eyeheight:<m>` | 1.20–1.90 m，0.05 m 步进，两位小数 | 会话中应用时 500 ms 缓动；`calibrating` 禁用 | 越界值整条命令拒绝，保留旧值 | 记录请求值与是否持久化 |
-| 姿态预设 | `posture:rise / lower / stop` | 坐起轨迹（髋 0.45 m、躯干 0.55 m、站立眼高 1.70 m，6 s）；`worldFor(head)` 反演镜头→世界；确认键短按坐起/回躺，长按菜单 | 播放头线性推进，旋转段为 quintic（峰值 ≈40 °/s）；停止/失权立即冻结当前进度 | `stop` 冻结在当前值（不回弹） | 记录命令与完成进度 |
+| 姿态预设 | `posture:rise / lower / stop` | 坐起轨迹（髋 0.45 m、躯干 0.55 m、站立眼高 1.70 m，6 s）；`worldFor(head)` 反演镜头→世界；患者短按确认键切换起身/回躺（仅已校准 + 会话中）；平板“视角”页签的 `缓慢起身` / `回躺` / `停止并保持` | 播放头线性推进，旋转段为 quintic（峰值 ≈40 °/s）；停止/失权立即冻结当前进度 | `stop` 冻结在当前值（不回弹） | 记录命令与完成进度 |
 | 姿态自定义 | 映射到同一 `comfort.setPosture`（协议保留，平板 UI 不提供） | pitch ±20°、roll ±10°、rise 0–1.2 m、duration 1–30 s | 由 duration 与限速推导最小合法时长 | 同上 | 记录全部四项 |
-| 校准 | `calibrate / recalibrate` | 两姿态：天花板、脚尖 | 采集稳定后倒计时；隐藏场景；开始时俯仰归 0、姿态重定向 neutral（≤1 s） | 失败**保留旧校准**；姿态保持 neutral | 记录结果、角度、置信度 |
+| 校准 | `calibrate / recalibrate` | **一步**：患者保持舒适姿势看向正前方并静止；6° 门限内累计 1.2 s 稳定 → 2 s 倒计时 → 落一帧，该朝向即中立（站立）帧，成功后页面以仰卧为起点创建起身路径（t=0） | 隐藏场景；开始时俯仰归 0、姿态重定向 neutral（≤1 s） | 采集失败（无有效姿态）**保留旧校准**；姿态保持 neutral；患者不满足稳定性时一直等待（无超时），结束会话即取消 | 记录结果与是否成功 |
 | 视角朝向 | `view:orient:<yaw>,<pitch>` | 绝对度数：yaw ∈ [−180,180]（+ = 视线左转）、pitch ∈ [−90,90]（+ = 上仰）；越界整条拒绝 | 页面从**当前**朝向平滑重定向（俯仰 ≤15 °/s、偏航 ≤30 °/s）；拖动时 ≤10 Hz；无 TTL | 断链、失控、患者停止 → 保持当前朝向，不回弹；会话结束/校准开始时归 0°/0° | 记录目标值 |
 | 视角动画 | `view:anim:up\|down\|recenter\|breathe`、`view:stop` | 系统级预设，**无参数**：up/down 相对**当前**角度 ±10°，recenter 回 0°，breathe 为 6 s 回到起点的曲线；曲线与时长由页面定义 | 页面播放；`view:stop` 立即冻结在**当前**俯仰（不回正）；只有 `recenter` 回 0° | 优先级：患者停止 > 租约丢失 > 会话结束/校准 > 显式命令 | 记录预设名与结果 |
 
 命令语义约定：
 
+- 患者侧注视选择不进协议：**只有场景可注视目标**走 6 s 停留（暗色底环 + 亮色进度弧，下方提示 `保持注视 6 秒以选择`），视线离开立即清零。头显内没有 WebXR 菜单，确认键也不承担选择职责——它唯一的作用是在已校准且会话中时切换起身/回躺。3DoF 视线噪声大，因此不在 1–2 s 量级做选择。
 - 所有命令小写、无换行、≤64 字符（`ControlProtocol.normalize`）。
 - 平板在发送前校验，页面再次校验并独立 clamp；任何一侧都不能把越界值直接写进变换。
 - 离散命令（场景、眼高、姿态、校准）由操作员明确点击触发，不做连发。
 - 连续命令只有 `view:orient`，它携带绝对朝向而非速度或增量，因此不存在“按住即无限加速”。
 
-重映射门限（P2，`REMAP_LIMITS`）：`remapFromPoses` 按顺序执行——
+两步重映射（历史，仅 `comfort.calibrateTwo` / `remapFromPoses` 保留，患者流程不使用）：3DoF 上头显位置不变，两次采样几乎落在同一点，`pivot` 与夹角都不可靠，因此患者校准已改为一步。以下 `REMAP_LIMITS` 门限只对显式调用 `calibrateTwo` 的调试路径有效——
 
 1. 夹角 <15° 或 >165°，或 pivot 间距 <0.005 m（两次采样几乎同一点）→ `poses-too-similar`；
 2. `confidence = sin(angle) < 0.35` → `low-confidence`；
 3. 通过后按 `weight = clamp(strength × confidence, 0, 0.85)` 向 identity 混合，并用 `appliedWeight = min(weight, 120° / rawAngle)` 封顶，保证世界永不翻转。
 
-任一失败都**不得**写入 `q0` / `p0` / `calibrated`，旧校准继续生效。默认 `strength = 1.0`；调试时可在 0.7–1.0 调整，但最终权重仍受 0.85 与 120° 上限约束。置信度只在头显状态行与校准结果里显示，平板无法显示（见 §7.3）。
+任一失败都**不得**写入 `q0` / `p0` / `calibrated`，旧校准继续生效。默认 `strength = 1.0`；调试时可在 0.7–1.0 调整，但最终权重仍受 0.85 与 120° 上限约束。置信度只在头显状态行与校准结果里显示；平板从 state byte 11 只看到 0 或 100 的粗粒度值（见 §7.3）。
 
 ### 4.1 可审计性
 
@@ -141,7 +145,7 @@ v0.8 只做内存环形缓冲（≥256 条）+ `Log.i`（TAG `QuietShorePortal`�
 | `EYE_HEIGHT` | 1.20–1.90 m，默认 1.70，步进 0.05 | 虚拟眼高 |
 | `POSTURE` | 默认 pitch ±20°、roll ±10°、rise 0–1.2 m、1–30 s；`setPosture` 可显式放宽到 90° | 沿用 `POSTURE_LIMITS`；完整起身由 sit-up 路径（6 s 逆变换）承担，体位层用于微调与归位 |
 | `POSTURE_RATE` | 小角度微调 pitch/roll ≤ 2°/s、rise ≤ 0.05 m/s | 代码只夹幅值与时长，速率由调用方按 `SMOOTHERSTEP_PEAK`（1.875×）反推；sit-up 路径 90°/4.2 s（旋转段）峰值约 40°/s，实机耐受待验证（TODO P0） |
-| `REMAP` | 夹角 15–165°、`confidence ≥ 0.35`、`weight ≤ 0.85`、旋转 ≤ 120° | 两姿态重映射的硬门限 |
+| `REMAP` | 夹角 15–165°、`confidence ≥ 0.35`、`weight ≤ 0.85`、旋转 ≤ 120° | 仅对历史的 `calibrateTwo` 生效；一步校准不经过这组门限 |
 
 不动式约束：
 
@@ -167,17 +171,18 @@ v0.8 只做内存环形缓冲（≥256 条）+ `Log.i`（TAG `QuietShorePortal`�
 
 | 组件 | 文件 | 职责 | 启用条件 |
 | --- | --- | --- | --- |
-| `ControlTopBar` | `ControlScreen.kt` | 连接、信号、接管、打开/收起控制栏与断开；只读状态，不做运动决策 | 始终 |
-| `StatusPanel` | `ui/components/StatusPanel.kt` | 场景、会话、眼高、校准置信度、姿态进度/俯仰/起身高度、姿态新鲜度 | 信息条展开 |
+| `ControlTopBar` | `ControlScreen.kt` | 浮动浅色顶栏：连接、信号、接管、录制入口、打开/收起控制栏与信息面板、断开；只读状态，不做运动决策 | 始终 |
+| `StatusPanel` | `ui/components/StatusPanel.kt` | 场景、训练状态、声音、视点高度、校准置信度、姿态进度/起身高度/姿态俯仰、视角朝向、姿态新鲜度 | 信息条展开 |
 | `DisconnectedBanner` | `ControlScreen.kt` | 断链/错误提示与重连/离开 | `DISCONNECTED` / `ERROR` / `IDLE` |
 | `ReconnectingBanner` | `ControlScreen.kt` | 退避重连进度（`reconnectAttempt`/`reconnectMax`）与“返回配对” | `RECONNECTING`，或重连期间经过 `SCANNING`/`CONNECTING` |
-| `AngleGauge` | `ui/components/AngleGauge.kt` | **只读**显示 `yaw`（±180°）与 `pitch`（±90°），整数度、1° 分辨率，`Canvas` 绘制，无点击区域与手势；5 Hz 更新，过期时降低不透明度并显示“无数据” | `pose != null` |
-| `ViewportControls` | `ControlScreen.kt` | 停靠视图底栏：`ViewModeToggle`（患者/全局视角）与进入全屏；全屏内保留同一组切换 | 控制页 |
+| `AngleGauge` | `ui/components/AngleGauge.kt` | **只读**显示 `yaw`（±180°）与 `pitch`（±90°），整数度、1° 分辨率，`Canvas` 绘制，无点击区域与手势；5 Hz 更新，过期时降低不透明度并显示“无数据”；固定在左下角、`ViewportControls` 上方 | `pose != null` |
+| `ViewportControls` | `ControlScreen.kt` | 左下角底栏：`ViewModeToggle`（患者/全局视角）与进入全屏；全屏内保留同一组切换 | 控制页 |
+| `ControlRail` | `ui/components/ControlRail.kt` | 右侧控制栏：场景、声音、视角、SUS 等页签；视角页签内含“虚拟起身”区块（`缓慢起身` / `回躺` / `停止并保持`，门控为已连接 + 租约 + 会话中 + 未校准中 + `calibrationConfidence > 0`）；宽屏常驻，窄屏（<1000 dp）默认收起、从顶栏展开 | `controlsOpen` |
 | `RecordingChip` | `ui/components/RecordingControls.kt` | 顶栏与全屏的录制入口；录制中显示 `● mm:ss` 与“停止”；`SAVING` 显示保存中 | 三维页面就绪 |
 | `RecordingNotice` | `ui/components/RecordingControls.kt` | 已保存（时长/大小/分享）或失败原因；可用“分享”拉起系统分享面板 | `SAVED` / `FAILED` |
 | `EyeHeightStepper` | `ui/components/EyeHeightStepper.kt` | 1.20–1.90、0.05 步进；本地立即回显请求值，收到 `OK:settings:eyeheight:*` 后标记“已生效”；300 ms 防抖合并连点 | `READY` + 已取得租约 + 未在校准中 |
 | `ViewOrientationControls` | `ui/components/ViewOrientationControls.kt` | 两条 1° 步进滑动条（偏航 ±180°、俯仰 ±90°）与 `上仰` / `下俯` / `回正` / `呼吸`（`view:anim:*`）；`停止（保持）` 发 `view:stop`；显示 `viewPreset`、`viewAnim` 相位与当前角度 | `READY` + 已取得租约 + 会话中 + 未在校准 |
-| `SessionAction` | `ui/components/ControlRail.kt` | 训练页签中的红色全宽按钮：会话中发 `stop`（结束训练），否则发 `enter`；患者确认键/停止始终优先 | 已连接 |
+| `SessionAction` | `ui/components/ControlRail.kt` | 训练页签中的红色全宽按钮：会话中发 `stop`（结束训练），否则发 `enter`；患者摘下头显或退出 WebXR 优先 | 已连接 |
 
 Compose 实现要点：
 
@@ -251,7 +256,8 @@ GET /ws?since=42   （RFC 6455，文本帧 JSON）
 ### 7.3 保持不变
 
 - **`ControlState` 为 15 字节二进制 v7**：`[4]`/`[5]` 是**测得**的世界俯仰/横滚有符号整度（起身到位为 +90），`[8]` 是**当前已应用**的 `viewPitch` 有符号整数度，`[9]` 是 `viewAnim`（0 idle / 1 playing / 2 held），`[12]` 是 `viewPreset`（0 none / 1 up / 2 down / 3 recenter / 4 breathe），`[13..14]` 是小端 int16 的 `viewYaw`（−180..180，+ = 左转）。`viewX`/`viewZ` 已删除。版本不等于 7 或长度不是 15 的帧直接丢弃，不提供旧版本兼容层。
-- `telemetry` 仍是 20 字节 `x,y,z,yaw,pitch`；因此平板**无法**显示 roll，也不显示重映射置信度——这两个数字只在头显页面状态行与校准结果里出现。
+- `telemetry` 仍是 20 字节 `x,y,z,yaw,pitch`；因此平板**无法**显示 roll（只在头显状态行）。
+- 一步校准下 `calibrationConfidence`（state byte 11）只有两种取值：校准成功 `1`（100）、未校准 `0`；历史上的两姿态置信度不再产生。
 - `status` 语义不变：`OK:<cmd>` 只表示“头显服务已接收”，`view:orient` 免回执。
 - 已知缺口：平板无法回读持久化眼高，重连后 `EyeHeightStepper` 只能显示进程内最后确认值或默认 1.70（标注“未确认”）。回读需要新增特性或状态字段，列入 P4。
 - `ControlProtocol.stateMaxBytes = 15`、`stateVersion = 7`；15 字节仍落在默认 ATT 负载（20 字节）内。新增字段需要新版本号，并同步两端。
@@ -282,12 +288,12 @@ renderer.domElement.captureStream(30)
 | --- | --- | --- | --- |
 | A1 | 松手保持 | 把滑动条拖到 `view:orient:-45,60` 后松手 | 拖动期间 ≤10 Hz 只发最新一对值；页面从当前朝向平滑重定向到 −45°/60° 并保持（无 TTL、不回弹）；平板回读一致 |
 | A2 | 断链 | 拖动滑动条时关闭平板蓝牙或远离 | 本地立即停止发送；页面保持当前角度（不回正、动画停止），头显因租约丢失入队一条 `posture:stop`；平板进入 `DISCONNECTED`；重连后滑动条显示头显回读值，不会自动续发 |
-| A3 | 患者停止优先 | 俯仰修正中 + 姿态上升中，患者按确认键、从 XR 菜单退出或摘下头显 | 当帧冻结姿态插值与俯仰缓动；会话结束并把俯仰归 0°；平板所有运动控件禁用，直至重新进入 |
+| A3 | 患者停止优先 | 姿态上升中，患者从 Firefox Reality 退出 WebXR 或摘下头显 | 当帧冻结姿态插值与俯仰缓动；会话结束并把俯仰归 0°；平板所有运动控件禁用，直至重新进入 |
 | A4 | 越界拒绝 | 依次发送 `settings:eyeheight:2.4`、`settings:eyeheight:NaN`、`view:orient:181,0`、`view:orient:0,91`、`view:orient:0` | 全部拒绝，不落盘、不改变当前值、页面不改变朝向；日志记录原始命令 |
-| A5 | 低置信度重映射 | 两次校准方向夹角约 20°（或约 160°） | 返回 `low-confidence`；**旧校准保留**；姿态与俯仰仍为 neutral；状态行显示失败原因。夹角约 10° 时返回 `poses-too-similar` |
+| A5 | 一步校准 | 患者持续左右张望（不满足 6°/1.2 s 稳定），或头显掉姿态 | 不落帧、状态停在“保持不动”；**旧校准保留**；姿态与俯仰仍为 neutral。历史的 `calibrateTwo` 低置信度路径（`poses-too-similar` / `low-confidence`）只用于调试调用 |
 | A6 | 重连恢复眼高 | 设 1.35 → 释放租约 → 重新进入训练（或刷新页面） | bootstrap 携带 `eyeHeight: 1.35`；页面初始高度与地板偏移使用 1.35；平板步进器显示“未确认”（见 §7.3）。仅重连 BLE 而不刷新页面时 bootstrap 不更新，属已知缺口 |
 | A7 | 朝向上限 | 把两条滑动条推到两端并反复来回 | 俯仰恒在 ±90°、偏航恒在 ±180° 内；无累积漂移、无抖动、来回不放大 |
-| A8 | 校准中禁用 | 校准倒计时期间拖滑动条、改眼高、点起身 | 全部拒绝；俯仰目标为 0°，姿态 ≤1 s 内到 neutral 并保持；校准不被中断 |
+| A8 | 校准中禁用 | 校准稳定/倒计时期间拖滑动条、改眼高、点起身 | 全部拒绝；俯仰目标为 0°，姿态 ≤1 s 内到 neutral 并保持；校准不被中断，1.2 s 稳定判定不受影响 |
 | A9 | 第二台平板 | 租约被占时第二台连接并 `CLAIM` | `CONTROL_BUSY`；第二台停留在配对页，无任何干预入口 |
 | A10 | 异常页面 | 控制中重载页面或渲染进程崩溃 | 页面重放快照后状态一致；运动立即失效；`DisconnectedBanner` / `StatusPanel` 显示故障原因 |
 | A11 | 租约丢失冻结姿态 | 起身过程中第二台平板抢到租约（或本机断链） | 头显每次租约丢失只入队**一条** `posture:stop`，姿态冻结在当前进度；视角朝向保持当前角度，不回正；平板视角与姿态控件禁用并给出原因 |
@@ -307,9 +313,12 @@ renderer.domElement.captureStream(30)
 | 头显 | `BluetoothControl.kt` | `HELLO/WELCOME` 门控；`#<seq>` 解析、有界去重、`ACK <seq> <result>`；`view:orient` 免回执 |
 | 页面 | `src/app/config.ts`、`src/app/App.ts`、`src/app/portal-link.ts` | 读取 `bootstrap.eyeHeight`；单一 WS 的 cmd/state/telemetry/ack；断线退避 + `since` 续传 |
 | 变换 | `src/core/xr/comfort.ts`、`src/core/scene/host.ts` | 俯仰写入世界朝向容器（`content.rotation.x` 一类）；**不得**写 `comfort.group.position`，该值每帧被 `applyTransform` 覆盖；不再做位置平移 |
-| 校准 | `src/ui/calibration.ts`、`src/core/xr/comfort.ts`、`App.beginCalibration/onCalibrationResult` | `REMAP_LIMITS` 门限与封顶；开始采集立即把俯仰目标归 0、把姿态重定向 neutral（≤1 s）；失败不覆盖旧校准 |
-| 平板 | `ControlUiState.kt`、`ControlActions.kt`、`ControlViewModel.kt`、`ui/components/ViewOrientationControls.kt` | 第四页签“视角”：两条滑动条 70 ms 防抖发送；四个 `view:anim:*` 预设、`停止（保持）` 发 `view:stop`；显示 `state.viewPreset`、`viewAnim` 相位与当前角度；无摇杆、无额外权限开关 |
+| 校准 | `src/ui/calibration.ts`、`src/core/xr/comfort.ts`、`App.beginCalibration/onCalibrationResult` | 单帧 `comfort.calibrate(pose)`：6° 容差、1.2 s 稳定、2 s 倒计时；开始采集立即把俯仰目标归 0、把姿态重定向 neutral（≤1 s）；失败不覆盖旧校准。成功后以仰卧为起点创建 `SitUpPath`、置 `sitUpMode` / `sitUpReady` 并写入 `setBasePose`。`calibrateTwo` / `remapFromPoses` 保留但不再被患者流程调用 |
+| 起身 | `src/core/xr/situp-path.ts`、`situp-run.ts`、`App.setVirtualPosture/applySitUpTransform`、`src/core/xr/posture-cue.ts` | 6 s 逆变换（旋转段 4.2 s）；`posture:rise/lower/stop` 与患者短按确认键等价；`posture:stop` / 失权当帧冻结；`flow = +1` 只在上行过渡真实移动时成立 |
+| 注视 | `src/ui/spatial/input.ts`、`App.registerSelectables` | 场景目标 6 s 停留；暗色底环 + 亮色进度弧；`dwellHint` 提示；视线离开即清零。确认键不参与选择，只用于头显内的起身开关 |
+| 平板 | `ControlUiState.kt`、`ControlActions.kt`、`ControlViewModel.kt`、`ui/components/ViewOrientationControls.kt`、`ui/components/ControlRail.kt`、`ui/components/StatusPanel.kt` | 第四页签“视角”：两条滑动条 70 ms 防抖发送；四个 `view:anim:*` 预设、`停止（保持）` 发 `view:stop`；“虚拟起身”区块发 `posture:rise/lower/stop`；显示 `state.viewPreset`、`viewAnim` 相位、姿态进度/起身高度/姿态俯仰；无摇杆、无额外权限开关 |
 | 平板 | `web/ControllerWebViewHost.kt`、`recording/ViewportRecorder.kt`、`ui/components/RecordingControls.kt`、`ControlScreen.kt`、`AndroidManifest.xml`、`res/xml/file_paths.xml` | 画布录制桥、分块落盘、FileProvider 分享、录制/计时/结果 UI、患者/全局视角与全屏入口 |
-| 平板 | `BleController.kt`、`BlePhase.kt`、`ControlViewModel.kt`、`ui/PairingScreen.kt` | `RECONNECTING` 阶段、0.8/1.6/3.2 s 退避、上次设备持久化与自动/快捷连接；`CONTROL_BUSY` 不重试 |
+| 平板 | `BleController.kt`、`BlePhase.kt`、`ControlViewModel.kt`、`ui/PairingScreen.kt` | 扫描到第一台匹配设备即自动连接（无设备列表/快捷连接卡）；`lastDeviceAddress` 持久化并冷启动直连；`RECONNECTING` 阶段、0.8/1.6/3.2 s 退避；`CONTROL_BUSY` 不重试 |
+| 平板 | `ControlScreen.kt`、`ui/components/ViewModeToggle.kt`、`ui/components/AngleGauge.kt`、`ui/components/ControlRail.kt` | 浮动浅色顶栏；左下角切换/全屏在角度仪表之下；宽屏常驻栏、窄屏（<1000 dp）抽屉；重连/录制提示条不遮挡操作 |
 
 任何文件改动若超出本表，先回到本文补充契约，再动代码。

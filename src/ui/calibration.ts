@@ -8,10 +8,8 @@ import { SpatialSurface } from './spatial/surface';
 import type { Strings } from './strings';
 
 const TOLERANCE_DEG = 6;
-const CEILING_HOLD_MS = 1200;
-const CEILING_COUNTDOWN_MS = 3000;
-const TOES_HOLD_MS = 900;
-const TOES_COUNTDOWN_MS = 2500;
+const HOLD_MS = 1200;
+const COUNTDOWN_MS = 2000;
 
 export interface CalibrationOptions {
   scene: THREE.Scene;
@@ -33,9 +31,15 @@ function toPoseLike(head: HeadPose): PoseLike {
 }
 
 /**
- * Two-step head-direction calibration. The card is a head-locked spatial
- * surface at 0.8 m; the stability gate uses the same head pose. World
- * visibility/background are owned by the app.
+ * One-step comfort calibration.
+ *
+ * 3DoF headsets have no usable translation, so a two-pose (ceiling + toes)
+ * basis is both unreachable and ill-conditioned. Instead capture the current
+ * comfortable forward orientation and make that the neutral world frame:
+ * the patient looks straight ahead, holds still, and the scene becomes
+ * upright relative to the posture they will actually stay in.
+ *
+ * The card is head-locked at 0.8 m; the stability gate uses the same pose.
  */
 export class Calibration {
   private readonly options: CalibrationOptions;
@@ -48,22 +52,10 @@ export class Calibration {
   private readonly barFillMaterial: THREE.MeshBasicMaterial;
 
   private active = false;
-  private step = 1;
   private stableMs = 0;
   private countdownStart = 0;
   private readonly forward = new THREE.Vector3();
   private filtered: THREE.Vector3 | null = null;
-  private poseC: PoseLike | null = null;
-  private poseT: PoseLike | null = null;
-  private lastDeviation = 0;
-
-  private get holdMs(): number {
-    return this.step === 1 ? CEILING_HOLD_MS : TOES_HOLD_MS;
-  }
-
-  private get countdownMs(): number {
-    return this.step === 1 ? CEILING_COUNTDOWN_MS : TOES_COUNTDOWN_MS;
-  }
 
   constructor(options: CalibrationOptions) {
     this.options = options;
@@ -76,7 +68,7 @@ export class Calibration {
       width: 0.72,
       height: 0.46,
       theme: options.theme,
-      title: options.strings.calibrationCeiling,
+      title: options.strings.calibrationForward,
       body: options.strings.calibrationHold,
       renderOrder: 1200
     });
@@ -113,15 +105,11 @@ export class Calibration {
 
   start(): void {
     this.active = true;
-    this.step = 1;
     this.stableMs = 0;
     this.countdownStart = 0;
     this.filtered = null;
-    this.poseC = null;
-    this.poseT = null;
-    this.lastDeviation = 0;
     this.anchor.setVisible(true);
-    this.surface.setTitle(this.options.strings.calibrationCeiling);
+    this.surface.setTitle(this.options.strings.calibrationForward);
     this.surface.setBody(this.options.strings.calibrationHold);
     this.setProgress(0);
   }
@@ -155,7 +143,6 @@ export class Calibration {
       this.filtered.lerp(this.forward, alpha).normalize();
     }
     const deviation = (this.forward.angleTo(this.filtered) * 180) / Math.PI;
-    this.lastDeviation = deviation;
 
     if (deviation <= TOLERANCE_DEG) {
       this.stableMs += dt * 1000;
@@ -166,26 +153,26 @@ export class Calibration {
       this.countdownStart = 0;
     }
 
-    if (this.stableMs >= this.holdMs && this.countdownStart === 0) {
+    if (this.stableMs >= HOLD_MS && this.countdownStart === 0) {
       this.countdownStart = now;
     }
 
     let progress = 0;
     let status = this.options.strings.calibrationHold;
     if (this.countdownStart > 0) {
-      progress = Math.min((now - this.countdownStart) / this.countdownMs, 1);
-      const left = Math.max(0, Math.ceil((this.countdownMs - (now - this.countdownStart)) / 1000));
+      progress = Math.min((now - this.countdownStart) / COUNTDOWN_MS, 1);
+      const left = Math.max(0, Math.ceil((COUNTDOWN_MS - (now - this.countdownStart)) / 1000));
       status = `${this.options.strings.calibrationRecording} ${left}s`;
     } else if (this.stableMs > 0) {
-      progress = Math.min(this.stableMs / this.holdMs, 1);
+      progress = Math.min(this.stableMs / HOLD_MS, 1);
       status = this.options.strings.calibrationStable;
     }
 
     this.surface.setBody(status);
     this.setProgress(progress);
 
-    if (this.countdownStart > 0 && now - this.countdownStart >= this.countdownMs) {
-      this.captureStep(toPoseLike(head));
+    if (this.countdownStart > 0 && now - this.countdownStart >= COUNTDOWN_MS) {
+      this.capture(toPoseLike(head));
     }
   }
 
@@ -201,26 +188,14 @@ export class Calibration {
     this.countdownStart = 0;
   }
 
-  private captureStep(pose: PoseLike): void {
-    if (this.step === 1) {
-      this.poseC = pose;
-      this.step = 2;
-      this.resetStability();
-      this.surface.setTitle(this.options.strings.calibrationToes);
-      this.surface.setBody(this.options.strings.calibrationHold);
-      this.setProgress(0);
-      return;
-    }
-
-    if (!this.poseC) {
-      return;
-    }
-    this.poseT = pose;
-    const result = this.options.comfort.calibrateTwo(this.poseC, this.poseT, { strength: 1 });
+  private capture(pose: PoseLike): void {
+    const ok = this.options.comfort.calibrate(pose);
     this.active = false;
     this.anchor.setVisible(false);
     this.resetStability();
-    this.options.onResult(result);
+    this.options.onResult(
+      ok ? { ok: true, confidence: 1 } : { ok: false, reason: 'invalid-pose', confidence: 0 }
+    );
   }
 
   dispose(): void {
