@@ -1,16 +1,22 @@
+import * as THREE from 'three';
 import type { PosturePhase, PostureState } from '../xr/comfort';
 import { POSTURE_LIMITS } from '../xr/comfort';
 import type { SitUpPath } from '../xr/situp-path';
+import { measureRelativeEuler, type EulerDeg } from '../xr/measure';
 import type { ViewAnimState, ViewPresetCode } from '../xr/view-motion';
 
 /**
  * One collected view of the patient world, filled in place every time the
- * telemetry upload, the HUD or a command handler needs the facts. Callers
- * never re-derive posture numbers: the sit-up performance and the comfort
- * posture are merged here so both report the same shape.
+ * telemetry upload, the HUD or a command handler needs the facts.
  *
- * The snapshot itself allocates nothing (`capture` writes into `this`); the
- * input object is reused by the app so a per-frame call would still be free.
+ * Angles are **measured from the transforms that were applied**: the reported
+ * world tilt is the base layer's rotation relative to the frame the posture or
+ * sit-up started from. Nothing here re-derives an angle from progress, so a
+ * sign error has exactly one place to live.
+ *
+ * Progress, phase and rise are business facts, not angles, and still come from
+ * their drivers. The snapshot allocates nothing (`capture` writes into `this`);
+ * the input object is reused by the app so a per-frame call would still be free.
  */
 export interface SceneSnapshotInput {
   sceneId: string;
@@ -26,10 +32,19 @@ export interface SceneSnapshotInput {
   sitUpT: number;
   sitUpTarget: number;
   sitUpMoving: boolean;
-  /** Comfort posture, or null when no comfort layer is bound. */
+  /**
+   * Comfort posture, or null when no comfort layer is bound. Only phase, rise
+   * and progress are read: the angles come from the base transform.
+   */
   posture: PostureState | null;
-  viewPitchDeg: number;
-  viewPitchTargetDeg: number;
+  /** Base layer as applied this frame (`shell.base.quaternion`). */
+  baseQuaternion: THREE.Quaternion;
+  /** Frame the posture / sit-up started from. */
+  baseReferenceQuaternion: THREE.Quaternion;
+  lookYawDeg: number;
+  lookYawTargetDeg: number;
+  upGazeDeg: number;
+  upGazeTargetDeg: number;
   viewAnim: ViewAnimState;
   /** Active preset id, or `none` for idle / slider-driven. */
   viewPreset: ViewPresetCode;
@@ -51,12 +66,15 @@ export class SceneSnapshot {
   sitUpT = 0;
   sitUpMoving = false;
   posturePhase: PosturePhase = 'neutral';
-  posturePitchDeg = 0;
-  postureRollDeg = 0;
+  /** Measured world tilt of the base, relative to the motion's start frame. */
+  worldPitchDeg = 0;
+  worldRollDeg = 0;
   postureRiseM = 0;
   postureProgress = 0;
-  viewPitchDeg = 0;
-  viewPitchTargetDeg = 0;
+  lookYawDeg = 0;
+  lookYawTargetDeg = 0;
+  upGazeDeg = 0;
+  upGazeTargetDeg = 0;
   viewAnim: ViewAnimState = 'idle';
   viewPreset: ViewPresetCode = 'none';
   floorOffset = 0;
@@ -64,6 +82,8 @@ export class SceneSnapshot {
   cueEnabled = false;
   cueIntensity = 0;
   calibrationConfidence = 0;
+
+  private readonly euler: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
 
   capture(input: SceneSnapshotInput): this {
     this.sceneId = input.sceneId;
@@ -73,8 +93,10 @@ export class SceneSnapshot {
     this.calibrated = input.calibrated;
     this.audioMuted = input.audioMuted;
     this.eyeHeight = input.eyeHeight;
-    this.viewPitchDeg = input.viewPitchDeg;
-    this.viewPitchTargetDeg = input.viewPitchTargetDeg;
+    this.lookYawDeg = input.lookYawDeg;
+    this.lookYawTargetDeg = input.lookYawTargetDeg;
+    this.upGazeDeg = input.upGazeDeg;
+    this.upGazeTargetDeg = input.upGazeTargetDeg;
     this.viewAnim = input.viewAnim;
     this.viewPreset = input.viewPreset;
     this.floorOffset = input.floorOffset;
@@ -83,30 +105,30 @@ export class SceneSnapshot {
     this.cueIntensity = input.cueIntensity;
     this.calibrationConfidence = input.confidence;
 
+    const measured = measureRelativeEuler(
+      input.baseQuaternion,
+      input.baseReferenceQuaternion,
+      this.euler
+    );
+    this.worldPitchDeg = measured.pitchDeg;
+    this.worldRollDeg = measured.rollDeg;
+
     const sitUp = input.sitUp;
-    const posture = input.posture;
     if (sitUp) {
       const t = clamp01(input.sitUpT);
       this.sitUpActive = true;
       this.sitUpT = t;
       this.sitUpMoving = input.sitUpMoving;
       this.posturePhase = sitUpPhase(input.sitUpMoving, input.sitUpTarget, t);
-      // Matches the previous App/telemetry derivation: the camera pitches from
-      // looking at the ceiling to looking at the front wall over the rotation
-      // portion of the timeline.
-      this.posturePitchDeg = -90 * Math.min(1, t / sitUp.rotationPortion);
-      this.postureRollDeg = 0;
       this.postureRiseM = Math.min(POSTURE_LIMITS.maxRiseM, sitUp.riseAt(t));
       this.postureProgress = t;
     } else {
       this.sitUpActive = false;
       this.sitUpT = 0;
       this.sitUpMoving = false;
-      this.posturePhase = posture?.phase ?? 'neutral';
-      this.posturePitchDeg = posture?.pitchDeg ?? 0;
-      this.postureRollDeg = posture?.rollDeg ?? 0;
-      this.postureRiseM = posture?.riseM ?? 0;
-      this.postureProgress = posture?.progress ?? 0;
+      this.posturePhase = input.posture?.phase ?? 'neutral';
+      this.postureRiseM = input.posture?.riseM ?? 0;
+      this.postureProgress = input.posture?.progress ?? 0;
     }
     return this;
   }

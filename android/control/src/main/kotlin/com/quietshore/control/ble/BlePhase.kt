@@ -12,10 +12,12 @@ enum class BlePhase(val wire: String?) {
     CONNECTING("connecting"),
     AUTHENTICATING("authenticating"),
     READY("ready"),
+    RECONNECTING("reconnecting"),
     ERROR("error"),
     DISCONNECTED("disconnected");
 
-    val isBusy: Boolean get() = this == CONNECTING || this == AUTHENTICATING
+    val isBusy: Boolean
+        get() = this == CONNECTING || this == AUTHENTICATING || this == RECONNECTING
 
     val isConnected: Boolean get() = this == READY
 }

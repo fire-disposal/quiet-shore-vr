@@ -7,8 +7,8 @@
 - 协议只有一个来源：`android/protocol/.../ControlProtocol.kt`，头显和平板共用命令、限制与编解码。
 - 控制权只有一个事实源：BLE `BluetoothControl.controller`；首个 `CLAIM` 胜出，断链释放。
 - 页面命令只有一条主通道：BLE → `PortalService` → `/ws` WebSocket → 患者页面；没有 SSE/轮询回退。
-- 高频运动有明确边界：`view:move` 10 Hz、无 TTL、±20°、6°/s 速率上限；页面旋转世界而不是 XR 相机。
-- 离散命令带 `#<seq>` 与 `ACK`，`view:move` 免 ack 只保留最新；stop 在平板队列中优先。
+- 高频运动有明确边界：`view:orient` 10 Hz、无 TTL、俯仰 ±90° / 偏航 ±180°、15 与 30 °/s 速率上限；页面旋转世界而不是 XR 相机。
+- 离散命令带 `#<seq>` 与 `ACK`，`view:orient` 免 ack 只保留最新；stop 在平板队列中优先。
 - 舒适度层没有把相机位置当成可随意改写的状态；posture 只在 comfort 包装层内组合。
 - 粒子层固定 28 个粒子，不逐帧分配；只挂 `landscape`，边界明确。
 - BLE 回执现在在语义路由之后返回；宿主命令失败不再伪装成 `OK`。

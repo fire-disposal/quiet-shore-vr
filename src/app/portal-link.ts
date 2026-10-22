@@ -15,9 +15,10 @@ export interface PoseSnapshot {
 
 /**
  * `/state` payload: the documented wire fields only, built from the collected
- * scene snapshot. `viewPitch` is the CURRENT applied pitch in signed degrees
- * (positive = 上仰) and `viewAnim` its playback state; the removed translation
- * fields (`viewX`/`viewZ`) must never reappear.
+ * scene snapshot. `viewPitch` is the CURRENT applied up-gaze in signed degrees
+ * (positive = 上仰), `posturePitch`/`postureRoll` are the measured world tilt
+ * of the base layer, and `viewAnim` is the playback state. The wire keys are
+ * frozen; the removed translation fields (`viewX`/`viewZ`) must never reappear.
  */
 export interface StateSnapshot {
   scene: string;
@@ -30,6 +31,7 @@ export interface StateSnapshot {
   postureRise: number;
   postureProgress: number;
   viewPitch: number;
+  viewYaw: number;
   viewAnim: ViewAnimState;
   viewPreset: ViewPresetCode;
   cueEnabled: boolean;
@@ -74,7 +76,7 @@ function wsUrl(): string {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${location.host}/ws`;
 }
-const VIEW_MOVE_PREFIX = 'view:move:';
+const VIEW_ORIENT_PREFIX = 'view:orient:';
 const VIEW_ANIM_PREFIX = 'view:anim:';
 
 const POSE_MS = 200;
@@ -92,11 +94,12 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     calibrating: snapshot.calibrating,
     audio: snapshot.audioMuted,
     eyeHeight: snapshot.eyeHeight,
-    posturePitch: snapshot.posturePitchDeg,
-    postureRoll: snapshot.postureRollDeg,
+    posturePitch: snapshot.worldPitchDeg,
+    postureRoll: snapshot.worldRollDeg,
     postureRise: snapshot.postureRiseM,
     postureProgress: snapshot.postureProgress,
-    viewPitch: snapshot.viewPitchDeg,
+    viewPitch: snapshot.upGazeDeg,
+    viewYaw: snapshot.lookYawDeg,
     viewAnim: snapshot.viewAnim,
     viewPreset: snapshot.viewPreset,
     cueEnabled: snapshot.cueEnabled,
@@ -108,7 +111,7 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
 /**
  * Pure dispatch planning for one batch of socket commands: drops everything at
  * or below `lastSeq`, never replays a history `view:anim:*` (one-shot presets),
- * and coalesces every continuous `view:move` in the batch to its latest sample
+ * and coalesces every continuous `view:orient` in the batch to its latest sample
  * while the discrete commands keep their arrival order.
  */
 export function planControlDispatch(
@@ -130,8 +133,8 @@ export function planControlDispatch(
     frames.push({
       seq,
       command,
-      // A `view:move` sample is continuous even if the flag is missing.
-      discrete: entry.continuous !== true && !command.startsWith(VIEW_MOVE_PREFIX),
+      // A `view:orient` sample is continuous even if the flag is missing.
+      discrete: entry.continuous !== true && !command.startsWith(VIEW_ORIENT_PREFIX),
       replay: entry.replay === true
     });
   }
@@ -170,7 +173,7 @@ export function planControlDispatch(
  *
  * Commands arrive as ordered `cmd` messages; each batch is deduped by seq and
  * coalesced before dispatch, a discrete command is acked and followed by an
- * immediate state frame, and continuous `view:move` samples are never acked.
+ * immediate state frame, and continuous `view:orient` samples are never acked.
  * The socket reconnects with exponential backoff using `since=lastSeq`, so a
  * drop resumes the stream without replaying what this page already ran. There
  * is no fallback transport: a closed socket halts operator motion until the

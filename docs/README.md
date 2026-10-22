@@ -9,8 +9,9 @@
 | `../README.md` | 项目总览、构建、当前限制 |
 | `../TODO.md` | 当前优先级与下一步 |
 | `system-boundaries.md` | 场景/Web/Android 分层、单写者规则、视角动画状态机、BLE/回环集成点 |
-| `control-plane.md` | BLE GATT、命令、二进制 state v5、心跳、回环 API |
+| `control-plane.md` | BLE GATT、命令、二进制 state v7、心跳、回环 API |
 | `control-interaction-spec.md` | 权限、状态机、干预目录、安全包络、验收 |
+| `rotation-contract.md` | 唯一角度契约：L0–L3 分层、双通道口径（偏航/俯仰）、已删除的第二真相、迁移状态、双侧 golden vectors、state v7 编码 |
 | `kiss-review.md` | 已收口项与剩余复杂度 |
 | `virtual-posture.md` | posture/comfort、视觉引导与粒子 |
 | `motion-polish.md` | 镜头动画、失重感、粒子/停止安全审计 |

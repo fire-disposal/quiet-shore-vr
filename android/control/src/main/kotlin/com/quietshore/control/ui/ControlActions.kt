@@ -21,14 +21,20 @@ data class ControlActions(
     val onPostureLower: () -> Unit,
     val onPostureStop: () -> Unit,
     val onEyeHeightChange: (Float) -> Unit,
-    /** Absolute pitch target from the slider, in whole degrees (-20..20). */
+    /** Absolute up-gaze from the slider, in whole degrees (-90..90). */
     val onPitchChange: (Float) -> Unit,
+    /** Absolute yaw from the slider, in whole degrees (-180..180, + = left). */
+    val onYawChange: (Float) -> Unit,
     /** Discrete page animation preset (`view:anim:<name>`). */
     val onViewAnim: (ViewPreset) -> Unit,
-    /** `停止`: freeze the view where it is (`view:stop`, holds pitch). */
+    /** `停止`: freeze the view where it is (`view:stop`, holds both axes). */
     val onViewPitchStop: () -> Unit,
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
     val onLeave: () -> Unit,
-    val onFullscreenChange: (Boolean) -> Unit
+    val onFullscreenChange: (Boolean) -> Unit,
+    val onStartRecording: () -> Unit,
+    val onStopRecording: () -> Unit,
+    val onShareRecording: () -> Unit,
+    val onDismissRecording: () -> Unit
 )

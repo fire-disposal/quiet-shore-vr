@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TransformSpec } from './types';
+import { degToRad } from '../xr/angle';
 
 /**
  * Transform application and frame-rate independent damping.
@@ -7,8 +8,6 @@ import type { TransformSpec } from './types';
  * Every helper writes into caller-owned objects; module-level scratch objects
  * keep the per-frame path allocation-free.
  */
-
-const DEG2RAD = Math.PI / 180;
 
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _quat = new THREE.Quaternion();
@@ -29,9 +28,9 @@ export function applyTransform(object: THREE.Object3D, spec: TransformSpec): THR
   }
   if (spec.rotationDeg) {
     object.rotation.set(
-      spec.rotationDeg[0] * DEG2RAD,
-      spec.rotationDeg[1] * DEG2RAD,
-      spec.rotationDeg[2] * DEG2RAD,
+      degToRad(spec.rotationDeg[0]),
+      degToRad(spec.rotationDeg[1]),
+      degToRad(spec.rotationDeg[2]),
       'YXZ'
     );
   }
@@ -62,9 +61,9 @@ export function composeMatrix(spec: TransformSpec, out?: THREE.Matrix4): THREE.M
     _quat.set(spec.quaternion[0], spec.quaternion[1], spec.quaternion[2], spec.quaternion[3]);
   } else if (spec.rotationDeg) {
     _euler.set(
-      spec.rotationDeg[0] * DEG2RAD,
-      spec.rotationDeg[1] * DEG2RAD,
-      spec.rotationDeg[2] * DEG2RAD,
+      degToRad(spec.rotationDeg[0]),
+      degToRad(spec.rotationDeg[1]),
+      degToRad(spec.rotationDeg[2]),
       'YXZ'
     );
     _quat.setFromEuler(_euler);

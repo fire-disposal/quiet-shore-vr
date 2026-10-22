@@ -18,8 +18,8 @@
 
 ```ts
 interface VirtualPosture {
-  pitchDeg: number;
-  rollDeg: number;
+  worldPitchDeg: number;
+  worldRollDeg: number;
   riseM: number;
 }
 
@@ -43,7 +43,7 @@ q_total = q_posture * q_calibration
 position = pivot - q_total * pivot + (0, -riseM, 0)
 ```
 
-- `pitchDeg` 让世界围绕视线方向的横向轴缓慢倾斜。
+- `worldPitchDeg` 让世界围绕视线方向的横向轴缓慢倾斜（正值 = 世界绕 +X 上倾，患者看到更多地面）。
 - `riseM` 让世界向下移动，等效患者在虚拟空间里“升高”。
 - 旋转与位移都围绕校准得到的 pivot，避免患者被瞬移到场景外。
 - 校准开始与会话结束时，体位层回到 neutral（立即重置）。控制断开（租约丢失）**不回 neutral**：`stopPosture()` 刹车到当前行程的稳定点并保持，避免患者在世界倾斜中途被推回。
@@ -63,7 +63,7 @@ position = pivot - q_total * pivot + (0, -riseM, 0)
 
 不要把 `posture:set:<任意角度>` 暴露给操作员。需要调试时走本地查询参数，不进入患者控制通道。
 
-状态扩展（页面 WS `state` → BLE state v5，见 `docs/control-plane.md §2.4`）：
+状态扩展（页面 WS `state` → BLE state v7，见 `docs/control-plane.md §2.4`）：
 
 ```text
 scene / session / calibrating / audio / eyeHeight
@@ -113,8 +113,8 @@ Posture 变换、限幅、缓动和停止减速已实现；近场重力粒子（
 
 视角俯仰已改由系统级控制器承担（`src/core/xr/view-motion.ts` + `src/core/xr/world-shell.ts`）：
 
-- `view:move:0,<z>`：绝对目标（`z × 20°`），从当前角度平滑重定向，无 TTL。
-- `view:anim:<id>`：目录预设 `up`/`down`（相对 ±10°，clamp ±20°，3.0 s）、`recenter`（绝对 0°，2.4 s）、`breathe`（当前 → +6° → 当前，6.0 s 往返）。
+- `view:orient:<yaw>,<pitch>`：绝对朝向（度），从当前朝向平滑重定向，无 TTL。
+- `view:anim:<id>`：目录预设 `up`/`down`（相对当前俯仰 ±10°，clamp ±90°，3.0 s）、`recenter`（俯仰 2.4 s 归零，偏航按距离均速展开）、`breathe`（当前 → +6° → 当前，6.0 s 往返）。
 - `view:stop`：立即保持当前角度（不回正）；校准开始与会话结束归零。
 - WS `state` 回报当前 `viewPitch`（度）、`viewAnim`（`idle|playing|held`）与 `viewPreset`（`none|up|down|recenter|breathe`）。
 

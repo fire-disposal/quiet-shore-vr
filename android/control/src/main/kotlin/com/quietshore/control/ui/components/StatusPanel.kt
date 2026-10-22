@@ -103,7 +103,11 @@ private fun StatusSummary(state: ControlUiState) {
         )
         SummaryRow(
             label = "姿态俯仰",
-            value = String.format(Locale.US, "%.1f°", state.control.posturePitch)
+            value = "${state.control.posturePitch.roundToInt()}°"
+        )
+        SummaryRow(
+            label = "视角朝向",
+            value = "${state.control.viewYaw.roundToInt()}° / ${state.control.viewPitch.roundToInt()}°"
         )
         SummaryRow("患者姿态", if (fresh) "实时" else "姿态未更新")
         if (fresh) {

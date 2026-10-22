@@ -41,9 +41,12 @@ fun ControllerViewport(
 ) {
     val context = LocalContext.current
     val controller = remember {
-        ControllerWebViewHost(context, viewModel::sendCommand) {
-            onFullscreen(true)
-        }
+        ControllerWebViewHost(
+            context = context,
+            onCommand = viewModel::sendCommand,
+            onFullscreen = { onFullscreen(true) },
+            onRecordingEvent = viewModel::onRecordingEvent
+        )
     }
     var loadError by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(false) }
@@ -58,7 +61,11 @@ fun ControllerViewport(
             loaded = false
             loadError = message
         }
-        onDispose { controller.destroy() }
+        viewModel.attachRecorder(controller)
+        onDispose {
+            viewModel.attachRecorder(null)
+            controller.destroy()
+        }
     }
 
     LaunchedEffect(controller) {

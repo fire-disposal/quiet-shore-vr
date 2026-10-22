@@ -40,6 +40,8 @@ class BleController(
         fun onControlGranted()
         fun onControlBusy(reason: String)
         fun onControlLost(reason: String)
+        /** A dropped link is retrying; [attempt] is 1-based. */
+        fun onReconnecting(attempt: Int, max: Int)
         fun onDisconnected()
         fun onTelemetry(pose: TelemetryPose)
         fun onControlState(state: ControlState)
@@ -386,7 +388,7 @@ class BleController(
             return
         }
         val current = manager
-        val continuous = command.startsWith(ControlProtocol.VIEW_MOVE)
+        val continuous = command.startsWith(ControlProtocol.VIEW_ORIENT)
         if (current == null || !current.isReady || phase != BlePhase.READY) {
             // Movement samples are disposable; only an operator action deserves
             // an error message while the link is still settling.
@@ -580,13 +582,21 @@ class BleController(
             return
         }
         if (reconnectAttempts >= MAX_RECONNECTS) {
+            // Give the screen back to the operator instead of spinning in a
+            // phase that never resolves.
+            setPhase(BlePhase.DISCONNECTED)
             listener.onError("自动重连失败，请重新搜索")
             return
         }
         reconnectAttempts++
         reconnectScheduled = true
-        listener.onError("$reason，正在重连（$reconnectAttempts/$MAX_RECONNECTS）")
-        mainHandler.postDelayed(reconnectRunnable, RECONNECT_DELAY_MS)
+        setPhase(BlePhase.RECONNECTING)
+        listener.onReconnecting(reconnectAttempts, MAX_RECONNECTS)
+        // 800 ms, 1600 ms, 3200 ms: a stack that just lost a GATT client needs
+        // a moment to finish teardown before it will accept a new connection.
+        val delay = (RECONNECT_DELAY_MS shl (reconnectAttempts - 1))
+            .coerceAtMost(RECONNECT_MAX_DELAY_MS)
+        mainHandler.postDelayed(reconnectRunnable, delay)
     }
 
     private fun cancelPendingConnect() {
@@ -733,11 +743,11 @@ class BleController(
                 cancelClaimTimeout()
                 awaitingControl = false
                 listener.onControlBusy("头显正被另一台平板控制")
-                // Drop this link and retry; the headset frees a stale
-                // controller on disconnect or after its watchdog.
+                // Busy is not a transient link fault: retrying would just
+                // fight the current owner, so hand the screen back to pairing.
                 closeManager()
                 setPhase(BlePhase.DISCONNECTED)
-                scheduleReconnect("头显仍被占用")
+                listener.onDisconnected()
             }
 
             ControlProtocol.STATUS_CONTROL_REQUIRED -> {
@@ -895,6 +905,7 @@ class BleController(
 
         const val RETRY_DELAY_MS = 250
         const val MAX_RECONNECTS = 3
-        const val RECONNECT_DELAY_MS = 700L
+        const val RECONNECT_DELAY_MS = 800L
+        const val RECONNECT_MAX_DELAY_MS = 5_000L
     }
 }

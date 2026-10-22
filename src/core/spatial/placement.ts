@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { HeadPose } from '../xr/types';
 import type { SpatialPlacementOptions, SpatialPose } from './types';
+import { degToRad } from '../xr/angle';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const tmpDirection = new THREE.Vector3();
@@ -21,10 +22,6 @@ export function copySpatialPose(source: SpatialPose, out: SpatialPose): SpatialP
 
 function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value;
-}
-
-function degToRad(degrees: number): number {
-  return (degrees * Math.PI) / 180;
 }
 
 /**

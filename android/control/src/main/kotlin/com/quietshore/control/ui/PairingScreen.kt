@@ -272,6 +272,13 @@ private fun PairingCard(
                     onAction = onCancelConnect
                 )
 
+                state.phase == BlePhase.RECONNECTING -> StatusLine(
+                    text = "连接中断，正在重连",
+                    loading = true,
+                    actionLabel = "取消",
+                    onAction = onCancelConnect
+                )
+
                 else -> Button(
                     onClick = onScan,
                     modifier = Modifier
@@ -297,6 +304,14 @@ private fun PairingCard(
                     text = "未找到头显，请确认头显已开机",
                     style = MaterialTheme.typography.bodyMedium,
                     color = QuietPalette.TextSecondary
+                )
+            }
+
+            state.lastDeviceAddress?.let { address ->
+                LastDeviceRow(
+                    address = address,
+                    enabled = state.canConnect && bluetoothEnabled && permissionsGranted,
+                    onConnect = { onConnect(address) }
                 )
             }
 
@@ -379,6 +394,42 @@ private fun StatusLine(
         )
         TextButton(onClick = onAction) {
             Text(actionLabel, color = QuietPalette.TextSecondary)
+        }
+    }
+}
+
+/** One-tap reconnect to the headset used last time, without a scan. */
+@Composable
+private fun LastDeviceRow(
+    address: String,
+    enabled: Boolean,
+    onConnect: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = QuietPalette.SurfaceRaised
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "上次连接的头显",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = QuietPalette.TextPrimary
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "尾号 ${address.takeLast(4).uppercase()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+            TextButton(onClick = onConnect, enabled = enabled) {
+                Text("直接连接", color = QuietPalette.Primary)
+            }
         }
     }
 }

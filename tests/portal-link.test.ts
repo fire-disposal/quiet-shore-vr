@@ -48,28 +48,28 @@ class FakeSocket {
 }
 
 describe('planControlDispatch', () => {
-  it('coalesces interspersed view:move samples without reordering discrete commands', () => {
+  it('coalesces interspersed view:orient samples without reordering discrete commands', () => {
     const plan = planControlDispatch(
       [
-        { seq: 40, command: 'view:move:0,0.1', continuous: true },
+        { seq: 40, command: 'view:orient:0,0.1', continuous: true },
         { seq: 41, command: 'scene:ward' },
-        { seq: 42, command: 'view:move:0,0.35', continuous: true }
+        { seq: 42, command: 'view:orient:0,0.35', continuous: true }
       ],
       -1
     );
     expect(plan.commands).toEqual([
       { seq: 41, command: 'scene:ward', discrete: true },
-      { seq: 42, command: 'view:move:0,0.35', discrete: false }
+      { seq: 42, command: 'view:orient:0,0.35', discrete: false }
     ]);
     expect(plan.nextSeq).toBe(42);
   });
 
   it('delivers a discrete command behind a stream exactly once', () => {
     const first = planControlDispatch(
-      [{ seq: 7, command: 'view:move:0,0.2', continuous: true }],
+      [{ seq: 7, command: 'view:orient:0,0.2', continuous: true }],
       -1
     );
-    expect(first.commands.map((item) => item.command)).toEqual(['view:move:0,0.2']);
+    expect(first.commands.map((item) => item.command)).toEqual(['view:orient:0,0.2']);
 
     const second = planControlDispatch([{ seq: 8, command: 'posture:rise' }], first.nextSeq);
     expect(second.commands).toEqual([{ seq: 8, command: 'posture:rise', discrete: true }]);
@@ -78,7 +78,7 @@ describe('planControlDispatch', () => {
     // A redelivered/replayed batch is a no-op.
     const replay = planControlDispatch(
       [
-        { seq: 7, command: 'view:move:0,0.2', continuous: true },
+        { seq: 7, command: 'view:orient:0,0.2', continuous: true },
         { seq: 8, command: 'posture:rise' }
       ],
       second.nextSeq
@@ -104,7 +104,7 @@ describe('planControlDispatch', () => {
   });
 
   it('classifies movement as continuous even without the flag', () => {
-    const plan = planControlDispatch([{ seq: 2, command: 'view:move:0,0.5' }], -1);
+    const plan = planControlDispatch([{ seq: 2, command: 'view:orient:0,0.5' }], -1);
     expect(plan.commands[0].discrete).toBe(false);
   });
 
@@ -219,14 +219,14 @@ describe('PortalLink', () => {
     socket.emitOpen();
     socket.sent.length = 0;
 
-    socket.deliver({ type: 'cmd', seq: 4, command: 'view:move:0,0.3', continuous: true });
+    socket.deliver({ type: 'cmd', seq: 4, command: 'view:orient:0,0.3', continuous: true });
     await harness.flush();
-    expect(harness.commands).toEqual(['view:move:0,0.3']);
+    expect(harness.commands).toEqual(['view:orient:0,0.3']);
     expect(socket.sent).toEqual([]);
 
     socket.deliver({ type: 'cmd', seq: 5, command: 'posture:rise', continuous: false });
     await harness.flush();
-    expect(harness.commands).toEqual(['view:move:0,0.3', 'posture:rise']);
+    expect(harness.commands).toEqual(['view:orient:0,0.3', 'posture:rise']);
     expect(socket.sent.map((message) => message.type)).toEqual(['ack', 'state']);
     expect(socket.sent[0]).toEqual({ type: 'ack', seq: 5 });
   });
@@ -237,13 +237,13 @@ describe('PortalLink', () => {
     const socket = harness.socket();
     socket.emitOpen();
 
-    socket.deliver({ type: 'cmd', seq: 1, command: 'view:move:0,0.1', continuous: true });
+    socket.deliver({ type: 'cmd', seq: 1, command: 'view:orient:0,0.1', continuous: true });
     socket.deliver({ type: 'cmd', seq: 2, command: 'scene:beach', continuous: false });
-    socket.deliver({ type: 'cmd', seq: 3, command: 'view:move:0,0.4', continuous: true });
-    socket.deliver({ type: 'cmd', seq: 4, command: 'view:move:0,0.6', continuous: true });
+    socket.deliver({ type: 'cmd', seq: 3, command: 'view:orient:0,0.4', continuous: true });
+    socket.deliver({ type: 'cmd', seq: 4, command: 'view:orient:0,0.6', continuous: true });
     await harness.flush();
 
-    expect(harness.commands).toEqual(['scene:beach', 'view:move:0,0.6']);
+    expect(harness.commands).toEqual(['scene:beach', 'view:orient:0,0.6']);
   });
 
   it('resumes after a drop without replaying consumed commands', async () => {
@@ -251,7 +251,7 @@ describe('PortalLink', () => {
     harness.link.start();
     const first = harness.socket();
     first.emitOpen();
-    first.deliver({ type: 'cmd', seq: 9, command: 'view:move:0,0.2', continuous: true });
+    first.deliver({ type: 'cmd', seq: 9, command: 'view:orient:0,0.2', continuous: true });
     await harness.flush();
     first.deliver({ type: 'cmd', seq: 10, command: 'scene:ward', continuous: false });
     await harness.flush();
@@ -270,7 +270,7 @@ describe('PortalLink', () => {
     second.deliver({ type: 'cmd', seq: 11, command: 'posture:lower', continuous: false });
     await harness.flush();
 
-    expect(harness.commands).toEqual(['view:move:0,0.2', 'scene:ward', 'posture:lower']);
+    expect(harness.commands).toEqual(['view:orient:0,0.2', 'scene:ward', 'posture:lower']);
     expect(second.sent.filter((message) => message.type === 'ack')).toEqual([
       { type: 'ack', seq: 11 }
     ]);

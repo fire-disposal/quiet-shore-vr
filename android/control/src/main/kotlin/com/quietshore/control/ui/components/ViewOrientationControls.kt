@@ -36,33 +36,39 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val MAX_DEG = ControlProtocol.VIEW_PITCH_MAX_DEG.roundToInt()
+private val MAX_PITCH = ControlProtocol.VIEW_PITCH_MAX_DEG.roundToInt()
+private val MAX_YAW = ControlProtocol.VIEW_YAW_MAX_DEG.roundToInt()
 
-/** 1° per tick: 39 intermediate values across the ±20° range. */
-private val PITCH_STEPS = (MAX_DEG * 2) - 1
+/** 1° per tick across the full range. */
+private val PITCH_STEPS = (MAX_PITCH * 2) - 1
+private val YAW_STEPS = (MAX_YAW * 2) - 1
 
 /**
- * Absolute virtual-view pitch plus the system-level animation presets.
+ * Absolute virtual-view orientation plus the system-level animation presets.
  *
- * The slider is the absolute channel (−20°..+20°, 1° steps). The four preset
- * buttons play fixed page curves and send no amplitude or timing: up/down move
- * ±10° from the current angle inside the page, recenter returns to 0°, breathe
- * is a 6 s return-to-start curve. The thumb follows [degrees], which is the
- * in-flight request while dragging and the headset readback otherwise.
+ * Two independent sliders: yaw (−180°..+180°, + = the patient's view turns
+ * left) and up-gaze (−90°..+90°, + = the patient sees more sky). The four
+ * preset buttons play fixed page curves and send no amplitude or timing;
+ * `recenter` returns both axes to 0°. The thumbs follow the in-flight request
+ * while dragging and the headset readback otherwise.
  */
 @Composable
-fun ViewPitchSlider(
-    degrees: Float,
-    target: Float,
+fun ViewOrientationControls(
+    yawDegrees: Float,
+    yawTarget: Float,
+    pitchDegrees: Float,
+    pitchTarget: Float,
     anim: ViewAnim,
     preset: ViewPreset,
     enabled: Boolean,
-    onChange: (Float) -> Unit,
+    onYawChange: (Float) -> Unit,
+    onPitchChange: (Float) -> Unit,
     onAnim: (ViewPreset) -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val value = degrees.roundToInt().coerceIn(-MAX_DEG, MAX_DEG)
+    val yaw = yawDegrees.roundToInt().coerceIn(-MAX_YAW, MAX_YAW)
+    val pitch = pitchDegrees.roundToInt().coerceIn(-MAX_PITCH, MAX_PITCH)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -73,51 +79,43 @@ fun ViewPitchSlider(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = pitchLabel(value),
+                text = "${yawLabel(yaw)} · ${pitchLabel(pitch)}",
                 style = MaterialTheme.typography.titleMedium,
                 color = if (enabled) QuietPalette.TextPrimary else QuietPalette.TextSecondary
             )
             Text(
-                text = String.format(Locale.US, "头显当前 %+d°", target.roundToInt()),
+                text = String.format(
+                    Locale.US,
+                    "头显当前 %+d° / %+d°",
+                    yawTarget.roundToInt(),
+                    pitchTarget.roundToInt()
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
             )
         }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onChange(it) },
+        OrientationSlider(
+            label = "偏航",
+            value = yaw,
+            max = MAX_YAW,
+            steps = YAW_STEPS,
             enabled = enabled,
-            valueRange = -MAX_DEG.toFloat()..MAX_DEG.toFloat(),
-            steps = PITCH_STEPS,
-            colors = SliderDefaults.colors(
-                thumbColor = QuietPalette.Primary,
-                activeTrackColor = QuietPalette.Primary,
-                inactiveTrackColor = QuietPalette.Outline,
-                disabledThumbColor = QuietPalette.TextSecondary.copy(alpha = 0.5f),
-                disabledActiveTrackColor = QuietPalette.Outline,
-                disabledInactiveTrackColor = QuietPalette.Outline.copy(alpha = 0.6f)
-            )
+            startHint = "左转 $MAX_YAW°",
+            centerHint = "正前",
+            endHint = "右转 $MAX_YAW°",
+            onChange = onYawChange
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "下俯 ${MAX_DEG}°",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
-            Text(
-                text = "平视",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
-            Text(
-                text = "上仰 ${MAX_DEG}°",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
-        }
+        OrientationSlider(
+            label = "俯仰",
+            value = pitch,
+            max = MAX_PITCH,
+            steps = PITCH_STEPS,
+            enabled = enabled,
+            startHint = "下俯 $MAX_PITCH°",
+            centerHint = "平视",
+            endHint = "上仰 $MAX_PITCH°",
+            onChange = onPitchChange
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PresetButton(
                 preset = ViewPreset.UP,
@@ -170,7 +168,7 @@ fun ViewPitchSlider(
         }
         Text(
             text = "预设：" + ViewPresets.label(preset) + " · " + animLabel(anim) +
-                " · 当前 " + signedDegrees(target),
+                " · 当前 " + String.format(Locale.US, "%d° / %d°", yawTarget.roundToInt(), pitchTarget.roundToInt()),
             style = MaterialTheme.typography.bodySmall,
             color = when (anim) {
                 ViewAnim.PLAYING -> QuietPalette.Primary
@@ -178,6 +176,52 @@ fun ViewPitchSlider(
                 ViewAnim.IDLE -> QuietPalette.TextSecondary
             }
         )
+    }
+}
+
+/**
+ * One absolute axis: −[max]..+[max] with 1° ticks. `value` is the applied or
+ * requested angle; the caller owns which one it shows.
+ */
+@Composable
+private fun OrientationSlider(
+    label: String,
+    value: Int,
+    max: Int,
+    steps: Int,
+    enabled: Boolean,
+    startHint: String,
+    centerHint: String,
+    endHint: String,
+    onChange: (Float) -> Unit
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = QuietPalette.TextSecondary
+    )
+    Slider(
+        value = value.toFloat(),
+        onValueChange = onChange,
+        enabled = enabled,
+        valueRange = -max.toFloat()..max.toFloat(),
+        steps = steps,
+        colors = SliderDefaults.colors(
+            thumbColor = QuietPalette.Primary,
+            activeTrackColor = QuietPalette.Primary,
+            inactiveTrackColor = QuietPalette.Outline,
+            disabledThumbColor = QuietPalette.TextSecondary.copy(alpha = 0.5f),
+            disabledActiveTrackColor = QuietPalette.Outline,
+            disabledInactiveTrackColor = QuietPalette.Outline.copy(alpha = 0.6f)
+        )
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(startHint, style = MaterialTheme.typography.bodySmall, color = QuietPalette.TextSecondary)
+        Text(centerHint, style = MaterialTheme.typography.bodySmall, color = QuietPalette.TextSecondary)
+        Text(endHint, style = MaterialTheme.typography.bodySmall, color = QuietPalette.TextSecondary)
     }
 }
 
@@ -211,14 +255,17 @@ private fun PresetButton(
     }
 }
 
-private fun pitchLabel(degrees: Int): String = when {
-    degrees > 0 -> "上仰 ${degrees}°"
-    degrees < 0 -> "下俯 ${abs(degrees)}°"
-    else -> "平视 0°"
+private fun yawLabel(degrees: Int): String = when {
+    degrees < 0 -> "右转 ${abs(degrees)}°"
+    degrees > 0 -> "左转 $degrees°"
+    else -> "正前"
 }
 
-private fun signedDegrees(degrees: Float): String =
-    String.format(Locale.US, "%+d°", degrees.roundToInt())
+private fun pitchLabel(degrees: Int): String = when {
+    degrees > 0 -> "上仰 $degrees°"
+    degrees < 0 -> "下俯 ${abs(degrees)}°"
+    else -> "平视"
+}
 
 private fun animLabel(anim: ViewAnim): String = when (anim) {
     ViewAnim.PLAYING -> "播放中"

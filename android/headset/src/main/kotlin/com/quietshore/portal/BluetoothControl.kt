@@ -16,7 +16,10 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.ParcelUuid
 import android.util.Log
@@ -31,7 +34,7 @@ import java.util.concurrent.CopyOnWriteArraySet
  * BLE peripheral for the tablet console.
  *
  * command   write       CLAIM / RELEASE / HELLO <v> / #<seq> <cmd> / <cmd>
- *                       (`view:move:*` stays unsequenced and ack-free)
+ *                       (`view:orient:*` stays unsequenced and ack-free)
  * status    read/notify "CONNECTED", "CONTROL_OK", "CONTROL_BUSY",
  *                       "CONTROL_RELEASED", "CONTROL_REQUIRED",
  *                       "WELCOME <v> <caps>", "ACK <seq> <OK|REJECTED|BUSY>",
@@ -68,6 +71,15 @@ internal class BluetoothControl(
         const val STATE_ADVERTISING = "advertising"
         const val WATCHDOG_INTERVAL_MS = 5_000L
         const val CONTROLLER_TIMEOUT_MS = 20_000L
+
+        /** Bluetooth off / GATT open failure: try again without a restart. */
+        const val START_RETRY_MS = 4_000L
+        /** A failed advertise attempt is retried well before a user gives up. */
+        const val ADVERTISE_RETRY_MS = 2_000L
+        /** Periodic check for a stack that silently stopped advertising. */
+        const val ADVERTISE_CHECK_MS = 8_000L
+        /** Give the controller time to leave before advertising again. */
+        const val ADVERTISE_RESUME_MS = 400L
 
         /** Bounded dedupe window: enough for every realistic retry burst. */
         const val SEQ_MEMO_DEPTH = 32
@@ -134,8 +146,66 @@ internal class BluetoothControl(
 
     private var started = false
 
+    /** True between startAdvertising and the stack stopping it. */
+    @Volatile
+    private var advertising = false
+    private var receiverRegistered = false
+
     val state: String
         get() = lifecycleState
+
+    private val startRetry = Runnable {
+        if (started && server == null) {
+            startInternal()
+        }
+    }
+
+    private val advertiseRetry = Runnable {
+        if (!started || advertising || connected.isNotEmpty()) {
+            return@Runnable
+        }
+        startAdvertising()
+    }
+
+    /**
+     * Advertising is the only way a new tablet can find this headset. Some
+     * stacks stop connectable advertising as soon as a link exists and do not
+     * tell the app, so keep probing while no tablet is connected.
+     */
+    private val advertiseWatchdog = object : Runnable {
+        override fun run() {
+            if (!started) {
+                return
+            }
+            if (server == null) {
+                scheduleStartRetry()
+            } else if (!advertising && connected.isEmpty()) {
+                startAdvertising()
+            }
+            watchdogHandler.postDelayed(this, ADVERTISE_CHECK_MS)
+        }
+    }
+
+    private val bluetoothReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != BluetoothAdapter.ACTION_STATE_CHANGED) {
+                return
+            }
+            when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                BluetoothAdapter.STATE_ON -> if (started) {
+                    watchdogHandler.post {
+                        teardownGatt()
+                        startInternal()
+                    }
+                }
+
+                BluetoothAdapter.STATE_OFF -> {
+                    teardownGatt()
+                    setState("bluetooth-off")
+                }
+            }
+        }
+    }
 
     @Synchronized
     fun start() {
@@ -143,12 +213,26 @@ internal class BluetoothControl(
             return
         }
         started = true
+        registerBluetoothReceiver()
+        startInternal()
+    }
+
+    /**
+     * Opens the GATT server and advertising. Safe to re-run after a failure or
+     * a Bluetooth toggle: every step is guarded by the field it fills.
+     */
+    private fun startInternal() {
+        if (server != null) {
+            startAdvertising()
+            return
+        }
         try {
             val manager = appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter = manager?.adapter
             this.adapter = adapter
             if (manager == null || adapter == null || !adapter.isEnabled) {
                 setState("bluetooth-off")
+                scheduleStartRetry()
                 return
             }
             if (!adapter.isMultipleAdvertisementSupported) {
@@ -164,6 +248,7 @@ internal class BluetoothControl(
             val server = manager.openGattServer(appContext, callback)
             if (server == null) {
                 setState("gatt-open-failed")
+                scheduleStartRetry()
                 return
             }
             this.server = server
@@ -202,33 +287,125 @@ internal class BluetoothControl(
             service.addCharacteristic(telemetry)
             service.addCharacteristic(state)
             if (!server.addService(service)) {
+                teardownGatt()
                 setState("gatt-add-service-failed")
+                scheduleStartRetry()
                 return
             }
 
-            val advertiser = adapter.bluetoothLeAdvertiser
-            if (advertiser == null) {
-                setState("ble-advertiser-unavailable")
-                return
-            }
-            this.advertiser = advertiser
-            val settings = AdvertiseSettings.Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
-                .setConnectable(true)
-                .setTimeout(0)
-                .build()
-            val data = AdvertiseData.Builder()
-                .addServiceUuid(ParcelUuid(ControlProtocol.serviceUuid))
-                .build()
-            val scanResponse = AdvertiseData.Builder()
-                .setIncludeDeviceName(true)
-                .build()
-            advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
-            setState(STATE_ADVERTISING)
+            startAdvertising()
+            watchdogHandler.removeCallbacks(advertiseWatchdog)
+            watchdogHandler.postDelayed(advertiseWatchdog, ADVERTISE_CHECK_MS)
         } catch (error: RuntimeException) {
             setState("error")
             Log.w(TAG, "BLE start failed: ${error.message}")
+            teardownGatt()
+            scheduleStartRetry()
+        }
+    }
+
+    private fun startAdvertising() {
+        if (!started || advertising) {
+            return
+        }
+        val advertiser = advertiser ?: adapter?.bluetoothLeAdvertiser
+        if (advertiser == null) {
+            setState("ble-advertiser-unavailable")
+            scheduleAdvertiseRetry()
+            return
+        }
+        this.advertiser = advertiser
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+            .setConnectable(true)
+            .setTimeout(0)
+            .build()
+        val data = AdvertiseData.Builder()
+            .addServiceUuid(ParcelUuid(ControlProtocol.serviceUuid))
+            .build()
+        val scanResponse = AdvertiseData.Builder()
+            .setIncludeDeviceName(true)
+            .build()
+        advertising = true
+        try {
+            advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
+        } catch (error: RuntimeException) {
+            advertising = false
+            Log.w(TAG, "BLE advertise failed: ${error.message}")
+            scheduleAdvertiseRetry()
+        }
+    }
+
+    private fun scheduleStartRetry() {
+        watchdogHandler.removeCallbacks(startRetry)
+        watchdogHandler.postDelayed(startRetry, START_RETRY_MS)
+    }
+
+    private fun scheduleAdvertiseRetry() {
+        watchdogHandler.removeCallbacks(advertiseRetry)
+        watchdogHandler.postDelayed(advertiseRetry, ADVERTISE_RETRY_MS)
+    }
+
+    private fun registerBluetoothReceiver() {
+        if (receiverRegistered) {
+            return
+        }
+        try {
+            appContext.registerReceiver(
+                bluetoothReceiver,
+                IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
+            )
+            receiverRegistered = true
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "cannot watch Bluetooth state: ${error.message}")
+        }
+    }
+
+    private fun unregisterBluetoothReceiver() {
+        if (!receiverRegistered) {
+            return
+        }
+        receiverRegistered = false
+        try {
+            appContext.unregisterReceiver(bluetoothReceiver)
+        } catch (ignored: RuntimeException) {
+            // Already unregistered with the process.
+        }
+    }
+
+    /** Closes GATT/advertising without stopping the service or the receiver. */
+    private fun teardownGatt() {
+        watchdogHandler.removeCallbacks(startRetry)
+        watchdogHandler.removeCallbacks(advertiseRetry)
+        watchdogHandler.removeCallbacks(advertiseWatchdog)
+        watchdogHandler.removeCallbacks(controllerWatchdog)
+        try {
+            advertiser?.stopAdvertising(advertiseCallback)
+        } catch (ignored: RuntimeException) {
+            // already stopped
+        }
+        advertiser = null
+        advertising = false
+        val hadController = synchronized(controlLock) { controller != null }
+        try {
+            server?.clearServices()
+            server?.close()
+        } catch (ignored: RuntimeException) {
+            // already closed
+        }
+        server = null
+        commandCharacteristic = null
+        statusCharacteristic = null
+        telemetryCharacteristic = null
+        stateCharacteristic = null
+        connected.clear()
+        synchronized(controlLock) {
+            controller = null
+            resetProtocolStateLocked()
+        }
+        if (hadController) {
+            listener.onControlMode(false)
         }
     }
 
@@ -252,26 +429,13 @@ internal class BluetoothControl(
 
     @Synchronized
     fun stop() {
-        watchdogHandler.removeCallbacks(controllerWatchdog)
         if (!started) {
             return
         }
         started = false
-        try {
-            advertiser?.stopAdvertising(advertiseCallback)
-        } catch (ignored: RuntimeException) {
-            // already stopped
-        }
-        try {
-            server?.clearServices()
-            server?.close()
-        } catch (ignored: RuntimeException) {
-            // already closed
-        }
-        connected.clear()
-        synchronized(controlLock) { controller = null }
-        advertiser = null
-        server = null
+        unregisterBluetoothReceiver()
+        watchdogHandler.removeCallbacksAndMessages(null)
+        teardownGatt()
         setState("stopped")
         listener.onControlMode(false)
     }
@@ -369,10 +533,12 @@ internal class BluetoothControl(
                 return ControlProtocol.STATUS_CONTROL_BUSY
             }
         }
+        // Re-claiming refreshes the lease even when the address already owns it;
+        // a tablet that just reconnected must not inherit an expired watchdog.
+        touchController()
+        watchdogHandler.removeCallbacks(controllerWatchdog)
+        watchdogHandler.postDelayed(controllerWatchdog, WATCHDOG_INTERVAL_MS)
         if (changed) {
-            touchController()
-            watchdogHandler.removeCallbacks(controllerWatchdog)
-            watchdogHandler.postDelayed(controllerWatchdog, WATCHDOG_INTERVAL_MS)
             listener.onControlMode(true)
         }
         // Always replay the snapshot: a reconnecting tablet may have missed
@@ -461,7 +627,7 @@ internal class BluetoothControl(
      * Seqs make delivery explicit: the result of every discrete command is
      * reported as `ACK <seq> <OK|REJECTED|BUSY>` and duplicates inside the
      * bounded window re-send the original result without executing twice.
-     * `view:move` stays seq-free and ack-free (latest sample wins).
+     * `view:orient` stays seq-free and ack-free (latest sample wins).
      */
     private fun handleCommandWrite(device: BluetoothDevice, requestId: Int, raw: String) {
         val sequenced = ControlProtocol.parseSequencedCommand(raw)
@@ -483,7 +649,7 @@ internal class BluetoothControl(
         }
         touchController()
 
-        val continuous = command.startsWith(ControlProtocol.VIEW_MOVE)
+        val continuous = command.startsWith(ControlProtocol.VIEW_ORIENT)
         val handshake = synchronized(controlLock) {
             if (handshakeAddress == address) handshakeVersion else 0
         }
@@ -627,6 +793,13 @@ internal class BluetoothControl(
                     // A dropped controller frees the console for the next pad.
                     listener.onControlMode(false)
                 }
+                // Connectable advertising usually ends with the link; make the
+                // headset discoverable again for a reconnect or a new tablet.
+                if (started && connected.isEmpty()) {
+                    advertising = false
+                    watchdogHandler.removeCallbacks(advertiseRetry)
+                    watchdogHandler.postDelayed(advertiseRetry, ADVERTISE_RESUME_MS)
+                }
             }
         }
 
@@ -694,13 +867,24 @@ internal class BluetoothControl(
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
+            advertising = true
             setState(STATE_ADVERTISING)
             Log.i(TAG, "BLE advertising as ${ControlProtocol.deviceName}")
         }
 
         override fun onStartFailure(errorCode: Int) {
+            if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED) {
+                // The stack kept the previous advertisement alive; that is fine.
+                advertising = true
+                setState(STATE_ADVERTISING)
+                return
+            }
+            advertising = false
             setState("advertise-failed:$errorCode")
             Log.w(TAG, "BLE advertise failed: $errorCode")
+            if (started && connected.isEmpty()) {
+                scheduleAdvertiseRetry()
+            }
         }
     }
 }

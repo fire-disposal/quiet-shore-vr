@@ -3,12 +3,13 @@ import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN, readConfig, type AppConfig } from './co
 import { createRenderer, type Quality } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
 import { SitUpPath, type CameraPose } from '../core/xr/situp-path';
+import { createSitUpMotion } from '../core/xr/situp-run';
 import {
   createComfort,
   POSTURE_LIMITS,
-  type ComfortApi,
-  type RemapResult
+  type ComfortApi
 } from '../core/xr/comfort';
+import type { RemapResult } from '../core/xr/remap';
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
@@ -46,15 +47,21 @@ import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
 import {
   createViewMotionController,
   presetCode,
+  viewToWorld,
   type ViewMotionControllerApi
 } from '../core/xr/view-motion';
 import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
-import { parseViewAnim, parseViewMove } from './view-command';
+import { parseViewAnim, parseViewOrient } from './view-command';
 
 const MAX_DT = 0.25;
 // Sit-up performance: the confirm key toggles between the supine frame and
-// the standing frame; 12 s spreads the rotation over a tolerable ramp.
-const SITUP_DURATION_MS = 12000;
+// the standing frame. 6 s keeps the turn decisive; the flow cue carries the
+// perceived rise, the rotation only sets which way is up.
+const SITUP_DURATION_MS = 6000;
+/** Rotation rate that maps to full cue flow while rising. */
+const CUE_FULL_DEG_PER_S = 40;
+/** Floor of the cue flow during a rising transition, so motion starts at once. */
+const CUE_IDLE_FLOW = 0.25;
 const LONG_PRESS_MS = 600;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
 const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
@@ -93,8 +100,12 @@ export class QuietShoreApp {
     sitUpTarget: 0,
     sitUpMoving: false,
     posture: null,
-    viewPitchDeg: 0,
-    viewPitchTargetDeg: 0,
+    baseQuaternion: new THREE.Quaternion(),
+    baseReferenceQuaternion: new THREE.Quaternion(),
+    lookYawDeg: 0,
+    lookYawTargetDeg: 0,
+    upGazeDeg: 0,
+    upGazeTargetDeg: 0,
     viewAnim: 'idle',
     viewPreset: 'none',
     floorOffset: 0,
@@ -115,11 +126,13 @@ export class QuietShoreApp {
   private postureCueState: PostureCueApi | null = null;
   private sitUpPath: SitUpPath | null = null;
   private sitUpReference: CameraPose | null = null;
+  /** Base rotation the sit-up starts from; telemetry measures against it. */
+  private readonly sitUpBase0 = new THREE.Quaternion();
+  private readonly calibrationFrame = new THREE.Quaternion();
+  private readonly identityQuaternion = new THREE.Quaternion();
   private sitUpMode = false;
   private sitUpReady = false;
-  private sitUpT = 0;
-  private sitUpTarget = 0;
-  private sitUpMoving = false;
+  private readonly sitUpMotion = createSitUpMotion({ durationMs: SITUP_DURATION_MS });
   private session: XRSession | null = null;
   private previewing = false;
   private savedBackground: THREE.Scene['background'] = null;
@@ -237,14 +250,16 @@ export class QuietShoreApp {
       () => stateFromSnapshot(this.captureSnapshot()),
       // The state payload carries no motion flag; the sit-up performance is
       // the only motion source that has to be reported from outside it.
-      () => this.sitUpMoving,
+      () => this.sitUpMotion.moving,
       (status) => this.handleLinkStatus(status)
     );
-    // View motion is a system capability: it owns pitch, presets, hold and
-    // reset, and pushes the applied angle into whichever world shell is bound.
+    // View motion is a system capability: it owns the orientation, presets,
+    // hold and reset. The sink adapter is the only place the patient-centric
+    // angles become a world rotation, and it targets whichever shell is bound.
     this.viewMotion = createViewMotionController({
       sink: {
-        setPitch: (deg: number) => this.shell?.setPitch(deg)
+        setOrientation: (lookYawDeg: number, upGazeDeg: number) =>
+          this.shell?.setWorldRotation(viewToWorld(lookYawDeg, upGazeDeg))
       }
     });
 
@@ -394,12 +409,14 @@ export class QuietShoreApp {
     // floor offset on content and survives both rotations.
     this.comfort = createComfort({ scene: this.scene, world: this.host.content });
     this.shell = createWorldShell({ scene: this.scene, base: this.comfort.group });
-    // Rebind, do not re-animate: the controller keeps its pitch and state.
-    this.shell.setPitch(this.viewMotion.getPitchDeg());
+    // Rebind, do not re-animate: the controller keeps its angles and state.
+    this.shell.setWorldRotation(
+      viewToWorld(this.viewMotion.getLookYawDeg(), this.viewMotion.getUpGazeDeg())
+    );
     this.disposePostureCue();
-    if (id === 'landscape') {
-      this.postureCueState = createPostureCue({ scene: this.scene });
-    }
+    // The cue lives in world space and follows the head, so it is independent
+    // of the scene art and of every world rotation: install it everywhere.
+    this.postureCueState = createPostureCue({ scene: this.scene });
     this.calibration = new Calibration({
       scene: this.scene,
       comfort: this.comfort,
@@ -411,9 +428,7 @@ export class QuietShoreApp {
     this.sitUpReference = null;
     this.sitUpMode = false;
     this.sitUpReady = false;
-    this.sitUpT = 0;
-    this.sitUpTarget = 0;
-    this.sitUpMoving = false;
+    this.sitUpMotion.reset();
     this.registerSelectables(handle.selectables);
     this.host.setFloorOffset(this.session ? -this.eyeHeight : 0);
     this.savedBackground = this.scene.background;
@@ -601,9 +616,8 @@ export class QuietShoreApp {
     this.sitUpReady = false;
     this.sitUpPath = null;
     this.sitUpReference = null;
-    this.sitUpT = 0;
-    this.sitUpTarget = 0;
-    this.sitUpMoving = false;
+    this.sitUpMotion.reset();
+    this.sitUpBase0.identity();
     this.stopSceneAudio();
     this.menu.attach(null);
     this.menu.close();
@@ -640,9 +654,8 @@ export class QuietShoreApp {
     this.sitUpReady = false;
     this.sitUpPath = null;
     this.sitUpReference = null;
-    this.sitUpT = 0;
-    this.sitUpTarget = 0;
-    this.sitUpMoving = false;
+    this.sitUpMotion.reset();
+    this.sitUpBase0.identity();
     // Calibration starts level: the operator's pitch correction is dropped and
     // the sit-up base pose is released so comfort owns the world again.
     this.viewMotion.reset();
@@ -650,7 +663,10 @@ export class QuietShoreApp {
     // A running posture transition must not keep advancing through the
     // capture. setPosture supersedes it and heads for neutral; the API's
     // 1 s floor runs while the scene is hidden.
-    this.comfort?.setPosture({ pitchDeg: 0, rollDeg: 0, riseM: 0 }, POSTURE_LIMITS.minDurationMs);
+    this.comfort?.setPosture(
+      { worldPitchDeg: 0, worldRollDeg: 0, riseM: 0 },
+      POSTURE_LIMITS.minDurationMs
+    );
     this.savedBackground = this.scene.background;
     this.scene.background = new THREE.Color(0x000000);
     this.handle.root.visible = false;
@@ -676,11 +692,14 @@ export class QuietShoreApp {
         position: this.headPose.position.clone(),
         quaternion: this.headPose.quaternion.clone()
       };
-      this.sitUpT = 0;
-      this.sitUpTarget = 0;
-      this.sitUpMoving = false;
+      this.sitUpMotion.reset();
       this.sitUpMode = true;
       this.sitUpReady = true;
+      // The frame the performance starts from: telemetry measures the applied
+      // base against it instead of re-deriving an angle from progress.
+      this.sitUpBase0.copy(
+        this.sitUpPath.worldFor(this.sitUpReference, this.sitUpPath.at(0)).quaternion
+      );
       this.host.setFloorOffset(0);
       this.applySitUpTransform();
     }
@@ -788,8 +807,8 @@ export class QuietShoreApp {
       this.applyEyeHeightCommand(command.slice('settings:eyeheight:'.length));
       return;
     }
-    if (command.startsWith('view:move:')) {
-      this.applyViewTarget(command.slice('view:move:'.length));
+    if (command.startsWith('view:orient:')) {
+      this.applyViewOrientation(command.slice('view:orient:'.length));
       return;
     }
     if (command.startsWith('view:anim:')) {
@@ -893,13 +912,13 @@ export class QuietShoreApp {
   }
 
   /**
-   * `view:move:<x>,<z>`: absolute pitch target (z × 20°), resent at ≤10 Hz
-   * while the operator drags. `x` must be 0; there is no translation channel.
+   * `view:orient:<yaw>,<pitch>`: absolute orientation in degrees, resent at
+   * ≤10 Hz while the operator drags. There is no translation channel.
    * Invalid frames are rejected whole and out-of-session frames are ignored so
    * a stuck tablet cannot move the view.
    */
-  private applyViewTarget(raw: string): void {
-    const target = parseViewMove(raw);
+  private applyViewOrientation(raw: string): void {
+    const target = parseViewOrient(raw);
     if (target === null) {
       this.start.setStatus(`视角参数无效：${raw}`, 'error');
       return;
@@ -907,7 +926,7 @@ export class QuietShoreApp {
     if (!this.viewCommandsAllowed()) {
       return;
     }
-    this.viewMotion.setTarget(target);
+    this.viewMotion.setTarget(target.lookYawDeg, target.upGazeDeg);
   }
 
   /** `view:anim:<name>`: fixed one-shot presets only. */
@@ -982,8 +1001,7 @@ export class QuietShoreApp {
       this.start.setStatus('校准中无法调整姿态', 'error');
       return;
     }
-    this.sitUpTarget = rising ? 1 : 0;
-    this.sitUpMoving = true;
+    this.sitUpMotion.setTarget(rising ? 1 : 0);
     this.start.setStatus(rising ? '虚拟起身中，随时可停止' : '正在回到卧床视角', 'ok');
   }
 
@@ -991,27 +1009,18 @@ export class QuietShoreApp {
     if (!this.sitUpMode) {
       return;
     }
-    this.sitUpTarget = this.sitUpT;
-    this.sitUpMoving = false;
+    this.sitUpMotion.stop();
     this.applySitUpTransform();
     this.start.setStatus('已停止虚拟起身', 'ok');
   }
 
   private updateSitUp(dt: number): void {
-    if (!this.sitUpMode || !Number.isFinite(dt) || dt <= 0) {
+    if (!this.sitUpMode) {
       return;
     }
-    const delta = this.sitUpTarget - this.sitUpT;
-    if (Math.abs(delta) < 1e-4) {
-      this.sitUpT = this.sitUpTarget;
-      this.sitUpMoving = false;
+    if (this.sitUpMotion.update(dt)) {
       this.applySitUpTransform();
-      return;
     }
-    const step = (dt * 1000) / SITUP_DURATION_MS;
-    this.sitUpT = Math.min(1, Math.max(0, this.sitUpT + Math.sign(delta) * step));
-    this.sitUpMoving = true;
-    this.applySitUpTransform();
   }
 
   /**
@@ -1023,7 +1032,7 @@ export class QuietShoreApp {
     if (!this.sitUpMode || !this.sitUpPath || !this.sitUpReference || !this.shell) {
       return;
     }
-    const camera = this.sitUpPath.at(this.sitUpT);
+    const camera = this.sitUpPath.at(this.sitUpMotion.t);
     this.shell.setBasePose(this.sitUpPath.worldFor(this.sitUpReference, camera));
   }
 
@@ -1124,9 +1133,9 @@ export class QuietShoreApp {
     ) {
       // Patient confirm key drives the sit-up in both standalone and guided
       // mode; the emergency stop now lives in the long-press menu.
-      this.sitUpTarget = this.sitUpTarget >= 0.5 ? 0 : 1;
-      this.sitUpMoving = true;
-      this.start.setStatus(this.sitUpTarget > 0.5 ? '正在坐起' : '正在回躺', 'ok');
+      const rising = this.sitUpMotion.target < 0.5;
+      this.sitUpMotion.setTarget(rising ? 1 : 0);
+      this.start.setStatus(rising ? '正在坐起' : '正在回躺', 'ok');
       return;
     }
     if (this.session || this.previewing) {
@@ -1205,10 +1214,16 @@ export class QuietShoreApp {
       return 0;
     }
     if (this.sitUpMode) {
-      if (!this.sitUpMoving) {
+      if (!this.sitUpMotion.moving) {
         return 0;
       }
-      return this.sitUpTarget > this.sitUpT ? 1 : 0;
+      // Lowering (or a stopped ramp) freezes the motes: only rising reads as
+      // weightlessness. A small floor makes the first frames move immediately.
+      if (this.sitUpMotion.target <= this.sitUpMotion.t) {
+        return 0;
+      }
+      const rate = this.sitUpPath?.pitchRateAt(this.sitUpMotion.t, SITUP_DURATION_MS) ?? 0;
+      return Math.max(CUE_IDLE_FLOW, Math.min(1, rate / CUE_FULL_DEG_PER_S));
     }
     const comfort = this.comfort;
     if (!comfort || !comfort.isPostureMoving()) {
@@ -1229,12 +1244,22 @@ export class QuietShoreApp {
     input.eyeHeight = this.eyeHeight;
     input.confidence = this.comfort?.getState().remap?.confidence ?? 0;
     input.sitUp = this.sitUpMode ? this.sitUpPath : null;
-    input.sitUpT = this.sitUpT;
-    input.sitUpTarget = this.sitUpTarget;
-    input.sitUpMoving = this.sitUpMoving;
+    input.sitUpT = this.sitUpMotion.t;
+    input.sitUpTarget = this.sitUpMotion.target;
+    input.sitUpMoving = this.sitUpMotion.moving;
     input.posture = this.comfort?.getPostureState() ?? null;
-    input.viewPitchDeg = this.viewMotion.getPitchDeg();
-    input.viewPitchTargetDeg = this.viewMotion.getTargetDeg();
+    const comfort = this.comfort;
+    const shell = this.shell;
+    input.baseQuaternion = shell ? shell.base.quaternion : this.identityQuaternion;
+    input.baseReferenceQuaternion = this.sitUpMode
+      ? this.sitUpBase0
+      : comfort
+        ? comfort.getCalibrationQuaternion(this.calibrationFrame)
+        : this.identityQuaternion;
+    input.lookYawDeg = this.viewMotion.getLookYawDeg();
+    input.lookYawTargetDeg = this.viewMotion.getTargetLookYawDeg();
+    input.upGazeDeg = this.viewMotion.getUpGazeDeg();
+    input.upGazeTargetDeg = this.viewMotion.getTargetUpGazeDeg();
     input.viewAnim = this.viewMotion.getStateName();
     input.viewPreset = presetCode(this.viewMotion.getPresetId());
     input.floorOffset = this.host.floor;

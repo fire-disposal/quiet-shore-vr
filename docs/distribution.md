@@ -46,7 +46,7 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 
 ### 2.3 共享契约 `:protocol`
 
-纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、20 字节遥测编解码、13 字节 state v5 都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
+纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、20 字节遥测编解码、15 字节 state v7 都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
 
 ## 3. 方案矩阵
 

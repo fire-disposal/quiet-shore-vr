@@ -231,21 +231,24 @@ fun ControlRail(
                 }
             }
 
-            RailSection("视角俯仰", visible = tab == RailTab.VIEW) {
+            RailSection("视角朝向", visible = tab == RailTab.VIEW) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ViewPitchSlider(
-                        degrees = state.viewPitchDegrees,
-                        target = state.control.viewPitch,
+                    ViewOrientationControls(
+                        yawDegrees = state.viewYawDegrees,
+                        yawTarget = state.control.viewYaw,
+                        pitchDegrees = state.viewPitchDegrees,
+                        pitchTarget = state.control.viewPitch,
                         anim = state.control.viewAnim,
                         preset = state.control.viewPreset,
                         enabled = state.canAdjustView,
-                        onChange = actions.onPitchChange,
+                        onYawChange = actions.onYawChange,
+                        onPitchChange = actions.onPitchChange,
                         onAnim = actions.onViewAnim,
                         onStop = actions.onViewPitchStop
                     )
                     Text(
                         text = state.viewPitchBlockedReason
-                            ?: "滑动条设定绝对角度；四个预设由页面固定曲线播放，“停止”立即冻结在当前角度。",
+                            ?: "滑动条设定绝对朝向（偏航 ±180°、俯仰 ±90°）；四个预设由页面固定曲线播放，“停止”立即冻结在当前朝向。",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (state.canAdjustView) {
                             QuietPalette.TextSecondary

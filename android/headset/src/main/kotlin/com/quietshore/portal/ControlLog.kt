@@ -13,13 +13,13 @@ internal enum class ControlKind {
     /** Scene/posture/cue/view:stop and friends: stays pending until acked. */
     DISCRETE,
 
-    /** `view:move:*` sample: ack-free, newest absolute target wins. */
+    /** `view:orient:*` sample: ack-free, newest absolute target wins. */
     CONTINUOUS
 }
 
 /** Kinds of frames a subscriber can hold; drives queue coalescing. */
 internal enum class FrameKind {
-    /** A `cmd` message carrying only a fresh `view:move` sample. */
+    /** A `cmd` message carrying only a fresh `view:orient` sample. */
     CONTINUOUS,
 
     /** A `cmd` message carrying a discrete command; never dropped by the queue. */
@@ -37,7 +37,7 @@ internal enum class FrameKind {
  *
  * Discrete commands stay resident until the page acks them (`ack.seq` prunes
  * everything at or below it), so a reconnect with `since` can be gap-filled.
- * The newest continuous `view:move` lives in its own slot and is never acked:
+ * The newest continuous `view:orient` lives in its own slot and is never acked:
  * a 10 Hz movement stream can never evict a discrete command.
  *
  * `view:anim:*` is deliberately absent: it is a one-shot event, delivered live
@@ -57,7 +57,7 @@ internal class ControlLog(private val depth: Int = PENDING_DEPTH) {
     val pendingSize: Int get() = pending.size
 
     fun record(seq: Int, command: String): ControlKind {
-        if (command.startsWith(ControlProtocol.VIEW_MOVE)) {
+        if (command.startsWith(ControlProtocol.VIEW_ORIENT)) {
             continuous = ControlEntry(seq, command)
             return ControlKind.CONTINUOUS
         }

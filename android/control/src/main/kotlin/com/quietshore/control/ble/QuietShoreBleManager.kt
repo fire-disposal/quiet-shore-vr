@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets
  * notifying characteristics. Telemetry is a fixed 20 byte little endian
  * payload, so no MTU negotiation is required.
  *
- * The 10 Hz `view:move` stream is written with `WRITE_TYPE_NO_RESPONSE`; every
+ * The 10 Hz `view:orient` stream is written with `WRITE_TYPE_NO_RESPONSE`; every
  * discrete command keeps `WRITE_TYPE_DEFAULT` so its ATT response still proves
  * the headset accepted it. The write type travels with each request instead of
  * being stored on the shared characteristic, so a move sample can never make a
@@ -158,7 +158,7 @@ class QuietShoreBleManager(
         // Continuous pitch targets are fire-and-forget: waiting for an ATT
         // response at 10 Hz would queue samples behind the link interval. Every
         // discrete command keeps the response so it cannot be silently lost.
-        val continuous = command.startsWith(ControlProtocol.VIEW_MOVE)
+        val continuous = command.startsWith(ControlProtocol.VIEW_ORIENT)
         val request = writeCharacteristic(
             characteristic,
             ControlProtocol.commandPayload(command),

@@ -30,13 +30,15 @@ fun phaseLabel(phase: BlePhase): String = when (phase) {
     BlePhase.SCANNING -> "搜索头显"
     BlePhase.CONNECTING, BlePhase.AUTHENTICATING -> "连接中"
     BlePhase.READY -> "已连接"
+    BlePhase.RECONNECTING -> "重连中"
     BlePhase.ERROR -> "连接失败"
     BlePhase.DISCONNECTED -> "已断开"
 }
 
 fun phaseColor(phase: BlePhase): Color = when (phase) {
     BlePhase.READY -> QuietPalette.Success
-    BlePhase.CONNECTING, BlePhase.AUTHENTICATING, BlePhase.SCANNING -> QuietPalette.Warning
+    BlePhase.CONNECTING, BlePhase.AUTHENTICATING, BlePhase.SCANNING,
+    BlePhase.RECONNECTING -> QuietPalette.Warning
     BlePhase.ERROR -> QuietPalette.Danger
     BlePhase.IDLE, BlePhase.DISCONNECTED -> QuietPalette.TextSecondary
 }

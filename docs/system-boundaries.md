@@ -57,7 +57,7 @@ Scene modules (three.js)
 | `recenter` | 3 | 绝对回 0° | 2.4 s | 15.6 °/s（从 ±20°） |
 | `breathe` | 4 | 当前 → +6° → 当前 | 6.0 s | 3.75 °/s |
 
-滑动条 `view:move:0,<z>` 是连续绝对目标（z×20°），0.35 s 时间常数 + 6°/s 速率上限；
+滑动条 `view:orient:<yaw>,<pitch>` 是连续绝对朝向（度），0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 速率上限；
 它清除当前预设。`view:stop` 立即冻结当前角度（`held`），不回正。
 
 ### 2.2 状态机与优先级
@@ -93,17 +93,17 @@ held --play / slider--> playing            （从当前角度继续）
 | --- | --- | --- | --- |
 | 宿主 | `enter/home/allapps/settings:*/scene:*` | 头显服务执行 | 成功 `ACK <seq> OK`；失败 `ACK <seq> REJECTED` |
 | 页面离散 | `posture:*`、`cue:*`、`view:anim:*`、`view:stop`、`sus:*` | `/ws` 保留区 → 页面 | `ACK <seq> <OK\|REJECTED\|BUSY>`；同 seq 去重 |
-| 页面连续 | `view:move:0,<z>` | `/ws` 最新样本槽 | **免 seq/回执**，no-response 写 |
+| 页面连续 | `view:orient:<yaw>,<pitch>` | `/ws` 最新样本槽 | **免 seq/回执**，no-response 写 |
 
-- 离散命令线格式 `#<seq> <command>`；`view:move` 保持原样。白名单在 `ControlProtocol.isAllowedCommand`。
+- 离散命令线格式 `#<seq> <command>`；`view:orient` 保持原样。白名单在 `ControlProtocol.isAllowedCommand`。
 - 平板一次只写一条：stop 优先并丢弃待发 pitch，离散 FIFO 不丢；pitch 只保留最新样本。
-- `view:move` 的 x 必须为 0（|x| < 1e-6）；非零 x 整条拒绝。
+- `view:orient` 的 x 必须为 0（|x| < 1e-6）；非零 x 整条拒绝。
 - `view:anim` 只接受 `up|down|recenter|breathe`；`none` 仅用于状态，不接受播放；不跨重连重放。
 - 平板发送频率上限 10 Hz；页面侧无 TTL，目标持续有效。
 
 ### 3.2 状态特征（头显 → 平板）
 
-页面 WS `state`（静止 1 Hz / 运动中 5 Hz）→ 头显 `ControlState` → state v5（13 字节）：
+页面 WS `state`（静止 1 Hz / 运动中 5 Hz）→ 头显 `ControlState` → state v7（15 字节）：
 
 | 字节 | 字段 | 编码 |
 | ---: | --- | --- |
@@ -142,13 +142,13 @@ held --play / slider--> playing            （从当前角度继续）
 ### 3.5 回环
 
 - `/ws?since=<seq>` 是页面唯一实时通道：服务端推 `ready`/`cmd`/`control`，页面推 `state`/`telemetry`/`ack`。
-- 离散命令保留到 ack（≤64）；`view:move` 只保留最新；`view:anim` 不跨重连重放；每订阅者队列有界并优先淘汰连续帧。
+- 离散命令保留到 ack（≤64）；`view:orient` 只保留最新；`view:anim` 不跨重连重放；每订阅者队列有界并优先淘汰连续帧。
 - 页面断线指数退避重连并带 `since=lastSeq`；没有 SSE、轮询或 HTTP state/telemetry 回退。
 - `/status`、`/capabilities`、`/command` 仅诊断；`/` 提供页面。
 
 ## 4. 变更规则
 
-1. 新增视角预设 = 三层同改：`view-motion.ts` 目录、`ControlProtocol` 白名单/`ViewPreset`、平板 UI；state v5 的 preset code 需要新编号；同版本 APK 一起升级。
+1. 新增视角预设 = 三层同改：`view-motion.ts` 目录、`ControlProtocol` 白名单/`ViewPreset`、平板 UI；state v7 的 preset code / 新增 `viewYaw` 需要新版本号；同版本 APK 一起升级。
 2. 新增场景只实现 `SceneDefinition`/`SceneHandle`；不得引入视角/会话/BLE 依赖。
 3. Android 不新增动画参数命令；需要新曲线时先改目录与协议，不接受任意 duration/amplitude。
 4. 旧 state/命令格式不保留兼容层；版本不匹配直接拒绝。

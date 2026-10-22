@@ -1,4 +1,12 @@
 import * as THREE from 'three';
+import {
+  clearTransform,
+  copyWorldRotation,
+  isIdentityRotation,
+  worldQuaternion,
+  writeWorld,
+  type WorldRotation
+} from './frame';
 import type { WorldTransform } from './situp-path';
 
 /**
@@ -6,27 +14,25 @@ import type { WorldTransform } from './situp-path';
  *
  * ```text
  * scene
- * └── world-shell          view pitch: rotation about the eye (this module)
+ * └── world-shell          world rotation about the eye (this module)
  *     └── base             comfort.group: calibration + posture, or the sit-up pose
  *         └── content      scene host: floor offset
  *             └── root     scene art (content-only)
  * ```
  *
- * The shell owns the *order* of the layers and the only writer of its own
- * pitch transform. It does not own animation policy: `setPitch` is a plain
- * setter, and easing/hold/reset live in the view-motion controller. It is
- * rebuilt and rebound on a scene switch, so no scene module ever sees a
- * transform layer or decides precedence.
+ * The shell owns the *order* of the layers and is the only writer of its own
+ * transform. It does not own policy: `setWorldRotation` stores a world-frame
+ * rotation, and `update` applies exactly that rotation about the eye. Easing,
+ * hold, recentre and limits live above it (`view-motion`, `comfort`).
  *
  * Each layer has exactly one writer:
- * - `group` here, from the pitch value handed in by the view-motion controller;
+ * - `group` here, from the rotation handed in by the view controller;
  * - `base` by `Comfort` while calibrated, and by `setBasePose` for the sit-up
  *   performance (the sit-up inverse replaces the calibration frame);
  * - `content` by `SceneHost.setFloorOffset` only.
  *
- * The XR camera is never read or written. The pitch is a world rotation about
- * the patient's eye, so it composes with any rigid base pose without moving
- * the eye point.
+ * The XR camera is never read or written. The rotation is about the patient's
+ * eye, so it composes with any rigid base pose without moving the eye point.
  */
 
 export interface WorldShellApi {
@@ -35,11 +41,11 @@ export interface WorldShellApi {
   /** Base pose layer: `Comfort.group`, or the sit-up transform. */
   readonly base: THREE.Object3D;
   /**
-   * Absolute pitch in degrees, positive = 上仰 (the patient sees more sky).
-   * Non-finite input is ignored; the caller clamps to the wire limit.
+   * World-frame rotation in degrees (see `frame.ts`). Non-finite components
+   * are ignored; the caller owns the envelope.
    */
-  setPitch(deg: number): void;
-  getPitch(): number;
+  setWorldRotation(rotation: WorldRotation): void;
+  getWorldRotation(out: WorldRotation): WorldRotation;
   /**
    * Hand the base layer to the sit-up performance, or give it back to
    * `Comfort` with `null`. `null` leaves the base transform untouched: the
@@ -48,7 +54,7 @@ export interface WorldShellApi {
   setBasePose(world: WorldTransform | null): void;
   /** True while the sit-up pose owns the base layer. */
   isBasePosed(): boolean;
-  /** Place the pitch transform around `eye`. Allocation-free. */
+  /** Apply the stored rotation about `eye`. Allocation-free. */
   update(eye: THREE.Vector3): void;
   dispose(): void;
 }
@@ -59,9 +65,6 @@ export interface WorldShellOptions {
   base: THREE.Object3D;
 }
 
-const DEG_TO_RAD = Math.PI / 180;
-const PITCH_AXIS = new THREE.Vector3(1, 0, 0);
-
 export function createWorldShell(options: WorldShellOptions): WorldShellApi {
   const { scene, base } = options;
   const group = new THREE.Group();
@@ -70,17 +73,20 @@ export function createWorldShell(options: WorldShellOptions): WorldShellApi {
   scene.remove(base);
   group.add(base);
 
-  const rotation = new THREE.Quaternion();
-  const rotatedEye = new THREE.Vector3();
-  let pitchDeg = 0;
+  const rotation: WorldRotation = { pitchDeg: 0, rollDeg: 0, yawDeg: 0 };
+  const quaternion = new THREE.Quaternion();
   let basePosed = false;
   let disposed = false;
 
-  function setPitch(deg: number): void {
-    if (!Number.isFinite(deg)) {
+  function setWorldRotation(next: WorldRotation): void {
+    if (
+      !Number.isFinite(next.pitchDeg) ||
+      !Number.isFinite(next.rollDeg) ||
+      !Number.isFinite(next.yawDeg)
+    ) {
       return;
     }
-    pitchDeg = deg;
+    copyWorldRotation(next, rotation);
   }
 
   function setBasePose(world: WorldTransform | null): void {
@@ -104,18 +110,13 @@ export function createWorldShell(options: WorldShellOptions): WorldShellApi {
     ) {
       return;
     }
-    if (pitchDeg === 0) {
-      group.quaternion.identity();
-      group.position.set(0, 0, 0);
+    if (isIdentityRotation(rotation)) {
+      clearTransform(group);
       return;
     }
-    // Positive pitch = look up = the world tilts down, i.e. content rotates by
-    // -pitch about +X (a point straight ahead moves toward -Y).
-    rotation.setFromAxisAngle(PITCH_AXIS, -pitchDeg * DEG_TO_RAD);
-    rotatedEye.copy(eye).applyQuaternion(rotation);
-    group.quaternion.copy(rotation);
+    worldQuaternion(quaternion, rotation);
     // Rotation about the eye: the pivot itself is a fixed point of the shell.
-    group.position.copy(eye).sub(rotatedEye);
+    writeWorld(group, quaternion, eye);
   }
 
   function dispose(): void {
@@ -131,8 +132,8 @@ export function createWorldShell(options: WorldShellOptions): WorldShellApi {
   return {
     group,
     base,
-    setPitch,
-    getPitch: () => pitchDeg,
+    setWorldRotation,
+    getWorldRotation: (out) => copyWorldRotation(rotation, out),
     setBasePose,
     isBasePosed: () => basePosed,
     update,

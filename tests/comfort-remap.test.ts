@@ -3,12 +3,14 @@ import * as THREE from 'three';
 import {
   createComfort,
   POSTURE_LIMITS,
+  type ComfortApi
+} from '../src/core/xr/comfort';
+import {
   REMAP_LIMITS,
   REMAP_TRANSITION_MS,
   remapFromPoses,
-  type ComfortApi,
   type RemapResult
-} from '../src/core/xr/comfort';
+} from '../src/core/xr/remap';
 import type { PoseLike } from '../src/core/xr/types';
 
 const DEG = Math.PI / 180;
@@ -330,7 +332,7 @@ describe('two-pose calibration transition', () => {
 describe('posture stop deceleration', () => {
   it('brakes the remaining motion instead of freezing instantly', () => {
     const comfort = singleCalibratedComfort();
-    comfort.setPosture({ pitchDeg: 10, riseM: 1 }, 2000);
+    comfort.setPosture({ worldPitchDeg: 10, riseM: 1 }, 2000);
     comfort.updatePosture(1);
     expect(comfort.getPostureState().riseM).toBeCloseTo(0.5, 10);
 
@@ -338,15 +340,15 @@ describe('posture stop deceleration', () => {
     const stopped = comfort.getPostureState();
     expect(stopped.phase).toBe('standing');
     expect(stopped.progress).toBeCloseTo(0.5, 10);
-    expect(stopped.pitchDeg).toBeCloseTo(5, 10);
+    expect(stopped.worldPitchDeg).toBeCloseTo(5, 10);
     expect(stopped.riseM).toBeCloseTo(0.5, 10);
 
     // Velocity at the stop: 30*t^2*(1-t)^2/duration = 0.9375 per second of
     // travel, so 9.375 deg/s and 0.9375 m/s at the midpoint.
     comfort.updatePosture(POSTURE_LIMITS.stopDecelMs / 2000);
     const midway = comfort.getPostureState();
-    expect(midway.pitchDeg).toBeGreaterThan(5);
-    expect(midway.pitchDeg).toBeLessThanOrEqual(5.875 + 1e-9);
+    expect(midway.worldPitchDeg).toBeGreaterThan(5);
+    expect(midway.worldPitchDeg).toBeLessThanOrEqual(5.875 + 1e-9);
     expect(midway.riseM).toBeGreaterThan(0.5);
     expect(midway.riseM).toBeLessThanOrEqual(0.5875 + 1e-9);
     expect(midway.phase).toBe('standing');
@@ -354,7 +356,7 @@ describe('posture stop deceleration', () => {
     comfort.updatePosture(1);
     const settled = comfort.getPostureState();
     // Full ramp travel is v0 * stopDecelMs / 3 = 1 deg and 0.1 m.
-    expect(settled.pitchDeg).toBeCloseTo(6, 10);
+    expect(settled.worldPitchDeg).toBeCloseTo(6, 10);
     expect(settled.riseM).toBeCloseTo(0.6, 10);
     expect(settled.phase).toBe('standing');
 

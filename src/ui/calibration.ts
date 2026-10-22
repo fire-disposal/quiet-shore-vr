@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { HeadPose, PoseLike } from '../core/xr/types';
-import type { ComfortApi, RemapResult } from '../core/xr/comfort';
+import type { ComfortApi } from '../core/xr/comfort';
+import type { RemapResult } from '../core/xr/remap';
 import { SpatialAnchor } from '../core/spatial/anchor';
 import type { SpatialTheme } from '../core/spatial/theme';
 import { SpatialSurface } from './spatial/surface';

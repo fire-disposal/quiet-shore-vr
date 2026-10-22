@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { smootherstepRate } from './drivers/curve';
 
 /**
  * Stable world -> virtual camera model for the supine -> seated -> standing
@@ -76,6 +77,24 @@ export class SitUpPath {
     const time = t < 0 ? 0 : t > 1 ? 1 : t;
     const theta = (Math.PI / 2) * ease(time / this.rotationPortion);
     return this.eyeHeightFor(time, Math.sin(theta));
+  }
+
+  /**
+   * Rotation speed of the virtual camera at `t`, in degrees per second, for a
+   * performance lasting `durationMs`. Allocation-free; it mirrors the curve in
+   * `at(t)` so a flow cue tracks the real motion instead of guessing.
+   */
+  pitchRateAt(t: number, durationMs: number): number {
+    const durationS = durationMs / 1000;
+    if (!(durationS > 0)) {
+      return 0;
+    }
+    const time = t < 0 ? 0 : t > 1 ? 1 : t;
+    if (time >= this.rotationPortion) {
+      return 0;
+    }
+    return (90 * smootherstepRate(time / this.rotationPortion)) /
+      (this.rotationPortion * durationS);
   }
 
   /** Rise above the supine hip, in metres; what the posture layer reports. */

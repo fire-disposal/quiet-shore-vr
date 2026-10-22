@@ -1,5 +1,6 @@
 import {
-  VIEW_PITCH_LIMIT_DEG,
+  LOOK_YAW_LIMIT_DEG,
+  UP_GAZE_LIMIT_DEG,
   isViewPresetId,
   type ViewPresetId
 } from '../core/xr/view-motion';
@@ -7,42 +8,46 @@ import {
 /**
  * Strict wire parsing for the operator view channel.
  *
- * `view:move:<x>,<z>` carries an ABSOLUTE pitch target: `x` must be 0
- * (|x| < 1e-6, no translation axis exists any more) and `z ∈ [-1, 1]` maps to
- * `pitch = z × 20°`. Anything else is rejected whole, never coerced.
+ * `view:orient:<yaw>,<pitch>` carries an ABSOLUTE orientation in degrees:
+ * yaw ∈ [−180, 180] (positive = the patient's view turns left), pitch
+ * ∈ [−90, 90] (positive = the patient sees more sky). Anything else —
+ * extra fields, exponents, a leading dot or plus, out-of-range values — is
+ * rejected whole, never coerced or clamped.
  */
 const VIEW_ARG = /^-?\d+(?:\.\d+)?$/;
 
-/** Tolerated residual on the dead `x` slot, per the shared wire contract. */
-const VIEW_X_EPSILON = 1e-6;
+export interface ViewOrientation {
+  lookYawDeg: number;
+  upGazeDeg: number;
+}
 
 /**
- * Parse the payload after `view:move:`.
+ * Parse the payload after `view:orient:`.
  *
- * @returns the absolute target in degrees, or `null` when the frame is invalid.
+ * @returns the absolute orientation, or `null` when the frame is invalid.
  */
-export function parseViewMove(raw: string): number | null {
+export function parseViewOrient(raw: string): ViewOrientation | null {
   const comma = raw.indexOf(',');
   if (comma < 0 || raw.indexOf(',', comma + 1) >= 0) {
     return null;
   }
-  const rawX = raw.slice(0, comma);
-  const rawZ = raw.slice(comma + 1);
-  if (!VIEW_ARG.test(rawX) || !VIEW_ARG.test(rawZ)) {
+  const rawYaw = raw.slice(0, comma);
+  const rawPitch = raw.slice(comma + 1);
+  if (!VIEW_ARG.test(rawYaw) || !VIEW_ARG.test(rawPitch)) {
     return null;
   }
-  const x = Number(rawX);
-  const z = Number(rawZ);
-  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+  const lookYawDeg = Number(rawYaw);
+  const upGazeDeg = Number(rawPitch);
+  if (!Number.isFinite(lookYawDeg) || !Number.isFinite(upGazeDeg)) {
     return null;
   }
-  if (Math.abs(x) >= VIEW_X_EPSILON) {
+  if (lookYawDeg < -LOOK_YAW_LIMIT_DEG || lookYawDeg > LOOK_YAW_LIMIT_DEG) {
     return null;
   }
-  if (z < -1 || z > 1) {
+  if (upGazeDeg < -UP_GAZE_LIMIT_DEG || upGazeDeg > UP_GAZE_LIMIT_DEG) {
     return null;
   }
-  return z * VIEW_PITCH_LIMIT_DEG;
+  return { lookYawDeg, upGazeDeg };
 }
 
 /**

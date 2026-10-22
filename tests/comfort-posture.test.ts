@@ -2,21 +2,22 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import {
   createComfort,
-  POSTURE_EASE_PEAK,
   POSTURE_LIMITS,
-  postureEase,
-  postureEaseRate,
   type ComfortApi,
   type PostureState
 } from '../src/core/xr/comfort';
+import {
+  SMOOTHERSTEP_PEAK,
+  smootherstep,
+  smootherstepRate
+} from '../src/core/xr/drivers/curve';
+import { worldQuaternion } from '../src/core/xr/frame';
 import type { PoseLike } from '../src/core/xr/types';
-
-const DEG = Math.PI / 180;
 
 const NEUTRAL: PostureState = {
   phase: 'neutral',
-  pitchDeg: 0,
-  rollDeg: 0,
+  worldPitchDeg: 0,
+  worldRollDeg: 0,
   riseM: 0,
   progress: 0
 };
@@ -55,11 +56,13 @@ function expectVecClose(actual: THREE.Vector3, expected: THREE.Vector3): void {
 function expectedTransform(
   qCal: THREE.Quaternion,
   pivot: THREE.Vector3,
-  posture: Pick<PostureState, 'pitchDeg' | 'rollDeg' | 'riseM'>
+  posture: Pick<PostureState, 'worldPitchDeg' | 'worldRollDeg' | 'riseM'>
 ): { quaternion: THREE.Quaternion; position: THREE.Vector3 } {
-  const qPosture = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(posture.pitchDeg * DEG, 0, posture.rollDeg * DEG, 'XYZ')
-  );
+  const qPosture = worldQuaternion(new THREE.Quaternion(), {
+    pitchDeg: posture.worldPitchDeg,
+    rollDeg: posture.worldRollDeg,
+    yawDeg: 0
+  });
   // q_total = q_posture * q_calibration.
   const quaternion = qPosture.clone().multiply(qCal);
   const position = pivot.clone().sub(pivot.clone().applyQuaternion(quaternion));
@@ -78,7 +81,7 @@ describe('comfort posture layer', () => {
     expect(comfort.getPostureState()).toEqual(NEUTRAL);
     expect(comfort.getState().posture).toEqual(NEUTRAL);
 
-    comfort.setPosture({ pitchDeg: 10, riseM: 0.5 }, 5000);
+    comfort.setPosture({ worldPitchDeg: 10, riseM: 0.5 }, 5000);
     comfort.updatePosture(1);
     expect(comfort.getPostureState()).toEqual(NEUTRAL);
     expect(comfort.group.quaternion.equals(new THREE.Quaternion())).toBe(true);
@@ -104,11 +107,11 @@ describe('comfort posture layer', () => {
     const pivot = new THREE.Vector3(0, 1.6, 0);
     const comfort = makeComfort(pivot, new THREE.Quaternion());
 
-    comfort.setPosture({ pitchDeg: 12, riseM: 0.4 }, 2000);
+    comfort.setPosture({ worldPitchDeg: 12, riseM: 0.4 }, 2000);
     let state = comfort.getPostureState();
     expect(state.phase).toBe('rising');
     expect(state.progress).toBe(0);
-    expect(state.pitchDeg).toBe(0);
+    expect(state.worldPitchDeg).toBe(0);
     expect(state.riseM).toBe(0);
 
     // Halfway through a 2 s transition: the quintic ease is exactly 0.5.
@@ -116,14 +119,14 @@ describe('comfort posture layer', () => {
     state = comfort.getPostureState();
     expect(state.phase).toBe('rising');
     expect(state.progress).toBeCloseTo(0.5, 10);
-    expect(state.pitchDeg).toBeCloseTo(6, 10);
+    expect(state.worldPitchDeg).toBeCloseTo(6, 10);
     expect(state.riseM).toBeCloseTo(0.2, 10);
 
     comfort.updatePosture(1);
     state = comfort.getPostureState();
     expect(state.phase).toBe('standing');
     expect(state.progress).toBe(1);
-    expect(state.pitchDeg).toBeCloseTo(12, 10);
+    expect(state.worldPitchDeg).toBeCloseTo(12, 10);
     expect(state.riseM).toBeCloseTo(0.4, 10);
 
     const expected = expectedTransform(new THREE.Quaternion(), pivot, state);
@@ -135,7 +138,7 @@ describe('comfort posture layer', () => {
     const comfort = makeComfort();
     const before = comfort.group.position.clone();
 
-    comfort.setPosture({ pitchDeg: 0, riseM: 0.3 }, 1000);
+    comfort.setPosture({ worldPitchDeg: 0, riseM: 0.3 }, 1000);
     comfort.updatePosture(1);
 
     expect(comfort.group.position.x).toBeCloseTo(before.x, 10);
@@ -146,31 +149,31 @@ describe('comfort posture layer', () => {
 
   it('clamps posture ranges and the minimum duration', () => {
     const comfort = makeComfort();
-    comfort.setPosture({ pitchDeg: 90, rollDeg: -80, riseM: 9 }, 10);
+    comfort.setPosture({ worldPitchDeg: 90, worldRollDeg: -80, riseM: 9 }, 10);
     comfort.updatePosture(0.5); // clamped to 1000 ms, quintic midpoint
 
     const state = comfort.getPostureState();
-    expect(state.pitchDeg).toBeCloseTo(POSTURE_LIMITS.maxPitchDeg / 2, 10);
-    expect(state.rollDeg).toBeCloseTo(-POSTURE_LIMITS.maxRollDeg / 2, 10);
+    expect(state.worldPitchDeg).toBeCloseTo(POSTURE_LIMITS.maxPitchDeg / 2, 10);
+    expect(state.worldRollDeg).toBeCloseTo(-POSTURE_LIMITS.maxRollDeg / 2, 10);
     expect(state.riseM).toBeCloseTo(POSTURE_LIMITS.maxRiseM / 2, 10);
   });
 
   it('allows an explicit near-90 degree rise while the default clamp stays 20', () => {
     const comfort = makeComfort();
-    comfort.setPosture({ pitchDeg: -90, riseM: 0.45 }, 2000, 90);
+    comfort.setPosture({ worldPitchDeg: -90, riseM: 0.45 }, 2000, 90);
     comfort.updatePosture(2);
     const state = comfort.getPostureState();
-    expect(state.pitchDeg).toBeCloseTo(-90, 6);
+    expect(state.worldPitchDeg).toBeCloseTo(-90, 6);
     expect(state.riseM).toBeCloseTo(0.45, 6);
 
-    comfort.setPosture({ pitchDeg: -90, riseM: 0 }, 2000);
+    comfort.setPosture({ worldPitchDeg: -90, riseM: 0 }, 2000);
     comfort.updatePosture(2);
-    expect(comfort.getPostureState().pitchDeg).toBeCloseTo(-20, 6);
+    expect(comfort.getPostureState().worldPitchDeg).toBeCloseTo(-20, 6);
   });
 
   it('clamps long durations and defaults non-finite ones', () => {
     const long = makeComfort();
-    long.setPosture({ pitchDeg: 0, riseM: 1 }, 1_000_000);
+    long.setPosture({ worldPitchDeg: 0, riseM: 1 }, 1_000_000);
     long.updatePosture(1);
     expect(long.getPostureState().progress).toBeCloseTo(
       1000 / POSTURE_LIMITS.maxDurationMs,
@@ -178,7 +181,7 @@ describe('comfort posture layer', () => {
     );
 
     const fallback = makeComfort();
-    fallback.setPosture({ pitchDeg: 0, riseM: 1 }, Number.NaN);
+    fallback.setPosture({ worldPitchDeg: 0, riseM: 1 }, Number.NaN);
     fallback.updatePosture(5);
     expect(fallback.getPostureState().progress).toBeCloseTo(0.5, 10);
     expect(fallback.getPostureState().riseM).toBeCloseTo(0.5, 10);
@@ -186,11 +189,11 @@ describe('comfort posture layer', () => {
 
   it('restarts from current values when retargeted mid-transition', () => {
     const comfort = makeComfort();
-    comfort.setPosture({ pitchDeg: 0, riseM: 1 }, 2000);
+    comfort.setPosture({ worldPitchDeg: 0, riseM: 1 }, 2000);
     comfort.updatePosture(1);
     expect(comfort.getPostureState().riseM).toBeCloseTo(0.5, 10);
 
-    comfort.setPosture({ pitchDeg: 0, riseM: 0 }, 2000);
+    comfort.setPosture({ worldPitchDeg: 0, riseM: 0 }, 2000);
     let state = comfort.getPostureState();
     expect(state.phase).toBe('lowering');
     expect(state.progress).toBe(0);
@@ -205,7 +208,7 @@ describe('comfort posture layer', () => {
 
   it('decelerates the posture when stopped, then holds it', () => {
     const comfort = makeComfort();
-    comfort.setPosture({ pitchDeg: 10, riseM: 1 }, 2000);
+    comfort.setPosture({ worldPitchDeg: 10, riseM: 1 }, 2000);
     comfort.updatePosture(1);
     comfort.stopPosture();
 
@@ -213,7 +216,7 @@ describe('comfort posture layer', () => {
     const stopped = comfort.getPostureState();
     expect(stopped.phase).toBe('standing');
     expect(stopped.progress).toBeCloseTo(0.5, 10);
-    expect(stopped.pitchDeg).toBeCloseTo(5, 10);
+    expect(stopped.worldPitchDeg).toBeCloseTo(5, 10);
     expect(stopped.riseM).toBeCloseTo(0.5, 10);
     // The pose is no longer on a transition, but the brake still moves it.
     expect(comfort.isPostureMoving()).toBe(true);
@@ -225,14 +228,14 @@ describe('comfort posture layer', () => {
     const halfTravel = (0.5 - 0.25 + 1 / 24) * (POSTURE_LIMITS.stopDecelMs / 1000);
     const braking = comfort.getPostureState();
     expect(braking.riseM).toBeCloseTo(0.5 + 0.9375 * halfTravel, 10);
-    expect(braking.pitchDeg).toBeCloseTo(5 + 9.375 * halfTravel, 10);
+    expect(braking.worldPitchDeg).toBeCloseTo(5 + 9.375 * halfTravel, 10);
     expect(braking.phase).toBe('standing');
 
     comfort.updatePosture(1);
     const settled = comfort.getPostureState();
     // Full ramp travel is v0 * stopDecelMs / 3: 0.1 m and 1 deg.
     expect(settled.riseM).toBeCloseTo(0.6, 10);
-    expect(settled.pitchDeg).toBeCloseTo(6, 10);
+    expect(settled.worldPitchDeg).toBeCloseTo(6, 10);
     expect(settled.progress).toBeCloseTo(0.5, 10);
     // The head-locked cue reads progress, so it must not jump to 1 while the
     // world is still creeping to rest.
@@ -249,7 +252,7 @@ describe('comfort posture layer', () => {
     const pivot = new THREE.Vector3(0.6, 1.55, -1.2);
     const comfort = makeComfort(pivot, qCal);
 
-    comfort.setPosture({ pitchDeg: 14, rollDeg: 6, riseM: 0.55 }, 1000);
+    comfort.setPosture({ worldPitchDeg: 14, worldRollDeg: 6, riseM: 0.55 }, 1000);
     comfort.updatePosture(1);
     const state = comfort.getPostureState();
     expect(state.phase).toBe('standing');
@@ -258,9 +261,11 @@ describe('comfort posture layer', () => {
     expectQuatClose(comfort.group.quaternion, expected.quaternion);
     expectVecClose(comfort.group.position, expected.position);
 
-    const qPosture = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(state.pitchDeg * DEG, 0, state.rollDeg * DEG, 'XYZ')
-    );
+    const qPosture = worldQuaternion(new THREE.Quaternion(), {
+      pitchDeg: state.worldPitchDeg,
+      rollDeg: state.worldRollDeg,
+      yawDeg: 0
+    });
     expect(
       comfort.group.quaternion.angleTo(qPosture.clone().multiply(qCal))
     ).toBeLessThan(1e-6);
@@ -271,7 +276,7 @@ describe('comfort posture layer', () => {
 
   it('clears calibration and posture on reset', () => {
     const comfort = makeComfort();
-    comfort.setPosture({ pitchDeg: 12, riseM: 0.4 }, 1000);
+    comfort.setPosture({ worldPitchDeg: 12, riseM: 0.4 }, 1000);
     comfort.updatePosture(1);
     expect(comfort.isCalibrated()).toBe(true);
 
@@ -284,49 +289,49 @@ describe('comfort posture layer', () => {
 
     comfort.updatePosture(1);
     expect(comfort.getPostureState().riseM).toBe(0);
-    comfort.setPosture({ pitchDeg: 5, riseM: 0.2 }, 1000);
+    comfort.setPosture({ worldPitchDeg: 5, riseM: 0.2 }, 1000);
     expect(comfort.getPostureState()).toEqual(NEUTRAL);
   });
 });
 
 describe('posture easing curve', () => {
   it('is a quintic smootherstep with a matching derivative', () => {
-    expect(postureEase(0)).toBe(0);
-    expect(postureEase(1)).toBe(1);
-    expect(postureEase(0.5)).toBe(0.5);
+    expect(smootherstep(0)).toBe(0);
+    expect(smootherstep(1)).toBe(1);
+    expect(smootherstep(0.5)).toBe(0.5);
     // 6t^5 - 15t^4 + 10t^3 at t = 0.25 and t = 0.75.
-    expect(postureEase(0.25)).toBeCloseTo(0.103515625, 12);
-    expect(postureEase(0.75)).toBeCloseTo(0.896484375, 12);
+    expect(smootherstep(0.25)).toBeCloseTo(0.103515625, 12);
+    expect(smootherstep(0.75)).toBeCloseTo(0.896484375, 12);
 
     // Derivative 30 t^2 (1 - t)^2 agrees with central differences.
     const h = 1e-4;
     for (let i = 1; i < 100; i++) {
       const t = i / 100;
-      const slope = (postureEase(t + h) - postureEase(t - h)) / (2 * h);
-      expect(slope).toBeCloseTo(postureEaseRate(t), 5);
+      const slope = (smootherstep(t + h) - smootherstep(t - h)) / (2 * h);
+      expect(slope).toBeCloseTo(smootherstepRate(t), 5);
     }
-    expect(postureEaseRate(0)).toBe(0);
-    expect(postureEaseRate(1)).toBe(0);
-    expect(postureEaseRate(0.5)).toBeCloseTo(1.875, 12);
+    expect(smootherstepRate(0)).toBe(0);
+    expect(smootherstepRate(1)).toBe(0);
+    expect(smootherstepRate(0.5)).toBeCloseTo(1.875, 12);
     // The exported peak is exactly the curve's midpoint speed, so preset
     // durations can be checked against the documented rate envelope.
-    expect(POSTURE_EASE_PEAK).toBe(postureEaseRate(0.5));
-    expect(POSTURE_EASE_PEAK).toBeCloseTo(1.875, 12);
+    expect(SMOOTHERSTEP_PEAK).toBe(smootherstepRate(0.5));
+    expect(SMOOTHERSTEP_PEAK).toBeCloseTo(1.875, 12);
     // Velocity is continuous at both ends: a transition starts and finishes
     // at rest, so neither the start nor a stop at the end can jerk.
-    expect(postureEaseRate(1e-6)).toBeLessThan(1e-10);
-    expect(postureEaseRate(1 - 1e-6)).toBeLessThan(1e-10);
+    expect(smootherstepRate(1e-6)).toBeLessThan(1e-10);
+    expect(smootherstepRate(1 - 1e-6)).toBeLessThan(1e-10);
   });
 
   it('starts and ends gentler than smoothstep without reversing', () => {
     // Smoothstep is 3t^2 - 2t^3: 0.028 at t = 0.1, 0.15625 at t = 0.25.
-    expect(postureEase(0.1)).toBeCloseTo(0.00856, 12);
-    expect(postureEase(0.1)).toBeLessThan(0.028);
-    expect(postureEase(0.25)).toBeLessThan(0.15625);
+    expect(smootherstep(0.1)).toBeCloseTo(0.00856, 12);
+    expect(smootherstep(0.1)).toBeLessThan(0.028);
+    expect(smootherstep(0.25)).toBeLessThan(0.15625);
 
     let previous = 0;
     for (let i = 1; i <= 1000; i++) {
-      const value = postureEase(i / 1000);
+      const value = smootherstep(i / 1000);
       expect(value).toBeGreaterThan(previous);
       previous = value;
     }
@@ -334,17 +339,17 @@ describe('posture easing curve', () => {
     // Symmetric about the midpoint: ease(1 - t) === 1 - ease(t).
     for (let i = 0; i <= 100; i++) {
       const t = i / 100;
-      expect(postureEase(1 - t)).toBeCloseTo(1 - postureEase(t), 12);
+      expect(smootherstep(1 - t)).toBeCloseTo(1 - smootherstep(t), 12);
     }
   });
 
   it('clamps normalised time outside 0..1', () => {
-    expect(postureEase(-1)).toBe(0);
-    expect(postureEase(2)).toBe(1);
-    expect(postureEase(Number.NaN)).toBe(0);
-    expect(postureEaseRate(-1)).toBe(0);
-    expect(postureEaseRate(2)).toBe(0);
-    expect(postureEaseRate(Number.NaN)).toBe(0);
+    expect(smootherstep(-1)).toBe(0);
+    expect(smootherstep(2)).toBe(1);
+    expect(smootherstep(Number.NaN)).toBe(0);
+    expect(smootherstepRate(-1)).toBe(0);
+    expect(smootherstepRate(2)).toBe(0);
+    expect(smootherstepRate(Number.NaN)).toBe(0);
   });
 });
 

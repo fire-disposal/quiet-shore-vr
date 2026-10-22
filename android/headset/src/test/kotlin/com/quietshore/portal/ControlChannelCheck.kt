@@ -55,7 +55,7 @@ private fun retentionChecks() {
     var seq = 2
     repeat(1000) {
         seq++
-        log.record(seq, "view:move:0,0.5")
+        log.record(seq, "view:orient:0,30")
     }
     checkEquals(
         "a move flood cannot evict a discrete command",
@@ -96,7 +96,7 @@ private fun retentionChecks() {
         listOf(3, 5),
         outOfOrder.pendingSince(-1).map { it.seq }
     )
-    check(outOfOrder.record(9, "view:move:0,1") == ControlKind.CONTINUOUS)
+    check(outOfOrder.record(9, "view:orient:0,60") == ControlKind.CONTINUOUS)
     check(outOfOrder.record(10, "view:stop") == ControlKind.DISCRETE)
 }
 
@@ -313,7 +313,7 @@ private fun protocolGrammarChecks() {
     check(ControlProtocol.parseAck("ACK 7 BUSY")?.result == ControlProtocol.RESULT_BUSY)
 
     check("discrete needs an ack", ControlProtocol.requiresSequencedAck("scene:ward"))
-    check("view:move needs no ack", !ControlProtocol.requiresSequencedAck("view:move:0,0.5"))
+    check("view:orient needs no ack", !ControlProtocol.requiresSequencedAck("view:orient:0,30"))
     check("ping needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.PING))
     check("hello needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.helloCommand()))
 
@@ -335,10 +335,10 @@ private fun protocolGrammarChecks() {
 private fun tabletQueueChecks() {
     val queue = CommandQueue()
     for (index in 0 until 100) {
-        queue.enqueue("view:move:0,${index / 100f}")
+        queue.enqueue("view:orient:0,${index / 100f}")
     }
     checkEquals("pitch flood keeps one sample", 1, queue.pendingMoves)
-    checkEquals("newest pitch wins", "view:move:0,0.99", queue.newestMove)
+    checkEquals("newest orientation wins", "view:orient:0,0.99", queue.newestMove)
     queue.enqueue("scene:ward")
     queue.enqueue("view:stop")
     checkEquals("stop drops queued pitch", null, queue.newestMove)
@@ -363,7 +363,7 @@ private fun tabletQueueChecks() {
     checkEquals("overflow keeps every queued command", 4, bounded.pendingDiscrete)
 
     val cleared = CommandQueue()
-    cleared.enqueue("view:move:0,1")
+    cleared.enqueue("view:orient:0,60")
     cleared.enqueue("scene:ward")
     cleared.clear()
     check(cleared.isEmpty)

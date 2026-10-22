@@ -30,7 +30,7 @@
 | 遥测 `telemetry` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000004` | Read / Notify |
 | 状态快照 `state` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000005` | Read / Notify |
 
-扫描过滤条件就是服务 UUID；平板只显示广播该服务的设备。BLE 外设创建失败时，通知会显示 `蓝牙不可用` / `蓝牙未开启`，不会进入“等待平板连接”。
+平板广泛扫描，在回调里按服务 UUID 或设备名 `QuietShore` 匹配（部分协议栈的扫描记录不带 128-bit UUID）；只显示匹配的设备。BLE 外设创建失败时，通知会显示 `蓝牙不可用` / `蓝牙未开启`，不会进入“等待平板连接”。
 
 ### 2.1 command
 
@@ -78,29 +78,31 @@ ASCII 字符串，通知给所有已连接设备：
 
 ### 2.4 state
 
-固定 13 字节二进制，小端；第一字节是版本号 `5`：
+固定 15 字节二进制，小端；第一字节是版本号 `7`：
 
 | 偏移 | 字段 | 编码 |
 | --- | --- | --- |
-| 0 | version | `5` |
+| 0 | version | `7` |
 | 1 | scene | `0` landscape / `1` ward / `2` bathroom / `3` lab / `255` unknown |
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
-| 4 | posturePitch | 度，字节值减 20 |
-| 5 | postureRoll | 度，字节值减 10 |
+| 4 | posturePitch | **有符号**整数度：测得的世界倾角（0 → +90 为起身） |
+| 5 | postureRoll | **有符号**整数度：测得的世界倾角 |
 | 6 | postureRise | 厘米，0–120 |
 | 7 | postureProgress | 0–100 |
-| 8 | viewPitch | **有符号**整数度，−20–+20；正值 = 上仰（患者看到更多天空） |
+| 8 | viewPitch | **有符号**整数度，−20–+20（页面是唯一夹紧点）；正值 = 上仰（患者看到更多天空） |
 | 9 | viewAnim | 0 idle / 1 playing / 2 held；其他值按 idle 处理 |
 | 10 | cueIntensity | 0–100 |
 | 11 | calibrationConfidence | 0–100 |
 | 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe；其他值按 none 处理 |
+| 13–14 | viewYaw | **有符号** int16 小端，度；+ = 患者视线左转 |
 
 - 页面通过 WS `{"type":"state","data":...}` 提供这些字段；头显编码后通知控制者。
 - `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested`，收到回读后清空。
 - `viewAnim` 只表示页面动画播放器的粗粒度相位（`idle` / `playing` / `held`），页面通过 WS `state` 的 `viewAnim` 字符串上报；未知值按 `idle` 处理。
 - `viewPreset` 是页面最近播放/正在播放的预设 id（`none|up|down|recenter|breathe`），未知值按 `none` 处理；平板只回显，不自行推断。
-- 13 字节仍落在默认 ATT 负载（20 字节）内；v4 及更早的帧因版本/长度不符直接丢弃。
+- 15 字节仍落在默认 ATT 负载（20 字节）内；v6 及更早的帧因版本/长度不符直接丢弃。
+- 四个度数字段（byte 4 / 5 / 8 / 13–14）只做位宽检查：越界值不会被静默夹紧，口径见 `docs/rotation-contract.md`。
 - 旧文本四/五段格式与 v3、v4 帧均已删除：版本不等于 5 或长度不为 13 的 state 直接丢弃，没有兼容层。
 
 ## 3. 第一台接管
@@ -125,6 +127,14 @@ ASCII 字符串，通知给所有已连接设备：
 - 服务重启同样清空控制权；平板必须重新连接并 `CLAIM`。
 - 通知标题随之变化：“等待平板连接” → “平板控制中，按一次确认键开始”。
 
+### 3.1 链路恢复
+
+- 头显在链路断开、广告启动失败、蓝牙关闭后重新打开时都会恢复可连接广播；8 s 广播看门狗负责发现协议栈静默停播。
+- 蓝牙关闭不退出服务：`ACTION_STATE_CHANGED` 收到 `STATE_ON` 后重建 GATT server 与广播，不需要重启头显应用。
+- 平板保存上次头显地址（`quiet-shore-control/lastDeviceAddress`），冷启动自动连接；失败后配对页仍提供“直接连接”和重新搜索。
+- 非主动断链按 0.8 / 1.6 / 3.2 s 退避重连 3 次，期间 `BlePhase.RECONNECTING`、界面显示“重连中”；用尽后回到 `DISCONNECTED` 并提示重新搜索。`CONTROL_BUSY` 不重试，直接回配对页。
+- 重复 `CLAIM` 会刷新头显侧的 20 s 租约看门狗，避免重连中的平板被旧计时器释放。
+
 没有控制码、PIN、配对/绑定或应用层认证。**规则就是先到先得。**
 
 ## 4. 控制命令
@@ -136,12 +146,12 @@ BLE 写入语法：
 ```text
 HELLO <version>          # CONTROL_OK 后一次；头显回 WELCOME <version> <capMask>
 #<seq> <command>         # 离散命令：单调 seq，头显回 ACK <seq> <OK|REJECTED|BUSY>
-view:move:0,<z>          # 连续俯仰：无 seq、无 ACK，只保留最新样本
+view:orient:<yaw>,<pitch> # 连续朝向：无 seq、无 ACK，只保留最新样本
 PING / RELEASE / CLAIM   # 存活与租约
 ```
 
 - 离散命令在头显侧按控制器维护有界去重窗口；重复 seq 只重发原 ACK，不重复执行。
-- `view:move` 使用 no-response 写，离散命令使用 response 写；平板一次只写一条，stop 优先并丢弃待发 pitch。
+- `view:orient` 使用 no-response 写，离散命令使用 response 写；平板一次只写一条，stop 优先并丢弃待发朝向。
 - 未完成 HELLO 的控制器发命令会得到 `PROTOCOL_REQUIRED` / ACK `REJECTED`，不会静默执行。
 
 | 命令 | 页面行为 |
@@ -162,12 +172,12 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止 |
 | `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场重力粒子引导开关与强度（当前仅 landscape 场景生效） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
-| `view:move:0,<z>` | 绝对俯仰目标：x 恒为 0，z∈[−1,1] 映射 ±20°，无 TTL；免回执 |
-| `view:stop` | 停止动画并**保持**当前俯仰，不回正 |
+| `view:orient:<yaw>,<pitch>` | 绝对朝向（度）：yaw ±180（+ = 左转）、pitch ±90（+ = 上仰），无 TTL；免回执 |
+| `view:stop` | 停止动画并**保持**当前朝向，不回正 |
 | `view:anim:up\|down\|recenter\|breathe` | 播放页面的固定预设：up/down 相对当前角度 ±10°，recenter 回 0°，breathe 为 6 s 回到起点的曲线；无参数，作为一次性离散命令回 `ACK <seq> OK`，不跨重连重放 |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-`enter`、`home`、`allapps`、`sus:*`、`settings:*`、`scene:<id>` 由头显服务执行；其余离散命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。`view:move` 只保留最新样本，不等待 ack。
+`enter`、`home`、`allapps`、`sus:*`、`settings:*`、`scene:<id>` 由头显服务执行；其余离散命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。`view:orient` 只保留最新样本，不等待 ack。
 
 非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 
@@ -192,7 +202,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 ```text
 {"type":"ready","seq":N,"control":bool,"controller":string|null}
 {"type":"cmd","seq":N,"command":"scene:ward","continuous":false}
-{"type":"cmd","seq":N,"command":"view:move:0,0.35","continuous":true}
+{"type":"cmd","seq":N,"command":"view:orient:0,35","continuous":true}
 {"type":"control","control":bool,"controller":string|null}
 ```
 
@@ -204,11 +214,11 @@ PING / RELEASE / CLAIM   # 存活与租约
 {"type":"ack","seq":N}
 ```
 
-- 连接建立先发 `ready`，随后补发 `seq > since` 的离散命令与最新 `view:move`；`since` 缺失按 `-1`。
-- 离散命令保留到页面 `ack`（≤64 条）；`view:move` 免 ack、只保留最新；`view:anim:*` 只实时投递，不跨重连重放。
+- 连接建立先发 `ready`，随后补发 `seq > since` 的离散命令与最新 `view:orient`；`since` 缺失按 `-1`。
+- 离散命令保留到页面 `ack`（≤64 条）；`view:orient` 免 ack、只保留最新；`view:anim:*` 只实时投递，不跨重连重放。
 - 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。
 - 服务端每 15 s 发 ping，30 s 无 pong 关闭；页面断线后以指数退避重连并带 `since=lastSeq`。
-- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v5 / 20 B 遥测后 BLE 通知平板。
+- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v7 / 20 B 遥测后 BLE 通知平板。
 - 页面不得再发送 `viewX`/`viewZ`；头显也不会解析它们。
 
 `/ws`、`/command`、`/capabilities` 没有认证，只绑定 loopback，适用于单设备受控环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
@@ -245,7 +255,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 - **单控制者。** 不支持多平板协作或观察者模式；第二台平板只能等待。
 - **无持久化。** 控制权、最后场景和控制状态都只存在于进程内存；服务重启后平板需重新接管。
 - **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态；平板视图不是逐帧镜像。
-- **state 已固定为 13 字节二进制 v5**（第 8 字节 `viewPitch` 当前角度有符号度，第 9 字节 `viewAnim`：0 idle / 1 playing / 2 held，第 12 字节 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
+- **state 已固定为 15 字节二进制 v7**（byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。
 
 ## 9. 排障

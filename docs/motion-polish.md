@@ -46,8 +46,8 @@ scene
 | XR 相机归属 | `core/xr/renderer.ts:createRenderer`、`core/xr/pose.ts:readHeadPose` | `xr.enabled`、`setReferenceSpaceType('local')`；每帧从 `xr.getCamera()` 读世界位姿到 `headPose` | 相机 | 3DoF，位置近似恒定；`camera.position.set(0, eyeHeight, 3.2)` 只服务 2D 预览 |
 | 世界变换外壳 | `core/xr/world-shell.ts`、`App.loadScene`、`core/scene/host.ts` | shell 包住 `comfort.group`，comfort 包住 `host.content`；`content.y = -eyeHeight`；换场景时重建 shell 并重贴当前角度，不重新动画 | 世界 | 相机不入场，层级即安全边界；App 不再直接写任何 group |
 | 校准重映射 | `core/xr/comfort.ts:calibrateTwo/updatePosture` | `remapDurationMs` 200–4000，默认 900；smoothstep；`weight ≤0.85`、旋转 ≤120° | 世界旋转/位移 | 失败保留旧帧 |
-| 姿态过渡 | `core/xr/situp-path.ts:SitUpPath` + `App.updateSitUp` | 髋部 0.45 m、躯干 0.55 m、站立眼高 1.70 m；前 70% 时间躯干旋转 90°，后 30% 抬升到眼高；`worldFor(head)` 自动反演镜头→世界；确认键短按坐起/回躺，长按菜单；会话内总时长 12 s | 世界 | `App.setVirtualPosture`：起身/回躺/停止；`sitUpT` 与姿态进度/俯仰/起身高度一致 |
-| 平板视角修正 | `core/xr/view-motion.ts:ViewMotionController`、`core/xr/world-shell.ts` | `view:move:0,<z>` = 绝对俯仰目标（z×20°，x 必须为 0）；滑动条重定向用 0.35 s 时间常数 + 6°/s 速率上限；预设 `view:anim:up|down|recenter` = ±10°/0°，固定 2.4 s smootherstep；`view:stop` 立即冻结 | 世界（shell 层） | 无平移、无 TTL、无 yaw；App 只解析命令并转发 |
+| 姿态过渡 | `core/xr/situp-path.ts:SitUpPath` + `core/xr/situp-run.ts` | 髋部 0.45 m、躯干 0.55 m、站立眼高 1.70 m；旋转段占 70%（90°，峰值 ≈40 °/s），后 30% 抬升到眼高；`worldFor(head)` 自动反演镜头→世界；确认键短按坐起/回躺，长按菜单；播放头 6 s | 世界 | `situp-run` 持有进度/目标/停止；`App.setVirtualPosture` 只转发命令 |
+| 平板视角朝向 | `core/xr/view-motion.ts:ViewMotionController`、`core/xr/world-shell.ts` | `view:orient:<yaw>,<pitch>` = 绝对朝向（±180°/±90°）；滑动条重定向用 0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 上限；预设 `up|down|recenter|breathe` 固定曲线，recenter 同时归零偏航；`view:stop` 立即冻结 | 世界（shell 层，两轴取负） | 无平移、无 TTL、无 roll；App 只解析命令并转发 |
 | 空间 UI | `core/spatial/anchor.ts`、`placement.ts` | 菜单 `summoned`（1.25 m，世界锁定，仅召唤时计算）；HUD `head-locked`（1.5 m，damping 0.06 s）；校准 `head-locked`（0.8 m，damping 0） | UI | 头锁只用于短时面板 |
 | 场景环境循环 | `scenes/*/…js:update` | landscape：水面/天空/风/泡沫 `uTime`，云/雾/鸟 `InstancedMesh`；ward：心电纹理 0.09/s、屏幕 2.6 s 切换、秒针；bathroom：叶片 ±0.028 rad、水面 ±0.0012 m；lab：0.35 rad/s | 世界内容 | 全部 `dt ≤0.1` |
 | 重力粒子 | `core/xr/posture-cue.ts:createPostureCue` | 双 `Points`：近 17（r 0.22–0.46 m、size 0.0095、opacity 0.34、0.020–0.034 m/s、`growTau` 0.5 / `fadeTau` 0.28），远 11（r 0.40–1.10 m、size 0.0075、opacity 0.18、0.010–0.018 m/s、`growTau` 1.0 / `fadeTau` 0.45）；横向摆动 ±0.045 rad；`depth`/`spread` 缩放；`flow` 门控；种子 PRNG；`dt ≤0.05` | 近场点云（2 draw call） | 仅 `landscape` 安装；`scene` 根下的两层；`flow=0` 当帧冻结位置；`dt=0` 时硬复位 |
@@ -79,9 +79,9 @@ render  10    renderer.render(scene, camera)
 状态机（单一事实来源）：
 
 ```text
-idle    --play / view:move-->  playing --到达目标--> idle
+idle    --play / view:orient-->  playing --到达目标--> idle
 playing --view:stop / 租约丢失--> held        （冻结当前角度，不缓动、不回正）
-held    --play / view:move-->  playing        （从当前角度继续，不跳变）
+held    --play / view:orient-->  playing        （从当前角度继续，不跳变）
 any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 ```
 
@@ -93,19 +93,19 @@ any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 | --- | --- | --- | --- | --- | --- |
 | `view:anim:up` | `up` / 1 | 相对 +10°，clamp +20° | 3.0 s | smootherstep | 6.25°/s |
 | `view:anim:down` | `down` / 2 | 相对 −10°，clamp −20° | 3.0 s | smootherstep | 6.25°/s |
-| `view:anim:recenter` | `recenter` / 3 | 绝对 0° | 2.4 s | smootherstep | ±20° 全程时 15.6°/s |
+| `view:anim:recenter` | `recenter` / 3 | 绝对 0°（偏航同时归零） | 2.4 s | smootherstep | 俯仰 ±90° 全程时 ≈70 °/s；偏航按 40 °/s 均速展开 |
 | `view:anim:breathe` | `breathe` / 4 | 当前 → +6° → 当前（往返） | 6.0 s | smootherstep 去、镜像 smootherstep 回（`cycle`） | 峰值 3.75°/s，末态=初态 |
 | —（无预设） | `none` / 0 | 仅状态回报，不可播放 | — | — | — |
 
 - `up`/`down` 是**相对**目标：在 +20° 再按 `up` 是无运动（`idle`，`viewPreset=none`），不再出现“按上仰却在向下”的矛盾。
 - `recenter` 是唯一绝对目标，也是唯一能回到 0° 的预设；`view:stop` 只保持。
-- `breathe` 在一次播放里改变方向：前半程 smootherstep 到 +6°，后半程镜像回落，结束时精确回到起始角度；若峰值越过 ±20° 会先 clamp（例如 18° 起播 → 20° → 18°）。
+- `breathe` 在一次播放里改变方向：前半程 smootherstep 到 +6°，后半程镜像回落，结束时精确回到起始角度；若峰值越过 ±90° 会先 clamp（例如 88° 起播 → 90° → 88°）。
 - 目录项带 `label.zh/en` 与 `curveLabel`，供平板镜像/文档使用；页面不接受任意时长或振幅（`view:anim:<id>` 只有 id，多余参数整条拒绝）。
 - 每条预设首末速率为 0；in-play 保持 `playing`，到达后 `idle`。`view:stop` 冻结并保留 `preset` 供回读，`setTarget`（滑动条）会清空预设。
 
-滑动条 `view:move:0,<z>`（`z` 为绝对目标，`|z| ≤ 1` → ±20°）是**连续重定向**：每次重定向都从当前角度继续，采用 0.35 s 时间常数 + 6°/s 硬速率上限的指数逼近，因此 10 Hz 拖动不会因为“每帧重启一次固定时长缓动”而迟滞，也不会因为把滑动条点到端点而甩动世界。
+滑动条 `view:orient:<yaw>,<pitch>`（绝对度数，±180°/±90°）是**连续重定向**：每次重定向都从当前朝向继续，采用 0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 硬速率上限的指数逼近，因此 10 Hz 拖动不会因为“每帧重启一次固定时长缓动”而迟滞，也不会因为把滑动条点到端点而甩动世界。
 
-状态回报：WS `state` 的 `viewPitch` 是**当前已生效角度**（有符号度，±20 内），`viewAnim` 为 `idle|playing|held`，`viewPreset` 为 `none|up|down|recenter|breathe`。state v5（Android 编码，13 字节）携带当前角度、相位与预设 id；页面只发送字符串，不参与字节布局。`viewX`/`viewZ` 已删除。
+状态回报：WS `state` 的 `viewPitch` / `viewYaw` 是**当前已生效角度**（有符号度），`viewAnim` 为 `idle|playing|held`，`viewPreset` 为 `none|up|down|recenter|breathe`。state v7（Android 编码，15 字节）携带两个角度、相位与预设 id；页面只发送字符串，不参与字节布局。`viewX`/`viewZ` 已删除。
 
 ## 2. “场景相机动画”在本应用里能指什么
 
@@ -264,7 +264,7 @@ return comfort.getPosturePhase() === 'rising' ? 1 : 0;
 11. **A11 缓动峰值**：按 `POSTURE_EASE_PEAK` 采样 App 的两个预设（0.45 m/30 s、90°/30 s）。rise 峰值约 0.028 m/s，满足 ≤0.05 m/s；pitch 峰值约 5.6°/s，属于完整起身重定向，已超出小角度微调的 2°/s 指南，必须在 PICO 上单独验证耐受，不能按微调预算宣称合规。
 12. **A12 停止不靠进度**：`flow` 从 +1 置 0 后，`tests/posture-cue.test.ts` 断言位置数组逐帧不变（冻结），且 3 s 内两层不可见。
 13. **A13 方向**：`flow=0`（含回躺与 `flow<0`）时整个缓冲区与上一帧完全相同，不存在向下推进。
-14. **A14 视角目录与状态机**（`tests/view-motion.test.ts`）：目录 id/编码/时长/曲线/标签齐全；`up`/`down` 相对并在 ±20° 处 clamp；`breathe` 中途达峰、结束回到初值；`recenter` 首帧不等于 0；`stop()` 后角度冻结且 `preset` 保留，`setTarget` 清空 `preset`，完成/重置回到 `idle` 且 `preset=null`；越界目标与未知 id 整条拒绝。
+14. **A14 视角目录与状态机**（`tests/view-motion.test.ts`）：目录 id/编码/时长/曲线/标签齐全；`up`/`down` 相对并在 ±90° 处 clamp；`breathe` 中途达峰、结束回到初值；`recenter` 首帧不等于 0；`stop()` 后两轴冻结且 `preset` 保留，`setTarget` 清空 `preset`，完成/重置回到 `idle` 且 `preset=null`；越界目标与未知 id 整条拒绝。
 15. **A15 变换组合**（`tests/world-shell.test.ts`）：`pitch>0` 时前方点下移、眼部点不动；起身各 `t` 下 base 姿态不被 pitch 覆写，且 `shell × base` 把虚拟相机映回真实头部。
 
 实机（PICO + Firefox Reality，记录到 `docs/performance-evidence.md` 的方式）：
@@ -328,14 +328,14 @@ interface PostureCueApi {
 
 ### S3 视角俯仰系统（已实现，取代原“平移补齐”切片）
 
-原切片计划给 `view:move` 的平移补死区与加减速；控制面已改为绝对俯仰，该切片作废，相关常量 `VIEW_MAX_SPEED` / `VIEW_MAX_OFFSET` / `VIEW_TTL_MS` 与整条平移管线一并删除。
+原切片计划给 `view:orient` 的平移补死区与加减速；控制面已改为绝对俯仰，该切片作废，相关常量 `VIEW_MAX_SPEED` / `VIEW_MAX_OFFSET` / `VIEW_TTL_MS` 与整条平移管线一并删除。
 
 实现拆成两半（§1.4）：`ViewMotionController` 持状态与缓动，`WorldShell` 负责组合。要点：
 
 - `setPitch` sink 由 App 注入为 `deg => this.shell?.setPitch(deg)`，所以控制器不 import three，也不认识场景；换场景时 shell 重建、控制器状态原样保留（`loadScene` 里重贴当前角度）。
 - 预设与滑动条是两种运动语义：预设是**目录驱动的固定时长一次性**（`VIEW_PRESETS` 里的 `motion` 决定相对/绝对/往返，`curve` 决定 smootherstep 或单周期；零初末速），滑动条是**连续重定向**（0.35 s 时间常数 + 6°/s 上限）。控制器只 switch `motion` 与 `curve`，无逐预设分支。原因见 §1.4。
 - 目录项同时带 `VIEW_PRESET_CODES`（0–4）与中英文标签，供平板镜像与状态编码对照。
-- `stop()` 立即冻结（`held`）：不缓动、不回正，目标保留，后续 `play`/`view:move` 从当前角度继续。
+- `stop()` 立即冻结（`held`）：不缓动、不回正，目标保留，后续 `play`/`view:orient` 从当前角度继续。
 - `reset()` 仅由会话结束/校准开始调用，直接归零并回到 `idle`。
 - 俯仰符号：正 = 上仰。世界变换为绕眼部的 `R_x(−pitch)`；`tests/world-shell.test.ts` 断言正角度让前方点下降、眼部点不动。
 - 组合：shell 在最外层，`comfort` 或起身姿态在其下，`content`（地板）在最内层。起身期间 `shell.setBasePose(worldFor(head, camera))` 写 base 槽位，与 pitch 互不覆写。
@@ -352,7 +352,7 @@ WS `state` 由 `stateFromSnapshot` 输出固定字段：`viewPitch`（当前角�
 - `tests/view-motion.test.ts`：目录映射与编码、`up`/`down` 相对与 clamp、`breathe` 往返回到初值、recenter 不跳变、`preset` 生命周期（playing/held 保留、slide/完成/重置清空）、滑动条重定向与速率上限、越界与未知 id 拒绝。
 - `tests/world-shell.test.ts`：pitch 符号与眼部不动点、与起身姿态在多个 `t` 的组合、dispose 解绑。
 - `tests/scene-snapshot.test.ts`：快照复用、起身/舒适姿态派生、WS `state` 字段集合。
-- `tests/view-command.test.ts`：`view:move`/`view:anim` 的严格解析与拒绝。
+- `tests/view-command.test.ts`：`view:orient`/`view:anim` 的严格解析与拒绝。
 - 不改 posture 数学与 `tests/comfort-posture.test.ts`；`docs/virtual-posture.md` 已删除 FOV 行、更新 PostureCue 接口、移除“回躺反向播放”。
 - `docs/README.md` 索引未改（不在本次范围）。
 
@@ -363,7 +363,7 @@ WS `state` 由 `stateFromSnapshot` 输出固定字段：`viewPitch`（当前角�
 | I1 | 任何代码路径都不写 `camera.position/rotation/quaternion/fov/projectionMatrix`，除非 `!xr.isPresenting` 的 2D 预览 |
 | I2 | `PostureCue.object` 的父节点只能是 `scene` 根；不得进入 `world-shell`、`comfort.group` 或 `host.content` |
 | I3 | 粒子更新零分配、固定 count、≤2 draw call、dt ≤0.05 |
-| I4 | 视角只有俯仰一个通道，恒在 ±20°；无平移、无 yaw、无 roll、无速度加成。姿态仍是 `POSTURE_LIMITS` 的子集 |
+| I4 | 视角有偏航 ±180° 与俯仰 ±90° 两个通道；无平移、无 roll、无速度加成。姿态仍是 `POSTURE_LIMITS` 的子集 |
 | I5 | 停止优先：`view:stop`、`posture:stop`、`cue:off`、患者确认键、租约丢失都在当帧生效；`view:stop` 保持角度，只有 `reset` 归零 |
 | I6 | 场景内容永不被头锁；只有 ≤1.5 m 的短时面板可以 head-locked |
 | I7 | 三个变换层各有唯一写者；App 不直接写 `world-shell.group`、`comfort.group` 或 `content` |
@@ -377,7 +377,7 @@ WS `state` 由 `stateFromSnapshot` 输出固定字段：`viewPitch`（当前角�
 ## 5. 禁止清单
 
 1. **不动相机**：不改 XR 相机、`renderer.xr.getCamera()`、reference space offset，不用 `getOffsetReferenceSpace` 伪造位移。
-2. **无自由飞行**：不加平移、不加 yaw/roll、不做瞬移、不做速度加成。视角俯仰只允许经 `view:*` 一个通道，恒在 ±20°，且必须走 `ViewMotionController`（不许在 App 或场景里另写缓动）。
+2. **无自由飞行**：不加平移、不加 roll、不做瞬移、不做速度加成。视角朝向只允许经 `view:orient` 一个通道（偏航 ±180°、俯仰 ±90°），且必须走 `ViewMotionController`（不许在 App 或场景里另写缓动）。
 3. **不做 FOV/zoom/透视动画**：XR 每帧覆写投影，且属于相机层。
 4. **不做相机震动、头部摆动（head bob）、运动模糊、全屏暗角、闪光**。
 5. **不做地平线倾斜**：landscape `roll` 恒 0。
@@ -397,7 +397,7 @@ WS `state` 由 `stateFromSnapshot` 输出固定字段：`viewPitch`（当前角�
 4. 14 s 起身全程的观感，以及 `posture:stop` 后 0.8 s 淡出、粒子立即停止推进是否足够。
 5. 租赁丢失时冻结 posture 是否会让患者停在倾斜中途；若观感差，改用 320 ms 减速到最近稳定姿态（不回 neutral）。
 6. `spread` 拉满时远带是否穿进山体/栏杆；若会，收紧 clamp 而不是移除调参。
-7. 视角俯仰 ±20° 的耐受度：`up`/`down`（±10°/3 s）与极限 20° 的滑动条拖动是否引起前庭冲突；必要时拉长 `VIEW_PRESETS` 里对应条目的 `durationMs`（例如 3.5 s）、把滑动条速率上限从 6°/s 降到 3°/s（常量集中在 `core/xr/view-motion.ts`）。
+7. 视角朝向的耐受度：`up`/`down`（±10°/3 s）、±90° 俯仰与 ±180° 偏航的滑动条拖动是否引起前庭冲突；必要时拉长 `VIEW_PRESETS` 的 `durationMs`、调低 `VIEW_PITCH_MAX_DEG_PER_S` / `VIEW_YAW_MAX_DEG_PER_S`（常量集中在 `core/xr/view-motion.ts`）。
 8. `breathe`（+6° 往返 / 6 s）在卧床患者上是否真的带来呼吸节律暗示，还是会与前庭冲突叠加；若不适，缩短为 4.5 s 或把振幅降到 4°（改目录条目即可，不动控制器）。
 9. 俯仰绕“眼部”旋转的世界位移在 20° 时约 0.1 m 量级；若患者报告“世界被推开”，改为绕校准 pivot 旋转（数学等价性见 `tests/world-shell.test.ts`，改动只在 shell 的 pivot 选择）。
 10. `view:stop` 保持角度后，患者看到的倾斜世界会一直保留到 `view:anim:recenter` 或会话结束；需实机确认护理者能否理解“保持”语义（平板文案已写“停止（保持）”，页面状态为 `viewAnim=held`）。
@@ -406,5 +406,5 @@ WS `state` 由 `stateFromSnapshot` 输出固定字段：`viewPitch`（当前角�
 
 - 起身表演仍在 `App.ts`（`updateSitUp`/`setVirtualPosture`）而不是独立控制器；本次只把它的变换写入收进 `WorldShell.setBasePose`，状态机仍与 App 字段耦合。
 - `SceneSnapshot.capture` 自身零分配，但它调用的 `Comfort.getPostureState()` / `Comfort.getState()` 会分配小对象；只在 1–2 Hz 的快照与 HUD 路径调用，未进入逐帧热路径。
-- `up`/`down` 是相对目标，重复按会逐步逼近 ±20°；到达 clamp 后再按是无运动（`idle`/`none`），平板需要据此提示“已达上限”。`recenter` 仍是绝对 0°。
-- 播放中的预设若被滑动条打断（`view:move`），会话从当前角度继续但没有“恢复预设”的语义；平板不应把被打断的预设当作仍在播放（`viewPreset=none`）。
+- `up`/`down` 是相对目标，重复按会逐步逼近 ±90°；到达 clamp 后再按是无运动（`idle`/`none`），平板需要据此提示“已达上限”。`recenter` 仍是绝对 0°。
+- 播放中的预设若被滑动条打断（`view:orient`），会话从当前角度继续但没有“恢复预设”的语义；平板不应把被打断的预设当作仍在播放（`viewPreset=none`）。

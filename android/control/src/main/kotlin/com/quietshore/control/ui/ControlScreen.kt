@@ -43,6 +43,9 @@ import com.quietshore.control.model.ViewMode
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.ControlRail
+import com.quietshore.control.ui.components.LoadingDots
+import com.quietshore.control.ui.components.RecordingChip
+import com.quietshore.control.ui.components.RecordingNotice
 import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.StatusPanel
 import com.quietshore.control.ui.components.ViewModeToggle
@@ -70,6 +73,12 @@ fun ControlScreen(
     val offline = state.phase == BlePhase.DISCONNECTED ||
         state.phase == BlePhase.ERROR ||
         state.phase == BlePhase.IDLE
+    // A retrying reconnect passes through scanning/connecting; keep the
+    // "reconnecting" banner until the link is READY or given up.
+    val reconnecting = state.reconnectAttempt > 0 &&
+        (state.phase == BlePhase.RECONNECTING ||
+            state.phase == BlePhase.SCANNING ||
+            state.phase == BlePhase.CONNECTING)
 
     BoxWithConstraints(
         modifier = Modifier
@@ -92,7 +101,9 @@ fun ControlScreen(
                 infoOpen = infoOpen,
                 onToggleControls = { controlsOpen = !controlsOpen },
                 onToggleInfo = { infoOpen = !infoOpen },
-                onDisconnect = actions.onDisconnect
+                onDisconnect = actions.onDisconnect,
+                onStartRecording = actions.onStartRecording,
+                onStopRecording = actions.onStopRecording
             )
 
             if (infoOpen) {
@@ -108,7 +119,16 @@ fun ControlScreen(
                 )
             }
 
-            if (offline) {
+            if (reconnecting) {
+                ReconnectingBanner(
+                    attempt = state.reconnectAttempt,
+                    max = state.reconnectMax,
+                    onLeave = actions.onLeave,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (compact) 62.dp else 72.dp)
+                )
+            } else if (offline) {
                 DisconnectedBanner(
                     onReconnect = actions.onReconnect,
                     onLeave = actions.onLeave,
@@ -139,6 +159,29 @@ fun ControlScreen(
                 }
             }
 
+            // Patient/global mirror mode plus the fullscreen entry. This is
+            // the only way into the headset view besides tapping it there.
+            ViewportControls(
+                state = state,
+                onViewModeChange = actions.onViewModeChange,
+                onFullscreen = { actions.onFullscreenChange(true) },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 14.dp, bottom = 86.dp)
+            )
+
+            RecordingNotice(
+                state = state,
+                onShare = actions.onShareRecording,
+                onDismiss = actions.onDismissRecording,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(
+                        top = (if (compact) 62.dp else 72.dp) +
+                            if (reconnecting || offline) 58.dp else 0.dp
+                    )
+            )
+
             // Read-only heading readout: a corner badge, never a touch target.
             AngleGauge(
                 pose = state.pose,
@@ -147,6 +190,35 @@ fun ControlScreen(
                     .align(Alignment.BottomStart)
                     .padding(start = 14.dp, bottom = 14.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun ViewportControls(
+    state: ControlUiState,
+    onViewModeChange: (ViewMode) -> Unit,
+    onFullscreen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ViewModeToggle(
+            selected = state.viewMode,
+            onSelect = onViewModeChange,
+            modifier = Modifier.width(300.dp)
+        )
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = QuietPalette.Surface.copy(alpha = 0.86f),
+            contentColor = QuietPalette.TextPrimary
+        ) {
+            TextButton(onClick = onFullscreen) {
+                Text("全屏", color = QuietPalette.TextPrimary)
+            }
         }
     }
 }
@@ -180,20 +252,27 @@ private fun FullscreenPatientView(
                 accent = phaseColor(state.phase)
             )
         }
-        TextButton(
-            onClick = { actions.onFullscreenChange(false) },
+        Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(10.dp)
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("退出全屏", color = QuietPalette.TextPrimary)
+            RecordingChip(
+                state = state,
+                onStart = actions.onStartRecording,
+                onStop = actions.onStopRecording
+            )
+            TextButton(onClick = { actions.onFullscreenChange(false) }) {
+                Text("退出全屏", color = QuietPalette.TextPrimary)
+            }
         }
         AngleGauge(
             pose = state.pose,
             stale = state.poseStale,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 60.dp, end = 14.dp)
+                .padding(top = 64.dp, end = 14.dp)
         )
         ViewModeToggle(
             selected = state.viewMode,
@@ -202,6 +281,14 @@ private fun FullscreenPatientView(
                 .align(Alignment.BottomStart)
                 .padding(18.dp)
                 .width(320.dp)
+        )
+        RecordingNotice(
+            state = state,
+            onShare = actions.onShareRecording,
+            onDismiss = actions.onDismissRecording,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 16.dp)
         )
         Column(
             modifier = Modifier
@@ -223,7 +310,9 @@ private fun ControlTopBar(
     infoOpen: Boolean,
     onToggleControls: () -> Unit,
     onToggleInfo: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -273,6 +362,11 @@ private fun ControlTopBar(
             }
         }
         Spacer(Modifier.weight(1f))
+        RecordingChip(
+            state = state,
+            onStart = onStartRecording,
+            onStop = onStopRecording
+        )
         TextButton(onClick = onToggleControls) {
             Text(if (controlsOpen) "收起" else "控制", color = QuietPalette.TextPrimary)
         }
@@ -323,59 +417,37 @@ private fun DisconnectedBanner(
 }
 
 @Composable
-private fun ViewportPanel(
-    state: ControlUiState,
-    onViewModeChange: (ViewMode) -> Unit,
-    onFullscreen: () -> Unit,
-    viewport: @Composable (Modifier) -> Unit,
+private fun ReconnectingBanner(
+    attempt: Int,
+    max: Int,
+    onLeave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(QuietPalette.Viewport)
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = QuietPalette.Warning.copy(alpha = 0.14f),
+        contentColor = QuietPalette.Warning
     ) {
-        viewport(Modifier.fillMaxSize())
-
         Row(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            OverlayPill(
-                label = Scenes.label(state.control.scene),
-                accent = QuietPalette.Primary
+            LoadingDots(color = QuietPalette.Warning)
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = "连接中断，正在重连（${attempt.coerceAtLeast(1)}/${max.coerceAtLeast(1)}）",
+                style = MaterialTheme.typography.titleSmall
             )
-            OverlayPill(
-                label = phaseLabel(state.phase),
-                accent = phaseColor(state.phase)
-            )
-        }
-
-        ViewModeToggle(
-            selected = state.viewMode,
-            onSelect = onViewModeChange,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(20.dp)
-                .width(340.dp)
-        )
-
-        PoseFreshness(
-            stale = state.poseStale || state.pose == null,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp)
-        )
-
-        TextButton(
-            onClick = onFullscreen,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-        ) {
-            Text("全屏患者视角", color = QuietPalette.TextPrimary)
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = onLeave,
+                colors = ButtonDefaults.textButtonColors(contentColor = QuietPalette.Warning)
+            ) {
+                Text("返回配对")
+            }
         }
     }
 }

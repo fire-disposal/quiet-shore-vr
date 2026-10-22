@@ -1,13 +1,17 @@
 package com.quietshore.control.ui
 
 import android.bluetooth.BluetoothAdapter
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,6 +22,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.quietshore.control.ControlViewModel
+import com.quietshore.control.ble.BlePhase
+import java.io.File
 
 @Composable
 fun ControlApp(viewModel: ControlViewModel) {
@@ -55,6 +61,23 @@ fun ControlApp(viewModel: ControlViewModel) {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Cold start with a known headset: skip the scan step. A failed attempt
+    // still lands on pairing with the quick-connect card and a scan button.
+    var autoConnectAttempted by remember { mutableStateOf(false) }
+    LaunchedEffect(permissionsGranted, bluetoothEnabled, state.phase, state.scanAttempted) {
+        val address = state.lastDeviceAddress
+        if (!autoConnectAttempted &&
+            permissionsGranted &&
+            bluetoothEnabled &&
+            address != null &&
+            state.phase == BlePhase.IDLE &&
+            !state.scanAttempted
+        ) {
+            autoConnectAttempted = true
+            viewModel.connect(address)
+        }
     }
 
     val onScan: () -> Unit = {
@@ -112,12 +135,17 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onPostureStop = viewModel::postureStop,
                 onEyeHeightChange = viewModel::setEyeHeight,
                 onPitchChange = viewModel::setViewPitch,
+                onYawChange = viewModel::setViewYaw,
                 onViewAnim = viewModel::playViewAnim,
                 onViewPitchStop = viewModel::stopViewPitch,
                 onDisconnect = viewModel::disconnect,
                 onReconnect = viewModel::reconnect,
                 onLeave = viewModel::leaveControl,
-                onFullscreenChange = viewModel::setFullscreen
+                onFullscreenChange = viewModel::setFullscreen,
+                onStartRecording = viewModel::startRecording,
+                onStopRecording = viewModel::stopRecording,
+                onShareRecording = { shareRecording(context, state.recordingPath) },
+                onDismissRecording = viewModel::dismissRecordingNotice
             ),
             viewport = { modifier ->
                 ControllerViewport(
@@ -140,5 +168,33 @@ fun ControlApp(viewModel: ControlViewModel) {
             onEnableBluetooth = onEnableBluetooth,
             onOpenSettings = onOpenSettings
         )
+    }
+}
+
+/** Hands a finished patient-view clip to the system share sheet. */
+private fun shareRecording(context: Context, path: String?) {
+    if (path == null) {
+        Toast.makeText(context, "还没有可分享的录像", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val file = File(path)
+    if (!file.exists()) {
+        Toast.makeText(context, "找不到录像文件", Toast.LENGTH_SHORT).show()
+        return
+    }
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.recordings",
+            file
+        )
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "video/*"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, "分享患者视角录像"))
+    } catch (error: Exception) {
+        Toast.makeText(context, "无法分享录像", Toast.LENGTH_SHORT).show()
     }
 }

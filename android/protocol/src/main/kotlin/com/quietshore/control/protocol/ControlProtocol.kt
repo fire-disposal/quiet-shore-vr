@@ -22,8 +22,8 @@ object ControlProtocol {
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
-    const val stateMaxBytes: Int = 13
-    const val stateVersion: Int = 5
+    const val stateMaxBytes: Int = 15
+    const val stateVersion: Int = 7
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -53,39 +53,40 @@ object ControlProtocol {
     const val EYE_HEIGHT_DEFAULT: Float = 1.7f
 
     /**
-     * Absolute virtual-view pitch correction. [VIEW_MOVE] is
-     * `view:move:0,<z>`: the x component must be zero (view translation is
-     * gone) and z in [-1,1] maps to `viewPitchDeg = z * [VIEW_PITCH_MAX_DEG]`.
-     * Positive degrees tilt the view up (the patient sees more sky). The page
-     * retargets smoothly from the current pitch and the target persists with no
-     * TTL until another sample arrives; the slider sends at most 10 Hz.
+     * Absolute virtual-view orientation. [VIEW_ORIENT] is
+     * `view:orient:<yaw>,<pitch>` in whole degrees:
+     * yaw ∈ [−180, 180] (positive = the patient's view turns left) and pitch
+     * ∈ [−90, 90] (positive = the patient sees more sky). There is no
+     * translation channel. The page retargets smoothly from the current
+     * orientation and the target persists with no TTL until another sample
+     * arrives; the sliders send at most 10 Hz.
      *
      * [VIEW_STOP] interrupts whatever the page is playing and **holds** the
-     * applied pitch. It never recenters; recentering is the discrete [VIEW_ANIM]
-     * `recenter` animation.
+     * applied orientation. It never recenters; recentering is the discrete
+     * [VIEW_ANIM] `recenter` animation.
      *
      * Note that the `up`/`down` presets are relative (±10° from the current
-     * angle) inside the page, while [VIEW_MOVE] is absolute.
+     * pitch) inside the page, while [VIEW_ORIENT] is absolute.
      */
-    const val VIEW_MOVE: String = "view:move:"
+    const val VIEW_ORIENT: String = "view:orient:"
     const val VIEW_STOP: String = "view:stop"
 
     /**
      * Discrete, parameterless view animations played by the page:
      * `view:anim:<name>` with name in [VIEW_ANIM_NAMES]. The page owns the
-     * curves and amplitudes — up/down move ±10° relative to the current angle,
-     * recenter returns to 0°, breathe is a 6 s return-to-start curve. The
-     * tablet never sends timing or amplitude. Accepted commands are
+     * curves and amplitudes — up/down move ±10° relative to the current pitch,
+     * recenter returns pitch and yaw to 0°, breathe is a 6 s return-to-start
+     * curve. The tablet never sends timing or amplitude. Accepted commands are
      * acknowledged with `OK:<cmd>` like every other discrete command.
      */
     const val VIEW_ANIM: String = "view:anim:"
     val VIEW_ANIM_NAMES: Set<String> = setOf("up", "down", "recenter", "breathe")
 
-    /** Magnitude of the absolute pitch correction, in degrees. */
-    const val VIEW_PITCH_MAX_DEG: Float = 20f
+    /** Absolute up-gaze envelope, in degrees. */
+    const val VIEW_PITCH_MAX_DEG: Float = 90f
 
-    /** Wire x tolerance: the command is pitch-only, so x must be zero. */
-    const val VIEW_PITCH_X_EPSILON: Float = 1e-6f
+    /** Absolute yaw envelope, in degrees. */
+    const val VIEW_YAW_MAX_DEG: Float = 180f
 
     val CAPABILITIES: List<String> = listOf(
         "start", "enter", "preview", "exit", "stop",
@@ -97,7 +98,8 @@ object ControlProtocol {
         "sus:answer:1-5",
         "settings:skipcalibration:on|off", "settings:hud:on|off",
         "settings:eyeheight:1.2-1.9",
-        "view:move:0,<z> (absolute pitch, z=-1..1 => -20..20 deg)", "view:stop",
+        "view:orient:<yaw>,<pitch> (absolute degrees, |yaw|<=180, |pitch|<=90)",
+        "view:stop",
         "view:anim:up|down|recenter|breathe"
     )
 
@@ -115,7 +117,7 @@ object ControlProtocol {
      * tablet must refuse to drive a new headset (and say why) instead of
      * silently mis-parsing acknowledgements.
      */
-    const val protocolVersion: Int = 1
+    const val protocolVersion: Int = 2
 
     /** Capability bits the headset advertises in `WELCOME <version> <mask>`. */
     const val CAP_VIEW_ANIM: Int = 1 shl 0
@@ -124,8 +126,11 @@ object ControlProtocol {
     const val CAP_CUE: Int = 1 shl 3
     const val CAP_SUS: Int = 1 shl 4
     const val CAP_EYE_HEIGHT: Int = 1 shl 5
+    /** The view channel carries a yaw axis as well as up-gaze. */
+    const val CAP_VIEW_YAW: Int = 1 shl 6
     const val CAPABILITIES_MASK: Int =
-        CAP_VIEW_ANIM or CAP_SCENE or CAP_POSTURE or CAP_CUE or CAP_SUS or CAP_EYE_HEIGHT
+        CAP_VIEW_ANIM or CAP_SCENE or CAP_POSTURE or CAP_CUE or CAP_SUS or CAP_EYE_HEIGHT or
+            CAP_VIEW_YAW
 
     const val HELLO: String = "HELLO"
     const val WELCOME: String = "WELCOME"
@@ -179,7 +184,7 @@ object ControlProtocol {
     }
 
     /**
-     * Wire form of a discrete command: `#<seq> <command>`. `view:move` samples
+     * Wire form of a discrete command: `#<seq> <command>`. `view:orient` samples
      * stay unsequenced (latest-wins, no ack); every other discrete command is
      * acked and deduped by the headset.
      */
@@ -216,12 +221,13 @@ object ControlProtocol {
      * answered by WELCOME.
      */
     fun requiresSequencedAck(payload: String): Boolean =
-        !payload.startsWith(VIEW_MOVE) && payload != PING && parseHello(payload) == null
+        !payload.startsWith(VIEW_ORIENT) && payload != PING && parseHello(payload) == null
 
     /** Capability a discrete command depends on; 0 means "always available". */
     fun capabilityFor(command: String): Int {
         val normalized = normalize(command) ?: return 0
         return when {
+            normalized.startsWith(VIEW_ORIENT) -> CAP_VIEW_ANIM
             normalized.startsWith(VIEW_ANIM) -> CAP_VIEW_ANIM
             normalized.startsWith("scene:") -> CAP_SCENE
             normalized.startsWith("posture:") -> CAP_POSTURE
@@ -234,13 +240,14 @@ object ControlProtocol {
 
     /** Stable English tokens for UI messages built by the tablet. */
     fun capabilityNames(mask: Int): List<String> {
-        val names = ArrayList<String>(6)
+        val names = ArrayList<String>(7)
         if (mask and CAP_VIEW_ANIM != 0) names.add("viewAnim")
         if (mask and CAP_SCENE != 0) names.add("scene")
         if (mask and CAP_POSTURE != 0) names.add("posture")
         if (mask and CAP_CUE != 0) names.add("cue")
         if (mask and CAP_SUS != 0) names.add("sus")
         if (mask and CAP_EYE_HEIGHT != 0) names.add("eyeheight")
+        if (mask and CAP_VIEW_YAW != 0) names.add("viewYaw")
         return names
     }
 
@@ -264,8 +271,12 @@ object ControlProtocol {
     /** Plain decimal meters only: no sign, exponent or locale-specific comma. */
     private val EYE_HEIGHT_VALUE = Regex("""\d{1,3}(?:\.\d{1,3})?""")
 
-    /** Plain decimal axis; "NaN", "Infinity" and exponents never match. */
-    private val NORMALIZED_AXIS = Regex("""-?(?:\d+(?:\.\d*)?|\.\d+)""")
+    /**
+     * Plain decimal axis, identical to the page's `^-?\d+(?:\.\d+)?$`:
+     * "NaN", "Infinity", exponents, a leading dot (`.5`), a leading plus and a
+     * trailing dot never match. Two parsers must accept exactly one grammar.
+     */
+    private val NORMALIZED_AXIS = Regex("""-?\d+(?:\.\d+)?""")
 
     /** Parses `sus:answer:<1-5>`; anything else is rejected whole. */
     fun parseSusAnswer(command: String): Int? {
@@ -298,25 +309,22 @@ object ControlProtocol {
     }
 
     /**
-     * Parses `view:move:<x>,<z>`: exactly two normalized components. `x` must
-     * be zero (|x| < [VIEW_PITCH_X_EPSILON]) because the view is pitch-only now;
-     * `z` must be finite and in [-1, 1] and is the absolute pitch target.
-     * Any other shape is rejected whole.
+     * Parses `view:orient:<yaw>,<pitch>`: exactly two decimal degrees. Yaw is
+     * limited to ±[VIEW_YAW_MAX_DEG] and pitch to ±[VIEW_PITCH_MAX_DEG]; any
+     * other shape (extra fields, exponents, leading dot/plus, out of range) is
+     * rejected whole, never clamped.
      */
-    fun parseViewMove(command: String): ViewMove? {
-        if (!command.startsWith(VIEW_MOVE)) {
+    fun parseViewOrient(command: String): ViewOrientation? {
+        if (!command.startsWith(VIEW_ORIENT)) {
             return null
         }
-        val parts = command.substring(VIEW_MOVE.length).split(',')
+        val parts = command.substring(VIEW_ORIENT.length).split(',')
         if (parts.size != 2) {
             return null
         }
-        val x = parseAxis(parts[0]) ?: return null
-        val z = parseAxis(parts[1]) ?: return null
-        if (abs(x) >= VIEW_PITCH_X_EPSILON) {
-            return null
-        }
-        return ViewMove(x, z)
+        val yaw = parseAngle(parts[0], VIEW_YAW_MAX_DEG) ?: return null
+        val pitch = parseAngle(parts[1], VIEW_PITCH_MAX_DEG) ?: return null
+        return ViewOrientation(yaw, pitch)
     }
 
     /**
@@ -331,12 +339,12 @@ object ControlProtocol {
         return command.substring(VIEW_ANIM.length).takeIf { it in VIEW_ANIM_NAMES }
     }
 
-    private fun parseAxis(raw: String): Float? {
+    private fun parseAngle(raw: String, limitDeg: Float): Float? {
         if (!NORMALIZED_AXIS.matches(raw)) {
             return null
         }
         val value = raw.toFloatOrNull() ?: return null
-        return value.takeIf { it.isFinite() && it >= -1f && it <= 1f }
+        return value.takeIf { it.isFinite() && abs(it) <= limitDeg }
     }
 
     fun isAllowedCommand(command: String): Boolean {
@@ -371,7 +379,7 @@ object ControlProtocol {
             normalized == "settings:hud:on" ||
             normalized == "settings:hud:off" ||
             parseEyeHeight(normalized) != null ||
-            parseViewMove(normalized) != null ||
+            parseViewOrient(normalized) != null ||
             normalized == VIEW_STOP ||
             parseViewAnim(normalized) != null
     }
@@ -399,6 +407,30 @@ object ControlProtocol {
 
     private val SCENE_IDS = listOf("landscape", "ward", "bathroom", "lab")
 
+    /**
+     * 15-byte state frame, little endian:
+     *
+     * | byte | field |
+     * | --- | --- |
+     * | 0 | version (7) |
+     * | 1 | scene index |
+     * | 2 | flags |
+     * | 3 | eye height (cm) |
+     * | 4 | posturePitch — signed integer degrees, measured world tilt |
+     * | 5 | postureRoll — signed integer degrees, measured world tilt |
+     * | 6 | postureRise (cm) |
+     * | 7 | postureProgress (%) |
+     * | 8 | viewPitch — signed integer degrees, + = up-gaze |
+     * | 9 | viewAnim |
+     * | 10 | cueIntensity (%) |
+     * | 11 | calibrationConfidence (%) |
+     * | 12 | viewPreset |
+     * | 13–14 | viewYaw — signed int16 degrees, + = view turned left |
+     *
+     * The degree fields carry whatever the page measured. This layer only
+     * guarantees the bit width: the envelope is enforced once, in the page
+     * (see `docs/rotation-contract.md`), never re-applied here.
+     */
     fun encodeState(state: ControlState): ByteArray {
         val sceneIndex = SCENE_IDS.indexOf(state.scene).let { if (it < 0) 255 else it }
         var flags = 0
@@ -411,16 +443,16 @@ object ControlProtocol {
         buffer.put(sceneIndex.toByte())
         buffer.put(flags.toByte())
         buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(120, 190).toByte())
-        buffer.put(((state.posturePitch + 20f).roundToInt()).coerceIn(0, 40).toByte())
-        buffer.put(((state.postureRoll + 10f).roundToInt()).coerceIn(0, 20).toByte())
+        buffer.put(state.posturePitch.roundToInt().coerceIn(-128, 127).toByte())
+        buffer.put(state.postureRoll.roundToInt().coerceIn(-128, 127).toByte())
         buffer.put((state.postureRise * 100f).roundToInt().coerceIn(0, 120).toByte())
         buffer.put((state.postureProgress * 100f).roundToInt().coerceIn(0, 100).toByte())
-        // Signed integer degrees (byte 8) and the animation phase (byte 9).
-        buffer.put(state.viewPitch.roundToInt().coerceIn(-20, 20).toByte())
+        buffer.put(state.viewPitch.roundToInt().coerceIn(-128, 127).toByte())
         buffer.put(state.viewAnim.code.toByte())
         buffer.put((state.cueIntensity * 100f).roundToInt().coerceIn(0, 100).toByte())
         buffer.put((state.calibrationConfidence * 100f).roundToInt().coerceIn(0, 100).toByte())
         buffer.put(state.viewPreset.code.toByte())
+        buffer.putShort(state.viewYaw.roundToInt().coerceIn(-32768, 32767).toShort())
         return buffer.array()
     }
 
@@ -431,16 +463,17 @@ object ControlProtocol {
         val sceneIndex = buffer.get().toInt() and 0xFF
         val flags = buffer.get().toInt() and 0xFF
         val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val posturePitch = (buffer.get().toInt() and 0xFF).toFloat() - 20f
-        val postureRoll = (buffer.get().toInt() and 0xFF).toFloat() - 10f
+        val posturePitch = buffer.get().toInt().toFloat()
+        val postureRoll = buffer.get().toInt().toFloat()
         val postureRise = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val postureProgress = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        // Signed byte: keep the JVM sign extension, then clamp to the legal range.
-        val viewPitch = buffer.get().toInt().coerceIn(-20, 20).toFloat()
+        // Signed byte: keep the JVM sign extension. The envelope is the page's.
+        val viewPitch = buffer.get().toInt().toFloat()
         val viewAnim = ViewAnim.fromCode(buffer.get().toInt() and 0xFF)
         val cueIntensity = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val confidence = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val viewPreset = ViewPreset.fromCode(buffer.get().toInt() and 0xFF)
+        val viewYaw = buffer.short.toInt().toFloat()
         if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
         return ControlState(
             scene = if (sceneIndex < SCENE_IDS.size) SCENE_IDS[sceneIndex] else SCENE_IDS[0],
@@ -454,6 +487,7 @@ object ControlProtocol {
             postureRise = postureRise,
             postureProgress = postureProgress,
             viewPitch = viewPitch,
+            viewYaw = viewYaw,
             viewAnim = viewAnim,
             cueIntensity = cueIntensity,
             calibrationConfidence = confidence,
@@ -471,17 +505,14 @@ data class TelemetryPose(
 )
 
 /**
- * Parsed `view:move:<x>,<z>`. [x] is always within [ControlProtocol.VIEW_PITCH_X_EPSILON]
- * of zero (translation is gone); [z] is the absolute pitch target normalized to
- * [-1, 1], where +1 means +[ControlProtocol.VIEW_PITCH_MAX_DEG] degrees (up).
+ * Parsed `view:orient:<yaw>,<pitch>` in degrees. +[lookYawDeg] turns the
+ * patient's view left, +[upGazeDeg] shows more sky. Both are absolute and
+ * already range-checked; there is no translation channel.
  */
-data class ViewMove(
-    val x: Float,
-    val z: Float
-) {
-    /** Absolute pitch target in degrees: `z * VIEW_PITCH_MAX_DEG`. */
-    val viewPitchDeg: Float get() = z * ControlProtocol.VIEW_PITCH_MAX_DEG
-}
+data class ViewOrientation(
+    val lookYawDeg: Float,
+    val upGazeDeg: Float
+)
 
 /**
  * View-animation presets the page can play. [NONE] is state-only: it is never a
@@ -540,6 +571,11 @@ data class ControlState(
      * intermediate values here.
      */
     val viewPitch: Float = 0f,
+    /**
+     * **Currently applied** yaw in degrees, −180..180; positive turns the
+     * patient's view left. Same "applied, not requested" rule as [viewPitch].
+     */
+    val viewYaw: Float = 0f,
     /** Coarse animation phase reported by the page; see [ViewAnim]. */
     val viewAnim: ViewAnim = ViewAnim.IDLE,
     /** Preset the page last played (or is playing); see [ViewPreset]. */

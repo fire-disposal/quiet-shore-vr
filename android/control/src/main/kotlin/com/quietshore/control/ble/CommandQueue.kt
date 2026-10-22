@@ -10,7 +10,7 @@ import com.quietshore.control.protocol.ControlProtocol
  *   discard the queued pitch sample, so a stop is never delayed by movement;
  * - discrete lane: FIFO, every command is delivered (bounded only to keep a
  *   wedged link from growing without limit; refusal is explicit, never silent);
- * - movement lane: exactly one `view:move` sample, always the newest.
+ * - movement lane: exactly one `view:orient` sample, always the newest.
  *
  * Not thread safe: [com.quietshore.control.ble.BleController] serialises access.
  */
@@ -32,7 +32,7 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
      * @return false when the discrete lane is full and the command was refused.
      */
     fun enqueue(command: String): Boolean {
-        if (command.startsWith(ControlProtocol.VIEW_MOVE)) {
+        if (command.startsWith(ControlProtocol.VIEW_ORIENT)) {
             // Latest sample wins; never queues behind anything.
             move = command
             return true

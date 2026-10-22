@@ -22,6 +22,9 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ViewMode
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.recording.ControllerRecorder
+import com.quietshore.control.recording.RecordingEvent
+import com.quietshore.control.recording.ViewportRecorder
 import java.util.Locale
 
 /**
@@ -36,12 +39,15 @@ import java.util.Locale
 class ControllerWebViewHost(
     context: Context,
     private val onCommand: (String) -> Unit,
-    private val onFullscreen: (() -> Unit)? = null
-) {
+    private val onFullscreen: (() -> Unit)? = null,
+    private val onRecordingEvent: (RecordingEvent) -> Unit = {}
+) : ControllerRecorder {
 
     var onPageReady: (() -> Unit)? = null
     var onPageLoading: (() -> Unit)? = null
     var onLoadError: ((String) -> Unit)? = null
+
+    private val recorder = ViewportRecorder(context, onRecordingEvent)
 
     private val assetLoader: WebViewAssetLoader = WebViewAssetLoader.Builder()
         .addPathHandler(ASSETS_PATH, WebViewAssetLoader.AssetsPathHandler(context))
@@ -120,6 +126,9 @@ class ControllerWebViewHost(
                 if (!destroyed) {
                     failed = true
                     ready = false
+                    if (recorder.cancel()) {
+                        onRecordingEvent(RecordingEvent.Failed("三维视图进程已退出，录像未保存"))
+                    }
                     onLoadError?.invoke("三维视图进程已退出")
                 }
                 return true
@@ -182,9 +191,33 @@ class ControllerWebViewHost(
         evaluate("window.qsControl.setViewMode(${string(mode.wire)})")
     }
 
+    /** Starts the page's canvas recorder; the page runs the encoder itself. */
+    override fun startRecording() {
+        if (destroyed) {
+            return
+        }
+        if (!ready) {
+            onRecordingEvent(RecordingEvent.Failed("三维视图尚未加载完成"))
+            return
+        }
+        evaluate("if (window.qsRecorder) window.qsRecorder.start();")
+    }
+
+    override fun stopRecording() {
+        if (destroyed) {
+            return
+        }
+        evaluate("if (window.qsRecorder) window.qsRecorder.stop();")
+    }
+
     fun reload() {
         if (destroyed) {
             return
+        }
+        // The old page's encoder dies with the navigation; drop the partial
+        // file instead of leaving a truncated clip in Movies.
+        if (recorder.cancel()) {
+            onRecordingEvent(RecordingEvent.Failed("三维视图已重载，录像未保存"))
         }
         failed = false
         ready = false
@@ -197,11 +230,13 @@ class ControllerWebViewHost(
         }
         destroyed = true
         ready = false
+        recorder.cancel()
         webView.stopLoading()
         webView.webViewClient = WebViewClient()
         webView.removeJavascriptInterface(BRIDGE_NAME)
         webView.loadUrl("about:blank")
         webView.destroy()
+        recorder.shutdown()
     }
 
     private fun replaySnapshot() {
@@ -248,6 +283,27 @@ class ControllerWebViewHost(
         @JavascriptInterface
         fun openFullscreen() {
             onFullscreen?.invoke()
+        }
+
+        @JavascriptInterface
+        fun recordingStarted(mimeType: String) {
+            recorder.begin(mimeType)
+        }
+
+        @JavascriptInterface
+        fun recordingChunk(base64: String) {
+            recorder.append(base64)
+        }
+
+        @JavascriptInterface
+        fun recordingFinished() {
+            recorder.finish()
+        }
+
+        @JavascriptInterface
+        fun recordingFailed(message: String) {
+            recorder.cancel()
+            onRecordingEvent(RecordingEvent.Failed(message))
         }
     }
 

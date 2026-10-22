@@ -50,7 +50,7 @@ import java.util.concurrent.locks.ReentrantLock
  *       {"type":"ack","seq":N}
  *   连接建立先发 ready（`seq` 回显客户端的 since，可安全当作去重水位），
  *   再补 `seq > since` 的未确认命令（离散按序，连续只发最新一个样本）。
- *   离散命令在被 ack 之前一直保留；`view:move` 不参与 ack，只保留最新样本；
+ *   离散命令在被 ack 之前一直保留；`view:orient` 不参与 ack，只保留最新样本；
  *   `view:anim:*` 是一次性事件，不入保留区，重连不重放。
  *   控制权变化（CLAIM/RELEASE/断开/停 BLE）立即推一条 control 消息。
  *   每 15 s ping 一次，30 s 没收到 pong 即关闭通道。
@@ -860,23 +860,19 @@ class PortalService : Service() {
                 }
                 queued = true
             }
-            command.startsWith(ControlProtocol.VIEW_MOVE) -> {
-                // Slider stream: the newest absolute pitch target owns the
+            command.startsWith(ControlProtocol.VIEW_ORIENT) -> {
+                // Slider stream: the newest absolute orientation owns the
                 // continuous slot and persists there with no TTL. It never
                 // changes BLE/status state, so it skips the per-sample activity
                 // broadcast (the WS push carries it instead).
-                if (ControlProtocol.parseViewMove(command) == null) {
-                    Log.w(TAG, "rejected view move: $command")
+                if (ControlProtocol.parseViewOrient(command) == null) {
+                    Log.w(TAG, "rejected view orient: $command")
                     return false
                 }
                 queued = true
                 broadcastStatus = false
             }
             command.startsWith("cue:") -> {
-                if (HeadsetSettings.read(this).sceneId != "landscape") {
-                    Log.w(TAG, "rejected cue outside landscape: $command")
-                    return false
-                }
                 if (command.startsWith("cue:intensity:")) {
                     val intensity = command.substringAfter("cue:intensity:").toFloatOrNull()
                     if (intensity == null || !intensity.isFinite() || intensity < 0f || intensity > 1f) {
@@ -963,6 +959,7 @@ class PortalService : Service() {
         body.put("posturePitch", state.posturePitch)
         body.put("postureRise", state.postureRise)
         body.put("viewPitch", state.viewPitch)
+        body.put("viewYaw", state.viewYaw)
         body.put("viewAnim", state.viewAnim.wire)
         body.put("viewPreset", state.viewPreset.wire)
         body.put("calibrationConfidence", state.calibrationConfidence)
@@ -1007,8 +1004,11 @@ class PortalService : Service() {
             postureProgress = finite("postureProgress", 0f),
             // 视角俯仰是**当前已应用**的角度（度），不是目标。v3 的
             // viewX/viewZ 平移字段已删除，页面若仍发送也会被忽略。
-            viewPitch = finite("viewPitch", 0f)
-                .coerceIn(-ControlProtocol.VIEW_PITCH_MAX_DEG, ControlProtocol.VIEW_PITCH_MAX_DEG),
+            // ±20° 的夹紧只在页面做一次（见 docs/rotation-contract.md），
+            // 这里不重复，否则坏值会被静默改写成"合法"的错值。
+            viewPitch = finite("viewPitch", 0f),
+            // 视角偏航：+ = 患者视线向左（与世界层符号相反，页面已换算）。
+            viewYaw = finite("viewYaw", 0f),
             // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
             viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
             viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),

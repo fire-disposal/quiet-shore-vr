@@ -11,6 +11,18 @@ enum class ViewMode(val wire: String, val label: String) {
     GLOBAL("global", "全局视角")
 }
 
+/** State of the tablet-side patient-view recording. */
+enum class RecordingPhase {
+    IDLE,
+    STARTING,
+    RECORDING,
+    SAVING,
+    SAVED,
+    FAILED;
+
+    val isBusy: Boolean get() = this == STARTING || this == RECORDING || this == SAVING
+}
+
 data class DiscoveredDevice(
     val address: String,
     val rssi: Int
@@ -83,6 +95,17 @@ data class ControlUiState(
     val control: ControlState = ControlState(),
     val viewMode: ViewMode = ViewMode.GLOBAL,
     val fullscreen: Boolean = false,
+    /** Last headset the operator connected to; null until one is stored. */
+    val lastDeviceAddress: String? = null,
+    /** 1-based attempt while the link is being re-established. */
+    val reconnectAttempt: Int = 0,
+    val reconnectMax: Int = 0,
+    /** Patient-view recording, independent of the BLE lease. */
+    val recording: RecordingPhase = RecordingPhase.IDLE,
+    val recordingElapsedMs: Long = 0L,
+    val recordingBytes: Long = 0L,
+    val recordingPath: String? = null,
+    val recordingError: String? = null,
     /**
      * Eye height the tablet requests. The headset is the source of truth for
      * the stored value and never echoes it back over BLE.
@@ -96,6 +119,11 @@ data class ControlUiState(
      * between a local change and the next state notification.
      */
     val viewPitchRequested: Float? = null,
+    /**
+     * In-flight absolute yaw in degrees (+ = view turns left). Non-null only
+     * while the yaw slider is ahead of the headset readback.
+     */
+    val viewYawRequested: Float? = null,
     val rssi: Int? = null,
     val notice: String? = null,
     val error: String? = null,
@@ -125,6 +153,7 @@ data class ControlUiState(
 
     val canAdjustView: Boolean get() = viewPitchBlockedReason == null
 
-    /** Slider position: the in-flight request wins over the headset readback. */
+    /** Slider positions: the in-flight request wins over the headset readback. */
     val viewPitchDegrees: Float get() = viewPitchRequested ?: control.viewPitch
+    val viewYawDegrees: Float get() = viewYawRequested ?: control.viewYaw
 }
