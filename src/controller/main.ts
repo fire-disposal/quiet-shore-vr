@@ -122,19 +122,24 @@ function createPatientMarker(): THREE.Group {
 
   const box = new THREE.BoxGeometry(1, 1, 1);
   const cloth = new THREE.MeshStandardMaterial({
-    color: 0x3f7168,
-    emissive: 0x0d2622,
-    emissiveIntensity: 0.28,
+    color: 0x5b988c,
+    emissive: 0x12332d,
+    emissiveIntensity: 0.32,
     roughness: 0.78,
     metalness: 0.03
   });
   const pants = new THREE.MeshStandardMaterial({
-    color: 0x263c38,
+    color: 0x1d2f2b,
     emissive: 0x081412,
-    emissiveIntensity: 0.2,
+    emissiveIntensity: 0.18,
     roughness: 0.86
   });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xe8cfae, roughness: 0.82 });
+  const skin = new THREE.MeshStandardMaterial({
+    color: 0xf0d3ad,
+    emissive: 0x2a1c10,
+    emissiveIntensity: 0.22,
+    roughness: 0.82
+  });
   const headset = new THREE.MeshStandardMaterial({
     color: 0x1a2523,
     roughness: 0.45,
@@ -210,15 +215,16 @@ function createPatientMarker(): THREE.Group {
   block(pants, 0.12, 0.76, 0.14, -0.11, 0.41, 0);
   block(pants, 0.12, 0.76, 0.14, 0.11, 0.41, 0);
   block(pants, 0.34, 0.14, 0.2, 0, 0.82, 0);
+  block(new THREE.MeshBasicMaterial({ color: 0xa88a55 }), 0.37, 0.035, 0.21, 0, 0.875, 0);
   block(cloth, 0.34, 0.24, 0.2, 0, 0.97, 0);
-  block(cloth, 0.42, 0.32, 0.22, 0, 1.24, 0);
-  block(cloth, 0.52, 0.1, 0.22, 0, 1.41, 0);
-  block(cloth, 0.1, 0.3, 0.12, -0.29, 1.23, 0);
-  block(cloth, 0.1, 0.3, 0.12, 0.29, 1.23, 0);
-  block(cloth, 0.09, 0.28, 0.1, -0.3, 0.99, -0.02);
-  block(cloth, 0.09, 0.28, 0.1, 0.3, 0.99, -0.02);
-  block(skin, 0.1, 0.1, 0.1, -0.3, 0.82, -0.02);
-  block(skin, 0.1, 0.1, 0.1, 0.3, 0.82, -0.02);
+  block(cloth, 0.38, 0.32, 0.22, 0, 1.24, 0);
+  block(cloth, 0.48, 0.1, 0.22, 0, 1.41, 0);
+  block(cloth, 0.1, 0.22, 0.12, -0.27, 1.27, 0);
+  block(cloth, 0.1, 0.22, 0.12, 0.27, 1.27, 0);
+  block(skin, 0.09, 0.26, 0.1, -0.275, 1.03, -0.02);
+  block(skin, 0.09, 0.26, 0.1, 0.275, 1.03, -0.02);
+  block(skin, 0.1, 0.1, 0.1, -0.275, 0.86, -0.02);
+  block(skin, 0.1, 0.1, 0.1, 0.275, 0.86, -0.02);
   block(skin, 0.1, 0.09, 0.1, 0, 1.47, 0);
 
   // Head + headset rotate around the eye line; arrows stay separate.
@@ -228,11 +234,11 @@ function createPatientMarker(): THREE.Group {
   group.add(head);
 
   const skull = new THREE.Mesh(box, skin);
-  skull.scale.set(0.19, 0.22, 0.19);
+  skull.scale.set(0.22, 0.23, 0.21);
   head.add(skull);
 
   const shell = new THREE.Mesh(box, headset);
-  shell.scale.set(0.24, 0.14, 0.08);
+  shell.scale.set(0.26, 0.145, 0.08);
   shell.position.set(0, 0.01, -0.09);
   head.add(shell);
 
@@ -264,7 +270,8 @@ function createPatientMarker(): THREE.Group {
 }
 
 function updateMarker(): void {
-  marker.position.set(pose.x, 0, pose.z);
+  // Feet sit on the rendered floor; the scene content is offset by -eyeHeight.
+  marker.position.set(pose.x, host.floor, pose.z);
   marker.rotation.y = pose.yaw;
   // Yaw is the marker body; pitch must show on the head and gaze rays,
   // otherwise the global view looks level while the patient looks up or down.
@@ -310,7 +317,7 @@ function updateCamera(): void {
     camera.quaternion.copy(cameraHeadQuat).multiply(cameraWorldQuat);
     return;
   }
-  target.set(pose.x, 1.08, pose.z);
+  target.set(pose.x, host.floor + 1.08, pose.z);
   const offset = new THREE.Vector3(
     Math.cos(orbit.pitch) * Math.sin(orbit.yaw),
     Math.sin(orbit.pitch),
