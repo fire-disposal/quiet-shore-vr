@@ -91,13 +91,13 @@ any     --会话结束 / 校准开始--> idle @ 0°    （reset，无缓动）
 
 | 命令 | id / 编码 | 目标解析 | 时长 | 曲线 | 峰值角速度 |
 | --- | --- | --- | --- | --- | --- |
-| `view:anim:up` | `up` / 1 | 相对 +10°，clamp +20° | 3.0 s | smootherstep | 6.25°/s |
-| `view:anim:down` | `down` / 2 | 相对 −10°，clamp −20° | 3.0 s | smootherstep | 6.25°/s |
+| `view:anim:up` | `up` / 1 | 相对 +10°，整体 clamp ±90° | 3.0 s | smootherstep | 6.25°/s |
+| `view:anim:down` | `down` / 2 | 相对 −10°，整体 clamp ±90° | 3.0 s | smootherstep | 6.25°/s |
 | `view:anim:recenter` | `recenter` / 3 | 绝对 0°（偏航同时归零） | 2.4 s | smootherstep | 俯仰 ±90° 全程时 ≈70 °/s；偏航按 40 °/s 均速展开 |
 | `view:anim:breathe` | `breathe` / 4 | 当前 → +6° → 当前（往返） | 6.0 s | smootherstep 去、镜像 smootherstep 回（`cycle`） | 峰值 3.75°/s，末态=初态 |
 | —（无预设） | `none` / 0 | 仅状态回报，不可播放 | — | — | — |
 
-- `up`/`down` 是**相对**目标：在 +20° 再按 `up` 是无运动（`idle`，`viewPreset=none`），不再出现“按上仰却在向下”的矛盾。
+- `up`/`down` 是**相对**目标：在 +90° 再按 `up` 是无运动（`idle`，`viewPreset=none`），不再出现“按上仰却在向下”的矛盾。
 - `recenter` 是唯一绝对目标，也是唯一能回到 0° 的预设；`view:stop` 只保持。
 - `breathe` 在一次播放里改变方向：前半程 smootherstep 到 +6°，后半程镜像回落，结束时精确回到起始角度；若峰值越过 ±90° 会先 clamp（例如 88° 起播 → 90° → 88°）。
 - 目录项带 `label.zh/en` 与 `curveLabel`，供平板镜像/文档使用；页面不接受任意时长或振幅（`view:anim:<id>` 只有 id，多余参数整条拒绝）。

@@ -17,7 +17,7 @@ PICO / Firefox Reality
 Android headset (PortalService)
   本机 WebSocket + HTTP 诊断 + BLE GATT 外设 + 宿主命令
 Android tablet (ControlScreen)
-  BLE 中心 + Compose 遥控 UI + WebView 镜像
+  BLE 中心 + Compose 遥控 UI + WebView 镜像 + 本地患者视角录像
 
 Scene modules (three.js)
   纯内容：美术、材质、局部环境循环、可注视目标、释放
@@ -32,7 +32,7 @@ Scene modules (three.js)
 | `ViewMotionController` | 预设目录、当前/目标俯仰、播放/保持/复位、`viewAnim`/`viewPreset` 状态 | three.js、场景模块、BLE 字节、会话/租约判断 |
 | `WorldShell` | 每层唯一写者、变换顺序、绕眼点的俯仰组合 | 缓动、状态机、优先级、场景内容 |
 | Android headset | BLE/回环传输、白名单与语法校验、宿主命令、state 编码、租约存活 | 动画曲线/时长/幅度、场景知识、替代页面做运动决策 |
-| Android tablet | 连接/接管、命令发送、state 回读、遥控 UI | 第二套运动状态机、按按钮推断播放状态 |
+| Android tablet | 连接/接管、命令发送、state 回读、遥控 UI、画布录制与本地文件 | 第二套运动状态机、按按钮推断播放状态；录像不得反向驱动会话/租约 |
 
 ### 1.2 单写者规则
 
@@ -52,9 +52,9 @@ Scene modules (three.js)
 | id | code | 语义 | 时长 | 峰值（约） |
 | --- | ---: | --- | ---: | ---: |
 | `none` | 0 | 无预设（仅状态） | — | — |
-| `up` | 1 | 相对当前 +10°，钳制 +20° | 3.0 s | 6.25 °/s |
-| `down` | 2 | 相对当前 −10°，钳制 −20° | 3.0 s | 6.25 °/s |
-| `recenter` | 3 | 绝对回 0° | 2.4 s | 15.6 °/s（从 ±20°） |
+| `up` | 1 | 相对当前 +10°，整体钳制 ±90° | 3.0 s | 6.25 °/s |
+| `down` | 2 | 相对当前 −10°，整体钳制 ±90° | 3.0 s | 6.25 °/s |
+| `recenter` | 3 | 绝对回 0°；偏航同时以 40 °/s 均速归零（0.7–5 s） | 2.4 s | 约 70 °/s（从 ±90°） |
 | `breathe` | 4 | 当前 → +6° → 当前 | 6.0 s | 3.75 °/s |
 
 滑动条 `view:orient:<yaw>,<pitch>` 是连续绝对朝向（度），0.25 s 时间常数 + 俯仰 15 °/s、偏航 30 °/s 速率上限；
@@ -74,10 +74,11 @@ held --play / slider--> playing            （从当前角度继续）
 
 ### 2.3 状态回报
 
-- `viewPitch`：**当前已应用**角度（有符号度，±20），不是目标。
+- `viewPitch`：**当前已应用**上仰角（有符号度，±90），不是目标。
+- `viewYaw`：**当前已应用**偏航（有符号度，±180，+ = 视线左转）。
 - `viewAnim`：`idle | playing | held`。
 - `viewPreset`：`none | up | down | recenter | breathe`。
-- 平板只显示回读；本地 `viewPitchRequested` 仅是拖动期间的 UI 缓冲，收到回读后清空。
+- 平板只显示回读；本地 `viewPitchRequested` / `viewYawRequested` 仅是拖动期间的 UI 缓冲，收到对应回读后清空。
 - 场景切换：`ViewMotionController` 保留角度/状态，`WorldShell` 重建后重贴当前角度，不重播。
 
 ## 3. BLE 与回环集成点
@@ -96,8 +97,8 @@ held --play / slider--> playing            （从当前角度继续）
 | 页面连续 | `view:orient:<yaw>,<pitch>` | `/ws` 最新样本槽 | **免 seq/回执**，no-response 写 |
 
 - 离散命令线格式 `#<seq> <command>`；`view:orient` 保持原样。白名单在 `ControlProtocol.isAllowedCommand`。
-- 平板一次只写一条：stop 优先并丢弃待发 pitch，离散 FIFO 不丢；pitch 只保留最新样本。
-- `view:orient` 的 x 必须为 0（|x| < 1e-6）；非零 x 整条拒绝。
+- 平板一次只写一条：stop 优先并丢弃待发的 `view:orient`，离散 FIFO 不丢；朝向只保留最新样本。
+- `view:orient:<yaw>,<pitch>` 恰好两个整度分量；偏航 ±180°、俯仰 ±90°，任一分量越界整条拒绝。
 - `view:anim` 只接受 `up|down|recenter|breathe`；`none` 仅用于状态，不接受播放；不跨重连重放。
 - 平板发送频率上限 10 Hz；页面侧无 TTL，目标持续有效。
 
@@ -107,23 +108,25 @@ held --play / slider--> playing            （从当前角度继续）
 
 | 字节 | 字段 | 编码 |
 | ---: | --- | --- |
-| 0 | version | `5` |
+| 0 | version | `7` |
 | 1 | scene | 0 landscape / 1 ward / 2 bathroom / 3 lab / 255 unknown |
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
-| 4 | posturePitch | 度 + 20，0–40 |
-| 5 | postureRoll | 度 + 10，0–20 |
+| 4 | posturePitch | **有符号度**（测得的世界俯仰；起身到位约 +90） |
+| 5 | postureRoll | **有符号度**（测得的世界横滚） |
 | 6 | postureRise | 厘米，0–120 |
 | 7 | postureProgress | 0–100 |
-| 8 | viewPitch | **有符号度**，−20–+20（当前角度） |
+| 8 | viewPitch | **有符号度**，−90–+90（当前已应用上仰角） |
 | 9 | viewAnim | 0 idle / 1 playing / 2 held |
 | 10 | cueIntensity | 0–100 |
 | 11 | calibrationConfidence | 0–100 |
 | 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe |
+| 13–14 | viewYaw | **有符号 int16** 小端，−180–+180（+ = 视线左转） |
 
-- 版本不等于 5、长度不为 13、`viewAnim`/`viewPreset` 未知值：丢弃整帧或按 idle/none 处理（实现按字段容错）。
+- 版本不等于 7、长度不为 15 的帧直接丢弃；四个度数字段只做位宽检查，不静默夹紧。
+- `viewAnim` / `viewPreset` 的未知值按 idle / none 处理（字段容错）。
 - 平板不自行推断状态；按钮只发命令，显示只读 state。
-- WS `state` 的 `viewPitch` 是当前角度；`viewX`/`viewZ` 已删除，禁止回退。
+- `viewX`/`viewZ` 已删除，不提供旧版本兼容层。
 
 ### 3.3 遥测特征（页面 → 平板）
 
@@ -133,6 +136,8 @@ held --play / slider--> playing            （从当前角度继续）
 
 - 首个 `CLAIM` 胜出；第二台 `CONTROL_BUSY`。
 - 平板 5 s `PING`，15 s 无 `PONG` 断开；头显 20 s 无控制者写入释放。
+- 头显在断链、广告失败或蓝牙关开后恢复 GATT/广播；8 s 广播看门狗兜底，重复 `CLAIM` 刷新租约看门狗。
+- 平板保存上次头显地址；非主动断链按 0.8 / 1.6 / 3.2 s 退避重连 3 次，`CONTROL_BUSY` 直接回配对页。
 - 失权（RELEASE / 超时 / 断链）是一次**停止事件**：
   - 头显只入队一条 `posture:stop`（幂等），并发布 `control:false`；
   - 页面 `ViewMotionController.stop()` 冻结视角、`stopSitUp()`、`comfort.stopPosture()`；
@@ -153,3 +158,5 @@ held --play / slider--> playing            （从当前角度继续）
 3. Android 不新增动画参数命令；需要新曲线时先改目录与协议，不接受任意 duration/amplitude。
 4. 旧 state/命令格式不保留兼容层；版本不匹配直接拒绝。
 5. 任何“急停/失权/复位”改动必须同时检查：患者停止、租约丢失、会话结束、校准开始、场景切换五条路径。
+6. 录像只在平板本地：读取 WebGL 画布、写应用外部目录、经 FileProvider 分享；不得新增 BLE 命令、不得依赖租约，也不得让页面为录制改变渲染状态。
+7. 改动 BLE 生命周期必须检查：断链、广告失败、蓝牙关开、服务重启、重复 `CLAIM` 五种恢复路径。

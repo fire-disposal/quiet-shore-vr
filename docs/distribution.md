@@ -119,7 +119,7 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 - 步骤：`npm ci` → `npm run check` → `npm test` → `npm run build` → `npm run standalone` → 安装 Android SDK Platform 36 → `cd android && ./gradlew :headset:assembleDebug :control:assembleDebug` → 上传两个 APK。
 - Gradle 在 `preBuild` 复制 `dist/standalone.html`（头显 assets）与 `dist/controller.html`（平板 assets），所以 Web 构建必须排在 Gradle 之前。
 - 签名：仓库不提交 keystore。常规 CI 产出 debug 签名 APK，仅用于侧载验证。Release workflow 在配置 `ANDROID_KEYSTORE_BASE64` 等 Secrets 时用 `apksigner` 重新签名；未配置时发布物仍是 debug 签名。构建变体仍是 debug，不能作为应用商店包。
-- 版本：`versionCode` / `versionName` 分别写在 `android/headset/build.gradle.kts`、`android/control/build.gradle.kts`；两端独立发版。
+- 版本：`versionCode` / `versionName` 分别写在 `android/headset/build.gradle.kts`、`android/control/build.gradle.kts`；协议同版本，两端必须同步升级。
 - 产物：`:headset` 的 `headset-debug.apk`、`:control` 的 `control-debug.apk`，以及 `dist/standalone.html`、`dist/controller.html`。
 - 旧库 `fire-disposal/stillwater-vr` 已在新库基线 CI 通过后从 GitHub 删除；本地草稿 `~/dev/VR` 保留。
 
@@ -127,7 +127,7 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 
 - **BLE 邻近即授权。** 没有控制码、配对或应用层认证；先 `CLAIM` 的平板获得控制。只适用于一台头显配一台平板的专用环境，不用于多租户或共享临床空间。
 - 只监听 `127.0.0.1`；不暴露局域网。回环控制接口没有认证，只是同源页面的桥，不构成安全边界。
-- 不申请不必要的权限；头显保留 `INTERNET`（本地 socket）、`FOREGROUND_SERVICE`、`RECEIVE_BOOT_COMPLETED`、蓝牙与通知权限；平板保留 BLE 扫描/连接与旧系统所需的位置权限。
+- 不申请不必要的权限；头显保留 `INTERNET`（本地 socket）、`FOREGROUND_SERVICE`、`RECEIVE_BOOT_COMPLETED`、蓝牙与通知权限；平板保留 BLE 扫描/连接与旧系统所需的位置权限。录像写入应用外部目录 `Movies/recordings`，不申请存储权限，只通过 `FileProvider` 分享单个文件。
 - 不修改厂家 HOME、不卸载/清数据、不 root。
 - 应用图标/通知/磁贴只打开 `PortalActivity` 控制台，由控制台的“进入训练”拉起 Firefox；`BootReceiver` 恢复服务/通知并打开头显控制台。
 - 平板退出或链路断开时头显自动释放控制权；服务重启会清空控制者。

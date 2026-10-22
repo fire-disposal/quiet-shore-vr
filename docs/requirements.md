@@ -41,19 +41,22 @@
 - 当前控制者可 `RELEASE` 或断开，释放后其他平板可接管。
 - 遥测和场景状态只发给当前控制者。
 - 控制权是单租约，不是身份认证；BLE 邻近就是授权边界。
+- 头显在断链、广告失败或蓝牙关开后恢复广播；重复 `CLAIM` 刷新租约看门狗。
+- 平板记住上次头显，冷启动自动连接；非主动断链退避重连 3 次，`CONTROL_BUSY` 不重试。
 
 代码归属：`android/protocol`、`android/headset/BluetoothControl.kt`、`android/control/ble`。
 
 ## 5. 平板控制台
 
-- PAD 横屏优先，左侧大三维视口，右侧固定控制栏。
-- 配对、连接、接管、断开、被占用、超时都有明确状态。
+- PAD 横屏优先：三维视口铺满背景，右侧悬浮控制栏，连接与录制状态在顶栏。
+- 配对、连接、接管、断开、重连、被占用、超时都有明确状态；重连显示 `n/3`。
 - 三维视口复用头显同一套 Three.js 场景模块。
-- 患者视角和全局视角可切换；全局视角显示患者标记与朝向。
+- 患者视角和全局视角可切换，底栏提供全屏入口；全局视角显示患者标记与朝向。
+- 平板可录制患者视角（画布级，不含操作层），支持计时、停止、分享；不依赖 BLE 租约。
 - 姿态过期、断开、第二台占用都要可见。
 - 加载态只用不确定的三点波动，不用假进度。
 
-代码归属：`android/control`，`ControlViewModel`、`BleController`、`ControllerWebViewHost`、`ui/`。
+代码归属：`android/control`，`ControlViewModel`、`BleController`、`ControllerWebViewHost`、`recording/ViewportRecorder`、`ui/`。
 
 ## 6. 场景契约
 
@@ -77,6 +80,7 @@
 - Web：TypeScript、Three.js、esbuild；`npm run build`、`npm run standalone`。
 - Android：Gradle 多模块，`:protocol`、`:headset`、`:control`。
 - 头显与平板共享 BLE 契约，不共享 Android UI 代码。
+- 平板录像写入应用外部目录 `Movies/recordings`，不申请存储权限；只通过 FileProvider 分享单个文件。
 - GitHub Actions 在 main 上传双 APK 工件；`v*` tag 创建带两个 APK 和校验文件的 Release。
 
 ## 9. 明确非目标
@@ -99,4 +103,5 @@
 3. 是否要求 WebXR 用户手势。
 4. 是否让第二台平板能绕过租约。
 5. 是否新增场景专属分支到 `App`。
-6. 是否需要同步更新协议、两端 UI、文档、测试和 Release。
+6. 是否引入新的本地文件、权限或后台任务；录像/导出是否仍与租约解耦。
+7. 是否需要同步更新协议、两端 UI、文档、测试和 Release。

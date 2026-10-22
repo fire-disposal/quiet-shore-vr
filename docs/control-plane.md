@@ -38,9 +38,13 @@ UTF-8 字符串，去掉首尾空白后解释：
 
 | 写入值 | 行为 |
 | --- | --- |
-| `CLAIM` | 申请控制权 |
+| `CLAIM` | 申请控制权；重复写入刷新 20 s 租约看门狗 |
 | `RELEASE` | 释放控制权 |
-| 其他白名单字符串 | 视为控制命令，仅当前控制者可发；不在白名单内直接拒绝 |
+| `HELLO <version>` | 协议握手；成功回 `WELCOME <v> <capMask>` |
+| `PING` | 存活探测；控制者回 `PONG` |
+| `#<seq> <command>` | 带序号与 `ACK` 的离散命令；头显对 seq 去重 |
+| `view:orient:<yaw>,<pitch>` | 连续朝向，Write Without Response，免序号/回执 |
+| 其他白名单字符串 | 旧式无序号命令，仅当前控制者可发；不在白名单内直接拒绝 |
 
 命令白名单由 `ControlProtocol.isAllowedCommand` 与 `CAPABILITIES` 共同维护，可通过 `GET /capabilities` 读取。
 
@@ -48,16 +52,22 @@ UTF-8 字符串，去掉首尾空白后解释：
 
 ### 2.2 status
 
-ASCII 字符串，通知给所有已连接设备：
+ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只发给当前控制者；租约超时通知被释放的控制者：
 
 | 值 | 含义 |
 | --- | --- |
 | `CONNECTED` | 有设备连上外设 |
 | `CONTROL_OK` | `CLAIM` 成功；本设备是控制者 |
 | `CONTROL_BUSY` | 已有其他控制者 |
-| `CONTROL_RELEASED` | 控制者已释放 |
+| `CONTROL_RELEASED` | 控制者已释放 / 租约超时 |
 | `CONTROL_REQUIRED` | 当前设备不是控制者，命令被拒绝 |
-| `OK:<cmd>` | 控制者的命令已转交患者页面 |
+| `WELCOME <v> <capMask>` | `HELLO` 成功；返回头显协议版本与能力位 |
+| `ACK <seq> <OK\|REJECTED\|BUSY>` | 离散命令的序号回执 |
+| `PROTOCOL_REQUIRED` | 未完成 `HELLO` 就发送 Discrete 命令 |
+| `PROTOCOL_MISMATCH <v>` | 头显协议版本与平板不一致 |
+| `COMMAND_REJECTED` | 白名单、语法或语义校验失败 |
+| `OK:<cmd>` | 旧式无序号命令已转交患者页面 |
+| `PONG` | `PING` 的存活回复 |
 | `ready` | 服务启动后的初始值 |
 
 `status` 不包含姿态或状态数据，只表示连接与接管结果。`PING` 是内部存活探测，头显响应 `PONG`，不进入页面命令队列。`OK:<cmd>` 只会在头显语义路由接受命令后返回；白名单外或语义失败返回 `COMMAND_REJECTED`。
@@ -90,7 +100,7 @@ ASCII 字符串，通知给所有已连接设备：
 | 5 | postureRoll | **有符号**整数度：测得的世界倾角 |
 | 6 | postureRise | 厘米，0–120 |
 | 7 | postureProgress | 0–100 |
-| 8 | viewPitch | **有符号**整数度，−20–+20（页面是唯一夹紧点）；正值 = 上仰（患者看到更多天空） |
+| 8 | viewPitch | **有符号**整数度，−90–+90（页面是唯一夹紧点）；正值 = 上仰（患者看到更多天空） |
 | 9 | viewAnim | 0 idle / 1 playing / 2 held；其他值按 idle 处理 |
 | 10 | cueIntensity | 0–100 |
 | 11 | calibrationConfidence | 0–100 |
@@ -98,12 +108,12 @@ ASCII 字符串，通知给所有已连接设备：
 | 13–14 | viewYaw | **有符号** int16 小端，度；+ = 患者视线左转 |
 
 - 页面通过 WS `{"type":"state","data":...}` 提供这些字段；头显编码后通知控制者。
-- `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested`，收到回读后清空。
+- `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested` / `viewYawRequested`，收到回读后清空。
 - `viewAnim` 只表示页面动画播放器的粗粒度相位（`idle` / `playing` / `held`），页面通过 WS `state` 的 `viewAnim` 字符串上报；未知值按 `idle` 处理。
 - `viewPreset` 是页面最近播放/正在播放的预设 id（`none|up|down|recenter|breathe`），未知值按 `none` 处理；平板只回显，不自行推断。
-- 15 字节仍落在默认 ATT 负载（20 字节）内；v6 及更早的帧因版本/长度不符直接丢弃。
+- 15 字节仍落在默认 ATT 负载（20 字节）内；版本不等于 7 或长度不为 15 的帧直接丢弃。
 - 四个度数字段（byte 4 / 5 / 8 / 13–14）只做位宽检查：越界值不会被静默夹紧，口径见 `docs/rotation-contract.md`。
-- 旧文本四/五段格式与 v3、v4 帧均已删除：版本不等于 5 或长度不为 13 的 state 直接丢弃，没有兼容层。
+- 旧文本格式与 v6 及更早的二进制帧均已删除，没有兼容层。
 
 ## 3. 第一台接管
 
@@ -123,7 +133,7 @@ ASCII 字符串，通知给所有已连接设备：
 - `CLAIM` 在通知启用后立即发送；平板等待 `CONTROL_OK` 最多 6 秒，超时断开并提示重新连接。
 - 收到 `CONTROL_BUSY` 后平板主动断开，留在配对页；不会自动重试。
 - 控制者 `RELEASE`、写入超时或断链都会清空控制者，下一台平板可以直接接管。
-- 每次租约丢失（`RELEASE` / 20 s 写入超时 / 断链 / 停 BLE）头显只入队**一条** `posture:stop`，让页面冻结起身轨迹；视角俯仰目标保持不变，动画停止但角度不回正。
+- 每次租约丢失（`RELEASE` / 20 s 写入超时 / 断链 / 停 BLE）头显只入队**一条** `posture:stop`，让页面冻结起身轨迹；视角朝向目标保持不变，动画停止但角度不回正。
 - 服务重启同样清空控制权；平板必须重新连接并 `CLAIM`。
 - 通知标题随之变化：“等待平板连接” → “平板控制中，按一次确认键开始”。
 

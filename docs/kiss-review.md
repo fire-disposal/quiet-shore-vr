@@ -1,4 +1,4 @@
-# KISS 审查（v0.8.3 基线）
+# KISS 审查（v0.8.11 基线）
 
 目标不是“代码少”，而是**每条协议只有一个解释、每个失败只有一个结果、每个高频路径不产生隐藏状态**。
 
@@ -18,11 +18,12 @@
 | 优先级 | 位置 | 问题 | 建议 |
 | --- | --- | --- | --- |
 | P0 | `PortalService.kt` | 约 1300 行，HTTP/WebSocket/GATT/设置/命令路由混在一个类 | 拆成 `LoopbackHttpServer`、`WsEventHub`、`CommandRouter`；先拆纯函数，不动线程模型 |
-| P1 | 平板眼高 | state 已是 13 字节 v5；旧帧直接丢弃 | 仍需实机确认 GATT 通知长度、MTU 与解析 |
+| P1 | 平板眼高 / state | state 已是 15 字节 v7；旧帧直接丢弃 | 仍需实机确认 GATT 通知长度、MTU 与解析 |
 | P1 | 能力清单 | `WELCOME` 已带 capability mask，但 HTTP `CAPABILITIES` 仍是字符串 | 让两端只依赖 mask；诊断清单保留为展示 |
 | P1 | 页面命令 | `start` 只提示，不是真正启动；`cue` 只在 landscape 生效 | 返回明确的 `NOT_READY` / `UNSUPPORTED`，不要静默成功 |
 | P2 | `Comfort` | 重映射、posture、减速、状态查询都集中在一个闭包对象 | 保留 API，内部拆纯计算模块；先加测试再拆 |
 | P2 | `App.ts` | 会话、XR、控制命令、HUD、手势仍集中；传输/视角/快照已独立 | 继续按“会话生命周期 / 控制命令 / 渲染管线”拆，不要引入框架 |
+| P2 | 平板录像 | `ViewportRecorder` 在 stop 前把整段 Blob 留在 WebView 内存；512 MB 上限只防失控 | 演示级别可接受；若需长录，改为可独立播放的分片或平台侧编码/封装 |
 
 ## 已经删除/收紧的假承诺
 
@@ -31,6 +32,8 @@
 - `cue:*` 在非 landscape 场景直接拒绝；越界 intensity 直接拒绝。
 - BLE 写回执改为 `dispatchControl` 返回成功才回 `OK`；失败回 `COMMAND_REJECTED`。
 - 删除未使用的 `PortalStatus.description()` 和 `PortalActions.chooseHome()`。
+- `CONTROL_BUSY` 不再自动重连：忙不是链路故障，退避重试只会和当前控制者抢链路。
+- 页面重载 / 渲染进程退出会丢弃未完成录像并上报失败，不留下截断文件冒充成功。
 
 ## 判断标准
 
