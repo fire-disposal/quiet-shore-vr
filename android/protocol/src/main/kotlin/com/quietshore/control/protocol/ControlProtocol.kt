@@ -441,6 +441,7 @@ object ControlProtocol {
         if (state.calibrating) flags = flags or 2
         if (state.audioMuted) flags = flags or 4
         if (state.cueEnabled) flags = flags or 8
+        if (state.sitUpActive) flags = flags or 16
         val buffer = ByteBuffer.allocate(stateMaxBytes).order(ByteOrder.LITTLE_ENDIAN)
         buffer.put(stateVersion.toByte())
         buffer.put(sceneIndex.toByte())
@@ -490,6 +491,7 @@ object ControlProtocol {
             calibrating = flags and 2 != 0,
             audioMuted = flags and 4 != 0,
             cueEnabled = flags and 8 != 0,
+            sitUpActive = flags and 16 != 0,
             eyeHeight = eyeHeight,
             posturePitch = posturePitch,
             postureRoll = postureRoll,
@@ -572,6 +574,7 @@ data class ControlState(
     val calibrating: Boolean = false,
     val audioMuted: Boolean = false,
     val cueEnabled: Boolean = true,
+    val sitUpActive: Boolean = false,
     val eyeHeight: Float = ControlProtocol.EYE_HEIGHT_DEFAULT,
     val posturePitch: Float = 0f,
     val postureRoll: Float = 0f,

@@ -159,6 +159,7 @@ describe('scene snapshot', () => {
     expect(payload.eyeHeight).toBe(1.7);
     expect(payload.postureProgress).toBe(0);
     expect(payload.calibrationConfidence).toBe(0.62);
+    expect(payload.sitUpActive).toBe(false);
     expect('viewX' in payload).toBe(false);
     expect('viewZ' in payload).toBe(false);
     expect(Object.keys(payload).sort()).toEqual(
@@ -175,6 +176,7 @@ describe('scene snapshot', () => {
         'postureRoll',
         'scene',
         'session',
+        'sitUpActive',
         'viewAnim',
         'viewPitch',
         'viewPreset',

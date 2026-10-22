@@ -993,6 +993,7 @@ class PortalService : Service() {
             scene = if (scene.isEmpty()) ControlState().scene else scene,
             session = json.optBoolean("session", false),
             calibrating = json.optBoolean("calibrating", false),
+            sitUpActive = json.optBoolean("sitUpActive", false),
             audioMuted = json.optBoolean("audio", false),
             cueEnabled = json.optBoolean("cueEnabled", true),
             eyeHeight = finite("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT)

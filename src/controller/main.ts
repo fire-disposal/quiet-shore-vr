@@ -22,6 +22,7 @@ interface ControllerApi {
     calibrating: boolean,
     audioMuted: boolean,
     eyeHeight: number,
+    sitUpActive: boolean,
     worldYaw: number,
     worldPitch: number,
     worldRoll: number
@@ -72,6 +73,7 @@ let sceneId = 'landscape';
 let viewMode: ViewMode = 'global';
 let eyeHeight = 1.7;
 let builtEyeHeight = 0;
+let sitUpActive = false;
 let worldOffsetYawDeg = 0;
 let worldOffsetPitchDeg = 0;
 let worldOffsetRollDeg = 0;
@@ -294,6 +296,30 @@ function updateMarker(): void {
   marker.visible = viewMode === 'global' && session;
 }
 
+
+/** Mirror of situp-path.at(t): hip-to-eye path in the room frame. */
+function sitUpEye(t: number, standEyeHeight: number): { y: number; z: number } {
+  const hip = 0.45;
+  const torso = 0.55;
+  const rotate = 0.7;
+  const time = Math.max(0, Math.min(1, t));
+  const x = time / rotate;
+  const eased = x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (x * 6 - 15) + 10);
+  const theta = (Math.PI / 2) * eased;
+  const sin = Math.sin(theta);
+  const cos = Math.cos(theta);
+  const seated = hip + torso;
+  const stand = Math.max(seated, standEyeHeight);
+  const y = time <= rotate
+    ? hip + torso * sin
+    : seated + (stand - seated) * (() => {
+        const v = (time - rotate) / (1 - rotate);
+        return v <= 0 ? 0 : v >= 1 ? 1 : v * v * v * (v * (v * 6 - 15) + 10);
+      })();
+  const z = time <= rotate ? torso * cos : 0;
+  return { y, z };
+}
+
 const cameraHeadEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const cameraHeadQuat = new THREE.Quaternion();
 const cameraWorldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
@@ -301,7 +327,12 @@ const cameraWorldQuat = new THREE.Quaternion();
 
 function updateCamera(): void {
   if (viewMode === 'patient') {
-    camera.position.set(pose.x, pose.y, pose.z);
+    if (sitUpActive) {
+      const eye = sitUpEye(postureProgress, eyeHeight);
+      camera.position.set(pose.x, eye.y, pose.z + eye.z);
+    } else {
+      camera.position.set(pose.x, pose.y, pose.z);
+    }
     // The patient sees scene content rotated by the world shell. Undo that
     // rotation on the mirror camera, otherwise calibration/view/sit-up offsets
     // are invisible here and the two views diverge.
@@ -332,6 +363,10 @@ function setStatus(text: string, error = false): void {
   status.classList.toggle('error', error);
 }
 
+function mirrorFloorOffset(): number {
+  return session && !sitUpActive ? -eyeHeight : 0;
+}
+
 function loadScene(nextId: string): void {
   const definition = getSceneDefinition(nextId);
   if (!definition) {
@@ -339,13 +374,13 @@ function loadScene(nextId: string): void {
   }
   const eyeHeightChanged = Math.abs(eyeHeight - builtEyeHeight) > 0.005;
   if (nextId === sceneId && host.definition && !eyeHeightChanged) {
-    host.setFloorOffset(session ? -eyeHeight : 0);
+    host.setFloorOffset(mirrorFloorOffset());
     return;
   }
   sceneId = definition.id;
   builtEyeHeight = eyeHeight;
   host.load(definition, { quality: 'high', eyeHeight });
-  host.setFloorOffset(session ? -eyeHeight : 0);
+  host.setFloorOffset(mirrorFloorOffset());
   scene.add(marker);
   marker.visible = viewMode === 'global' && session;
   label.textContent = `患者场景 ${definition.name.zh}`;
@@ -549,6 +584,7 @@ window.qsControl = {
     nextCalibrating,
     nextAudioMuted,
     nextEyeHeight,
+    nextSitUpActive,
     nextWorldYaw,
     nextWorldPitch,
     nextWorldRoll
@@ -559,13 +595,14 @@ window.qsControl = {
     if (Number.isFinite(nextEyeHeight)) {
       eyeHeight = Math.min(1.9, Math.max(1.2, nextEyeHeight));
     }
+    sitUpActive = nextSitUpActive === true;
     if ([nextWorldYaw, nextWorldPitch, nextWorldRoll].every(Number.isFinite)) {
       worldOffsetYawDeg = nextWorldYaw;
       worldOffsetPitchDeg = nextWorldPitch;
       worldOffsetRollDeg = nextWorldRoll;
     }
     loadScene(nextScene);
-    host.setFloorOffset(session ? -eyeHeight : 0);
+    host.setFloorOffset(mirrorFloorOffset());
     updateMarker();
     updateCamera();
     const legend = document.getElementById('view-legend');
@@ -740,6 +777,6 @@ window.setTimeout(() => {
       Math.sin(demo * 0.5) * 0.55,
       Math.sin(demo * 0.23) * 0.06
     );
-    window.qsControl.onState(sceneId, true, false, false, 1.7, 0, 0, 0);
+    window.qsControl.onState(sceneId, true, false, false, 1.7, false, 0, 0, 0);
   }, 80);
 }, 700);
