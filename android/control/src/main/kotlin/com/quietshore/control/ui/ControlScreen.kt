@@ -235,6 +235,7 @@ private fun FullscreenPatientView(
         modifier = Modifier
             .fillMaxSize()
             .background(QuietPalette.Viewport)
+            .safeDrawingPadding()
     ) {
         viewport(Modifier.fillMaxSize())
         Row(

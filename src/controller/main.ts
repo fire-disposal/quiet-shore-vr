@@ -16,7 +16,13 @@ interface Pose {
 
 interface ControllerApi {
   onTelemetry(x: number, y: number, z: number, yaw: number, pitch: number): void;
-  onState(scene: string, session: boolean, calibrating: boolean, audioMuted: boolean): void;
+  onState(
+    scene: string,
+    session: boolean,
+    calibrating: boolean,
+    audioMuted: boolean,
+    eyeHeight: number
+  ): void;
   onPosture(worldPitchDeg: number, worldRollDeg: number, riseM: number, progress: number): void;
   onBleState(state: string): void;
   onAuth(ok: boolean): void;
@@ -61,6 +67,8 @@ camera.rotation.order = 'YXZ';
 const pose: Pose = { x: 0, y: 1.7, z: 0.4, yaw: 0, pitch: 0 };
 let sceneId = 'landscape';
 let viewMode: ViewMode = 'global';
+let eyeHeight = 1.7;
+let builtEyeHeight = 0;
 let session = false;
 let calibrating = false;
 let audioMuted = false;
@@ -294,12 +302,18 @@ function setStatus(text: string, error = false): void {
 
 function loadScene(nextId: string): void {
   const definition = getSceneDefinition(nextId);
-  if (!definition || nextId === sceneId && host.definition) {
+  if (!definition) {
+    return;
+  }
+  const eyeHeightChanged = Math.abs(eyeHeight - builtEyeHeight) > 0.005;
+  if (nextId === sceneId && host.definition && !eyeHeightChanged) {
+    host.setFloorOffset(session ? -eyeHeight : 0);
     return;
   }
   sceneId = definition.id;
-  host.load(definition, { quality: 'high', eyeHeight: 1.7 });
-  host.setFloorOffset(0);
+  builtEyeHeight = eyeHeight;
+  host.load(definition, { quality: 'high', eyeHeight });
+  host.setFloorOffset(session ? -eyeHeight : 0);
   scene.add(marker);
   marker.visible = viewMode === 'global' && session;
   label.textContent = `患者场景 ${definition.name.zh}`;
@@ -497,11 +511,15 @@ window.qsControl = {
     updateMarker();
     updateCamera();
   },
-  onState(nextScene, nextSession, nextCalibrating, nextAudioMuted) {
+  onState(nextScene, nextSession, nextCalibrating, nextAudioMuted, nextEyeHeight) {
     session = nextSession;
     calibrating = nextCalibrating;
     audioMuted = nextAudioMuted;
+    if (Number.isFinite(nextEyeHeight)) {
+      eyeHeight = Math.min(1.9, Math.max(1.2, nextEyeHeight));
+    }
     loadScene(nextScene);
+    host.setFloorOffset(session ? -eyeHeight : 0);
     updateMarker();
     const legend = document.getElementById('view-legend');
     if (legend) {
@@ -675,6 +693,6 @@ window.setTimeout(() => {
       Math.sin(demo * 0.5) * 0.55,
       Math.sin(demo * 0.23) * 0.06
     );
-    window.qsControl.onState(sceneId, true, false, false);
+    window.qsControl.onState(sceneId, true, false, false, 1.7);
   }, 80);
 }, 700);
