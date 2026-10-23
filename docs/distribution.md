@@ -36,17 +36,17 @@
 
 ### 2.2 平板端 `com.quietshore.control`（`:control`）
 
-Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
+Kotlin + Compose 操作台，职责是“中心 + 控制”，不承载 XR：
 
 1. 以 BLE 中心扫描服务 UUID，连接头显，启用通知后写 `CLAIM` 接管。
 2. 第一台 `CLAIM` 成功；后续平板收到 `CONTROL_BUSY`，只能在配对页等待。
-3. 通过 `command` 特征发送场景、校准、声音、预览、结束等命令；接收 5 Hz 头姿态和 1 Hz 状态。
-4. 用 WebView 加载 `assets/controller.html`，复用 `src/core`、`src/scenes` 渲染同一批场景，显示患者位置/朝向和场景状态。
+3. 通过 `command` 特征发送模式、漂浮强度、声音、预览、结束等命令；接收 5 Hz 头姿态和 1 Hz 状态。
+4. 控制页是原生 Compose 单屏，不承载三维镜像，也不加载 WebView。
 5. “断开”先写 `RELEASE` 再断链；头显随即释放控制权。
 
 ### 2.3 共享契约 `:protocol`
 
-纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、20 字节遥测编解码、20 字节 state v8 都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
+纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、20 字节遥测编解码、20 字节 state v10 都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
 
 ## 3. 方案矩阵
 
@@ -69,8 +69,8 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 
 - 继续用应用图标/通知栏/快捷磁贴作为头显稳定入口；它们只打开 `PortalActivity` 控制台，不修改 HOME，不自动拉起 Firefox。
 - 头显 APK 仍是薄壳，但承担四件事：轻量控制台、静态资源服务、BLE 外设、患者页面与 BLE 之间的回环桥。控制台只显示状态并提供“进入训练/全部应用/返回桌面”，不是完整 2D 主界面。
-- 平板 APK 独立发布，负责操作台与三维镜像；它不承载 XR，只通过 BLE 控制和观察头显。
-- Web 内容构建两次：`standalone.html` 给头显单文件页面，`controller.html` 给平板 WebView；两者复用同一套 `src/core` 与 `src/scenes`。
+- 平板 APK 独立发布，负责操作台；它不承载 XR，只通过 BLE 控制和观察头显。
+- Web 内容只构建一次：`standalone.html` 给头显单文件页面。平板已无 WebView，`controller.html` 与 `src/controller/` 已删除。
 - 控制权先到先得，没有控制码；细节见 `docs/control-plane.md`。
 - 保留 `adb reverse` 开发路径；生产走 APK 内置资产。
 - 26s 退出问题是已知限制；用通知栏重新进入，不在本轮解决。
@@ -127,7 +127,7 @@ Kotlin + Compose 操作台，职责是“中心 + 镜像”，不承载 XR：
 
 - **BLE 邻近即授权。** 没有控制码、配对或应用层认证；先 `CLAIM` 的平板获得控制。只适用于一台头显配一台平板的专用环境，不用于多租户或共享临床空间。
 - 只监听 `127.0.0.1`；不暴露局域网。回环控制接口没有认证，只是同源页面的桥，不构成安全边界。
-- 不申请不必要的权限；头显保留 `INTERNET`（本地 socket）、`FOREGROUND_SERVICE`、`RECEIVE_BOOT_COMPLETED`、蓝牙与通知权限；平板保留 BLE 扫描/连接与旧系统所需的位置权限。录像写入应用外部目录 `Movies/recordings`，不申请存储权限，只通过 `FileProvider` 分享单个文件。
+- 不申请不必要的权限；头显保留 `INTERNET`（本地 socket）、`FOREGROUND_SERVICE`、`RECEIVE_BOOT_COMPLETED`、蓝牙与通知权限；平板保留 BLE 扫描/连接与旧系统所需的位置权限。平板不再写录像、不声明 `FileProvider`。
 - 不修改厂家 HOME、不卸载/清数据、不 root。
 - 应用图标/通知/磁贴只打开 `PortalActivity` 控制台，由控制台的“进入训练”拉起 Firefox；`BootReceiver` 恢复服务/通知并打开头显控制台。
 - 平板退出或链路断开时头显自动释放控制权；服务重启会清空控制者。

@@ -1,8 +1,10 @@
 # quiet-shore-vr（静岸 · Quiet Shore VR）
 
-面向卧床患者的引导想象与失重体验 WebXR 系统：患者佩戴 PICO G2 4K 仰卧观看定制虚拟场景，技术员使用 Android 平板控制台通过蓝牙与 WebSocket 远程控制场景切换、视角校准、姿态引导与声音播放。
+面向卧床患者的引导想象与失重体验 WebXR 系统：患者佩戴 PICO G2 4K 仰卧观看定制虚拟场景，技术员使用 Android 平板通过蓝牙远程控制会话模式、漂浮强度与声音。
 
-**状态**：原型（v0.8.11，已实机跑通，状态机 v8 运转正常；自更新与双端发布签名待做）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v0.9.0（单场景 + 漂浮模式；状态机 v10；双端 debug 签名，待实机验收）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+
+**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.0.apk`、`artifacts/flash/quiet-shore-control-0.9.0.apk`，校验见同目录 `SHA256SUMS.txt`。
 
 ## 本质
 
@@ -20,22 +22,22 @@
 - Android 头显端 (`com.quietshore.portal`)
   - Kotlin + Android 前台服务 + BLE GATT 外设 + 本地回环 HTTP/WS 桥
 - Android 控制端 (`com.quietshore.control`)
-  - Jetpack Compose + Nordic BLE + WebView 镜像
+  - Jetpack Compose + Nordic BLE
 - 外部服务与通信
-  - BLE GATT（20 字节二进制 state v8 与序号回执）
+  - BLE GATT（20 字节二进制 state v10 与序号回执）
   - 本地 WebSocket（`/ws?since=<seq>` 单一双向通道）
 - 部署
   - 双 APK GitHub Actions 自动构建与发布签名
 
 ## 功能
 
-- 3DoF 一步快速校准：患者舒适卧姿看向前方静止 1.2 秒自动对齐站立中立参考系，无需二次重映射。
-- 平板端控制面：偏航（±180°）与俯仰（±90°）滑动条精准调校、上仰/下俯/回正固定预设与呼吸辅助。
-- 多场景渲染引擎：`landscape`（湖畔风景）、`ward`（病房环境）、`bathroom`（卫生间）与 `lab`（直立光室参照系）。
-- 注视交互：6 秒悬停注视选择目标，暗色底环与高亮进度弧引导，头显内无悬浮遮挡菜单。
-- 双 APK 同步通信：头显端前台服务广播 BLE 外设，平板端自动扫描连接、握手（`HELLO 1` / `WELCOME 1`）与心跳存活检测（5s PING）。
-- 平板端三维画布录像：控制端支持直接抓取 WebView 画布录制为 MP4/WebM 用于演示评估。
-- 未完成：端上安全自更新机制；PICO G2 4K 上的 OpenXR 原生迁移（经评估无法支持）。
+- 会话：患者按确认键开始/停止；会话模式由技术员在平板选定（漂浮默认，起身为备选分支）。
+- 漂浮：世界竖向缓慢漂移（周期 11 s，满强度 ±35 mm）+ 近场微粒上飘，强度 0–3；停止时按 tau 0.25 s 渐出，1 s 内收住。
+- 朝向记录：会话开始后的第一帧取当前头部朝向作为站立中立帧，没有稳定检测与倒计时。
+- 场景：单一 `landscape`（湖畔晨岸），含天穹渐变与三片缓慢漂移的云层，供仰卧观看。
+- 双 APK 通信：头显前台服务广播 BLE 外设，平板自动扫描连接、`HELLO 2` / `WELCOME 2` 握手与 5 s PING 存活检测；state 为 20 字节 v10。
+- 平板界面：单屏——连接、会话时长、模式、开始/结束、漂浮强度、水声、常驻急停。
+- 未完成：场景仰视构图实机定稿；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。
 
 ## 启动流程
 
@@ -52,16 +54,16 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 
 ## 边界与已知问题
 
-- 设备限制：PICO G2 4K 仅支持 3DoF 姿态追踪（无位置位移），起身与仰卧位移均为纯视觉渲染偏移。
+- 设备限制：PICO G2 4K 仅支持 3DoF 姿态追踪（无位置位移），漂浮与起身均为纯视觉偏移。
 - 浏览器绑定：WebXR 能力仅在内置 Firefox Reality 10 中可用，系统自带 Chromium 67 内核浏览器无法创建 WebXR 会话。
 - 认证边界：本地回环 HTTP 与 BLE GATT 均无应用层密码认证，设计为受控医疗环境下的单头显对单平板使用。
-- 录像约束：平板镜像录制仅捕获渲染画布，无环境音频流，页面崩溃或刷新会导致当前未完成录像丢弃。
-- 签名状态：当前 Actions 构建产物采用 debug 签名，生产化前需建立持久化 Release Keystore。
+- 场景观感：从下往上看时，既有湖岸几何会暴露栈桥方块与浮空山体；云层亮度待实机定稿。
+- 签名状态：当前产物为 debug 签名，生产化前需建立持久化 Release Keystore。
 
 ## 文档索引
 
 - [docs/core.md](docs/core.md) — 目标、场景接口与核心设计规范
 - [docs/control-plane.md](docs/control-plane.md) — BLE 与 WebSocket 控制面通信契约
-- [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state v8 编解码
+- [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state v10 编解码
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
 - [TODO.md](TODO.md) — 迭代演进与重构路线

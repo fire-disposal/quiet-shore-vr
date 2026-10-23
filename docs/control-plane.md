@@ -93,7 +93,7 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 | 偏移 | 字段 | 编码 |
 | --- | --- | --- |
 | 0 | version | `8` |
-| 1 | scene | `0` landscape / `1` ward / `2` bathroom / `3` lab / `255` unknown |
+| 1 | reserved | 场景索引占位；只发布一个场景，当前恒为 `0` |
 | 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
 | 3 | eyeHeight | 厘米，120–190 |
 | 4 | posturePitch | **有符号**整数度：测得的世界倾角（0 → +90 为起身） |
@@ -177,20 +177,22 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `allapps` | 打开系统全部应用页 |
 | `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |
 | `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
-| `scene:<id>` | 持久化场景；页面在线时同步切换（会话中仍拒绝） |
+| `mode:float\|posture` | 会话前选择模式；会话中拒绝。起身为备选分支 |
+| `float:level:0-3` | 漂浮强度；0 为停用，停止时按 tau 0.25 s 渐出 |
+| `float:profile:a\|b\|c` | 漂浮档位：a 温和（22 mm / 14 s）、b 标准（35 mm / 11 s）、c 沉浸（45 mm / 9 s + 1.5° 地平线微摆）。实机选型用 |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
-| `calibrate` / `recalibrate` | 重新校准（一步：正前方 + 保持静止）；训练中可用 |
+| `calibrate` / `recalibrate` | 记录当前朝向为新中立帧（无倒计时、无稳定检测）；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 设置/切换静音 |
 | `exit` / `stop` | 结束训练、退出会话 |
-| `posture:rise` / `posture:lower` / `posture:stop` | 虚拟起身/回落/停止：平板“视角”页签的虚拟起身区块与患者短按确认键都走这三条命令；`stop` 立即冻结在当前进度 |
-| `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场粒子层开关与强度（应用级，四个场景共用；`flow` 只在上行起身过渡时为正） |
+| `posture:rise` / `posture:lower` / `posture:stop` | 备选模式下由平板驱动起身/回落/保持在当前进度；患者确认键只做开始/停止，不触发起身 |
+| `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场粒子层开关与强度（应用级；`flow` 由漂浮振幅或起身上升驱动） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `view:orient:<yaw>,<pitch>` | 绝对朝向（度）：yaw ±180（+ = 左转）、pitch ±90（+ = 上仰），无 TTL；免回执 |
 | `view:stop` | 停止动画并**保持**当前朝向，不回正 |
 | `view:anim:up\|down\|recenter\|breathe` | 播放页面的固定预设：up/down 相对当前角度 ±10°，recenter 回 0°，breathe 为 6 s 回到起点的曲线；无参数，作为一次性离散命令回 `ACK <seq> OK`，不跨重连重放 |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-`enter`、`home`、`allapps`、`sus:*`、`settings:*`、`scene:<id>` 由头显服务执行；其余离散命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。`view:orient` 只保留最新样本，不等待 ack。
+`enter`、`home`、`allapps`、`sus:*`、`settings:*` 由头显服务执行；其余离散命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。`view:orient` 只保留最新样本，不等待 ack。
 
 非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 
@@ -202,7 +204,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 | --- | --- | --- |
 | GET | `/ws?since=<seq>` | RFC 6455 控制通道；同源 `http://127.0.0.1:8130`，仅文本帧、JSON、≤8 KiB，无分片/二进制 |
 | GET / HEAD | `/`、`/index.html` | `text/html`，APK `assets/index.html` |
-| GET / HEAD | `/status` | 蓝牙、接管、场景、`pendingSeq`、当前 state 摘要 |
+| GET / HEAD | `/status` | 蓝牙、接管、`pendingSeq`、当前 state 摘要 |
 | GET / HEAD | `/capabilities` | 命令清单与当前控制权 |
 | POST | `/command` | 本地诊断/调试用的命令注入；非白名单返回 400 |
 
@@ -214,7 +216,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 
 ```text
 {"type":"ready","seq":N,"control":bool,"controller":string|null}
-{"type":"cmd","seq":N,"command":"scene:ward","continuous":false}
+{"type":"cmd","seq":N,"command":"float:level:2","continuous":false}
 {"type":"cmd","seq":N,"command":"view:orient:0,35","continuous":true}
 {"type":"control","control":bool,"controller":string|null}
 ```
@@ -222,7 +224,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 页面 → 服务端：
 
 ```text
-{"type":"state","data":{scene,session,calibrating,audio,eyeHeight,posturePitch,postureRoll,postureRise,postureProgress,viewPitch,viewAnim,viewPreset,cueEnabled,cueIntensity,calibrationConfidence}}
+{"type":"state","data":{session,calibrating,postureMode,audio,eyeHeight,posturePitch,postureRoll,postureRise,postureProgress,viewPitch,viewAnim,viewPreset,cueEnabled,cueIntensity,calibrationConfidence}}
 {"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
 {"type":"ack","seq":N}
 ```
@@ -231,7 +233,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 - 离散命令保留到页面 `ack`（≤64 条）；`view:orient` 免 ack、只保留最新；`view:anim:*` 只实时投递，不跨重连重放。
 - 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。
 - 服务端每 15 s 发 ping，30 s 无 pong 关闭；页面断线后以指数退避重连并带 `since=lastSeq`。
-- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v8 / 20 B 遥测后 BLE 通知平板。
+- `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v10 / 20 B 遥测后 BLE 通知平板。
 - 页面不得再发送 `viewX`/`viewZ`；头显也不会解析它们。
 
 `/ws`、`/command`、`/capabilities` 没有认证，只绑定 loopback，适用于单设备受控环境。`/command` 只接受白名单命令，不提供任意 Intent、路径或 shell。
@@ -261,17 +263,17 @@ PING / RELEASE / CLAIM   # 存活与租约
 7. 非主动断链按 0.8 / 1.6 / 3.2 s 退避重连 3 次，界面显示“重连中 n/3”；用尽后回配对页，只能重新搜索。
 8. “断开”先写 `RELEASE` 再断链；直接退出应用让链路断开，头显同样会释放控制。
 
-平板 WebView 加载 `https://appassets.androidplatform.net/assets/controller.html`，不加载头显的 loopback 页面。页面命令通过 `QuietShoreBridge.send(command)` 回到原生层，再由 BLE 发出；原生层通过 `window.qsControl` 注入姿态、状态、连接阶段和授权结果。
+平板不加载任何 WebView：控制页是原生 Compose 单屏，命令直接由 BLE 发出，状态从 `state` 通知回到界面。
 
 ## 8. 边界与已知问题
 
 - **邻近即授权。** 没有身份校验，任何能运行控制台 APK 且在范围内的平板都能在空闲时接管。当前只适合一台头显配一台平板的专用环境。
 - **单控制者。** 不支持多平板协作或观察者模式；第二台平板只能等待。
-- **无持久化。** 控制权（租约）、当前场景与状态都只存在于进程内存；服务重启后平板需重新接管。平板只在本地存上次头显地址，用于冷启动直连。
+- **无持久化。** 控制权（租约）与状态都只存在于进程内存；服务重启后平板需重新接管。平板只在本地存上次头显地址，用于冷启动直连。
 - **单头显假设。** 扫描不提供设备列表：屏幕上同时有第二台广播 `QuietShore` 的头显时，会连上先被扫描到的那台。
-- **控制页布局。** 浮动浅色顶栏常驻；左下角底部是患者/全局切换与全屏入口，其上方是只读角度仪表；右侧控制栏在 ≥1000 dp 常驻、窄屏默认收起并从顶栏展开，视角页签含虚拟起身区块；重连/录制提示条叠在顶栏下方。
-- **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态；平板视图不是逐帧镜像。
-- **state 已固定为 20 字节二进制 v8**（byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16，byte 15–18 为实际世界 yaw/pitch int16、byte 19 为世界 roll int8，供镜像复现最终视角），不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
+- **控制页布局。** 原生 Compose 单屏：顶部连接状态条，下方依次是会话（状态、计时、开始/结束、朝向）、模式、漂浮强度、声音，最底部常驻急停。底部保留只读角度仪表。
+- **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态。
+- **state 已固定为 20 字节二进制 v10**（flags bit5 为姿态模式、bit6–7 为漂浮档位，byte 1 为漂浮强度，见 `ControlProtocol.kt`；byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16，byte 15–18 为实际世界 yaw/pitch int16、byte 19 为世界 roll int8；不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。
 
 ## 9. 排障
@@ -283,7 +285,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `CONTROL_BUSY` | 另一台平板持有控制权；在它上面断开，或等待其断链 |
 | 控制页能连但命令无效 | 查看 `status` 是否为 `CONTROL_REQUIRED`；重新 `CLAIM` |
 | 没有姿态数据 | 患者尚未在头显内开始 WebXR；页面只在开始后上报 |
-| 场景切换被拒绝 | WebXR 会话进行中；先结束训练再切换 |
+| 视角命令被拒绝 | `view:*` 命令已无平板入口；页面只在会话中接受 |
 | 头显通知显示 `蓝牙未开启` | 打开头显蓝牙；服务会自动重试广播 |
 | 头显通知显示 `蓝牙不可用` | 适配器不支持多广播、GATT server 打开失败或广播失败；重启蓝牙和服务 |
 | 页面打不开 | 检查 Firefox Reality 是否安装、`:8130` 是否被占用；`adb logcat -s QuietShorePortal` |

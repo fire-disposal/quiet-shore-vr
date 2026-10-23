@@ -17,4 +17,4 @@ android/build/
 android/*/build/
 android/local.properties
 android/headset/src/main/assets/index.html
-android/control/src/main/assets/controller.html
+android/control/src/main/assets/mirror.html
