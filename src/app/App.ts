@@ -9,38 +9,44 @@ import {
   POSTURE_LIMITS,
   type ComfortApi
 } from '../core/xr/comfort';
-import type { RemapResult } from '../core/xr/remap';
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
-import { getSceneDefinition } from '../scenes/registry';
+import { getSceneDefinition, SCENE } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
-import { Calibration } from '../ui/calibration';
 import { StartScreen } from '../ui/start-screen';
 import { SpatialHud } from '../ui/spatial-hud';
-import {
-  normalizeSceneId,
-  readStoredScene,
-  storeScene,
-  type SceneId
-} from '../ui/scene-select';
+import { createSusPanel, type SusPanelApi } from '../ui/sus-panel';
+import { createCalibrationCard, type CalibrationCardApi } from '../ui/calibration-card';
 import { getStrings, type Strings } from '../ui/strings';
 import {
   disposeAudio,
   playSceneAudio,
   preloadSceneAudio,
   setAudioMuted,
+  setBuoyancySwell,
   stopAudio,
   toggleMuted,
   unlockAudio
 } from '../audio/audio';
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
+import {
+  DEFAULT_FLOAT_PROFILE,
+  FLOAT_PROFILES,
+  FLOAT_MAX_LEVEL,
+  easeAmplitude,
+  floatAmplitudeForLevel,
+  floatOffsetAt,
+  floatPitchAt,
+  isFloatProfileId,
+  type FloatProfile
+} from '../core/xr/float';
 import { RenderMonitor } from '../core/performance/render-monitor';
-import { readStoredShowPerf, storeShowPerf } from './preferences';
 import { PortalLink, stateFromSnapshot } from './portal-link';
+import { lowerScaleStep, storeScale } from './quality-memory';
 import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
 import {
   createViewMotionController,
@@ -50,6 +56,7 @@ import {
 } from '../core/xr/view-motion';
 import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
 import { parseViewAnim, parseViewOrient } from './view-command';
+import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent, type SessionState } from './session';
 
 const MAX_DT = 0.25;
 // Sit-up performance: the confirm key toggles between the supine frame and
@@ -60,6 +67,18 @@ const SITUP_DURATION_MS = 6000;
 const CUE_FULL_DEG_PER_S = 40;
 /** Floor of the cue flow during a rising transition, so motion starts at once. */
 const CUE_IDLE_FLOW = 0.25;
+/** Time from a stop to the fade-complete state; motion is frozen at once. */
+const STOP_FADE_MS = 1000;
+/** 60 fps budget in ms; a session above this at p95 lowers the next one's scale. */
+const FRAME_BUDGET_MS = 18;
+/** How deep the water bed breathes with the buoyancy; 0.12 is audible, not pumping. */
+const SWELL_AUDIO_DEPTH = 0.12;
+/** Bad frames tolerated before a capture reports itself as a lost pose. */
+const MAX_CAPTURE_ATTEMPTS = 30;
+/** Fallback capture delay when the patient does not press confirm. */
+const CALIBRATION_AUTO_RECORD_MS = 4000;
+/** Buoyancy fade constant: the visible heave is gone inside a second. */
+const FLOAT_FADE_TAU_S = 0.25;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
 const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
 
@@ -89,6 +108,7 @@ export class QuietShoreApp {
     session: false,
     calibrating: false,
     calibrated: false,
+    postureMode: false,
     audioMuted: false,
     eyeHeight: 0,
     worldYawDeg: 0,
@@ -111,19 +131,44 @@ export class QuietShoreApp {
     floorOffset: 0,
     cueFlow: 0,
     cueEnabled: false,
-    cueIntensity: 0
+    cueIntensity: 0,
+    floatLevel: 1,
+    floatProfile: 'b'
   };
   private controlMode = false;
 
   private eyeHeight: number;
   private cueFlow = 0;
 
-  private sceneId: SceneId;
+  private sceneId: string = SCENE.id;
+  /** Mode the next session starts in; set before a session, never during one. */
+  private pendingMode: 'float' | 'posture' = 'float';
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
   private shell: WorldShellApi | null = null;
-  private calibration: Calibration | null = null;
+  private capturePending = false;
+  private captureAttempts = 0;
+  /** Technician's buoyancy choice, 0..FLOAT_MAX_LEVEL. */
+  private floatLevel = 1;
+  /** Which buoyancy profile is active; chosen in the room, not on a desk. */
+  private floatProfile: FloatProfile = FLOAT_PROFILES[DEFAULT_FLOAT_PROFILE];
+  /** Eased amplitude actually applied; drops to 0 on stop. */
+  private floatAmplitude = 0;
+  /** Seconds of continuous drift; kept while fading so the phase never jumps. */
+  private floatSeconds = 0;
+  /** Breathing layer on the heave; the strongest cheap buoyancy cue. */
+  private floatBreath = true;
+  /** Sit-up ramp length; the operator can slow it down for comfort. */
+  private sitUpDurationMs = SITUP_DURATION_MS;
+  /** Last non-zero buoyancy offset written, or 0 once settled. */
+  private floatOffsetApplied = 0;
+  /** Last horizon sway written, in degrees, or 0 once settled. */
+  private floatSwayApplied = 0;
   private postureCueState: PostureCueApi | null = null;
+  private susPanel: SusPanelApi | null = null;
+  private calibrationCard: CalibrationCardApi | null = null;
+  /** Operator switch for gaze dwell; on by default per product decision. */
+  private gazeDwellEnabled = true;
   private sitUpPath: SitUpPath | null = null;
   private sitUpReference: CameraPose | null = null;
   /** Base rotation the sit-up starts from; telemetry measures against it. */
@@ -140,11 +185,7 @@ export class QuietShoreApp {
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion()
   };
-  private selectableOffs: Array<() => void> = [];
-  private focusedSelectable: THREE.Object3D | null = null;
-  private flashTimers = new Set<number>();
   private selectEndHandled = false;
-  private selectCount = 0;
   private showPerf: boolean;
   private audioMuted = false;
   private lastFrame = 0;
@@ -156,24 +197,26 @@ export class QuietShoreApp {
   private started = false;
   private enterPending = false;
   private patientStopped = false;
+  private lifecycle: SessionState = INITIAL_SESSION;
 
   constructor() {
     this.config = readConfig(window.location.search);
     this.eyeHeight = this.config.eyeHeight;
     this.strings = getStrings(this.config.lang);
-    this.showPerf = this.config.showPerf || readStoredShowPerf();
-    this.sceneId = this.config.initialScene ?? readStoredScene() ?? 'landscape';
+    this.showPerf = this.config.showPerf;
+    if (this.config.initialScene) {
+      const requested = getSceneDefinition(this.config.initialScene);
+      if (requested) {
+        this.sceneId = requested.id;
+      }
+    }
+    if (isFloatProfileId(this.config.floatProfile)) {
+      this.floatProfile = FLOAT_PROFILES[this.config.floatProfile];
+    }
 
     this.start = new StartScreen(this.strings, {
-      onEnter: () => void this.enterVR(),
-      onShowPerfChange: (enabled) => {
-        this.showPerf = enabled;
-        storeShowPerf(enabled);
-        this.start.setShowPerf(enabled);
-        this.updateHud(performance.now());
-      }
+      onEnter: () => void this.enterVR()
     });
-    this.start.setShowPerf(this.showPerf);
 
     this.camera = new THREE.PerspectiveCamera(
       70,
@@ -241,9 +284,6 @@ export class QuietShoreApp {
       order: 0,
       run: (dt: number) => {
         this.handle?.update(dt, this.elapsed);
-        if (this.config.spin && this.focusedSelectable) {
-          this.focusedSelectable.rotation.y += dt * 1.6;
-        }
       }
     });
     this.pipeline.add({
@@ -255,7 +295,11 @@ export class QuietShoreApp {
           this.showPerf && !this.controlMode && (this.xr.isPresenting || this.previewing)
         );
         this.hud.update(this.headPose, dt, now);
-        this.calibration?.update(dt, now, this.headPose);
+        this.calibrationCard?.update(dt, now, this.headPose);
+        if (this.capturePending) {
+          this.capturePending = false;
+          this.captureHeading();
+        }
       }
     });
     this.pipeline.add({
@@ -272,6 +316,8 @@ export class QuietShoreApp {
         }
         this.cueFlow = this.computeCueFlow();
         this.postureCueState?.update(dt, this.headPose.position, this.cueFlow);
+        this.updateFloat(dt);
+        this.susPanel?.update(dt, now, this.headPose);
         this.input.update(dt, now, this.headPose);
       }
     });
@@ -294,8 +340,8 @@ export class QuietShoreApp {
       }
     });
 
-    this.loadScene(this.sceneId);
-    this.start.setScene(this.sceneName(this.sceneId));
+    this.loadScene();
+    this.start.setScene(SCENE.name[this.config.lang]);
     this.bind();
     this.start.setStatus(this.strings.checking);
     this.updateHud(performance.now());
@@ -355,13 +401,9 @@ export class QuietShoreApp {
     });
   }
 
-  private loadScene(id: SceneId): void {
-    const definition = getSceneDefinition(id);
-    if (!definition) {
-      throw new Error(`unknown scene: ${id}`);
-    }
-
+  private loadScene(): void {
     this.disposeScene();
+    const definition = getSceneDefinition(this.sceneId) ?? SCENE;
     const handle = this.host.load(definition, {
       quality: this.config.highQuality ? 'high' : 'low',
       eyeHeight: this.eyeHeight
@@ -380,25 +422,15 @@ export class QuietShoreApp {
     // The cue lives in world space and follows the head, so it is independent
     // of the scene art and of every world rotation: install it everywhere.
     this.postureCueState = createPostureCue({ scene: this.scene });
-    this.calibration = new Calibration({
-      scene: this.scene,
-      comfort: this.comfort,
-      strings: this.strings,
-      theme: DEFAULT_SPATIAL_THEME,
-      onResult: (result) => this.onCalibrationResult(result)
-    });
     this.sitUpPath = null;
     this.sitUpReference = null;
     this.sitUpMode = false;
     this.sitUpReady = false;
     this.sitUpMotion.reset();
-    this.registerSelectables(handle.selectables);
     this.host.setFloorOffset(this.session ? -this.eyeHeight : 0);
     this.savedBackground = this.scene.background;
     preloadSceneAudio(definition.audio);
-    this.sceneId = id;
-    storeScene(id);
-    this.start.setScene(this.sceneName(id));
+    this.start.setScene(definition.name[this.config.lang]);
   }
 
   private disposePostureCue(): void {
@@ -408,9 +440,6 @@ export class QuietShoreApp {
 
   private disposeScene(): void {
     this.disposePostureCue();
-    this.unregisterSelectables();
-    this.calibration?.dispose();
-    this.calibration = null;
     if (this.comfort) {
       // Unwrap the shell first: it re-hangs the base group on the scene.
       this.shell?.dispose();
@@ -424,53 +453,6 @@ export class QuietShoreApp {
     }
     this.host.unload();
     this.handle = null;
-    for (const timer of this.flashTimers) {
-      window.clearTimeout(timer);
-    }
-    this.flashTimers.clear();
-  }
-
-  private registerSelectables(objects: readonly THREE.Object3D[]): void {
-    for (let i = 0; i < objects.length; i += 1) {
-      const object = objects[i];
-      const off = this.input.register({
-        object,
-        layer: 'scene',
-        dwellTime: 6,
-        onFocus: (focused: boolean) => {
-          if (focused) {
-            this.focusedSelectable = object;
-          } else if (this.focusedSelectable === object) {
-            this.focusedSelectable = null;
-          }
-        },
-        onSelect: () => this.flash(object)
-      });
-      this.selectableOffs.push(off);
-    }
-  }
-
-  private unregisterSelectables(): void {
-    for (let i = 0; i < this.selectableOffs.length; i += 1) {
-      this.selectableOffs[i]();
-    }
-    this.selectableOffs = [];
-    this.focusedSelectable = null;
-  }
-
-  private flash(object: THREE.Object3D): void {
-    this.selectCount += 1;
-    const scale = object.scale.x;
-    object.scale.setScalar(scale * 1.12);
-    const timer = window.setTimeout(() => {
-      object.scale.setScalar(scale);
-      this.flashTimers.delete(timer);
-    }, 180);
-    this.flashTimers.add(timer);
-  }
-
-  private sceneName(id: string): string {
-    return getSceneDefinition(id)?.name[this.config.lang] ?? id;
   }
 
   private async detectXR(): Promise<void> {
@@ -513,6 +495,7 @@ export class QuietShoreApp {
         optionalFeatures: ['local-floor', 'bounded-floor']
       });
       this.session = next;
+      this.dispatch({ type: 'start', mode: this.pendingMode });
       await this.xr.setSession(next);
       this.lastFrame = 0;
       this.renderer.setAnimationLoop(this.onFrame);
@@ -536,6 +519,7 @@ export class QuietShoreApp {
         }
         this.comfort?.reset();
         this.startSceneAudio();
+        this.dispatch({ type: 'calibrated' });
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
         this.beginCalibration();
@@ -543,6 +527,8 @@ export class QuietShoreApp {
       this.updateHud(performance.now());
     } catch (error) {
       this.session = null;
+      this.dispatch({ type: 'stop', reason: 'session-end' });
+      this.dispatch({ type: 'faded' });
       this.start.setStatus(
         `${this.strings.enterFailed}：${error instanceof Error ? error.message : String(error)}`,
         'error'
@@ -553,7 +539,27 @@ export class QuietShoreApp {
     }
   }
 
+  /**
+   * Single entry for the session lifecycle. Entering `stopping` freezes every
+   * motion source at once and schedules the fade; the reducer decides whether
+   * each transition is legal.
+   */
+  private dispatch(event: SessionEvent): void {
+    const previous = this.lifecycle.phase;
+    this.lifecycle = reduceSession(this.lifecycle, event);
+    if (this.lifecycle.phase !== 'stopping' || previous === 'stopping') {
+      return;
+    }
+    this.viewMotion.stop();
+    this.comfort?.stopPosture();
+    this.stopSitUp();
+    window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
+  }
+
   private onSessionEnd(): void {
+    this.adaptScale();
+    this.dispatch({ type: 'stop', reason: 'session-end' });
+    this.dispatch({ type: 'faded' });
     this.session = null;
     // A patient stop freezes first, then the end-of-session reset zeroes the
     // pitch: stop never eases and never recenters on its own.
@@ -568,7 +574,6 @@ export class QuietShoreApp {
     this.sitUpMotion.reset();
     this.sitUpBase0.identity();
     this.stopSceneAudio();
-    this.calibration?.stop();
     this.scene.background = this.savedBackground;
     if (this.handle) {
       this.handle.root.visible = true;
@@ -591,68 +596,295 @@ export class QuietShoreApp {
     this.updateHud(performance.now());
   }
 
-  private beginCalibration(): void {
-    if (!this.calibration || !this.handle) {
+  /**
+   * Builds the SUS panel on first use and shows it.
+   *
+   * The panel is answered by gaze (5 s per target) because a supine patient has
+   * no pointer; the operator can still answer from the tablet, and the gaze
+   * feature itself is switchable from the control side.
+   */
+  private openSus(): void {
+    if (!this.susPanel) {
+      this.susPanel = createSusPanel({
+        scene: this.scene,
+        theme: DEFAULT_SPATIAL_THEME,
+        input: this.input,
+        stringsDwellHint: this.strings.dwellHint,
+        onAnswer: (index, value) => {
+          this.start.setStatus(`SUS ${index + 1} = ${value}`, 'ok');
+        }
+      });
+      this.susPanel.setDwellEnabled(this.gazeDwellEnabled);
+    }
+    this.susPanel.open();
+  }
+
+  /**
+   * Scene switch is a pre-session action: swapping art under a running patient
+   * would drop their frame and their bearings. The tablet disables the choice
+   * while a session runs; the page refuses it for the same reason.
+   */
+  private applySceneCommand(id: string): void {
+    const definition = getSceneDefinition(id);
+    if (!definition) {
+      this.start.setStatus('未知场景', 'error');
       return;
     }
-    // Calibration owns the world frame until the patient confirms the sit-up.
+    if (this.session) {
+      this.start.setStatus('训练中不可切换场景', 'error');
+      return;
+    }
+    if (definition.id === this.sceneId && this.handle) {
+      return;
+    }
+    this.sceneId = definition.id;
+    this.loadScene();
+    if (this.previewing) {
+      this.startSceneAudio();
+      this.start.showStage();
+    }
+    this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
+    this.link.sendStateNow();
+    this.updateHud(performance.now());
+  }
+
+  /**
+   * Mode can be chosen before a session or switched during one. While running,
+   * the phase follows the mode and the world is handed over without a jump:
+   * entering posture arms the sit-up at "standing" (what the patient currently
+   * sees) and leaves the lowering to the operator; leaving posture releases the
+   * sit-up base so the comfort frame and buoyancy take over again.
+   */
+  private applyModeCommand(value: string): void {
+    if (value !== 'float' && value !== 'posture') {
+      this.start.setStatus('未知模式', 'error');
+      return;
+    }
+    if (!isActive(this.lifecycle)) {
+      this.pendingMode = value;
+      this.start.setStatus(value === 'posture' ? '模式：起身' : '模式：漂浮', 'ok');
+      this.link.sendStateNow();
+      return;
+    }
+    if (this.lifecycle.mode === value) {
+      return;
+    }
+    if (value === 'posture') {
+      this.armPostureAt(1);
+    } else {
+      this.stopSitUp();
+      this.sitUpMode = false;
+      this.sitUpReady = false;
+      this.sitUpPath = null;
+      this.sitUpReference = null;
+      this.shell?.setBasePose(null);
+      this.host.setFloorOffset(this.xr.isPresenting ? -this.eyeHeight : 0);
+    }
+    this.dispatch({ type: 'mode', mode: value });
+    this.start.setStatus(value === 'posture' ? '已切到起身' : '已切回漂浮', 'ok');
+    this.link.sendStateNow();
+    this.updateHud(performance.now());
+  }
+
+  /**
+   * Between sessions: if this run could not hold ~60 fps at 95th percentile,
+   * remember one notch lower for the next launch. The framebuffer scale can
+   * only be set before a session starts, so this is the honest place to adjust.
+   */
+  private adaptScale(): void {
+    const budget = this.renderMonitor.snapshot();
+    if (budget.p95Ms <= FRAME_BUDGET_MS || !Number.isFinite(budget.p95Ms) || budget.p95Ms <= 0) {
+      return;
+    }
+    const next = lowerScaleStep(this.config.xrScale);
+    if (next < this.config.xrScale - 1e-3) {
+      storeScale(next);
+      this.start.setStatus(
+        `帧时间偏高（p95 ${budget.p95Ms.toFixed(1)} ms），下次进入改用 ${Math.round(next * 100)}%`,
+        'neutral'
+      );
+    }
+  }
+
+  /** Arms the sit-up layer at [t] (0 = supine, 1 = standing) with no motion. */
+  private armPostureAt(t: number): void {
+    this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
+    this.sitUpReference = {
+      position: this.headPose.position.clone(),
+      quaternion: this.headPose.quaternion.clone()
+    };
+    this.sitUpMotion.reset();
+    this.sitUpMotion.seek(t);
+    this.sitUpMode = true;
+    this.sitUpReady = true;
+    this.applySitUpTransform();
+    this.host.setFloorOffset(0);
+  }
+
+  /**
+   * Applies the buoyancy layer. Only the floating phase drives it; posture mode
+   * and every stop path ease the amplitude to zero, so the world settles in
+   * under a second instead of snapping.
+   */
+  private updateFloat(dt: number): void {
+    if (!this.xr.isPresenting && !this.previewing) {
+      return;
+    }
+    // Buoyancy belongs to lying down. Once the sit-up layer leaves the supine
+    // pose, the posture path owns the base and the heave stops.
+    const lying = this.sitUpMotion.t <= 0.02 && !this.sitUpMotion.moving;
+    const active = this.lifecycle.phase !== 'stopping' && this.lifecycle.phase !== 'idle' && lying;
+    const target = active ? floatAmplitudeForLevel(this.floatProfile, this.floatLevel) : 0;
+    this.floatAmplitude = easeAmplitude(this.floatAmplitude, target, dt, FLOAT_FADE_TAU_S);
+    if (this.floatAmplitude <= 0 && target === 0) {
+      this.floatAmplitude = 0;
+      // Settle exactly once, so an idle scene pays nothing per frame.
+      if (this.floatOffsetApplied !== 0) {
+        this.floatOffsetApplied = 0;
+        this.host.setFloorOffset(this.xr.isPresenting ? -this.eyeHeight : 0);
+      }
+      if (this.floatSwayApplied !== 0) {
+        this.floatSwayApplied = 0;
+        this.host.content.rotation.x = 0;
+      }
+      return;
+    }
+    this.floatSeconds += dt;
+    if (!lying) {
+      // Sitting up hands the world base to the posture path; the heave stops.
+      setBuoyancySwell(0, this.floatProfile.periodS);
+      return;
+    }
+    // The swell follows the visible heave: same period, depth scaled by how
+    // much of the envelope is currently in use.
+    setBuoyancySwell(
+      (this.floatAmplitude / this.floatProfile.amplitudeM) * SWELL_AUDIO_DEPTH,
+      this.floatProfile.periodS
+    );
+    const base = this.xr.isPresenting ? -this.eyeHeight : 0;
+    this.floatOffsetApplied = floatOffsetAt(
+      this.floatProfile,
+      this.floatSeconds,
+      this.floatAmplitude,
+      this.floatBreath
+    );
+    this.host.setFloorOffset(base + this.floatOffsetApplied);
+    // Horizon sway: a couple of degrees of world pitch, in phase with the
+    // drift, is what makes the horizon feel unmoored rather than the floor.
+    const swayDeg = floatPitchAt(this.floatProfile, this.floatSeconds, this.floatAmplitude);
+    if (swayDeg === 0 && this.floatSwayApplied === 0) {
+      return;
+    }
+    this.floatSwayApplied = swayDeg;
+    this.host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
+  }
+
+  /**
+   * Records the heading the patient is holding right now and makes it the
+   * neutral (standing) world frame. There is no stability window and no
+   * countdown: the technician aims the patient, the session starts, the first
+   * frame's head orientation is the reference.
+   */
+  private beginCalibration(): void {
+    if (!this.handle) {
+      return;
+    }
+    // The capture owns the world frame until it lands.
     this.sitUpMode = false;
     this.sitUpReady = false;
     this.sitUpPath = null;
     this.sitUpReference = null;
     this.sitUpMotion.reset();
     this.sitUpBase0.identity();
-    // Calibration starts level: the operator's pitch correction is dropped and
-    // the sit-up base pose is released so comfort owns the world again.
+    // Start level: the operator's pitch correction is dropped and the sit-up
+    // base pose is released so comfort owns the world again.
     this.viewMotion.reset();
     this.shell?.setBasePose(null);
-    // A running posture transition must not keep advancing through the
-    // capture. setPosture supersedes it and heads for neutral; the API's
-    // 1 s floor runs while the scene is hidden.
     this.comfort?.setPosture(
       { worldPitchDeg: 0, worldRollDeg: 0, riseM: 0 },
       POSTURE_LIMITS.minDurationMs
     );
+    // Calibrate first, then show the scene: the patient should not see a world
+    // that is about to be re-oriented under them. The scene is swapped for
+    // black until the heading lands.
     this.savedBackground = this.scene.background;
     this.scene.background = new THREE.Color(0x000000);
     this.handle.root.visible = false;
     this.input.setLayers(false, false);
-    this.calibration.start();
+
+    // Explicit calibration step: the card tells the patient what is happening,
+    // the confirm key records immediately, and the card records by itself if
+    // they do nothing, with a progress bar so the wait is legible.
+    this.calibrationCard ??= createCalibrationCard({
+      scene: this.scene,
+      theme: DEFAULT_SPATIAL_THEME,
+      autoRecordMs: CALIBRATION_AUTO_RECORD_MS,
+      onRecord: () => this.captureHeading()
+    });
+    this.calibrationCard.show();
     this.link.sendStateNow();
-    this.updateHud(performance.now());
   }
 
-  private onCalibrationResult(result: RemapResult): void {
+  private captureHeading(): void {
+    const comfort = this.comfort;
+    if (!comfort) {
+      return;
+    }
+    // The card has served its purpose once the heading is recorded.
+    this.calibrationCard?.hide();
+    const position = this.headPose.position;
+    const orientation = this.headPose.quaternion;
+    const ok = comfort.calibrate({
+      transform: {
+        position: { x: position.x, y: position.y, z: position.z },
+        orientation: {
+          x: orientation.x,
+          y: orientation.y,
+          z: orientation.z,
+          w: orientation.w
+        }
+      }
+    });
+    if (!ok) {
+      // A rejected pose is a bad frame, not a patient action: try again on the
+      // next frame, and give up with a stop if it keeps failing so the session
+      // can never sit in `calibrating` with a dead confirm key.
+      this.captureAttempts += 1;
+      if (this.captureAttempts < MAX_CAPTURE_ATTEMPTS) {
+        this.capturePending = true;
+        return;
+      }
+      this.captureAttempts = 0;
+      this.dispatch({ type: 'stop', reason: 'pose-lost' });
+      return;
+    }
+    this.captureAttempts = 0;
+    // Scene back on, now that the world frame is known.
     this.scene.background = this.savedBackground;
     if (this.handle) {
       this.handle.root.visible = true;
     }
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
-    if (result.ok) {
-      // Start supine and let the patient press the confirm key to rise. The
-      // sit-up path owns the world base while it is active; comfort.q0 stays
-      // the fallback frame when the animation is reset.
-      this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
-      this.sitUpReference = {
-        position: this.headPose.position.clone(),
-        quaternion: this.headPose.quaternion.clone()
-      };
-      this.sitUpMotion.reset();
-      this.sitUpMode = true;
-      this.sitUpReady = true;
-      this.sitUpBase0.copy(
-        this.sitUpPath.worldFor(this.sitUpReference, this.sitUpPath.at(0)).quaternion
-      );
-      this.host.setFloorOffset(0);
-      this.applySitUpTransform();
-    }
+    this.dispatch({ type: 'calibrated' });
+    // The sit-up layer is armed for every session, not only for the posture
+    // branch: rising to a standing view is the核心 of the standing voiding
+    // scenario, and the operator must be able to call it at any time.
+    this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
+    this.sitUpReference = {
+      position: this.headPose.position.clone(),
+      quaternion: this.headPose.quaternion.clone()
+    };
+    this.sitUpMotion.reset();
+    this.sitUpMode = true;
+    this.sitUpReady = true;
+    this.sitUpBase0.copy(
+      this.sitUpPath.worldFor(this.sitUpReference, this.sitUpPath.at(0)).quaternion
+    );
+    this.host.setFloorOffset(0);
+    this.applySitUpTransform();
     if (this.session) {
       this.startSceneAudio();
     }
-    this.start.setStatus(
-      result.ok ? this.strings.calibrationDone : `${this.strings.calibrationFailed}：${result.reason ?? 'unknown'}`,
-      result.ok ? 'ok' : 'error'
-    );
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
@@ -695,47 +927,12 @@ export class QuietShoreApp {
       this.start.setStatus(this.strings.recalibrateNeedsSession, 'error');
       return;
     }
-    if (this.calibration?.isActive()) {
-      return;
-    }
     this.beginCalibration();
-  }
-
-  private switchScene(nextId: SceneId): void {
-    const normalized = normalizeSceneId(nextId);
-    if (!normalized) {
-      return;
-    }
-    if (this.session) {
-      this.start.setStatus(this.strings.sceneSwitchBlocked, 'error');
-      this.start.setScene(this.sceneName(this.sceneId));
-      return;
-    }
-    if (normalized === this.sceneId && this.handle) {
-      storeScene(this.sceneId);
-      this.start.setScene(this.sceneName(this.sceneId));
-      // Re-selecting the current scene is still an accepted command; the link
-      // refreshes the tablet readback for it.
-      return;
-    }
-    this.loadScene(normalized);
-    if (this.previewing) {
-      this.startSceneAudio();
-      this.start.showStage();
-    }
-    this.start.setStatus(
-      `${this.strings.sceneSelectedStatus}${getSceneDefinition(normalized)?.name[this.config.lang] ?? normalized}`
-    );
-    this.link.sendStateNow();
   }
 
   private handleRemoteCommand(raw: string): void {
     const command = raw.trim().toLowerCase();
     if (!command) {
-      return;
-    }
-    if (command.startsWith('scene:')) {
-      this.switchScene(command.slice('scene:'.length) as SceneId);
       return;
     }
     if (command.startsWith('settings:eyeheight:')) {
@@ -756,10 +953,84 @@ export class QuietShoreApp {
       this.start.setStatus('已保持当前视角', 'ok');
       return;
     }
+    if (command.startsWith('scene:')) {
+      this.applySceneCommand(command.slice('scene:'.length));
+      return;
+    }
+    if (command.startsWith('mode:')) {
+      this.applyModeCommand(command.slice('mode:'.length));
+      return;
+    }
+    if (command.startsWith('float:level:')) {
+      const level = Number(command.slice('float:level:'.length));
+      if (!Number.isInteger(level) || level < 0 || level > FLOAT_MAX_LEVEL) {
+        this.start.setStatus('漂浮强度无效', 'error');
+        return;
+      }
+      this.floatLevel = level;
+      this.start.setStatus(`漂浮强度 ${level}/${FLOAT_MAX_LEVEL}`, 'ok');
+      this.link.sendStateNow();
+      return;
+    }
+    if (command.startsWith('float:profile:')) {
+      const id = command.slice('float:profile:'.length);
+      if (!isFloatProfileId(id)) {
+        this.start.setStatus('未知漂浮档位', 'error');
+        return;
+      }
+      this.floatProfile = FLOAT_PROFILES[id];
+      this.start.setStatus(`漂浮档位：${this.floatProfile.label}`, 'ok');
+      this.link.sendStateNow();
+      return;
+    }
+    if (command === 'float:breath:on' || command === 'float:breath:off') {
+      this.floatBreath = command.endsWith(':on');
+      this.start.setStatus(this.floatBreath ? '呼吸层已开启' : '呼吸层已关闭', 'ok');
+      this.link.sendStateNow();
+      return;
+    }
+    if (command.startsWith('anim:duration:')) {
+      const ms = Number(command.slice('anim:duration:'.length));
+      if (!Number.isFinite(ms) || ms < 4000 || ms > 20000) {
+        this.start.setStatus('时长超出范围', 'error');
+        return;
+      }
+      this.sitUpDurationMs = Math.round(ms);
+      this.sitUpMotion.setDuration(this.sitUpDurationMs);
+      this.start.setStatus(`起身时长 ${(this.sitUpDurationMs / 1000).toFixed(0)} 秒`, 'ok');
+      this.link.sendStateNow();
+      return;
+    }
     if (command.startsWith('cue:intensity:')) {
       const value = Number(command.substring('cue:intensity:'.length));
       if (Number.isFinite(value) && value >= 0 && value <= 1) {
         this.postureCueState?.setIntensity(value);
+      }
+      return;
+    }
+    if (command === 'gaze:dwell:on' || command === 'gaze:dwell:off') {
+      this.gazeDwellEnabled = command.endsWith(':on');
+      this.susPanel?.setDwellEnabled(this.gazeDwellEnabled);
+      this.start.setStatus(this.gazeDwellEnabled ? '目视选择已开启' : '目视选择已关闭', 'ok');
+      this.link.sendStateNow();
+      return;
+    }
+    if (command === 'sus:open') {
+      this.openSus();
+      return;
+    }
+    if (command === 'sus:close') {
+      this.susPanel?.close();
+      return;
+    }
+    if (command === 'sus:next' || command === 'sus:prev') {
+      this.susPanel?.move(command === 'sus:next' ? 1 : -1);
+      return;
+    }
+    if (command.startsWith('sus:answer:')) {
+      const value = Number(command.slice('sus:answer:'.length));
+      if (Number.isInteger(value) && value >= 1 && value <= 5) {
+        this.susPanel?.answer(value);
       }
       return;
     }
@@ -790,8 +1061,8 @@ export class QuietShoreApp {
         this.setVirtualPosture(false);
         return;
       case 'posture:stop':
-        if (this.calibration?.isActive()) {
-          // Calibration already drives posture to neutral; do not freeze it.
+        if (this.capturePending) {
+          // The capture already drives posture to neutral; do not freeze it.
           return;
         }
         this.stopSitUp();
@@ -826,7 +1097,7 @@ export class QuietShoreApp {
       this.start.setStatus(`视点高度无效：${raw}`, 'error');
       return;
     }
-    if (this.calibration?.isActive()) {
+    if (this.capturePending) {
       this.start.setStatus('校准中无法调整视点高度', 'error');
       return;
     }
@@ -882,7 +1153,7 @@ export class QuietShoreApp {
   private viewCommandsAllowed(): boolean {
     return this.session !== null
       && this.xr.isPresenting
-      && !(this.calibration?.isActive() ?? false);
+      && !this.capturePending;
   }
 
   /**
@@ -896,6 +1167,7 @@ export class QuietShoreApp {
     if (status === 'open' || !wasOnline) {
       return;
     }
+    this.dispatch({ type: 'stop', reason: 'link-lost' });
     this.start.setStatus(this.strings.controlModeOff, 'error');
   }
 
@@ -911,6 +1183,7 @@ export class QuietShoreApp {
       }
       this.start.setStatus(this.strings.controlModeOn, 'ok');
     } else {
+      this.dispatch({ type: 'stop', reason: 'link-lost' });
       // Losing the tablet must never leave motion latched on. Freeze the view
       // where it is (no recenter: the pitch target is held), brake the comfort
       // posture and stop the sit-up performance at its current angle.
@@ -931,7 +1204,7 @@ export class QuietShoreApp {
       this.start.setStatus('虚拟起身仅能在完成校准后的训练中使用', 'error');
       return;
     }
-    if (this.calibration?.isActive()) {
+    if (this.capturePending) {
       this.start.setStatus('校准中无法调整姿态', 'error');
       return;
     }
@@ -984,10 +1257,7 @@ export class QuietShoreApp {
   }
 
   private startSceneAudio(): void {
-    const definition = getSceneDefinition(this.sceneId);
-    if (definition) {
-      playSceneAudio(definition.audio);
-    }
+    playSceneAudio(SCENE.audio);
   }
 
   private stopSceneAudio(): void {
@@ -1012,16 +1282,21 @@ export class QuietShoreApp {
   }
 
   /**
-   * The only in-headset click action: toggle the sit-up animation. Scene
-   * targets are still chosen by 6 s gaze dwell, and there is no web menu.
+   * The only in-headset click: start (after calibration) or stop the session.
+   * It never switches mode. Scene targets are still chosen by 6 s gaze dwell.
    */
   private onSelectShort(): void {
-    if (!this.session || !this.sitUpReady || (this.calibration?.isActive() ?? false)) {
+    if (this.lifecycle.phase === 'calibrating') {
+      // The reducer accepts this as "record the heading"; driving it from the
+      // button keeps that contract true instead of relying on the frame path.
+      this.capturePending = false;
+      this.captureHeading();
       return;
     }
-    const rising = this.sitUpMotion.target < 0.5;
-    this.sitUpMotion.setTarget(rising ? 1 : 0);
-    this.start.setStatus(rising ? '正在坐起' : '正在回躺', 'ok');
+    // Outside a session the confirm key is the entry gesture; nothing else.
+    if (isActive(this.lifecycle)) {
+      this.dispatch({ type: 'confirm' });
+    }
   }
 
   private onFrame = (): void => {
@@ -1054,7 +1329,6 @@ export class QuietShoreApp {
       return;
     }
     const state = this.captureSnapshot();
-    const definition = getSceneDefinition(this.sceneId);
     const calibrationState = state.calibrating
       ? '校准中'
       : state.calibrated
@@ -1073,7 +1347,7 @@ export class QuietShoreApp {
     const draws = `${render.calls}dc`;
     const summary = [
       mode,
-      definition?.name[this.config.lang] ?? this.sceneId,
+      SCENE.name[this.config.lang],
       calibrationState,
       this.config.highQuality ? `高 ${Math.round(this.config.xrScale * 100)}%` : `低 ${Math.round(this.config.xrScale * 100)}%`,
       triangles,
@@ -1090,7 +1364,7 @@ export class QuietShoreApp {
    * report 0, which freezes the motes and fades them with the cue's own τ.
    */
   private computeCueFlow(): number {
-    if (this.calibration?.isActive() ?? false) {
+    if (this.capturePending) {
       return 0;
     }
     if (this.sitUpMode) {
@@ -1107,7 +1381,12 @@ export class QuietShoreApp {
     }
     const comfort = this.comfort;
     if (!comfort || !comfort.isPostureMoving()) {
-      return 0;
+      // In float mode the motes rise with the buoyancy: amplitude over the
+      // envelope is the flow, so a stopped drift fades them out with the cue's
+      // own tau instead of cutting them.
+      return this.floatAmplitude > 0
+        ? Math.min(1, this.floatAmplitude / this.floatProfile.amplitudeM)
+        : 0;
     }
     return comfort.getPosturePhase() === 'rising' ? 1 : 0;
   }
@@ -1118,8 +1397,9 @@ export class QuietShoreApp {
     input.sceneId = this.sceneId;
     input.loaded = this.handle !== null;
     input.session = this.session !== null;
-    input.calibrating = this.calibration?.isActive() ?? false;
+    input.calibrating = this.lifecycle.phase === 'calibrating';
     input.calibrated = this.comfort?.isCalibrated() ?? false;
+    input.postureMode = this.lifecycle.mode === 'posture';
     input.audioMuted = this.audioMuted;
     input.eyeHeight = this.eyeHeight;
     // The mirror must see the same world the patient sees: shell (view) times
@@ -1159,6 +1439,8 @@ export class QuietShoreApp {
     const cue = this.postureCueState?.getState();
     input.cueEnabled = cue?.enabled ?? false;
     input.cueIntensity = cue?.intensity ?? 0;
+    input.floatLevel = this.floatLevel;
+    input.floatProfile = this.floatProfile.id;
     return this.snapshot.capture(input);
   }
 

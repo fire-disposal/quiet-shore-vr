@@ -17,6 +17,10 @@ const FADE_SECONDS = 1.2;
 
 let context: AudioContext | null = null;
 let master: GainNode | null = null;
+/** Buoyancy swell: LFO -> depth -> this gain -> master. One node, no per-frame work. */
+let swell: GainNode | null = null;
+let swellDepth: GainNode | null = null;
+let swellLfo: OscillatorNode | null = null;
 let current: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
 const buffers: Partial<Record<AudioTrack, AudioBuffer>> = {};
 let muted = false;
@@ -35,6 +39,18 @@ function ensureContext(): AudioContext | null {
     master = context.createGain();
     master.gain.value = muted ? 0 : VOLUME;
     master.connect(context.destination);
+    // Tracks feed the swell bus, which breathes with the buoyancy.
+    swell = context.createGain();
+    swell.gain.value = 1;
+    swell.connect(master);
+    swellDepth = context.createGain();
+    swellDepth.gain.value = 0;
+    swellLfo = context.createOscillator();
+    swellLfo.type = 'sine';
+    swellLfo.frequency.value = 1 / 12;
+    swellLfo.connect(swellDepth);
+    swellDepth.connect(swell.gain);
+    swellLfo.start();
   }
   if (context.state === 'suspended') {
     void context.resume();
@@ -100,7 +116,7 @@ export function playTrack(track: AudioTrack, options: PlayOptions = {}): void {
     const gain = context.createGain();
     gain.gain.value = 0;
     source.connect(gain);
-    gain.connect(master);
+    gain.connect(swell ?? master);
     source.start();
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(volume, now + fade);
@@ -143,6 +159,25 @@ export function stopAudio(): void {
 
 export function preloadSceneAudio(audio: SceneAudio): void {
   preloadTrack(audio.track);
+}
+
+/**
+ * Low-frequency gain swell used as a self-motion cue.
+ *
+ * Auditory stimuli produce weak vection on their own but add significantly to
+ * it when paired with visual motion (Sci Rep 2020, water-immersion vection).
+ * The swell follows the buoyancy phase instead of running free, so what the
+ * patient hears rises and falls with what they see. [depth] 0 disables it.
+ */
+export function setBuoyancySwell(depth: number, periodSeconds: number): void {
+  if (!swellDepth || !swellLfo || !context) {
+    return;
+  }
+  const now = context.currentTime;
+  swellDepth.gain.setTargetAtTime(Math.max(0, Math.min(0.2, depth)), now, 0.4);
+  if (periodSeconds > 0) {
+    swellLfo.frequency.setTargetAtTime(1 / periodSeconds, now, 0.6);
+  }
 }
 
 export function playSceneAudio(audio: SceneAudio): void {

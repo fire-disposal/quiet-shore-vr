@@ -109,13 +109,7 @@ internal class BluetoothControl(
                 return
             }
             if (android.os.SystemClock.elapsedRealtime() - lastControllerActivity > CONTROLLER_TIMEOUT_MS) {
-                synchronized(controlLock) {
-                    if (controller == active) {
-                        controller = null
-                        resetProtocolStateLocked()
-                    }
-                }
-                listener.onControlMode(false)
+                releaseControl(active)
                 // Tell the timed-out controller, not every connected tablet.
                 remoteDevice(active)?.let { device ->
                     notifyValueTo(
@@ -387,7 +381,6 @@ internal class BluetoothControl(
         }
         advertiser = null
         advertising = false
-        val hadController = synchronized(controlLock) { controller != null }
         try {
             server?.clearServices()
             server?.close()
@@ -400,13 +393,7 @@ internal class BluetoothControl(
         telemetryCharacteristic = null
         stateCharacteristic = null
         connected.clear()
-        synchronized(controlLock) {
-            controller = null
-            resetProtocolStateLocked()
-        }
-        if (hadController) {
-            listener.onControlMode(false)
-        }
+        releaseControl(null)
     }
 
     private fun notifyCharacteristic(uuid: UUID, initialValue: ByteArray): BluetoothGattCharacteristic {
@@ -489,6 +476,28 @@ internal class BluetoothControl(
     /** BLE address of the pad that currently owns the console, if any. */
     fun controllerAddress(): String? = synchronized(controlLock) { controller }
 
+    /**
+     * The only place that drops control. A null [address] drops unconditionally
+     * (teardown); otherwise only that controller is dropped. Protocol state is
+     * reset and the listener notified only when control was actually held.
+     */
+    private fun releaseControl(address: String?): Boolean {
+        val released = synchronized(controlLock) {
+            if (controller == null || (address != null && controller != address)) {
+                false
+            } else {
+                controller = null
+                resetProtocolStateLocked()
+                true
+            }
+        }
+        if (released) {
+            watchdogHandler.removeCallbacks(controllerWatchdog)
+            listener.onControlMode(false)
+        }
+        return released
+    }
+
     /** A new owner always starts from a clean handshake and seq window. */
     private fun resetProtocolStateLocked() {
         handshakeAddress = null
@@ -549,20 +558,10 @@ internal class BluetoothControl(
 
     private fun handleRelease(device: BluetoothDevice): String {
         val address = addressOf(device) ?: return ControlProtocol.STATUS_CONTROL_REQUIRED
-        val released = synchronized(controlLock) {
-            if (controller == address) {
-                controller = null
-                resetProtocolStateLocked()
-                true
-            } else {
-                false
-            }
-        }
+        val released = releaseControl(address)
         if (!released) {
             return ControlProtocol.STATUS_CONTROL_REQUIRED
         }
-        watchdogHandler.removeCallbacks(controllerWatchdog)
-        listener.onControlMode(false)
         return ControlProtocol.STATUS_CONTROL_RELEASED
     }
 
@@ -779,20 +778,8 @@ internal class BluetoothControl(
                 )
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 connected.remove(address)
-                val released = synchronized(controlLock) {
-                    if (controller == address) {
-                        controller = null
-                        resetProtocolStateLocked()
-                        true
-                    } else {
-                        false
-                    }
-                }
-                if (released) {
-                    watchdogHandler.removeCallbacks(controllerWatchdog)
-                    // A dropped controller frees the console for the next pad.
-                    listener.onControlMode(false)
-                }
+                // A dropped controller frees the console for the next pad.
+                releaseControl(address)
                 // Connectable advertising usually ends with the link; make the
                 // headset discoverable again for a reconnect or a new tablet.
                 if (started && connected.isEmpty()) {

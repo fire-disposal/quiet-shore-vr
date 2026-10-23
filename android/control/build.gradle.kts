@@ -11,8 +11,8 @@ android {
         applicationId = "com.quietshore.control"
         minSdk = 26
         targetSdk = 33
-        versionCode = 28
-        versionName = "0.8.11"
+        versionCode = 30
+        versionName = "0.9.1"
     }
 
     buildFeatures {
@@ -42,20 +42,18 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("no.nordicsemi.android:ble:2.11.0")
-    implementation("androidx.webkit:webkit:1.13.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
-val syncControllerAsset = tasks.register<Copy>("syncControllerAsset") {
+val syncMirrorAsset = tasks.register<Copy>("syncMirrorAsset") {
     val repoRoot = rootProject.projectDir.parentFile
-    from(repoRoot.resolve("dist/controller.html"))
+    from(repoRoot.resolve("dist/mirror.html"))
     into(layout.projectDirectory.dir("src/main/assets"))
-    rename { "controller.html" }
-    // Always refresh: Gradle's up-to-date check on a single copied file has
-    // silently kept an older page inside the APK.
+    // Always refresh: a single copied file silently kept an older page inside
+    // the APK once already.
     outputs.upToDateWhen { false }
 }
 
 tasks.named("preBuild") {
-    dependsOn(syncControllerAsset)
+    dependsOn(syncMirrorAsset)
 }

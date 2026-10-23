@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.Scenes
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.ui.theme.QuietPalette
 import java.util.Locale
@@ -75,40 +74,33 @@ private fun StatusSummary(state: ControlUiState) {
     val pose = state.pose
     val fresh = pose != null && !state.poseStale
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SummaryRow("患者场景", Scenes.label(state.control.scene))
         SummaryRow(
             label = "训练状态",
             value = when {
-                state.control.calibrating -> "校准中"
                 state.control.session -> "训练中"
                 else -> "待机"
             }
         )
+        SummaryRow("模式", if (state.control.postureMode) "起身" else "漂浮")
+        SummaryRow(
+            label = "漂浮",
+            value = "档位 ${state.control.floatProfile.uppercase(Locale.US)} · 强度 ${state.control.floatLevel}"
+        )
         SummaryRow("声音", if (state.control.audioMuted) "关" else "开")
         SummaryRow(
             label = "视点高度",
-            value = String.format(Locale.US, "%.2f 米", state.eyeHeightRequested)
+            value = String.format(Locale.US, "%.2f 米", state.control.eyeHeight)
         )
-        SummaryRow(
-            label = "校准置信度",
-            value = String.format(Locale.US, "%.2f", state.control.calibrationConfidence)
-        )
-        SummaryRow(
-            label = "姿态进度",
-            value = "${(state.control.postureProgress * 100f).roundToInt()}%"
-        )
-        SummaryRow(
-            label = "起身高度",
-            value = String.format(Locale.US, "%.2f 米", state.control.postureRise)
-        )
-        SummaryRow(
-            label = "姿态俯仰",
-            value = "${state.control.posturePitch.roundToInt()}°"
-        )
-        SummaryRow(
-            label = "视角朝向",
-            value = "${state.control.viewYaw.roundToInt()}° / ${state.control.viewPitch.roundToInt()}°"
-        )
+        if (state.control.postureMode) {
+            SummaryRow(
+                label = "起身进度",
+                value = "${(state.control.postureProgress * 100f).roundToInt()}%"
+            )
+            SummaryRow(
+                label = "起身高度",
+                value = String.format(Locale.US, "%.2f 米", state.control.postureRise)
+            )
+        }
         SummaryRow("患者姿态", if (fresh) "实时" else "姿态未更新")
         if (fresh) {
             Text(

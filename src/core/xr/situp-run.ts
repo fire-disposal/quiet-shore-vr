@@ -15,6 +15,13 @@ export interface SitUpMotionApi {
   readonly moving: boolean;
   /** Sit up (1) or lie back (0). Resumes from the current progress. */
   setTarget(target: number): void;
+  /**
+   * Jump to a progress without animating (arm mid-session at "standing" so the
+   * world does not snap), and hold there.
+   */
+  seek(t: number): void;
+  /** Changes the ramp length for the next move; the current one is untouched. */
+  setDuration(durationMs: number): void;
   /** Freeze at the current progress; a later `setTarget` resumes from there. */
   stop(): void;
   /** Advance one frame; true when the applied progress changed. */
@@ -28,7 +35,7 @@ const SNAP_T = 1e-4;
 
 export function createSitUpMotion(options: { durationMs?: number } = {}): SitUpMotionApi {
   const requested = options.durationMs ?? DEFAULT_DURATION_MS;
-  const durationMs = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_DURATION_MS;
+  let durationMs = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_DURATION_MS;
 
   let t = 0;
   let target = 0;
@@ -63,6 +70,18 @@ export function createSitUpMotion(options: { durationMs?: number } = {}): SitUpM
     return changed;
   }
 
+  function setDuration(next: number): void {
+    if (Number.isFinite(next) && next > 0) {
+      durationMs = next;
+    }
+  }
+
+  function seek(next: number): void {
+    t = !Number.isFinite(next) ? 0 : next < 0 ? 0 : next > 1 ? 1 : next;
+    target = t;
+    moving = false;
+  }
+
   function reset(): void {
     t = 0;
     target = 0;
@@ -80,6 +99,8 @@ export function createSitUpMotion(options: { durationMs?: number } = {}): SitUpM
       return moving;
     },
     setTarget,
+    setDuration,
+    seek,
     stop,
     update,
     reset

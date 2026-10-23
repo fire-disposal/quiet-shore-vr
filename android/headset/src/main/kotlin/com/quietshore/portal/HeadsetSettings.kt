@@ -9,7 +9,7 @@ import com.quietshore.control.protocol.ControlProtocol
  * SharedPreferences and the Android UI.
  */
 internal data class HeadsetSettings(
-    val sceneId: String = DEFAULT_SCENE,
+    val sceneId: String = ControlProtocol.DEFAULT_SCENE,
     val skipCalibration: Boolean = false,
     val showHud: Boolean = false,
     val eyeHeight: Float = DEFAULT_EYE_HEIGHT
@@ -22,8 +22,6 @@ internal data class HeadsetSettings(
     )
 
     companion object {
-        const val DEFAULT_SCENE = "landscape"
-
         /** Comfort eye height default, shared with the wire contract. */
         const val DEFAULT_EYE_HEIGHT: Float = ControlProtocol.EYE_HEIGHT_DEFAULT
 
@@ -35,8 +33,6 @@ internal data class HeadsetSettings(
         // once; the next operator change is persisted under this key.
         private const val KEY_EYE_HEIGHT = "settings.eyeHeight.v2"
 
-        val SCENE_IDS = listOf("landscape", "ward", "bathroom", "lab")
-
         /** True when [meters] is a usable eye height; the page only ever sees these. */
         fun isValidEyeHeight(meters: Float): Boolean =
             meters.isFinite() &&
@@ -45,8 +41,9 @@ internal data class HeadsetSettings(
 
         fun read(context: Context): HeadsetSettings {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val scene = prefs.getString(KEY_SCENE, DEFAULT_SCENE)
-                ?.takeIf { it in SCENE_IDS } ?: DEFAULT_SCENE
+            val scene = prefs.getString(KEY_SCENE, null)
+                ?.takeIf { it in ControlProtocol.SCENE_IDS }
+                ?: ControlProtocol.DEFAULT_SCENE
             val eyeHeight = prefs.getFloat(KEY_EYE_HEIGHT, DEFAULT_EYE_HEIGHT)
                 .takeIf { isValidEyeHeight(it) } ?: DEFAULT_EYE_HEIGHT
             return HeadsetSettings(

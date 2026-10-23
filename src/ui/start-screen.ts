@@ -3,7 +3,6 @@ import { createGazeGuide } from './gaze-guide';
 
 export interface StartScreenHandlers {
   onEnter: () => void;
-  onShowPerfChange: (enabled: boolean) => void;
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -34,10 +33,6 @@ export class StartScreen {
   private readonly hint = optional<HTMLElement>('enter-hint');
   private readonly core = this.enter.closest('.entry-core');
   private readonly controllerGuide = optional<HTMLElement>('controller-guide');
-  private readonly settingsPanel = optional<HTMLElement>('session-settings');
-  private readonly openSettings = optional<HTMLButtonElement>('open-settings');
-  private readonly closeSettings = optional<HTMLButtonElement>('close-settings');
-  private readonly perfSetting = optional<HTMLInputElement>('perf-setting');
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
   private enterBusy = false;
@@ -48,12 +43,6 @@ export class StartScreen {
     this.strings = strings;
     this.handlers = handlers;
     this.enter.addEventListener('click', handlers.onEnter);
-    this.openSettings?.addEventListener('click', () => this.setSettingsOpen(true));
-    this.closeSettings?.addEventListener('click', () => this.setSettingsOpen(false));
-    const perfSetting = this.perfSetting;
-    perfSetting?.addEventListener('change', () => {
-      handlers.onShowPerfChange(perfSetting.checked);
-    });
     // The right-side confirm arrives as a normal click at gaze. Empty space
     // around the target is the same one-time gesture, so a patient does not
     // have to aim at a small button.
@@ -107,7 +96,7 @@ export class StartScreen {
     if (busy) {
       this.setSeen(false);
     }
-    this.setEnterLabel(busy ? this.strings.entering : '看向我');
+    this.setEnterLabel(busy ? this.strings.entering : '准备好就开始');
     this.enter.classList.toggle('is-busy', busy);
     this.start.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
@@ -128,12 +117,6 @@ export class StartScreen {
     }
   }
 
-  setShowPerf(enabled: boolean): void {
-    if (this.perfSetting) {
-      this.perfSetting.checked = enabled;
-    }
-  }
-
   private setSeen(seen: boolean): void {
     if (this.enterBusy || this.seen === seen) {
       return;
@@ -144,7 +127,7 @@ export class StartScreen {
     if (this.controllerGuide) {
       this.controllerGuide.setAttribute('aria-hidden', seen ? 'false' : 'true');
     }
-    this.setEnterLabel(seen ? '按下头显右侧中间的按钮' : '看向我');
+    this.setEnterLabel(seen ? '按右侧确认键开始，或等操作员提示' : '准备好就开始');
   }
 
   private setEnterLabel(text: string): void {
@@ -152,18 +135,6 @@ export class StartScreen {
       this.enterLabel.textContent = text;
     } else {
       this.enter.textContent = text;
-    }
-  }
-
-  private setSettingsOpen(open: boolean): void {
-    if (!this.settingsPanel) {
-      return;
-    }
-    this.settingsPanel.hidden = !open;
-    if (open) {
-      this.perfSetting?.focus();
-    } else {
-      this.openSettings?.focus();
     }
   }
 }

@@ -1,17 +1,25 @@
-import type { SceneDefinition, SceneSummary } from '../core/scene/contract';
+import type { SceneDefinition } from '../core/scene/contract';
 import { bathroomScene } from './bathroom/index';
 import { labScene } from './lab/index';
 import { landscapeScene } from './landscape/index';
 import { wardScene } from './ward/index';
 
-export type { SceneSummary } from '../core/scene/contract';
-
+/**
+ * Registered scenes, in registry order. Adding one is an array entry plus its
+ * folder; the app loads what the tablet chose and never branches on id.
+ *
+ * Scene ids must stay in sync with `ControlProtocol.SCENE_LABELS`, which is what
+ * the tablet renders and the headset validates against.
+ */
 export const SCENES: readonly SceneDefinition[] = [
+  bathroomScene,
   landscapeScene,
   wardScene,
-  bathroomScene,
   labScene
 ];
+
+/** Default scene when nothing was chosen: the flagship bathroom. */
+export const SCENE: SceneDefinition = bathroomScene;
 
 export function getSceneDefinition(id: string): SceneDefinition | undefined {
   for (let i = 0; i < SCENES.length; i++) {
@@ -20,17 +28,4 @@ export function getSceneDefinition(id: string): SceneDefinition | undefined {
     }
   }
   return undefined;
-}
-
-/** Menu metadata, in stable registry order; scene-heavy fields stay behind `getSceneDefinition`. */
-export function listScenes(): SceneSummary[] {
-  return SCENES.map(function (scene) {
-    return {
-      id: scene.id,
-      name: scene.name,
-      tagline: scene.tagline,
-      description: scene.description,
-      audio: scene.audio
-    };
-  });
 }

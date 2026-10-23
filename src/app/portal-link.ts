@@ -25,6 +25,7 @@ export interface StateSnapshot {
   session: boolean;
   calibrating: boolean;
   sitUpActive: boolean;
+  postureMode: boolean;
   audio: boolean;
   eyeHeight: number;
   /** Applied world rotation, Euler XYZ degrees; the mirror's inverse offset. */
@@ -41,6 +42,8 @@ export interface StateSnapshot {
   viewPreset: ViewPresetCode;
   cueEnabled: boolean;
   cueIntensity: number;
+  floatLevel: number;
+  floatProfile: string;
   calibrationConfidence: number;
 }
 
@@ -98,6 +101,7 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     session: snapshot.session,
     calibrating: snapshot.calibrating,
     sitUpActive: snapshot.sitUpActive,
+    postureMode: snapshot.postureMode,
     audio: snapshot.audioMuted,
     eyeHeight: snapshot.eyeHeight,
     worldYaw: snapshot.appliedWorldYawDeg,
@@ -113,6 +117,8 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     viewPreset: snapshot.viewPreset,
     cueEnabled: snapshot.cueEnabled,
     cueIntensity: snapshot.cueIntensity,
+    floatLevel: snapshot.floatLevel,
+    floatProfile: snapshot.floatProfile,
     calibrationConfidence: snapshot.calibrationConfidence
   };
 }

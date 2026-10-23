@@ -145,7 +145,7 @@ private fun PairingIntro(compact: Boolean, modifier: Modifier = Modifier) {
         if (!compact) {
             Spacer(Modifier.height(24.dp))
             Text(
-                text = "连接后由平板控制场景、声音和校准",
+                text = "连接后由平板控制会话模式、漂浮强度、声音与急停",
                 style = MaterialTheme.typography.bodyMedium,
                 color = QuietPalette.TextSecondary
             )

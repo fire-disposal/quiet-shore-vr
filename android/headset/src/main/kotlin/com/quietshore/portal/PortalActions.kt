@@ -8,13 +8,15 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
+import com.quietshore.control.protocol.ControlProtocol
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 
 /** Immutable launch inputs; keeps Activity/Receiver from passing positional flags. */
 internal data class LaunchOptions(
-    val scene: String? = null,
+    /** Scene id chosen on the tablet; injected into the page bootstrap. */
+    val scene: String = ControlProtocol.DEFAULT_SCENE,
     val skipCalibration: Boolean = false,
     val quality: String? = null,
     val showHud: Boolean = false,
@@ -40,7 +42,6 @@ internal object PortalActions {
     const val EXTRA_SUS_ANSWER = "susAnswer"
 
     /** Launch parameters accepted by the activity, receiver and deep link. */
-    const val EXTRA_SCENE = "scene"
     const val EXTRA_SKIP_CALIBRATION = "skipCalibration"
     const val EXTRA_QUALITY = "quality"
     const val EXTRA_PAGE = "page"
@@ -249,6 +250,34 @@ internal object PortalActions {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         launch(context, intent, "未找到可用的桌面")
+    }
+
+    /**
+     * Bring the console back to the front, leaving the browser scene.
+     *
+     * This is the `exit` command from the tablet: the patient never has to find
+     * a button in the headset, and the operator can pick another scene and send
+     * the patient back in without touching the device.
+     */
+    fun showConsole(context: Context) {
+        val app = applicationContext(context)
+        // 1. Free the browser: it holds the only WebGL device context on this
+        //    headset, and a stale one makes the next session start slowly.
+        runCatching {
+            val am = app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            @Suppress("DEPRECATION")
+            am.killBackgroundProcesses(FIREFOX_PACKAGE)
+        }
+        // 2. Bring the console to the front; REORDER_TO_FRONT keeps its state so
+        //    the status text does not reset.
+        val intent = Intent(app, PortalActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        }
+        launch(app, intent, "无法回到控制台")
     }
 
     /** 系统设置首页；不修改任何设置，只打开入口。 */

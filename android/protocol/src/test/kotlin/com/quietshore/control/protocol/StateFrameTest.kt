@@ -16,7 +16,6 @@ class StateFrameTest {
     @Test
     fun `state frame is 20 bytes with signed degree angles`() {
         val state = ControlState(
-            scene = "ward",
             session = true,
             audioMuted = false,
             cueEnabled = true,
@@ -33,7 +32,7 @@ class StateFrameTest {
             viewAnim = ViewAnim.PLAYING,
             viewPreset = ViewPreset.BREATHE,
             cueIntensity = 0.5f,
-            calibrationConfidence = 0.62f
+            scene = "ward"
         )
         val bytes = ControlProtocol.encodeState(state)
 
@@ -55,7 +54,11 @@ class StateFrameTest {
         assertEquals(12f, decoded.worldPitch)
         assertEquals(-7f, decoded.worldRoll)
         assertEquals(1.2f, decoded.postureRise)
+        // Byte 1 is the buoyancy level; the fixture leaves it at the default.
+        assertEquals(1, bytes[1].toInt())
+        // Byte 11 is the scene index into ControlProtocol.SCENE_IDS.
         assertEquals("ward", decoded.scene)
+        assertEquals(ControlProtocol.SCENE_IDS.indexOf("ward"), bytes[11].toInt())
         assertEquals(ViewPreset.BREATHE, decoded.viewPreset)
         assertEquals(ViewAnim.PLAYING, decoded.viewAnim)
     }
@@ -73,6 +76,45 @@ class StateFrameTest {
         val bytes = ControlProtocol.encodeState(ControlState())
         bytes[0] = (ControlProtocol.stateVersion - 1).toByte()
         assertNull(ControlProtocol.decodeState(bytes))
+    }
+
+    @Test
+    fun `posture mode travels in flags bit 5`() {
+        val posture = ControlProtocol.encodeState(ControlState(postureMode = true))
+        assertEquals(32, posture[2].toInt() and 32)
+        val decoded = ControlProtocol.decodeState(posture)
+        requireNotNull(decoded)
+        assertEquals(true, decoded.postureMode)
+        val floating = requireNotNull(ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState())))
+        assertEquals(false, floating.postureMode)
+    }
+
+    @Test
+    fun `buoyancy level and profile round-trip`() {
+        for (profile in listOf("a", "b", "c")) {
+            for (level in 0..3) {
+                val bytes = ControlProtocol.encodeState(
+                    ControlState(floatLevel = level, floatProfile = profile)
+                )
+                assertEquals(level, bytes[1].toInt())
+                val decoded = requireNotNull(ControlProtocol.decodeState(bytes))
+                assertEquals(level, decoded.floatLevel)
+                assertEquals(profile, decoded.floatProfile)
+            }
+        }
+    }
+
+    @Test
+    fun `an unknown profile decodes as the default instead of failing`() {
+        val bytes = ControlProtocol.encodeState(ControlState(floatProfile = "zzz"))
+        assertEquals("b", requireNotNull(ControlProtocol.decodeState(bytes)).floatProfile)
+        // Bits 6-7 are the profile; posture mode in bit 5 must stay independent.
+        val posture = ControlProtocol.encodeState(
+            ControlState(postureMode = true, floatProfile = "c")
+        )
+        val decoded = requireNotNull(ControlProtocol.decodeState(posture))
+        assertTrue(decoded.postureMode)
+        assertEquals("c", decoded.floatProfile)
     }
 
     @Test

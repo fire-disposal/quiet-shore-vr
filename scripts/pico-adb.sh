@@ -27,7 +27,11 @@ find_adb() {
     return 0
   fi
   local candidate
-  for candidate in "$HOME/Android/Sdk/platform-tools/adb" "$HOME/Android/Sdk/platform-tools/adb.exe"; do
+  for candidate in \
+    "${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}/platform-tools/adb" \
+    /opt/android-sdk/platform-tools/adb \
+    "$HOME/Android/Sdk/platform-tools/adb" \
+    "$HOME/Android/Sdk/platform-tools/adb.exe"; do
     if [ -x "$candidate" ]; then
       printf '%s\n' "$candidate"
       return 0

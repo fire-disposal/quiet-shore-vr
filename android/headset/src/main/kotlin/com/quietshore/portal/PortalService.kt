@@ -816,14 +816,8 @@ class PortalService : Service() {
         when {
             command == "home" -> PortalActions.home(this)
             command == "allapps" -> PortalActions.allApps(this)
-            command == "sus:open" -> PortalActions.openSus(this)
-            command == "sus:close" -> PortalActions.closeSus(this)
-            command == "sus:next" -> PortalActions.susPage(this, 1)
-            command == "sus:prev" -> PortalActions.susPage(this, -1)
-            command.startsWith(ControlProtocol.SUS_ANSWER) -> {
-                val value = ControlProtocol.parseSusAnswer(command) ?: return false
-                PortalActions.susAnswer(this, value)
-            }
+            // SUS lives in the page now: only the WebXR surface can offer gaze
+            // selection, so these commands are forwarded instead of handled here.
             command == "enter" -> {
                 if (!PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())) {
                     return false
@@ -860,6 +854,24 @@ class PortalService : Service() {
                 }
                 queued = true
             }
+            command.startsWith(ControlProtocol.SCENE_PREFIX) -> {
+                val id = command.removePrefix(ControlProtocol.SCENE_PREFIX).trim()
+                if (id !in ControlProtocol.SCENE_IDS) {
+                    Log.w(TAG, "rejected scene: $command")
+                    return false
+                }
+                // The scene is stored here, not only forwarded: it is the launch
+                // parameter for the next `enter`, so the operator can pick a
+                // different scene and go back in without touching the headset.
+                synchronized(settingsLock) {
+                    HeadsetSettings.save(this, HeadsetSettings.read(this).copy(sceneId = id))
+                }
+                queued = true
+            }
+            command == "exit" -> {
+                // Leave the browser scene and come back to the console app.
+                PortalActions.showConsole(this)
+            }
             command.startsWith(ControlProtocol.VIEW_ORIENT) -> {
                 // Slider stream: the newest absolute orientation owns the
                 // continuous slot and persists there with no TTL. It never
@@ -881,21 +893,6 @@ class PortalService : Service() {
                     }
                 }
                 queued = true
-            }
-            command.startsWith("scene:") -> {
-                val scene = command.substringAfter("scene:").trim()
-                if (scene in HeadsetSettings.SCENE_IDS) {
-                    synchronized(settingsLock) {
-                        HeadsetSettings.save(
-                            this,
-                            HeadsetSettings.read(this).copy(sceneId = scene)
-                        )
-                    }
-                    queued = true
-                } else {
-                    Log.w(TAG, "rejected scene: $scene")
-                    return false
-                }
             }
             command == "status" -> Unit
             else -> queued = true
@@ -952,7 +949,6 @@ class PortalService : Service() {
         body.put("control", controlMode)
         body.put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
         val state = lastState
-        body.put("scene", HeadsetSettings.read(this).sceneId)
         body.put("session", state.session)
         body.put("calibrating", state.calibrating)
         body.put("postureProgress", state.postureProgress)
@@ -962,7 +958,7 @@ class PortalService : Service() {
         body.put("viewYaw", state.viewYaw)
         body.put("viewAnim", state.viewAnim.wire)
         body.put("viewPreset", state.viewPreset.wire)
-        body.put("calibrationConfidence", state.calibrationConfidence)
+        body.put("scene", state.scene)
         body.put("pendingSeq", controlSeq.get())
         return jsonResponse(body)
     }
@@ -986,14 +982,20 @@ class PortalService : Service() {
 
     /** Same decode path the removed `POST /state` used, now fed by `ws.state`. */
     private fun applyState(json: JSONObject) {
-        val scene = json.optString("scene", ControlState().scene).trim()
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
         val state = ControlState(
-            scene = if (scene.isEmpty()) ControlState().scene else scene,
+            scene = json.optString("scene", ControlState().scene)
+                .takeIf { it in ControlProtocol.SCENE_IDS } ?: ControlState().scene,
             session = json.optBoolean("session", false),
             calibrating = json.optBoolean("calibrating", false),
             sitUpActive = json.optBoolean("sitUpActive", false),
+            postureMode = json.optBoolean("postureMode", false),
+            // Buoyancy the page is actually applying; the tablet mirrors this so
+            // its controls can never drift from the headset.
+            floatLevel = json.optInt("floatLevel", 1).coerceIn(0, 3),
+            floatProfile = json.optString("floatProfile", "b")
+                .takeIf { it == "a" || it == "b" || it == "c" } ?: "b",
             audioMuted = json.optBoolean("audio", false),
             cueEnabled = json.optBoolean("cueEnabled", true),
             eyeHeight = finite("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT)
@@ -1017,8 +1019,7 @@ class PortalService : Service() {
             // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
             viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
             viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),
-            cueIntensity = finite("cueIntensity", 1f),
-            calibrationConfidence = finite("calibrationConfidence", 0f)
+            cueIntensity = finite("cueIntensity", 1f)
         )
         lastState = state
         bluetooth?.publishState(state)

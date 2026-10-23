@@ -61,30 +61,28 @@ if (standalone) {
   console.log(`standalone.html ${kb} KB`);
 }
 
-// Tablet console bundle: the same Three.js scene modules as the headset,
-// wrapped in a standalone page loaded by the control APK's WebView.
+// Tablet mirror: one self-contained page loaded by the control APK's WebView.
+// It is deliberately separate from the patient page so it can never grow a
+// session state machine or a second control path.
 await esbuild.build({
   ...common,
-  entryPoints: [path.join(src, 'controller/main.ts')],
-  outfile: path.join(dist, 'controller.js'),
+  sourcemap: false,
+  entryPoints: [path.join(src, 'mirror/main.ts')],
+  outfile: path.join(dist, 'mirror.js'),
   format: 'iife'
 });
-await esbuild.build({
-  ...common,
-  entryPoints: [path.join(src, 'controller/style.css')],
-  outfile: path.join(dist, 'controller.css')
-});
-const controllerTemplate = fs.readFileSync(path.join(src, 'controller/index.html'), 'utf8');
-const controllerJs = fs.readFileSync(path.join(dist, 'controller.js'), 'utf8')
-  .replace(/\/\/# sourceMappingURL=.*$/gm, '')
+const mirrorJs = fs.readFileSync(path.join(dist, 'mirror.js'), 'utf8')
   .replace(/<\/script/gi, '<\\/script');
-const controllerCss = fs.readFileSync(path.join(dist, 'controller.css'), 'utf8');
-const controllerPage = controllerTemplate
-  .replace('<!-- CONTROLLER_CSS -->', () => `<style>\n${controllerCss}\n</style>`)
-  .replace('<!-- CONTROLLER_JS -->', () => `<script>\n${controllerJs}\n</script>`);
-fs.writeFileSync(path.join(dist, 'controller.html'), controllerPage);
-const controllerKb = (Buffer.byteLength(controllerPage) / 1024).toFixed(0);
-console.log(`controller.html ${controllerKb} KB`);
+const mirrorPage = [
+  '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">',
+  '<meta name="viewport" content="width=device-width,initial-scale=1">',
+  '<title>静岸 场景镜像</title></head><body>',
+  '<script>',
+  mirrorJs,
+  '</script></body></html>'
+].join('');
+fs.writeFileSync(path.join(dist, 'mirror.html'), mirrorPage);
+console.log(`mirror.html ${(Buffer.byteLength(mirrorPage) / 1024).toFixed(0)} KB`);
 
 if (serve) {
   const types = {

@@ -117,8 +117,8 @@ function createWorld(THREE, opts) {
   var WATER_SEG_Z = low ? 12 : 30;
   var coniferCount = low ? 8 : 26;
   var broadleafCount = low ? 6 : 20;
-  var grassCount = low ? 360 : 1200;
-  var flowerCount = low ? 48 : 260;
+  var grassCount = low ? 80 : 240;
+  var flowerCount = low ? 24 : 90;
   var reedCount = low ? 32 : 140;
   var pebbleCount = low ? 44 : 240;
   var rockCount = low ? 8 : 30;
@@ -845,10 +845,19 @@ function createWorld(THREE, opts) {
   var grass = new THREE.InstancedMesh(grassGeo, grassMat, grassCount);
   grass.frustumCulled = false;
   for (si = 0; si < grassCount; si++) {
-    var gx = (rnd() * 2 - 1) * 34;
-    var gz = -1.8 + rnd() * 12;
+    var gx = 0;
+    var gz = 0;
+    // Reject the ring right in front of the viewer: blades that close to the
+    // lens are what made the field look like clutter from a supine pose.
+    for (var attempt = 0; attempt < 6; attempt++) {
+      gx = (rnd() * 2 - 1) * 34;
+      gz = -1.8 + rnd() * 12;
+      if (gx * gx + gz * gz > 30) {
+        break;
+      }
+    }
     var gy = terrainHeight(gx, gz);
-    var gs = 0.35 + rnd() * 0.5;
+    var gs = 0.5 + rnd() * 0.55;
     dummy.position.set(gx, gy + 0.31 * gs, gz);
     dummy.rotation.set(0, rnd() * Math.PI, (rnd() - 0.5) * 0.22);
     dummy.scale.set(gs, gs, gs);

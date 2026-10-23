@@ -1,40 +1,40 @@
 package com.quietshore.control.ui
 
-import com.quietshore.control.model.ViewMode
-import com.quietshore.control.protocol.ViewPreset
+import com.quietshore.control.model.SessionMode
 
 /** Callbacks the control screen needs; keeps screens free of the ViewModel. */
 data class ControlActions(
-    val onViewModeChange: (ViewMode) -> Unit,
+    /** Opens the training page on the headset (the patient still confirms once). */
+    val onStartTraining: () -> Unit,
+    /** Leaves the browser scene and comes back to the console app. */
+    val onExitScene: () -> Unit,
+    /** Ends the session and returns the headset to the system launcher. */
+    val onExitSystem: () -> Unit,
     val onSceneSelect: (String) -> Unit,
+    /** Breathing layer on the buoyancy; default on. */
+    val onBreathToggle: (Boolean) -> Unit,
+    /** Sit-up ramp length in milliseconds (4000..20000). */
+    val onAnimDuration: (Int) -> Unit,
+    /** Gaze dwell selection (SUS answers and spatial targets). Default on. */
+    val onGazeDwellChange: (Boolean) -> Unit,
+    /** Opens the SUS scale in the headset; it is answered by gaze. */
+    val onSusOpen: () -> Unit,
+    val onSusClose: () -> Unit,
     val onEnterTraining: () -> Unit,
     val onEnd: () -> Unit,
     val onRecalibrate: () -> Unit,
     val onToggleAudio: () -> Unit,
     val onPreview: () -> Unit,
-    val onSusOpen: () -> Unit,
-    val onSusClose: () -> Unit,
-    val onSusPrev: () -> Unit,
-    val onSusNext: () -> Unit,
-    val onSusAnswer: (Int) -> Unit,
-    val onPostureRise: () -> Unit,
+    val onSessionMode: (SessionMode) -> Unit,
+    val onFloatLevel: (Int) -> Unit,
+    /** Buoyancy character: "a" gentle, "b" standard, "c" immersive. */
+    val onFloatProfile: (String) -> Unit,
+    val onEmergencyStop: () -> Unit,
+    /** Posture branch: only meaningful in posture mode. */
     val onPostureLower: () -> Unit,
+    val onPostureRise: () -> Unit,
     val onPostureStop: () -> Unit,
-    val onEyeHeightChange: (Float) -> Unit,
-    /** Absolute up-gaze from the slider, in whole degrees (-90..90). */
-    val onPitchChange: (Float) -> Unit,
-    /** Absolute yaw from the slider, in whole degrees (-180..180, + = left). */
-    val onYawChange: (Float) -> Unit,
-    /** Discrete page animation preset (`view:anim:<name>`). */
-    val onViewAnim: (ViewPreset) -> Unit,
-    /** `停止`: freeze the view where it is (`view:stop`, holds both axes). */
-    val onViewPitchStop: () -> Unit,
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
-    val onLeave: () -> Unit,
-    val onFullscreenChange: (Boolean) -> Unit,
-    val onStartRecording: () -> Unit,
-    val onStopRecording: () -> Unit,
-    val onShareRecording: () -> Unit,
-    val onDismissRecording: () -> Unit
+    val onLeave: () -> Unit
 )

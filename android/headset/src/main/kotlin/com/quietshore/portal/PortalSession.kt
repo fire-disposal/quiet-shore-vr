@@ -26,7 +26,13 @@ internal object PortalSession {
 
     fun toJson(): JSONObject = JSONObject().apply {
         val current = options
-        if (current.scene.isNullOrEmpty()) put("scene", JSONObject.NULL) else put("scene", current.scene)
+        // The page loads this scene; the tablet owns the choice, the headset
+        // only carries it into the launch.
+        put(
+            "scene",
+            current.scene.takeIf { it in ControlProtocol.SCENE_IDS }
+                ?: ControlProtocol.DEFAULT_SCENE
+        )
         put("skipCalibration", current.skipCalibration)
         if (current.quality.isNullOrEmpty()) put("quality", JSONObject.NULL) else put("quality", current.quality)
         put("showHud", current.showHud)

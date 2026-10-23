@@ -23,7 +23,7 @@ object ControlProtocol {
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
     const val stateMaxBytes: Int = 20
-    const val stateVersion: Int = 8
+    const val stateVersion: Int = 10
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -82,6 +82,42 @@ object ControlProtocol {
     const val VIEW_ANIM: String = "view:anim:"
     val VIEW_ANIM_NAMES: Set<String> = setOf("up", "down", "recenter", "breathe")
 
+    /**
+     * Session mode, chosen before a session starts: `mode:float` (default) or
+     * `mode:posture` (the optional sit-up trajectory). Rejected while a session
+     * is running; the page never switches mode mid-session.
+     */
+    const val MODE: String = "mode:"
+    val MODE_NAMES: Set<String> = setOf("float", "posture")
+
+    /** Buoyancy intensity the technician picks: `float:level:<0-3>`. */
+    const val FLOAT_LEVEL: String = "float:level:"
+
+    /**
+     * Buoyancy character: `float:profile:<a|b|c>`. The profile sets amplitude,
+     * period and horizon sway; it is chosen in the room, on the headset.
+     */
+    const val FLOAT_PROFILE: String = "float:profile:"
+    val FLOAT_PROFILE_NAMES: Set<String> = setOf("a", "b", "c")
+
+    /** Scene switch: `scene:<id>`, only accepted before a session starts. */
+    const val SCENE_PREFIX: String = "scene:"
+
+    /** Breathing layer on the heave: `float:breath:on|off`. */
+    const val FLOAT_BREATH: String = "float:breath:"
+
+    /** Sit-up ramp length: `anim:duration:<4000-20000>` milliseconds. */
+    const val ANIM_DURATION: String = "anim:duration:"
+
+    /** Operator switch for gaze dwell: `gaze:dwell:on|off`. */
+    const val GAZE_DWELL: String = "gaze:dwell:"
+    val GAZE_DWELL_VALUES: Set<String> = setOf("gaze:dwell:on", "gaze:dwell:off")
+
+    /** Posture branch: rise, lower or hold, driven by the operator. */
+    const val POSTURE_RISE: String = "posture:rise"
+    const val POSTURE_LOWER: String = "posture:lower"
+    const val POSTURE_STOP: String = "posture:stop"
+
     /** Absolute up-gaze envelope, in degrees. */
     const val VIEW_PITCH_MAX_DEG: Float = 90f
 
@@ -92,7 +128,9 @@ object ControlProtocol {
         "start", "enter", "preview", "exit", "stop",
         "calibrate", "recalibrate", "status",
         "audio:on", "audio:off", "audio:toggle",
-        "scene:<id>", "posture:rise", "posture:lower", "posture:stop",
+        "mode:float|posture", "float:level:0-3", "float:profile:a|b|c", "float:breath:on|off",
+        "anim:duration:4000-20000", "posture:rise", "posture:lower", "posture:stop",
+        "scene:<id>",
         "cue:on", "cue:off", "cue:intensity:0-1",
         "home", "allapps", "sus:open", "sus:close", "sus:next", "sus:prev",
         "sus:answer:1-5",
@@ -121,6 +159,7 @@ object ControlProtocol {
 
     /** Capability bits the headset advertises in `WELCOME <version> <mask>`. */
     const val CAP_VIEW_ANIM: Int = 1 shl 0
+    /** Scene switching from the tablet; absent means a single fixed scene. */
     const val CAP_SCENE: Int = 1 shl 1
     const val CAP_POSTURE: Int = 1 shl 2
     const val CAP_CUE: Int = 1 shl 3
@@ -128,9 +167,11 @@ object ControlProtocol {
     const val CAP_EYE_HEIGHT: Int = 1 shl 5
     /** The view channel carries a yaw axis as well as up-gaze. */
     const val CAP_VIEW_YAW: Int = 1 shl 6
+    /** Gaze dwell selection exists and can be switched by the operator. */
+    const val CAP_GAZE_DWELL: Int = 1 shl 7
     const val CAPABILITIES_MASK: Int =
         CAP_VIEW_ANIM or CAP_SCENE or CAP_POSTURE or CAP_CUE or CAP_SUS or CAP_EYE_HEIGHT or
-            CAP_VIEW_YAW
+            CAP_VIEW_YAW or CAP_GAZE_DWELL
 
     const val HELLO: String = "HELLO"
     const val WELCOME: String = "WELCOME"
@@ -229,7 +270,13 @@ object ControlProtocol {
         return when {
             normalized.startsWith(VIEW_ORIENT) -> CAP_VIEW_ANIM
             normalized.startsWith(VIEW_ANIM) -> CAP_VIEW_ANIM
-            normalized.startsWith("scene:") -> CAP_SCENE
+            normalized.startsWith(MODE) -> CAP_POSTURE
+            normalized.startsWith(FLOAT_LEVEL) -> CAP_CUE
+            normalized.startsWith(FLOAT_PROFILE) -> CAP_CUE
+            normalized.startsWith(SCENE_PREFIX) -> CAP_SCENE
+            normalized.startsWith(GAZE_DWELL) -> CAP_GAZE_DWELL
+            normalized.startsWith(FLOAT_BREATH) -> CAP_CUE
+            normalized.startsWith(ANIM_DURATION) -> CAP_POSTURE
             normalized.startsWith("posture:") -> CAP_POSTURE
             normalized.startsWith("cue:") -> CAP_CUE
             normalized.startsWith("sus:") -> CAP_SUS
@@ -248,6 +295,7 @@ object ControlProtocol {
         if (mask and CAP_SUS != 0) names.add("sus")
         if (mask and CAP_EYE_HEIGHT != 0) names.add("eyeheight")
         if (mask and CAP_VIEW_YAW != 0) names.add("viewYaw")
+        if (mask and CAP_GAZE_DWELL != 0) names.add("gazeDwell")
         return names
     }
 
@@ -360,10 +408,20 @@ object ControlProtocol {
             normalized == "audio:on" ||
             normalized == "audio:off" ||
             normalized == "audio:toggle" ||
-            (normalized.startsWith("scene:") && normalized.length > "scene:".length) ||
-            normalized == "posture:rise" ||
-            normalized == "posture:lower" ||
-            normalized == "posture:stop" ||
+            (normalized.startsWith(MODE) && normalized.removePrefix(MODE) in MODE_NAMES) ||
+            (normalized.startsWith(FLOAT_LEVEL) &&
+                normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
+            (normalized.startsWith(FLOAT_PROFILE) &&
+                normalized.removePrefix(FLOAT_PROFILE) in FLOAT_PROFILE_NAMES) ||
+            (normalized.startsWith(SCENE_PREFIX) &&
+                normalized.removePrefix(SCENE_PREFIX) in SCENE_LABELS) ||
+            (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
+            normalized == FLOAT_BREATH + "on" || normalized == FLOAT_BREATH + "off" ||
+            (normalized.startsWith(ANIM_DURATION) &&
+                normalized.removePrefix(ANIM_DURATION).toIntOrNull() in 4000..20000) ||
+            normalized == POSTURE_RISE ||
+            normalized == POSTURE_LOWER ||
+            normalized == POSTURE_STOP ||
             normalized == "cue:on" ||
             normalized == "cue:off" ||
             (normalized.startsWith("cue:intensity:") && normalized.length > "cue:intensity:".length) ||
@@ -405,16 +463,14 @@ object ControlProtocol {
         )
     }
 
-    private val SCENE_IDS = listOf("landscape", "ward", "bathroom", "lab")
-
     /**
      * 20-byte state frame, little endian:
      *
      * | byte | field |
      * | --- | --- |
-     * | 0 | version (8) |
-     * | 1 | scene index |
-     * | 2 | flags |
+     * | 0 | version (10) |
+     * | 1 | float level (0–3) |
+     * | 2 | flags: bit0 session, bit1 calibrating, bit2 audio muted, bit3 cue enabled, bit4 sit-up active, bit5 posture mode, bit6–7 float profile (0=a, 1=b, 2=c) |
      * | 3 | eye height (cm) |
      * | 4 | posturePitch — signed integer degrees, measured world tilt |
      * | 5 | postureRoll — signed integer degrees, measured world tilt |
@@ -423,7 +479,7 @@ object ControlProtocol {
      * | 8 | viewPitch — signed integer degrees, + = up-gaze |
      * | 9 | viewAnim |
      * | 10 | cueIntensity (%) |
-     * | 11 | calibrationConfidence (%) |
+     * | 11 | scene index (255 = unknown) |
      * | 12 | viewPreset |
      * | 13–14 | viewYaw — signed int16 degrees, + = view turned left |
      * | 15–16 | worldYaw — signed int16 degrees, applied shell × base |
@@ -435,16 +491,17 @@ object ControlProtocol {
      * (see `docs/rotation-contract.md`), never re-applied here.
      */
     fun encodeState(state: ControlState): ByteArray {
-        val sceneIndex = SCENE_IDS.indexOf(state.scene).let { if (it < 0) 255 else it }
         var flags = 0
         if (state.session) flags = flags or 1
         if (state.calibrating) flags = flags or 2
         if (state.audioMuted) flags = flags or 4
         if (state.cueEnabled) flags = flags or 8
         if (state.sitUpActive) flags = flags or 16
+        if (state.postureMode) flags = flags or 32
+        flags = flags or ((profileIndex(state.floatProfile) and 0x3) shl 6)
         val buffer = ByteBuffer.allocate(stateMaxBytes).order(ByteOrder.LITTLE_ENDIAN)
         buffer.put(stateVersion.toByte())
-        buffer.put(sceneIndex.toByte())
+        buffer.put(state.floatLevel.coerceIn(0, 3).toByte())
         buffer.put(flags.toByte())
         buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(120, 190).toByte())
         buffer.put(state.posturePitch.roundToInt().coerceIn(-128, 127).toByte())
@@ -454,7 +511,7 @@ object ControlProtocol {
         buffer.put(state.viewPitch.roundToInt().coerceIn(-128, 127).toByte())
         buffer.put(state.viewAnim.code.toByte())
         buffer.put((state.cueIntensity * 100f).roundToInt().coerceIn(0, 100).toByte())
-        buffer.put((state.calibrationConfidence * 100f).roundToInt().coerceIn(0, 100).toByte())
+        buffer.put(sceneIndex(state.scene).toByte())
         buffer.put(state.viewPreset.code.toByte())
         buffer.putShort(state.viewYaw.roundToInt().coerceIn(-32768, 32767).toShort())
         buffer.putShort(state.worldYaw.roundToInt().coerceIn(-32768, 32767).toShort())
@@ -467,7 +524,7 @@ object ControlProtocol {
         if (bytes.size != stateMaxBytes) return null
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if ((buffer.get().toInt() and 0xFF) != stateVersion) return null
-        val sceneIndex = buffer.get().toInt() and 0xFF
+        val floatLevel = (buffer.get().toInt() and 0xFF).coerceIn(0, 3)
         val flags = buffer.get().toInt() and 0xFF
         val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val posturePitch = buffer.get().toInt().toFloat()
@@ -478,7 +535,7 @@ object ControlProtocol {
         val viewPitch = buffer.get().toInt().toFloat()
         val viewAnim = ViewAnim.fromCode(buffer.get().toInt() and 0xFF)
         val cueIntensity = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val confidence = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val sceneIndex = buffer.get().toInt() and 0xFF
         val viewPreset = ViewPreset.fromCode(buffer.get().toInt() and 0xFF)
         val viewYaw = buffer.short.toInt().toFloat()
         val worldYaw = buffer.short.toInt().toFloat()
@@ -486,12 +543,14 @@ object ControlProtocol {
         val worldRoll = buffer.get().toInt().toFloat()
         if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
         return ControlState(
-            scene = if (sceneIndex < SCENE_IDS.size) SCENE_IDS[sceneIndex] else SCENE_IDS[0],
             session = flags and 1 != 0,
             calibrating = flags and 2 != 0,
             audioMuted = flags and 4 != 0,
             cueEnabled = flags and 8 != 0,
             sitUpActive = flags and 16 != 0,
+            postureMode = flags and 32 != 0,
+            floatLevel = floatLevel,
+            floatProfile = profileName((flags shr 6) and 0x3),
             eyeHeight = eyeHeight,
             posturePitch = posturePitch,
             postureRoll = postureRoll,
@@ -504,9 +563,47 @@ object ControlProtocol {
             worldRoll = worldRoll,
             viewAnim = viewAnim,
             cueIntensity = cueIntensity,
-            calibrationConfidence = confidence,
+            scene = SCENE_IDS.getOrElse(sceneIndex) { SCENE_IDS[0] },
             viewPreset = viewPreset
         )
+    }
+
+    /** Stable scene ids; index order is the wire contract for byte 11. */
+    val SCENE_IDS: List<String> = listOf("landscape", "ward", "bathroom", "lab")
+
+    /** Flagship scene: the ward bathroom. Default everywhere a scene is implied. */
+    const val DEFAULT_SCENE: String = "bathroom"
+
+    /**
+     * Scenes that actually ship, with operator-facing labels. The tablet renders
+     * this list, so adding a scene is one entry here plus its content module.
+     */
+    val SCENE_LABELS: Map<String, String> = linkedMapOf(
+        "bathroom" to "病房卫生间",
+        "landscape" to "湖畔晨岸",
+        "ward" to "病房",
+        "lab" to "直立光室"
+    )
+
+    private fun sceneIndex(name: String): Int {
+        val index = SCENE_IDS.indexOf(name)
+        return if (index < 0) 255 else index
+    }
+
+    /**
+     * Two flag bits carry the profile: a=0, b=1, c=2. An unknown value decodes
+     * as the default profile rather than failing the whole frame.
+     */
+    private fun profileIndex(name: String): Int = when (name) {
+        "a" -> 0
+        "c" -> 2
+        else -> 1
+    }
+
+    private fun profileName(index: Int): String = when (index) {
+        0 -> "a"
+        2 -> "c"
+        else -> "b"
     }
 }
 
@@ -569,12 +666,16 @@ enum class ViewAnim(val code: Int, val wire: String) {
 }
 
 data class ControlState(
-    val scene: String = "landscape",
     val session: Boolean = false,
     val calibrating: Boolean = false,
     val audioMuted: Boolean = false,
     val cueEnabled: Boolean = true,
     val sitUpActive: Boolean = false,
+    val postureMode: Boolean = false,
+    /** Buoyancy intensity the page is actually applying, 0–3. */
+    val floatLevel: Int = 1,
+    /** Buoyancy profile the page is actually applying: "a", "b" or "c". */
+    val floatProfile: String = "b",
     val eyeHeight: Float = ControlProtocol.EYE_HEIGHT_DEFAULT,
     val posturePitch: Float = 0f,
     val postureRoll: Float = 0f,
@@ -600,5 +701,6 @@ data class ControlState(
     /** Preset the page last played (or is playing); see [ViewPreset]. */
     val viewPreset: ViewPreset = ViewPreset.NONE,
     val cueIntensity: Float = 1f,
-    val calibrationConfidence: Float = 0f
+    /** Scene currently loaded on the page; the tablet shows this as its choice. */
+    val scene: String = ControlProtocol.DEFAULT_SCENE
 )

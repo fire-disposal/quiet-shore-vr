@@ -24,6 +24,7 @@ export interface SceneSnapshotInput {
   session: boolean;
   calibrating: boolean;
   calibrated: boolean;
+  postureMode: boolean;
   audioMuted: boolean;
   eyeHeight: number;
   /** Applied world rotation (shell x base), Euler XYZ degrees. */
@@ -56,6 +57,9 @@ export interface SceneSnapshotInput {
   cueFlow: number;
   cueEnabled: boolean;
   cueIntensity: number;
+  /** Buoyancy actually applied, so the tablet never has to guess. */
+  floatLevel: number;
+  floatProfile: string;
 }
 
 export class SceneSnapshot {
@@ -71,6 +75,7 @@ export class SceneSnapshot {
   appliedWorldPitchDeg = 0;
   appliedWorldRollDeg = 0;
   sitUpActive = false;
+  postureMode = false;
   sitUpT = 0;
   sitUpMoving = false;
   posturePhase: PosturePhase = 'neutral';
@@ -89,6 +94,8 @@ export class SceneSnapshot {
   cueFlow = 0;
   cueEnabled = false;
   cueIntensity = 0;
+  floatLevel = 1;
+  floatProfile = 'b';
   calibrationConfidence = 0;
 
   private readonly euler: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
@@ -99,6 +106,7 @@ export class SceneSnapshot {
     this.session = input.session;
     this.calibrating = input.calibrating;
     this.calibrated = input.calibrated;
+    this.postureMode = input.postureMode;
     this.audioMuted = input.audioMuted;
     this.eyeHeight = input.eyeHeight;
     this.appliedWorldYawDeg = input.worldYawDeg;
@@ -114,6 +122,8 @@ export class SceneSnapshot {
     this.cueFlow = input.cueFlow;
     this.cueEnabled = input.cueEnabled;
     this.cueIntensity = input.cueIntensity;
+    this.floatLevel = input.floatLevel;
+    this.floatProfile = input.floatProfile;
     this.calibrationConfidence = input.confidence;
 
     const measured = measureRelativeEuler(

@@ -4,22 +4,16 @@ import android.app.Application
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quietshore.control.ble.BleController
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.EyeHeight
-import com.quietshore.control.model.RecordingPhase
-import com.quietshore.control.model.ViewMode
-import com.quietshore.control.model.ViewPresets
+import com.quietshore.control.model.SessionMode
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
-import com.quietshore.control.protocol.ViewPreset
-import com.quietshore.control.recording.ControllerRecorder
-import com.quietshore.control.recording.RecordingEvent
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,8 +25,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 class ControlViewModel(application: Application) :
     AndroidViewModel(application),
@@ -59,36 +51,12 @@ class ControlViewModel(application: Application) :
         _uiState.map { it.phase }.distinctUntilChanged()
     val grantedUpdates: Flow<Boolean> =
         _uiState.map { it.controlGranted }.distinctUntilChanged()
-    val viewModeUpdates: Flow<ViewMode> =
-        _uiState.map { it.viewMode }.distinctUntilChanged()
 
     private val ble = BleController(application, this)
 
     private var lastPoseAt = 0L
-
-    /** Last eye height actually written to the headset; NaN means nothing sent yet. */
-    private var lastEyeHeightSent = Float.NaN
-
-    /** Debounces slider samples; the newest one wins. */
-    private var viewJob: Job? = null
-    /** Last orientation written to the link; NaN means nothing sent yet. */
-    private var lastViewPitchSent = Float.NaN
-    private var lastViewYawSent = Float.NaN
-    /** Desired absolute orientation, seeded from the headset readback. */
-    private var desiredPitch = 0f
-    private var desiredYaw = 0f
-    /** Monotonic time of the last write, used to keep the stream at ≤10 Hz. */
-    private var lastViewSentAt = 0L
-
-    private var eyeHeightJob: Job? = null
-    /** First state after a connection seeds the stepper from the headset. */
-    private var eyeHeightSynced = false
-
-    /** Recorder owned by the viewport; null until the WebView page is alive. */
-    private var recorder: ControllerRecorder? = null
-    private var recordingClock: Job? = null
-    private var recordingGuard: Job? = null
-    private var recordingStartedAt = 0L
+    /** Monotonic start of the running session; 0 when no session is running. */
+    private var sessionStartedAt = 0L
 
     init {
         refreshBluetoothState()
@@ -120,6 +88,7 @@ class ControlViewModel(application: Application) :
 
     fun startScan() {
         val state = _uiState.value
+        Log.i("QuietShoreBle", "viewModel.startScan phase=${state.phase.name}")
         if (state.phase.isBusy || state.phase == BlePhase.READY) {
             return
         }
@@ -143,8 +112,6 @@ class ControlViewModel(application: Application) :
         if (_uiState.value.phase.isBusy) {
             return
         }
-        eyeHeightSynced = false
-        lastViewPitchSent = Float.NaN
         preferences.edit().putString(LAST_DEVICE_KEY, address).apply()
         _uiState.update {
             it.copy(
@@ -169,8 +136,20 @@ class ControlViewModel(application: Application) :
     }
 
     fun disconnect() {
-        cancelViewRequest()
+        // A manual disconnect is an operator decision to leave this headset, so
+        // the screen goes straight back to pairing instead of waiting for the
+        // link-loss callbacks to arrive.
         ble.disconnect()
+        _uiState.update {
+            it.copy(
+                sessionActive = false,
+                controlGranted = false,
+                poseStale = true,
+                rssi = null,
+                notice = null,
+                error = null
+            )
+        }
     }
 
     fun reconnect() {
@@ -183,7 +162,6 @@ class ControlViewModel(application: Application) :
     }
 
     fun leaveControl() {
-        cancelViewRequest()
         ble.disconnect()
         _uiState.update {
             it.copy(
@@ -195,351 +173,6 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    fun setViewMode(mode: ViewMode) {
-        _uiState.update { it.copy(viewMode = mode) }
-    }
-
-    fun setFullscreen(active: Boolean) {
-        _uiState.update {
-            it.copy(
-                fullscreen = active,
-                viewMode = if (active) ViewMode.PATIENT else it.viewMode
-            )
-        }
-    }
-
-    /**
-     * Hooks the viewport's recorder to the UI. The WebView lives in a
-     * composable, so the screen attaches it here instead of the ViewModel
-     * owning a View.
-     */
-    fun attachRecorder(next: ControllerRecorder?) {
-        if (next !== recorder && _uiState.value.recording.isBusy) {
-            recordingClock?.cancel()
-            recordingClock = null
-            recordingGuard?.cancel()
-            recordingGuard = null
-            _uiState.update {
-                it.copy(
-                    recording = RecordingPhase.FAILED,
-                    recordingError = "三维视图已重建，录像未保存"
-                )
-            }
-        }
-        recorder = next
-    }
-
-    /**
-     * Records the patient camera. BLE is deliberately not a precondition: a
-     * product demo may be captured from the simulated mirror alone.
-     */
-    fun startRecording() {
-        val current = _uiState.value
-        if (current.recording.isBusy) {
-            return
-        }
-        val target = recorder ?: run {
-            _uiState.update { it.copy(recordingError = "三维视图尚未就绪") }
-            return
-        }
-        _uiState.update {
-            it.copy(
-                recording = RecordingPhase.STARTING,
-                recordingElapsedMs = 0L,
-                recordingBytes = 0L,
-                recordingPath = null,
-                recordingError = null,
-                // The clip is the patient's view, so switch the mirror now.
-                viewMode = ViewMode.PATIENT
-            )
-        }
-        // The bridge is fire-and-forget: never leave the UI in STARTING when
-        // the page silently fails to answer.
-        recordingGuard?.cancel()
-        recordingGuard = viewModelScope.launch {
-            delay(RECORDING_START_TIMEOUT_MS)
-            if (_uiState.value.recording == RecordingPhase.STARTING) {
-                _uiState.update {
-                    it.copy(
-                        recording = RecordingPhase.FAILED,
-                        recordingError = "录制未启动，请重试"
-                    )
-                }
-            }
-        }
-        target.startRecording()
-    }
-
-    fun stopRecording() {
-        if (!_uiState.value.recording.isBusy) {
-            return
-        }
-        _uiState.update { it.copy(recording = RecordingPhase.SAVING) }
-        // The clip is in the page until the last slice lands; a missing finish
-        // event must still release the UI.
-        recordingGuard?.cancel()
-        recordingGuard = viewModelScope.launch {
-            delay(RECORDING_SAVE_TIMEOUT_MS)
-            if (_uiState.value.recording == RecordingPhase.SAVING) {
-                _uiState.update {
-                    it.copy(
-                        recording = RecordingPhase.FAILED,
-                        recordingError = "保存录像超时"
-                    )
-                }
-            }
-        }
-        recorder?.stopRecording()
-    }
-
-    fun dismissRecordingNotice() {
-        val phase = _uiState.value.recording
-        if (phase == RecordingPhase.SAVED || phase == RecordingPhase.FAILED) {
-            _uiState.update {
-                it.copy(recording = RecordingPhase.IDLE, recordingError = null)
-            }
-        }
-    }
-
-    fun onRecordingEvent(event: RecordingEvent) {
-        when (event) {
-            is RecordingEvent.Started -> {
-                recordingGuard?.cancel()
-                recordingGuard = null
-                startRecordingClock()
-                _uiState.update {
-                    it.copy(recording = RecordingPhase.RECORDING, recordingError = null)
-                }
-            }
-
-            is RecordingEvent.Saved -> {
-                recordingGuard?.cancel()
-                recordingGuard = null
-                recordingClock?.cancel()
-                recordingClock = null
-                _uiState.update {
-                    it.copy(
-                        recording = RecordingPhase.SAVED,
-                        recordingPath = event.path,
-                        recordingBytes = event.bytes,
-                        recordingElapsedMs = event.durationMs,
-                        recordingError = null,
-                        notice = "患者视角录像已保存"
-                    )
-                }
-            }
-
-            is RecordingEvent.Failed -> {
-                recordingGuard?.cancel()
-                recordingGuard = null
-                recordingClock?.cancel()
-                recordingClock = null
-                _uiState.update {
-                    it.copy(
-                        recording = RecordingPhase.FAILED,
-                        recordingError = event.message
-                    )
-                }
-            }
-        }
-    }
-
-    private fun startRecordingClock() {
-        recordingStartedAt = SystemClock.elapsedRealtime()
-        recordingClock?.cancel()
-        recordingClock = viewModelScope.launch {
-            while (isActive) {
-                delay(RECORDING_CLOCK_MS)
-                val elapsed = SystemClock.elapsedRealtime() - recordingStartedAt
-                _uiState.update { state ->
-                    if (state.recording == RecordingPhase.RECORDING) {
-                        state.copy(recordingElapsedMs = elapsed)
-                    } else {
-                        state
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Eye height is a headset preference: the tablet only mirrors the value it
-     * requested, and the page receives it through the headset bootstrap. Sending
-     * the same height twice is skipped so repeated taps cannot flood the link.
-     */
-    fun setEyeHeight(meters: Float) {
-        val value = (meters * 100f).roundToInt().coerceIn(
-            (EyeHeight.MIN * 100f).roundToInt(),
-            (EyeHeight.MAX * 100f).roundToInt()
-        ) / 100f
-        val state = _uiState.value
-        if (state.control.calibrating) {
-            // Calibration owns the head pose; changing eye height mid-collection
-            // would move the floor under the patient.
-            _uiState.update { it.copy(error = "校准中不可调整视点高度") }
-            return
-        }
-        _uiState.update { it.copy(eyeHeightRequested = value) }
-        if (state.phase != BlePhase.READY) {
-            // Offline: keep the value local and forget what was sent, so the
-            // next connected tap writes the headset again.
-            lastEyeHeightSent = Float.NaN
-            return
-        }
-        // Rapid taps collapse into one command; the stepper stays responsive.
-        eyeHeightJob?.cancel()
-        eyeHeightJob = viewModelScope.launch {
-            delay(EYE_HEIGHT_DEBOUNCE_MS)
-            val current = _uiState.value
-            if (current.phase != BlePhase.READY ||
-                current.control.calibrating ||
-                value == lastEyeHeightSent
-            ) {
-                return@launch
-            }
-            lastEyeHeightSent = value
-            _uiState.update { it.copy(eyeHeightConfirmed = false) }
-            sendCommand(
-                ControlProtocol.SETTINGS_EYE_HEIGHT + String.format(Locale.US, "%.2f", value)
-            )
-        }
-    }
-
-    /**
-     * Absolute up-gaze in whole degrees, clamped to ±[VIEW_PITCH_MAX_DEG].
-     *
-     * Both axes share one wire command, so samples collapse to the newest
-     * pair and leave at ≤10 Hz: the slider moves instantly, the newest state
-     * is written after [VIEW_DEBOUNCE_MS] and never sooner than
-     * [VIEW_MIN_INTERVAL_MS] after the previous write.
-     */
-    fun setViewPitch(degrees: Float) {
-        submitView(
-            viewPitch = degrees.roundToInt()
-                .coerceIn(-VIEW_PITCH_MAX_DEG, VIEW_PITCH_MAX_DEG)
-                .toFloat()
-        )
-    }
-
-    /** Absolute yaw in whole degrees; + = the patient's view turns left. */
-    fun setViewYaw(degrees: Float) {
-        submitView(
-            viewYaw = degrees.roundToInt()
-                .coerceIn(-VIEW_YAW_MAX_DEG, VIEW_YAW_MAX_DEG)
-                .toFloat()
-        )
-    }
-
-    private fun submitView(viewPitch: Float? = null, viewYaw: Float? = null) {
-        val blocked = _uiState.value.viewPitchBlockedReason
-        if (blocked != null) {
-            _uiState.update { it.copy(error = blocked) }
-            return
-        }
-        if (viewPitch != null) desiredPitch = viewPitch
-        if (viewYaw != null) desiredYaw = viewYaw
-        _uiState.update {
-            it.copy(
-                viewPitchRequested = viewPitch ?: it.viewPitchRequested,
-                viewYawRequested = viewYaw ?: it.viewYawRequested,
-                error = null
-            )
-        }
-        viewJob?.cancel()
-        viewJob = viewModelScope.launch {
-            delay(VIEW_DEBOUNCE_MS)
-            // Hard cap on the send rate: the debounce alone can still fire
-            // faster than the ~10 Hz the wire contract allows.
-            val early = VIEW_MIN_INTERVAL_MS -
-                (SystemClock.elapsedRealtime() - lastViewSentAt)
-            if (early > 0) {
-                delay(early)
-            }
-            if (_uiState.value.viewPitchBlockedReason != null) {
-                return@launch
-            }
-            if (desiredPitch == lastViewPitchSent && desiredYaw == lastViewYawSent) {
-                return@launch
-            }
-            lastViewPitchSent = desiredPitch
-            lastViewYawSent = desiredYaw
-            lastViewSentAt = SystemClock.elapsedRealtime()
-            ble.sendCommand(orientationCommand(desiredYaw, desiredPitch))
-        }
-    }
-
-    /**
-     * Plays one of the page's fixed-duration animations. Nothing is repeated
-     * and no timing crosses the wire: the page owns the curve and the tablet
-     * only reads the phase back through `state.viewAnim`.
-     */
-    fun playViewAnim(preset: ViewPreset) {
-        if (preset == ViewPreset.NONE) {
-            return
-        }
-        val blocked = _uiState.value.viewPitchBlockedReason
-        if (blocked != null) {
-            _uiState.update { it.copy(error = blocked) }
-            return
-        }
-        viewJob?.cancel()
-        viewJob = null
-        // The animation owns the motion now; drop the manual request so the
-        // sliders follow the page's readback instead of fighting it.
-        lastViewPitchSent = Float.NaN
-        lastViewYawSent = Float.NaN
-        _uiState.update {
-            it.copy(
-                viewPitchRequested = null,
-                viewYawRequested = null,
-                error = null,
-                notice = ViewPresets.label(preset) + "已发送"
-            )
-        }
-        ble.sendCommand(ControlProtocol.VIEW_ANIM + preset.wire)
-    }
-
-    /** `停止`: freezes the current orientation in place. It never recenters. */
-    fun stopViewPitch() {
-        val blocked = _uiState.value.viewPitchBlockedReason
-        if (blocked != null) {
-            _uiState.update { it.copy(error = blocked) }
-            return
-        }
-        viewJob?.cancel()
-        viewJob = null
-        lastViewPitchSent = Float.NaN
-        lastViewYawSent = Float.NaN
-        _uiState.update {
-            it.copy(
-                viewPitchRequested = null,
-                viewYawRequested = null,
-                error = null,
-                notice = "视角已停止"
-            )
-        }
-        ble.sendCommand(ControlProtocol.VIEW_STOP)
-    }
-
-    /**
-     * Drops any pending sample and lets the sliders follow the headset readback
-     * again. Deliberately does not send `view:stop`: a lost lease or a dropped
-     * link holds the last orientation by contract, it never recenters.
-     */
-    fun cancelViewRequest() {
-        viewJob?.cancel()
-        viewJob = null
-        // Forget the last write too: after a reconnect the page may sit at a
-        // different orientation, so the next identical drag must still reach it.
-        lastViewPitchSent = Float.NaN
-        lastViewYawSent = Float.NaN
-        _uiState.update { it.copy(viewPitchRequested = null, viewYawRequested = null) }
-    }
-
-    fun selectScene(sceneId: String) {
-        sendCommand("scene:$sceneId")
-    }
-
     /** Launches the headset page; the Firefox door gesture stays with the patient. */
     fun enterTraining() {
         sendCommand(ControlProtocol.ENTER)
@@ -549,51 +182,119 @@ class ControlViewModel(application: Application) :
         sendCommand("stop")
     }
 
+    /**
+     * Emergency stop: ends the session immediately. The page freezes motion and
+     * fades the buoyancy out inside a second; this is the same `stop` the
+     * patient's confirm key sends, so both converge on one path.
+     */
+    fun emergencyStop() {
+        sendCommand("stop")
+    }
+
+    /** Chosen before a session; the headset refuses it while one is running. */
+    fun setSessionMode(mode: SessionMode) {
+        _uiState.update { it.copy(sessionMode = mode) }
+        sendCommand(ControlProtocol.MODE + mode.wire)
+    }
+
+    /** Buoyancy intensity 0..3; the page scales amplitude linearly. */
+    fun setFloatLevel(level: Int) {
+        val clamped = level.coerceIn(0, 3)
+        _uiState.update { it.copy(floatLevel = clamped) }
+        sendCommand(ControlProtocol.FLOAT_LEVEL + clamped)
+    }
+
+    /** Buoyancy character: a gentle, b standard, c immersive. */
+    fun setFloatProfile(id: String) {
+        val profile = id.lowercase(Locale.US)
+        if (profile !in ControlProtocol.FLOAT_PROFILE_NAMES) {
+            return
+        }
+        _uiState.update { it.copy(floatProfile = profile) }
+        sendCommand(ControlProtocol.FLOAT_PROFILE + profile)
+    }
+
+    /**
+     * Scene choice, sent before a session. The headset stores it as the launch
+     * parameter, so picking a scene and pressing 启动 is the whole loop.
+     */
+    fun selectScene(id: String) {
+        val scene = id.lowercase(Locale.US)
+        if (scene !in ControlProtocol.SCENE_LABELS) {
+            return
+        }
+        sendCommand(ControlProtocol.SCENE_PREFIX + scene)
+    }
+
+    /** Leaves the browser scene and returns the headset to its console app. */
+    fun exitScene() {
+        sendCommand("exit")
+    }
+
+    /** Full exit: leave the scene, end any session, then go to the system home. */
+    fun exitSystem() {
+        if (_uiState.value.control.session) {
+            sendCommand("stop")
+        }
+        sendCommand("exit")
+        sendCommand("home")
+    }
+
+    /**
+     * Gaze dwell switch. It is on by default because a supine patient has no
+     * pointer; turning it off leaves only the tablet able to answer.
+     */
+    fun setGazeDwell(enabled: Boolean) {
+        _uiState.update { it.copy(gazeDwell = enabled) }
+        sendCommand(ControlProtocol.GAZE_DWELL + if (enabled) "on" else "off")
+    }
+
+    /** Breathing layer on the heave: the cheapest strong buoyancy cue. */
+    fun setBreathEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(breathEnabled = enabled) }
+        sendCommand(ControlProtocol.FLOAT_BREATH + if (enabled) "on" else "off")
+    }
+
+    /** Sit-up ramp length; slower reads as gentler for a frail patient. */
+    fun setAnimDuration(millis: Int) {
+        val clamped = millis.coerceIn(4000, 20000)
+        _uiState.update { it.copy(animDurationMs = clamped) }
+        sendCommand(ControlProtocol.ANIM_DURATION + clamped)
+    }
+
+    fun openSus() {
+        _uiState.update { it.copy(susOpen = true) }
+        sendCommand("sus:open")
+    }
+
+    fun closeSus() {
+        _uiState.update { it.copy(susOpen = false) }
+        sendCommand("sus:close")
+    }
+
     fun recalibrate() {
         sendCommand("calibrate")
+    }
+
+    /** Posture branch: only meaningful while the session runs in posture mode. */
+    fun postureLower() {
+        sendCommand(ControlProtocol.POSTURE_LOWER)
+    }
+
+    fun postureRise() {
+        sendCommand(ControlProtocol.POSTURE_RISE)
+    }
+
+    fun postureStop() {
+        sendCommand(ControlProtocol.POSTURE_STOP)
     }
 
     fun preview() {
         sendCommand("preview")
     }
 
-    fun openSus() {
-        sendCommand("sus:open")
-    }
-
-    fun closeSus() {
-        sendCommand("sus:close")
-    }
-
-    fun susPrev() {
-        sendCommand("sus:prev")
-    }
-
-    fun susNext() {
-        sendCommand("sus:next")
-    }
-
-    /** Operator answers the headset's current SUS item when the patient cannot. */
-    fun susAnswer(value: Int) {
-        if (value in 1..5) {
-            sendCommand(ControlProtocol.SUS_ANSWER + value)
-        }
-    }
-
     fun toggleAudio() {
         sendCommand("audio:toggle")
-    }
-
-    fun postureRise() {
-        sendCommand("posture:rise")
-    }
-
-    fun postureLower() {
-        sendCommand("posture:lower")
-    }
-
-    fun postureStop() {
-        sendCommand("posture:stop")
     }
 
     fun sendCommand(command: String) {
@@ -608,12 +309,7 @@ class ControlViewModel(application: Application) :
         }
         ble.sendCommand(normalized)
         _uiState.update { state ->
-            val control = if (normalized.startsWith("scene:")) {
-                state.control.copy(scene = normalized.removePrefix("scene:"))
-            } else {
-                state.control
-            }
-            state.copy(control = control, error = null, notice = "命令已发送")
+            state.copy(error = null, notice = "命令已发送")
         }
     }
 
@@ -634,7 +330,6 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onReconnecting(attempt: Int, max: Int) {
-        cancelViewRequest()
         _uiState.update {
             it.copy(
                 reconnectAttempt = attempt,
@@ -658,7 +353,6 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlBusy(reason: String) {
-        cancelViewRequest()
         _uiState.update {
             it.copy(
                 controlGranted = false,
@@ -670,8 +364,6 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlLost(reason: String) {
-        // 租约丢失：只取消本地采样，俯仰目标按契约保持在头显侧，不回正。
-        cancelViewRequest()
         _uiState.update {
             it.copy(
                 controlGranted = false,
@@ -682,19 +374,10 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onDisconnected() {
-        cancelViewRequest()
-        lastViewPitchSent = Float.NaN
-        eyeHeightJob?.cancel()
-        eyeHeightJob = null
         lastPoseAt = 0L
-        // A reconnected headset may have restarted; let the next tap write the
-        // height again instead of trusting our last sent value.
-        lastEyeHeightSent = Float.NaN
-        eyeHeightSynced = false
         _uiState.update {
             it.copy(
                 controlGranted = false,
-                eyeHeightConfirmed = false,
                 poseStale = true,
                 rssi = null,
                 notice = null
@@ -711,48 +394,34 @@ class ControlViewModel(application: Application) :
         // The patient stopped, the headset left the session, or a calibration
         // now owns the pose. The page resets its pitch target to 0 on both
         // transitions, so only the local request is dropped here.
-        val resetView = !state.session || state.calibrating
-        if (resetView) {
-            cancelViewRequest()
-        }
-        val syncEyeHeight = !eyeHeightSynced && lastEyeHeightSent.isNaN()
-        if (syncEyeHeight) {
-            eyeHeightSynced = true
+        // Session clock: starts on the rising edge, stops and clears on the
+        // falling edge, so the readout never carries time across sessions.
+        if (state.session && sessionStartedAt == 0L) {
+            sessionStartedAt = SystemClock.elapsedRealtime()
+        } else if (!state.session) {
+            sessionStartedAt = 0L
         }
         _uiState.update { current ->
-            // Once the headset readback reaches the requested degree the local
-            // request is settled and the slider follows the headset again.
-            val pendingPitch = if (resetView) {
-                null
-            } else {
-                current.viewPitchRequested?.takeIf {
-                    abs(state.viewPitch - it) > VIEW_READBACK_EPSILON
-                }
-            }
-            val pendingYaw = if (resetView) {
-                null
-            } else {
-                current.viewYawRequested?.takeIf {
-                    abs(state.viewYaw - it) > VIEW_READBACK_EPSILON
-                }
-            }
-            // A settled axis follows the headset again; an axis with no
-            // request never fights the readback.
-            if (pendingPitch == null) desiredPitch = state.viewPitch
-            if (pendingYaw == null) desiredYaw = state.viewYaw
-            val next = current.copy(
+            current.copy(
                 control = state,
-                viewPitchRequested = pendingPitch,
-                viewYawRequested = pendingYaw
+                // While a session runs the headset is authoritative for both
+                // buoyancy and mode, so a rejected command cannot leave the
+                // panel showing something that is not happening.
+                sessionMode = if (state.session && state.postureMode) {
+                    SessionMode.POSTURE
+                } else if (state.session) {
+                    SessionMode.FLOAT
+                } else {
+                    current.sessionMode
+                },
+                floatLevel = state.floatLevel,
+                floatProfile = state.floatProfile,
+                sessionElapsedMs = if (sessionStartedAt == 0L) {
+                    0L
+                } else {
+                    SystemClock.elapsedRealtime() - sessionStartedAt
+                }
             )
-            if (syncEyeHeight) {
-                next.copy(
-                    eyeHeightRequested = state.eyeHeight,
-                    eyeHeightConfirmed = true
-                )
-            } else {
-                next
-            }
         }
     }
 
@@ -761,18 +430,6 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onStatus(raw: String) {
-        if (raw.startsWith(OK_PREFIX + ControlProtocol.SETTINGS_EYE_HEIGHT)) {
-            val confirmedValue = ControlProtocol.parseEyeHeight(raw.removePrefix(OK_PREFIX))
-            _uiState.update { state ->
-                val matches = confirmedValue != null &&
-                    abs(confirmedValue - state.eyeHeightRequested) < 0.005f
-                state.copy(
-                    notice = "命令已生效",
-                    eyeHeightConfirmed = matches || state.eyeHeightConfirmed
-                )
-            }
-            return
-        }
         when {
             raw.startsWith(OK_PREFIX) -> _uiState.update { it.copy(notice = "头显已接收指令") }
             raw == ControlProtocol.STATUS_CONTROL_RELEASED ->
@@ -786,11 +443,6 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onCleared() {
-        cancelViewRequest()
-        recordingClock?.cancel()
-        recordingGuard?.cancel()
-        eyeHeightJob?.cancel()
-        eyeHeightJob = null
         ble.close()
         super.onCleared()
     }
@@ -799,44 +451,22 @@ class ControlViewModel(application: Application) :
         val now = SystemClock.elapsedRealtime()
         val stale = lastPoseAt == 0L || now - lastPoseAt > POSE_STALE_MS
         _uiState.update { state ->
-            if (state.poseStale == stale) state else state.copy(poseStale = stale)
+            val elapsed = if (sessionStartedAt == 0L) 0L else now - sessionStartedAt
+            if (state.poseStale == stale && state.sessionElapsedMs == elapsed) {
+                state
+            } else {
+                state.copy(poseStale = stale, sessionElapsedMs = elapsed)
+            }
         }
     }
-
-    /**
-     * `view:orient:<yaw>,<pitch>`: absolute whole degrees, both axes in one
-     * command so a drag never leaves one channel behind. No commas as
-     * decimal separators, no spaces.
-     */
-    private fun orientationCommand(yaw: Float, pitch: Float): String =
-        ControlProtocol.VIEW_ORIENT +
-            String.format(Locale.US, "%d,%d", yaw.roundToInt(), pitch.roundToInt())
 
     private companion object {
         const val TICK_MS = 500L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
-        const val RECORDING_CLOCK_MS = 500L
-        const val RECORDING_START_TIMEOUT_MS = 4_000L
-        const val RECORDING_SAVE_TIMEOUT_MS = 30_000L
 
         const val PREFERENCES = "quiet-shore-control"
         const val LAST_DEVICE_KEY = "lastDeviceAddress"
-
-        /** Collapse slider samples: only the newest pair survives a burst. */
-        const val VIEW_DEBOUNCE_MS = 70L
-
-        /** Contract: at most ~10 Hz while dragging, nothing while idle. */
-        const val VIEW_MIN_INTERVAL_MS = 100L
-
-        /** The wire carries whole degrees, so a half-degree readback is settled. */
-        const val VIEW_READBACK_EPSILON = 0.51f
-
-        val VIEW_PITCH_MAX_DEG: Int = ControlProtocol.VIEW_PITCH_MAX_DEG.toInt()
-        val VIEW_YAW_MAX_DEG: Int = ControlProtocol.VIEW_YAW_MAX_DEG.toInt()
-
-        /** Collapse fast stepper taps into a single eye height write. */
-        const val EYE_HEIGHT_DEBOUNCE_MS = 300L
 
         /** Headset acknowledgement prefix for accepted commands. */
         const val OK_PREFIX = "OK:"

@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.os.Looper
 import android.os.ParcelUuid
 import android.provider.Settings
+import android.util.Log
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
@@ -120,6 +121,7 @@ class BleController(
 
     private val scanWindow = Runnable {
         val wasAuto = autoScan
+        Log.i(TAG, "scan window expired (auto=$wasAuto, pending=$scanConnectPending)")
         stopScan()
         if (wasAuto && !manualClose) {
             autoScan = false
@@ -145,10 +147,24 @@ class BleController(
     }
 
     fun startScan() {
+        Log.i(TAG, "startScan (phase=${phase.name})")
         manualClose = false
         reconnectAttempts = 0
         autoScan = false
         cancelReconnect()
+        // A search must never lose to an earlier attempt. Before the operator
+        // used to have to press 取消 first, because a pending connect or a live
+        // manager from the auto-retry kept the radio busy and the new scan's
+        // connect silently did nothing.
+        cancelPendingConnect()
+        cancelClaimTimeout()
+        cancelHandshakeTimeout()
+        awaitingControl = false
+        scanConnectPending = false
+        closeManager()
+        if (phase != BlePhase.SCANNING) {
+            setPhase(BlePhase.IDLE)
+        }
         startScanInternal()
     }
 
@@ -201,6 +217,7 @@ class BleController(
                 if (!serviceMatch && !nameMatch) {
                     return
                 }
+                Log.i(TAG, "scan match $address (pending=$scanConnectPending)")
                 // One headset, one pad: connect the moment the advertised
                 // QuietShore device appears instead of making the operator
                 // pick it from a list.
@@ -243,6 +260,7 @@ class BleController(
         }
         scanCallback = callback
         setPhase(BlePhase.SCANNING)
+        Log.i(TAG, "scan started")
         mainHandler.postDelayed(scanWindow, SCAN_WINDOW_MS)
     }
 
@@ -276,10 +294,15 @@ class BleController(
     }
 
     fun connect(address: String) {
+        Log.i(TAG, "connect($address)")
         manualClose = false
         reconnectAttempts = 0
         autoScan = false
         cancelReconnect()
+        // Same reasoning as startScan: a fresh manual connect supersedes any
+        // previous attempt instead of queueing behind it.
+        cancelPendingConnect()
+        closeManager()
         connectInternal(address)
     }
 
@@ -314,6 +337,7 @@ class BleController(
         manager = next
 
         setPhase(BlePhase.CONNECTING)
+        Log.i(TAG, "enqueue connect for $address")
         try {
             val request = next.connect(device)
                 .timeout(CONNECT_TIMEOUT_MS)
@@ -638,6 +662,7 @@ class BleController(
         if (phase == next) {
             return
         }
+        Log.i(TAG, "phase ${phase.name} -> ${next.name}")
         phase = next
         if (next == BlePhase.READY) {
             startHeartbeat()
@@ -662,6 +687,7 @@ class BleController(
     }
 
     private fun onConnectFailed(code: Int) {
+        Log.i(TAG, "onConnectFailed code=$code phase=${phase.name}")
         if (phase == BlePhase.READY || phase == BlePhase.AUTHENTICATING) {
             return
         }
@@ -885,6 +911,7 @@ class BleController(
     private class InFlightCommand(val command: String, val sentAt: Long)
 
     private companion object {
+        const val TAG = "QuietShoreBle"
         const val HEARTBEAT_INTERVAL_MS = 5_000L
         const val HEARTBEAT_TIMEOUT_MS = 15_000L
         const val SCAN_WINDOW_MS = 12_000L

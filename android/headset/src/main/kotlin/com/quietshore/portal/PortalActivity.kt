@@ -35,8 +35,7 @@ import android.widget.TextView
  */
 class PortalActivity : Activity() {
     private enum class Page(val label: String, val description: String) {
-        HOME("控制台", "即将进入的场景与训练入口"),
-        SCENES("场景", "选择独立使用时的场景"),
+        HOME("静岸", "请舒适躺好，等待操作员提示"),
         SETTINGS("设置", "启动偏好与连接"),
         HELP("帮助", "使用方式与控制权"),
         SUS("SUS 量表", "系统可用性评分")
@@ -50,6 +49,9 @@ class PortalActivity : Activity() {
     )
 
     private companion object {
+        /** One auto-launch per process: a recreate must not fight the browser. */
+        var autoLaunchedThisProcess = false
+        const val AUTO_LAUNCH_DELAY_MS = 1500L
         val BG_TOP: Int = 0xFFF3EFE6.toInt()
         val BG_BOTTOM: Int = 0xFFE8E1D4.toInt()
         val SURFACE: Int = 0xFFECE6DA.toInt()
@@ -61,7 +63,9 @@ class PortalActivity : Activity() {
         val DANGER: Int = 0xFFA34D3D.toInt()
         val OK: Int = 0xFF486B58.toInt()
 
-        val NAV_PAGES = listOf(Page.HOME, Page.SCENES, Page.SETTINGS, Page.HELP)
+        // The headset is a status surface, not a console: every action lives on
+        // the tablet, so only the home page remains.
+        val NAV_PAGES = listOf(Page.HOME)
 
         val SUS_OPTION_LABELS = listOf(
             "非常不同意",
@@ -85,10 +89,7 @@ class PortalActivity : Activity() {
         )
 
         val SCENES = listOf(
-            SceneChoice("landscape", "湖畔晨岸", "水面、芦苇与清晨的光", 0xFF6F8B7A.toInt()),
-            SceneChoice("ward", "训练病区", "熟悉病房与床旁设备", 0xFF7C8578.toInt()),
-            SceneChoice("bathroom", "病房卫生间", "马桶居中，扶手与呼叫绳在伸手可及处", 0xFF8A9B86.toInt()),
-            SceneChoice("lab", "空间实验", "空间 UI 与边界练习", 0xFF6A7F8C.toInt())
+            SceneChoice("landscape", "湖畔晨岸", "水面、芦苇与清晨的光", 0xFF6F8B7A.toInt())
         )
     }
 
@@ -138,6 +139,7 @@ class PortalActivity : Activity() {
         super.onCreate(savedInstanceState)
         settings = HeadsetSettings.read(this)
         PortalActions.startServer(this)
+        autoLaunchTraining()
         window.statusBarColor = BG_TOP
         window.navigationBarColor = BG_TOP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -177,7 +179,6 @@ class PortalActivity : Activity() {
         "sus" -> Page.SUS
         "settings" -> Page.SETTINGS
         "home" -> Page.HOME
-        "scenes" -> Page.SCENES
         else -> null
     }
 
@@ -223,10 +224,10 @@ class PortalActivity : Activity() {
             setPadding(dp(24), dp(12), dp(18), dp(10))
         }
         val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        titleText = label("控制台", 27f, TEXT, Typeface.NORMAL, 0.04f).apply {
+        titleText = label("静岸", 27f, TEXT, Typeface.NORMAL, 0.04f).apply {
             typeface = Typeface.create("serif", Typeface.NORMAL)
         }
-        subtitleText = label("开始训练与连接状态", 12f, MUTED, Typeface.NORMAL, 0.01f).apply {
+        subtitleText = label("请舒适躺好，等待操作员提示", 12f, MUTED, Typeface.NORMAL, 0.01f).apply {
             setPadding(0, dp(2), 0, 0)
         }
         titles.addView(titleText)
@@ -244,6 +245,17 @@ class PortalActivity : Activity() {
         header.addView(prevPage, LinearLayout.LayoutParams(dp(38), dp(38)))
         header.addView(pageCount, LinearLayout.LayoutParams(dp(54), dp(38)))
         header.addView(nextPage, LinearLayout.LayoutParams(dp(38), dp(38)))
+        val settingsButton = label("设置", 13f, TEXT, Typeface.BOLD, 0.04f).apply {
+            gravity = Gravity.CENTER
+            background = rounded(SURFACE, 2, BORDER, 1)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "设置"
+            setOnClickListener { showPage(Page.SETTINGS) }
+        }
+        header.addView(settingsButton, LinearLayout.LayoutParams(dp(52), dp(38)).apply {
+            marginStart = dp(8)
+        })
         val homeButton = ImageView(this).apply {
             setImageDrawable(ExitIconDrawable(DANGER))
             setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -272,29 +284,9 @@ class PortalActivity : Activity() {
             0,
             1f
         ))
-
-        nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(4), dp(16), dp(10))
-        }
-        for (page in NAV_PAGES) {
-            val item = label(page.label, 16f, MUTED, Typeface.BOLD, 0f).apply {
-                gravity = Gravity.CENTER
-                minHeight = dp(44)
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { showPage(page) }
-            }
-            nav.addView(item, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                marginStart = dp(3)
-                marginEnd = dp(3)
-            })
-        }
-        root.addView(nav, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        // No bottom tabs: the only navigation is the settings and exit icons in
+        // the header. A patient-facing device should not look like a console.
+        nav = LinearLayout(this).apply { visibility = View.GONE }
         return root
     }
 
@@ -339,7 +331,6 @@ class PortalActivity : Activity() {
     }
 
     private fun internalPageCount(page: Page): Int = when (page) {
-        Page.SCENES -> (SCENES.size + 3) / 4
         Page.SUS -> SUS_STATEMENTS.size
         else -> 1
     }
@@ -359,7 +350,6 @@ class PortalActivity : Activity() {
         val page = currentPage
         val body = when (page) {
             Page.HOME -> buildHomePage()
-            Page.SCENES -> buildScenesPage()
             Page.SETTINGS -> buildSettingsPage()
             Page.HELP -> buildHelpPage()
             Page.SUS -> buildSusPage()
@@ -374,7 +364,7 @@ class PortalActivity : Activity() {
         titleText.text = page.label
         subtitleText.text = page.description
         val count = internalPageCount(page)
-        val showPager = page == Page.SCENES || count > 1
+        val showPager = count > 1
         val pagerVisibility = if (showPager) View.VISIBLE else View.GONE
         prevPage.visibility = pagerVisibility
         pageCount.visibility = pagerVisibility
@@ -402,22 +392,20 @@ class PortalActivity : Activity() {
     }
 
     private fun buildHomePage(): View {
-        val page = pageColumn()
-        val choice = sceneChoice(settings.sceneId)
-        val sceneCard = sectionCard().apply {
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { showPage(Page.SCENES) }
+        // Calm single-column composition: scene, pairing state, and the patient
+        // instruction. Nothing to tap, so the layout is centred instead of
+        // stacking controls from the top.
+        val page = pageColumn().apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(28), dp(18), dp(28), dp(24))
         }
+        val choice = SCENES.first()
+        val sceneCard = sectionCard()
         val sceneHead = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         sceneHead.addView(label("即将进入", 11f, ACCENT, Typeface.BOLD, 0.12f))
-        sceneHead.addView(
-            label("更换 ›", 12f, ACCENT, Typeface.NORMAL, 0f).apply { gravity = Gravity.END },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
         sceneCard.addView(sceneHead)
         sceneCard.addView(
             View(this).apply { setBackgroundColor(choice.tint) },
@@ -453,15 +441,11 @@ class PortalActivity : Activity() {
         homeStatusCard = status
         page.addView(status)
 
-        val enter = actionButton("进入训练", true) { launchTraining() }
-        enterButton = enter
-        page.addView(enter, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(60)
-        ).apply { topMargin = dp(18) })
+        // No button: the page opens by itself and the patient's only interaction
+        // is the one gesture Firefox Reality requires to enter immersive mode.
         homeHint = label(
             if (PortalActions.isFirefoxAvailable(this)) {
-                "请看向按钮，按下右侧中间确认键"
+                "请调整到舒适姿势，等待操作员提示；页面会自动打开"
             } else {
                 "未检测到 Firefox Reality，无法进入训练"
             },
@@ -471,76 +455,12 @@ class PortalActivity : Activity() {
             0f
         ).apply {
             gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, dp(14))
+            setPadding(0, dp(18), 0, dp(14))
         }
         page.addView(homeHint)
 
         return page
     }
-
-    private fun buildScenesPage(): View {
-        val page = pageColumn()
-        val lockedByTablet = PortalStatus.isControlActive()
-        val pageChoices = SCENES.drop(internalIndex * 4).take(4)
-        for ((rowIndex, chunk) in pageChoices.chunked(2).withIndex()) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            for (choice in chunk) {
-                val selected = choice.id == settings.sceneId
-                val card = sceneCard(choice, selected)
-                card.isEnabled = !lockedByTablet
-                card.alpha = if (lockedByTablet) 0.55f else 1f
-                if (!lockedByTablet) {
-                    card.setOnClickListener {
-                        settings = settings.copy(sceneId = choice.id)
-                        HeadsetSettings.save(this, settings)
-                        showPage(Page.SCENES)
-                    }
-                }
-                row.addView(card, LinearLayout.LayoutParams(0, dp(135), 1f).apply {
-                    marginStart = dp(5)
-                    marginEnd = dp(5)
-                })
-            }
-            if (chunk.size == 1) {
-                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-            }
-            page.addView(row, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { if (rowIndex > 0) topMargin = dp(10) })
-        }
-        return page
-    }
-
-    private fun sceneCard(choice: SceneChoice, selected: Boolean): LinearLayout =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(12))
-            background = rounded(
-                if (selected) 0xFFF4E9E2.toInt() else SURFACE,
-                4,
-                if (selected) ACCENT else BORDER,
-                if (selected) 2 else 1
-            )
-            isClickable = true
-            isFocusable = true
-            addView(
-                View(this@PortalActivity).apply { setBackgroundColor(choice.tint) },
-                LinearLayout.LayoutParams(dp(28), dp(3)).apply { bottomMargin = dp(10) }
-            )
-            addView(label(choice.name, 20f, TEXT, Typeface.BOLD, 0.02f).apply {
-                typeface = Typeface.create("serif", Typeface.BOLD)
-            })
-            addView(label(choice.tagline, 12f, MUTED, Typeface.NORMAL, 0f).apply {
-                setPadding(0, dp(5), 0, 0)
-            })
-            if (selected) {
-                addView(label("已选", 11f, ACCENT, Typeface.BOLD, 0.08f).apply {
-                    setPadding(0, dp(8), 0, 0)
-                })
-            }
-        }
 
     private fun buildSettingsPage(): View {
         // Three action columns + a full-width about strip. The previous
@@ -772,6 +692,30 @@ class PortalActivity : Activity() {
             .show()
     }
 
+    /**
+     * Opens the training page without waiting for a click.
+     *
+     * The headset has no in-app buttons by design: the operator drives
+     * everything from the tablet, and the patient's only interaction is the
+     * gesture Firefox Reality itself requires. The static guard keeps a
+     * recreate/rotation from launching twice and fighting the browser.
+     */
+    private fun autoLaunchTraining() {
+        if (autoLaunchedThisProcess || !PortalActions.isFirefoxAvailable(this)) {
+            return
+        }
+        autoLaunchedThisProcess = true
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            if (isFinishing || isDestroyed) {
+                return@postDelayed
+            }
+            // Never steal the foreground while a tablet is mid-session.
+            if (!PortalStatus.isControlActive()) {
+                PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())
+            }
+        }, AUTO_LAUNCH_DELAY_MS)
+    }
+
     private fun launchTraining() {
         if (!PortalActions.isFirefoxAvailable(this)) {
             warnIfFirefoxMissing()
@@ -905,12 +849,6 @@ class PortalActivity : Activity() {
     } catch (error: Exception) {
         "unknown"
     }
-
-    private fun sceneChoice(id: String): SceneChoice =
-        SCENES.firstOrNull { it.id == id } ?: SCENES.first()
-
-    private fun sceneLabel(id: String): String =
-        SCENES.firstOrNull { it.id == id }?.name ?: SCENES[0].name
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()

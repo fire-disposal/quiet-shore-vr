@@ -2,7 +2,6 @@ package com.quietshore.control.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,9 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,38 +35,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.Scenes
-import com.quietshore.control.model.ViewMode
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
-import com.quietshore.control.ui.components.ControlRail
+import com.quietshore.control.ui.components.ControlPanel
 import com.quietshore.control.ui.components.LoadingDots
-import com.quietshore.control.ui.components.RecordingChip
-import com.quietshore.control.ui.components.RecordingNotice
+import com.quietshore.control.ui.components.SceneMirror
+import com.quietshore.control.ui.components.ScenePage
 import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.StatusPanel
-import com.quietshore.control.ui.components.ViewModeToggle
-import com.quietshore.control.ui.components.phaseColor
-import com.quietshore.control.ui.components.phaseLabel
 import com.quietshore.control.ui.theme.QuietPalette
 
 @Composable
 fun ControlScreen(
     state: ControlUiState,
-    actions: ControlActions,
-    viewport: @Composable (Modifier) -> Unit
+    actions: ControlActions
 ) {
-    // Keep the WebView alive when moving between the docked layout and the
-    // fullscreen patient view; recreating it would reload the 3D scene.
-    val viewportContent = remember {
-        movableContentOf<Modifier> { modifier -> viewport(modifier) }
-    }
-
-    if (state.fullscreen) {
-        FullscreenPatientView(state = state, actions = actions, viewport = viewportContent)
-        return
-    }
-
     val offline = state.phase == BlePhase.DISCONNECTED ||
         state.phase == BlePhase.ERROR ||
         state.phase == BlePhase.IDLE
@@ -89,24 +69,46 @@ fun ControlScreen(
         val compact = maxWidth < 1000.dp
         var controlsOpen by rememberSaveable { mutableStateOf(!compact) }
         var infoOpen by rememberSaveable { mutableStateOf(false) }
+        // The mirror is mounted only while open: a closed mirror should cost
+        // nothing, not keep a renderer alive behind the panel.
+        var mirrorOpen by rememberSaveable { mutableStateOf(false) }
+        // Two operator pages: live control, and scene choice.
+        var scenePage by rememberSaveable { mutableStateOf(false) }
         val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
         // Banners and notices live in the same top band as the rail; inset
         // them so the rail cannot cover their recovery actions.
         val railOverlayInset = if (controlsOpen) railWidth + 14.dp else 0.dp
 
         Box(Modifier.fillMaxSize()) {
-            viewportContent(Modifier.fillMaxSize())
+            // Bottom layer: the scene mirror. Every control surface is drawn
+            // after it, so the top-left status panel is never covered.
+            if (mirrorOpen) {
+                SceneMirror(
+                    state = state,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(
+                            start = if (compact) 10.dp else 16.dp,
+                            top = if (compact) 78.dp else 82.dp,
+                            end = railOverlayInset + 14.dp,
+                            bottom = 14.dp
+                        )
+                        .clip(RoundedCornerShape(14.dp))
+                )
+            }
 
             ControlTopBar(
                 state = state,
                 compact = compact,
                 controlsOpen = controlsOpen,
                 infoOpen = infoOpen,
+                mirrorOpen = mirrorOpen,
+                scenePage = scenePage,
                 onToggleControls = { controlsOpen = !controlsOpen },
                 onToggleInfo = { infoOpen = !infoOpen },
-                onDisconnect = actions.onDisconnect,
-                onStartRecording = actions.onStartRecording,
-                onStopRecording = actions.onStopRecording
+                onToggleMirror = { mirrorOpen = !mirrorOpen },
+                onToggleScenePage = { scenePage = !scenePage },
+                onDisconnect = actions.onDisconnect
             )
 
             if (infoOpen) {
@@ -148,40 +150,28 @@ fun ControlScreen(
             }
 
             if (controlsOpen) {
-                ControlRail(
-                    state = state,
-                    actions = actions,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                        .width(railWidth)
-                        .fillMaxHeight()
-                )
-            }
-
-            // Patient/global mirror mode plus the fullscreen entry. This is
-            // the only way into the headset view besides tapping it there.
-            ViewportControls(
-                state = state,
-                onViewModeChange = actions.onViewModeChange,
-                onFullscreen = { actions.onFullscreenChange(true) },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 14.dp)
-            )
-
-            RecordingNotice(
-                state = state,
-                onShare = actions.onShareRecording,
-                onDismiss = actions.onDismissRecording,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(
-                        top = (if (compact) 78.dp else 82.dp) +
-                            if (reconnecting || offline) 58.dp else 0.dp,
-                        end = railOverlayInset
+                if (scenePage) {
+                    ScenePage(
+                        selectedScene = state.control.scene,
+                        sessionRunning = state.control.session,
+                        enabled = state.phase == BlePhase.READY,
+                        onSelect = actions.onSceneSelect,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
+                            .width(railWidth)
                     )
-            )
+                } else {
+                    ControlPanel(
+                        state = state,
+                        actions = actions,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
+                            .width(railWidth)
+                    )
+                }
+            }
 
             // Read-only heading readout: a corner badge, never a touch target.
             AngleGauge(
@@ -189,124 +179,8 @@ fun ControlScreen(
                 stale = state.poseStale,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 84.dp)
+                    .padding(start = 14.dp, bottom = 14.dp)
             )
-        }
-    }
-}
-
-@Composable
-private fun ViewportControls(
-    state: ControlUiState,
-    onViewModeChange: (ViewMode) -> Unit,
-    onFullscreen: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        ViewModeToggle(
-            selected = state.viewMode,
-            onSelect = onViewModeChange,
-            modifier = Modifier.width(300.dp)
-        )
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = QuietPalette.Surface.copy(alpha = 0.86f),
-            contentColor = QuietPalette.TextPrimary
-        ) {
-            TextButton(onClick = onFullscreen) {
-                Text("全屏", color = QuietPalette.TextPrimary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FullscreenPatientView(
-    state: ControlUiState,
-    actions: ControlActions,
-    viewport: @Composable (Modifier) -> Unit
-) {
-    BackHandler { actions.onFullscreenChange(false) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(QuietPalette.Viewport)
-            .safeDrawingPadding()
-    ) {
-        viewport(Modifier.fillMaxSize())
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OverlayPill(
-                label = Scenes.label(state.control.scene),
-                accent = QuietPalette.Primary
-            )
-            OverlayPill(
-                label = phaseLabel(state.phase),
-                accent = phaseColor(state.phase)
-            )
-        }
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(10.dp),
-            shape = RoundedCornerShape(50),
-            color = QuietPalette.Background.copy(alpha = 0.92f),
-            contentColor = QuietPalette.TextPrimary
-        ) {
-            Row(
-                modifier = Modifier.padding(start = 8.dp, end = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RecordingChip(
-                    state = state,
-                    onStart = actions.onStartRecording,
-                    onStop = actions.onStopRecording
-                )
-                TextButton(onClick = { actions.onFullscreenChange(false) }) {
-                    Text("退出全屏", color = QuietPalette.TextPrimary)
-                }
-            }
-        }
-        AngleGauge(
-            pose = state.pose,
-            stale = state.poseStale,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 78.dp, end = 14.dp)
-        )
-        ViewModeToggle(
-            selected = state.viewMode,
-            onSelect = actions.onViewModeChange,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(18.dp)
-                .width(320.dp)
-        )
-        RecordingNotice(
-            state = state,
-            onShare = actions.onShareRecording,
-            onDismiss = actions.onDismissRecording,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 16.dp)
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(18.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            PoseFreshness(stale = state.poseStale || state.pose == null)
         }
     }
 }
@@ -317,11 +191,13 @@ private fun ControlTopBar(
     compact: Boolean,
     controlsOpen: Boolean,
     infoOpen: Boolean,
+    mirrorOpen: Boolean,
+    scenePage: Boolean,
     onToggleControls: () -> Unit,
     onToggleInfo: () -> Unit,
-    onDisconnect: () -> Unit,
-    onStartRecording: () -> Unit,
-    onStopRecording: () -> Unit
+    onToggleMirror: () -> Unit,
+    onToggleScenePage: () -> Unit,
+    onDisconnect: () -> Unit
 ) {
     Surface(
         modifier = Modifier
@@ -376,13 +252,14 @@ private fun ControlTopBar(
                 )
             }
             Spacer(Modifier.weight(1f))
-            RecordingChip(
-                state = state,
-                onStart = onStartRecording,
-                onStop = onStopRecording
-            )
+            TextButton(onClick = onToggleScenePage) {
+                Text(if (scenePage) "控制" else "场景", color = QuietPalette.TextPrimary)
+            }
+            TextButton(onClick = onToggleMirror) {
+                Text(if (mirrorOpen) "收镜像" else "镜像", color = QuietPalette.TextPrimary)
+            }
             TextButton(onClick = onToggleControls) {
-                Text(if (controlsOpen) "收起" else "控制", color = QuietPalette.TextPrimary)
+                Text(if (controlsOpen) "收起" else "面板", color = QuietPalette.TextPrimary)
             }
             TextButton(
                 onClick = onDisconnect,

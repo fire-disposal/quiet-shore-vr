@@ -1,4 +1,4 @@
-import { normalizeSceneId, type SceneId } from '../ui/scene-select';
+import { readStoredScale } from './quality-memory';
 
 interface Bootstrap {
   scene?: string | null;
@@ -32,8 +32,10 @@ export interface AppConfig {
   xrScale: number;
   eyeHeight: number;
   lang: 'zh' | 'en';
-  initialScene: SceneId | null;
-  spin: boolean;
+  /** Buoyancy profile from `?float=a|b|c`; the in-room choice overrides it. */
+  floatProfile: string | null;
+  /** Scene id from the launch bootstrap; falls back to the shipped scene. */
+  initialScene: string | null;
 }
 
 export function readConfig(search: string): AppConfig {
@@ -45,11 +47,14 @@ export function readConfig(search: string): AppConfig {
   const scene = bootstrap.scene ?? params.get('scene');
   const scaleParam = params.get('scale');
   const requestedScale = scaleParam === null ? Number.NaN : Number(scaleParam);
-  const xrScale = Number.isFinite(requestedScale)
+  const explicitScale = Number.isFinite(requestedScale);
+  // Presence beats sharpness on this headset: 2160x3840 at 1.0 keeps 72 Hz
+  // reachable, and a dropped frame is far more noticeable than soft edges.
+  const fallback = quality === 'low' ? 0.9 : 1.0;
+  const stored = explicitScale ? null : readStoredScale();
+  const xrScale = explicitScale
     ? Math.min(1.5, Math.max(0.6, requestedScale))
-    : quality === 'low'
-      ? 0.9
-      : 1.25;
+    : Math.min(fallback, stored ?? fallback);
   return {
     highQuality: quality !== 'low',
     // Visual-first default: keep XR AA and native scale. Performance profiles
@@ -60,7 +65,8 @@ export function readConfig(search: string): AppConfig {
     skipCalibration: bootstrap.skipCalibration ?? params.get('nocal') === '1',
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     lang,
-    initialScene: normalizeSceneId(scene),
-    spin: params.get('spin') === '1'
+    floatProfile: params.get('float'),
+    /** Scene the tablet picked; null means "whatever the registry ships". */
+    initialScene: scene
   };
 }
