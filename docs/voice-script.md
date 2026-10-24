@@ -125,13 +125,13 @@
 - `npm run build` 把 `voice/` 复制到 `dist/voice/`；Gradle 再复制进头显 APK 的 `assets/voice/`。
 - 回环服务新增 `/voice/<set>/<id>.mp3`（`audio/mpeg`，长缓存）；页面按需 fetch 并解码。
 - 只有头显包带音频；平板包不带，镜像页可播放但默认静音。
-- 体积：两套共 64 个文件，约 1.6 MB（48 kbps）。页面启动后在空闲时预解码 11 句。
+- 体积：两套共 64 个文件，约 1.2 MB（男 593 KB / 女 675 KB，48 kbps）。页面启动后在空闲时预解码 11 句。
 
 ## 6 TTS 生成（管线）
 
 - 单一来源 `voice/lines.json`（id / group / text / trigger），改一句用 `--only` 增量重算。
 - 音色：男声 `zh_male_taocheng_uranus_bigtts`（仿真大赛最终片同款），女声 `zh_female_vv_uranus_bigtts`（豆包默认）。
-- 规格：mono 24 kHz、MP3 48 kbps、`speech_rate -5`（≈0.95×）、`loudness_rate 0`。
+- 规格：服务端 PCM → 本地一次编码 mono 24 kHz / MP3 48 kbps；`loudnorm I=-18 TP=-3 LRA=11`（实测 −18 dBFS 均值，两套差 ≤1.5 dB）；`speech_rate -5`（≈0.95×）。
 - 命令：
 
 ```bash

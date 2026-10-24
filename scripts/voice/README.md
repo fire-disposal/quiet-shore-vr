@@ -40,4 +40,8 @@ uv run --with websockets python scripts/voice/build.py --only v-safe-1,v-relax-2
 
 ## 规格
 
-mono 24 kHz，MP3 48 kbps，`speech_rate -5`（约 0.95×），`loudness_rate 0`。改这些值属于全局变更，两套一起重生成。
+- 服务端出 **wav（PCM）**，本地只编码一次：`loudnorm=I=-18:TP=-3:LRA=11` → mono 24 kHz MP3 48 kbps。
+- 响度归一后实测 ≈ −18 dBFS 均值、峰值 ≤ −3 dB；两套之间差 ≤1.5 dB，患者不需要在中途调音量。
+- `speech_rate -5`（约 0.95×）、`loudness_rate 0`；改这些值属于全局变更，两套一起重生成。
+- 一条连接跑完一整套：每句重开 websocket 会把 64 句的等待时间翻倍。
+- 当前产物：男 32 句 / 98 s / 593 KB，女 32 句 / 112 s / 675 KB。

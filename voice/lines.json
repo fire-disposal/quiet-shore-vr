@@ -1,10 +1,11 @@
 {
   "version": 1,
   "defaults": {
-    "format": "mp3",
+    "format": "wav",
     "sampleRate": 24000,
     "speechRate": -5,
-    "loudnessRate": 0
+    "loudnessRate": 0,
+    "loudnessTarget": -18
   },
   "voices": {
     "male": {

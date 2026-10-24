@@ -55,6 +55,26 @@ def ffprobe_ms(path: Path) -> int:
         return 0
 
 
+def encode_mp3(payload: bytes, suffix: str, dest: Path) -> None:
+    """Decode the service payload once, loudness-normalize, encode once.
+
+    TTS output varies a couple of dB between lines and between speakers; a
+    bedside patient should never have to adjust the volume mid-session, so every
+    clip lands on the same target before it is measured and hashed.
+    """
+    staged = dest.with_suffix(f".src{suffix}")
+    staged.write_bytes(payload)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", str(staged),
+             "-af", "loudnorm=I=-18:TP=-3:LRA=11",
+             "-ar", "24000", "-ac", "1", "-b:a", "48k", str(dest)],
+            check=True,
+        )
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def text_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
@@ -63,22 +83,26 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-async def synthesize(path: Path, text: str, voice: dict, defaults: dict, key: str) -> bytes:
+async def synthesize(tts, text: str, voice: dict, defaults: dict) -> bytes:
+    """One clip over an already-open connection; a handshake per line is waste."""
+    result = await tts.synthesize(
+        tts_request(text, voice, defaults)
+    )
+    return result.audio
+
+
+def tts_request(text: str, voice: dict, defaults: dict):
     import doubao_tts as dtts  # imported lazily so --dry-run needs no dependencies
 
-    async with dtts.DoubaoTTS(key, os.getenv("DOUBAO_TTS_RESOURCE_ID") or dtts.DEFAULT_RESOURCE_ID) as tts:
-        result = await tts.synthesize(
-            dtts.TTSRequest(
-                text=text,
-                speaker=voice["speaker"],
-                speech_rate=int(voice.get("speechRate", defaults["speechRate"])),
-                loudness_rate=int(voice.get("loudnessRate", defaults["loudnessRate"])),
-                fmt=defaults["format"],
-                sample_rate=int(defaults["sampleRate"]),
-                enable_subtitle=False,
-            )
-        )
-        return result.audio
+    return dtts.TTSRequest(
+        text=text,
+        speaker=voice["speaker"],
+        speech_rate=int(voice.get("speechRate", defaults["speechRate"])),
+        loudness_rate=int(voice.get("loudnessRate", defaults["loudnessRate"])),
+        fmt=defaults["format"],
+        sample_rate=int(defaults["sampleRate"]),
+        enable_subtitle=False,
+    )
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -119,6 +143,11 @@ async def run(args: argparse.Namespace) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         entries = []
         total_ms = 0
+        client = None
+        if not args.dry_run:
+            import doubao_tts as dtts
+            client = dtts.DoubaoTTS(key, os.getenv("DOUBAO_TTS_RESOURCE_ID") or dtts.DEFAULT_RESOURCE_ID)
+            await client.__aenter__()
         for index, line in enumerate(lines, start=1):
             path = out_dir / f"{line['id']}.mp3"
             reused = path.is_file() and not args.force
@@ -126,7 +155,8 @@ async def run(args: argparse.Namespace) -> int:
                 if args.dry_run:
                     print(f"would synthesize {name}/{line['id']}")
                     continue
-                path.write_bytes(await synthesize(path, line["text"], voice, defaults, key))
+                payload = await synthesize(client, line["text"], voice, defaults)
+                encode_mp3(payload, "." + str(defaults["format"]), path)
             payload = path.read_bytes()
             ms = ffprobe_ms(path)
             total_ms += ms
@@ -141,6 +171,8 @@ async def run(args: argparse.Namespace) -> int:
             })
             state = "reuse" if reused else "new"
             print(f"[{index:2d}/{len(lines)}] {name:6s} {line['id']:18s} {ms:5d} ms  {state}")
+        if client is not None:
+            await client.__aexit__(None, None, None)
         manifest["voices"][name] = {
             "speaker": voice["speaker"],
             "label": voice.get("label", name),
