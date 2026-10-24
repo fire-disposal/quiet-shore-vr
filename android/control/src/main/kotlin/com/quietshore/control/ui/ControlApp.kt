@@ -136,6 +136,7 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onBreathToggle = viewModel::setBreathEnabled,
                 onAnimDuration = viewModel::setAnimDuration,
                 onGazeDwellChange = viewModel::setGazeDwell,
+                onSusVoiceChange = viewModel::setSusVoice,
                 onSusOpen = viewModel::openSus,
                 onSusClose = viewModel::closeSus,
                 onEnterTraining = viewModel::enterTraining,

@@ -17,7 +17,7 @@ import { createRandom, makeTexture } from '../shared/canvas';
  * texture — bright at the top, black at the bottom — and the two caps use the
  * *exact* colours of those end rows, so neither end ever reads as a lid. There
  * is no horizon, no floor line and no edge to catch the eye; the only edges in
- * the picture are the rings.
+ * the picture are the wall fixtures.
  */
 
 const SHAFT_RADIUS = 9;
@@ -25,17 +25,26 @@ const SHAFT_HEIGHT = 120;
 const EYE_Y = 1.7;
 
 /**
- * Ring band: they live within ±RING_BAND and fade out before wrapping.
+ * Wall fixtures, not hoops.
  *
- * Nine rings, ten metres apart, and slow. Thirteen rings seven metres apart at
- * 0.85 m/s read as a continuous wall of hard-edged hoops sweeping the whole
- * view — busy to the point of discomfort, and a large-area bright/dark
- * alternation nobody needs in front of a patient. The band is still 90 m tall,
- * so the well keeps its depth; the crossings are now ~28 s apart.
+ * The old ring stack closed a full circle around the eye: every hoop had to
+ * pass *through* the camera plane, where its silhouette expands to fill the
+ * whole view and then flips. That is the "spinning" the user saw, and no
+ * amplitude tuning removes it — a circle around the viewer cannot pass by.
+ *
+ * A falling body does not see circles. It sees things attached to the wall
+ * sweep upward: brackets, ledges, courses. So the sense of descent comes from
+ * two layers that never cross the eye plane:
+ *
+ *  - a tiling detail skin on the wall whose texture scrolls upward (seamless,
+ *    no popping at all);
+ *  - a handful of protruding shelves that ride up with it and recycle at the
+ *    top of a 40 m band, faded into the wall tone before they wrap.
  */
-const RING_COUNT = 9;
-const RING_GAP = 10;
-const RING_BAND = RING_COUNT * RING_GAP;
+const FIXTURE_COUNT = 8;
+const FIXTURE_BAND = 40;
+/** One tie of the detail texture spans this many metres of wall. */
+const DETAIL_COURSE_M = 20;
 /**
  * Terminal-velocity motion with a real drag term.
  *
@@ -107,6 +116,45 @@ function shaftTexture(): THREE.CanvasTexture | null {
       ctx.fill();
     }
   }, { width: 512, height: 2048, repeat: [1, 1] });
+}
+
+/**
+ * Wall courses that tile vertically: ledges, brackets and rivets, all dark
+ * except the highlights. Drawn on black and added on top of the light ramp, so
+ * the skin can only brighten what the ramp already lights.
+ *
+ * Nothing is drawn within eight pixels of the tile's ends, so consecutive
+ * repeats read as a course rhythm instead of a seam.
+ */
+function detailSkinTexture(): THREE.CanvasTexture | null {
+  return makeTexture((ctx, width, height) => {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+    const random = createRandom(0x7a13);
+
+    const ledgeY = height * 0.34;
+    for (let x = 0; x < width; x += 32) {
+      const w = 18 + random() * 10;
+      const shade = 0.1 + random() * 0.16;
+      ctx.fillStyle = `rgba(255, 246, 230, ${shade.toFixed(3)})`;
+      ctx.fillRect(x, ledgeY, w, 1.5);
+    }
+
+    for (let i = 0; i < 7; i += 1) {
+      const x = 12 + random() * (width - 24);
+      const h = 10 + random() * 16;
+      ctx.fillStyle = `rgba(255, 244, 226, ${(0.06 + random() * 0.1).toFixed(3)})`;
+      ctx.fillRect(x, ledgeY + 2, 2, h);
+      ctx.fillRect(x, ledgeY + 2 + h, 7, 1.5);
+    }
+
+    for (let i = 0; i < 26; i += 1) {
+      const x = 8 + random() * (width - 16);
+      const y = 20 + random() * (height - 40);
+      ctx.fillStyle = `rgba(255, 250, 240, ${(0.04 + random() * 0.05).toFixed(3)})`;
+      ctx.fillRect(x, y, 1.5, 1.5);
+    }
+  }, { size: 256, repeat: [1, 6] });
 }
 
 export function createLightWell(): LightWellParts {
@@ -191,62 +239,70 @@ export function createLightWell(): LightWellParts {
     fog: false,
     side: THREE.DoubleSide
   });
-  const ribs = new THREE.InstancedMesh(ribGeometry, ribMaterial, RING_COUNT);
+  const ribs = new THREE.InstancedMesh(ribGeometry, ribMaterial, FIXTURE_COUNT);
   ribs.name = 'lightwell-ribs';
   ribs.frustumCulled = false;
   root.add(ribs);
 
   // 32 tubular segments: at 8 m a 12-gon is visibly faceted, and a faceted
   // hoop sweeping past is the "chaotic" edge the eye grabs first.
-  const ringGeometry = new THREE.TorusGeometry(SHAFT_RADIUS - 0.74, 0.07, 3, 32);
-  ringGeometry.rotateX(Math.PI / 2);
-  const ringMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    toneMapped: false,
-    fog: false
+  // Detail skin: the same shaft, one millimetre inside, carrying a tiling
+  // course pattern. Additive so it only ever brightens the ramp above.
+  const detailTexture = detailSkinTexture();
+  const detailGeometry = new THREE.CylinderGeometry(
+    SHAFT_RADIUS - 0.02,
+    SHAFT_RADIUS - 0.02,
+    SHAFT_HEIGHT,
+    24,
+    1,
+    true
+  );
+  const detailMaterial = new THREE.MeshBasicMaterial({
+    ...(detailTexture ? { map: detailTexture } : {}),
+    color: detailTexture ? 0xffffff : 0x000000,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
   });
-  const rings = new THREE.InstancedMesh(ringGeometry, ringMaterial, RING_COUNT);
-  rings.name = 'lightwell-rings';
-  rings.frustumCulled = false;
-  root.add(rings);
+  const detail = new THREE.Mesh(detailGeometry, detailMaterial);
+  detail.name = 'lightwell-detail';
+  detail.position.y = EYE_Y;
+  detail.frustumCulled = false;
+  root.add(detail);
 
-  // Centred band: rings live in [-RING_BAND/2, +RING_BAND/2] around the eye.
-  const ringY = new Float32Array(RING_COUNT);
-  for (let i = 0; i < RING_COUNT; i += 1) {
-    ringY[i] = -RING_BAND / 2 + i * RING_GAP;
+  // Centred band: fixtures live in [-FIXTURE_BAND/2, +FIXTURE_BAND/2].
+  const fixtureY = new Float32Array(FIXTURE_COUNT);
+  for (let i = 0; i < FIXTURE_COUNT; i += 1) {
+    fixtureY[i] = -FIXTURE_BAND / 2 + i * (FIXTURE_BAND / FIXTURE_COUNT);
   }
   const dummy = new THREE.Object3D();
   const tint = new THREE.Color();
 
-  function writeRings(): void {
-    for (let i = 0; i < RING_COUNT; i += 1) {
-      const y = ringY[i] + EYE_Y;
+  function writeFixtures(): void {
+    for (let i = 0; i < FIXTURE_COUNT; i += 1) {
+      const y = fixtureY[i] + EYE_Y;
       dummy.position.set(0, y, 0);
+      dummy.rotation.set(0, 0, 0);
       dummy.updateMatrix();
       ribs.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(0, y + 0.24, 0);
-      dummy.updateMatrix();
-      rings.setMatrixAt(i, dummy.matrix);
 
-      // Fade with the wall, not to black: at the bright top a dark fixture
-      // would read as a black band, and at the black bottom a bright one pops.
-      const u = Math.min(1, Math.max(0, (ringY[i] + RING_BAND / 2) / RING_BAND));
-      // Capped well below white: the wall is nearly black at the bottom, so a
-      // full-brightness fixture is a maximum-contrast flash every time it
-      // crosses the view.
-      const level = Math.min(0.55, 0.18 + 0.4 * u);
-      tint.setRGB(1.0 * level, 0.94 * level, 0.85 * level);
+      // Fade into the wall at both ends of the band so the wrap is invisible:
+      // a shelf that pops out of existence is exactly the jitter this design
+      // exists to remove.
+      const u = Math.min(1, Math.max(0, (fixtureY[i] + FIXTURE_BAND / 2) / FIXTURE_BAND));
+      const edge = Math.min(1, Math.min(u, 1 - u) * 6);
+      const level = Math.min(0.62, 0.2 + 0.42 * u) * edge;
+      tint.setRGB(level, level * 0.96, level * 0.9);
       ribs.setColorAt(i, tint);
-      const glow = Math.min(0.6, 0.22 + 0.45 * u);
-      tint.setRGB(1.0 * glow, 0.95 * glow, 0.86 * glow);
-      rings.setColorAt(i, tint);
     }
     ribs.instanceMatrix.needsUpdate = true;
-    rings.instanceMatrix.needsUpdate = true;
     if (ribs.instanceColor) ribs.instanceColor.needsUpdate = true;
-    if (rings.instanceColor) rings.instanceColor.needsUpdate = true;
   }
-  writeRings();
+  writeFixtures();
 
   // Motion state in metres per second, not in "flow units": the rings and the
   // wall scroll share one speed, so the picture stays physically consistent.
@@ -287,16 +343,24 @@ export function createLightWell(): LightWellParts {
       root.position.x = sway * 0.006 * Math.sin(swayTime * 0.51 + 1.1);
       root.position.z = sway * 0.005 * Math.sin(swayTime * 0.73 + 2.7);
 
-      // The body falls; the well stands still. So the fixtures sweep *upward*
-      // past the eye and recycle at the top of the band.
+      // The body falls; the well stands still. So everything mounted on the
+      // wall sweeps *upward* past the eye and recycles at the top of the band.
+      // Nothing crosses the camera plane, so nothing can flare into a hoop.
       const travel = dt * speed;
-      for (let i = 0; i < RING_COUNT; i += 1) {
-        ringY[i] += travel;
-        if (ringY[i] > RING_BAND / 2) {
-          ringY[i] -= RING_BAND;
+      for (let i = 0; i < FIXTURE_COUNT; i += 1) {
+        fixtureY[i] += travel;
+        if (fixtureY[i] > FIXTURE_BAND / 2) {
+          fixtureY[i] -= FIXTURE_BAND;
         }
       }
-      writeRings();
+      writeFixtures();
+
+      // The wall's own courses scroll with the fixtures: the texture wraps by
+      // construction, so this is the seamless half of the fall.
+      if (detailTexture) {
+        detailTexture.offset.y =
+          (detailTexture.offset.y + travel / DETAIL_COURSE_M) % 1;
+      }
     },
     dispose(): void {
       shaftGeometry.dispose();
@@ -308,8 +372,9 @@ export function createLightWell(): LightWellParts {
       bottomMaterial.dispose();
       ribGeometry.dispose();
       ribMaterial.dispose();
-      ringGeometry.dispose();
-      ringMaterial.dispose();
+      detailGeometry.dispose();
+      detailMaterial.dispose();
+      if (detailTexture) detailTexture.dispose();
       root.clear();
       root.removeFromParent();
     }
@@ -323,12 +388,12 @@ export const lightwellScene = defineScene(
     id: 'lightwell',
     name: { zh: '光井', en: 'Light Well' },
     tagline: {
-      zh: '一圈圈光从脚下掠过，身体被往上带。',
-      en: 'Rings of light pass upward and carry the body with them.'
+      zh: '井壁的托架一级级向上掠过，身体被带着下沉。',
+      en: 'Brackets on the wall sweep upward and carry the body down with them.'
     },
     description: {
-      zh: '约 18 米直径、120 米高的竖井：井壁顶部亮成天光，底部沉进黑里，两头都在六十米外，看不到“盖”。十三道暖白圆环自下而上掠过，靠近视野中心时最亮，出视野前先暗下去。所有运动都在环境里，视点不动。',
-      en: 'A shaft about 18 m across and 120 m tall: daylight at the top, black below, both ends sixty metres away with no visible lid. Thirteen warm rings pass upward, brightest near the centre of the view and dimming before they leave it. All motion is in the environment; the viewpoint never moves.'
+      zh: '约 18 米直径、120 米高的竖井：井壁顶部亮成天光，底部沉进黑里，两头都在六十米外，看不到“盖”。井壁上的托架与横档自下而上升起、到顶前淡出回收，像身体在下沉。所有运动都在井壁上，视点不动，也没有任何东西穿过眼前。',
+      en: 'A shaft about 18 m across and 120 m tall: daylight above, black below, both ends sixty metres away with no visible lid. Brackets and courses on the wall rise, fade before the top and recycle, so the body reads as descending. All motion is on the wall; nothing crosses the eye.'
     },
     // No ambience: water belongs to the shore and the washroom. This shaft is
     // meant to be heard as one's own breathing, not as a room.

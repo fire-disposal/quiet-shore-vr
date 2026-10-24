@@ -404,6 +404,15 @@ class ControlViewModel(application: Application) :
     }
 
     // ── SUS ────────────────────────────────────────────────────────────────
+    /**
+     * The headset reads each statement as it appears; this is the operator's
+     * switch for that. The default on both sides is on.
+     */
+    fun setSusVoice(enabled: Boolean) {
+        _uiState.update { it.copy(susVoice = enabled) }
+        sendCommand(if (enabled) "sus:voice:on" else "sus:voice:off")
+    }
+
     fun susShow(index: Int) {
         val n = index.coerceIn(1, 10)
         _uiState.update { it.copy(susIndex = n) }

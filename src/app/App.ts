@@ -410,6 +410,17 @@ export class QuietShoreApp {
           return this.previewFlow;
         },
         /**
+         * Desktop check: open the buoyancy gate without a real session, so the
+         * vertical motion can be measured on a desk. Never reachable outside
+         * `?debug=1`; it writes the same lifecycle the field path writes.
+         */
+        session: (on: boolean) => {
+          this.lifecycle = on
+            ? { phase: 'floating', mode: 'float', stopReason: null }
+            : INITIAL_SESSION;
+          return { phase: this.lifecycle.phase, mode: this.lifecycle.mode };
+        },
+        /**
          * Desktop check: frame clock against the wall clock. Anything but 1.00
          * means the compositor timestamp is not real time, and every dt-based
          * animation runs at that multiplier.
@@ -1439,10 +1450,20 @@ export class QuietShoreApp {
   }
 
   private onFrame = (frameTime?: number): void => {
-    // The XR frame timestamp is the one the compositor will present; reading
-    // performance.now() here mixes two clocks and jitters the easing.
-    const now = frameTime !== undefined ? frameTime : performance.now();
-    this.sampleClock(now);
+    /**
+     * `dt` comes from the wall clock, not from the XR frame timestamp.
+     *
+     * The compositor timestamp is a presentation time: on the headset it can
+     * advance at a different rate than real time, and every dt-based animation
+     * then runs at that multiplier. Measured in the field: the 5 s gaze dwell
+     * fired after ~2 s, and a 13 s buoyancy cycle read as "periodic trembling"
+     * instead of a slow heave. The frame timestamp is still sampled (see
+     * `sampleClock`) so the ratio stays visible, but it never drives time.
+     */
+    const now = performance.now();
+    if (frameTime !== undefined) {
+      this.sampleClock(frameTime);
+    }
     const dt = this.lastFrame > 0 ? Math.min((now - this.lastFrame) / 1000, MAX_DT) : 0;
     this.lastFrame = now;
     this.elapsed += dt;

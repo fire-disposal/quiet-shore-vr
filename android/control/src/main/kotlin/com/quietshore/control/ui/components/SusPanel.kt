@@ -94,7 +94,7 @@ fun SusPanel(
                 Column {
                     Text("目视选择", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        text = "患者注视选项 5 秒即可作答",
+                        text = "患者注视选项 8 秒即可作答（翻题后 2 秒不计时）",
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextSecondary
                     )
@@ -102,6 +102,25 @@ fun SusPanel(
                 Switch(
                     checked = state.gazeDwell,
                     onCheckedChange = actions.onGazeDwellChange,
+                    enabled = connected
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("朗读题干", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "题目出现时同步播放这一题语音",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+                Switch(
+                    checked = state.susVoice,
+                    onCheckedChange = actions.onSusVoiceChange,
                     enabled = connected
                 )
             }

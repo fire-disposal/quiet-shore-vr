@@ -233,25 +233,42 @@ describe('scene budgets', () => {
     handle.dispose();
   });
 
-  it('drives the light well only through its flow hook', () => {
+  it('moves the wall fixtures upward only through the flow hook', () => {
     const { handle } = build('lightwell');
-    const rings = handle.root.getObjectByName('lightwell-rings') as THREE.InstancedMesh;
+    const fixtures = handle.root.getObjectByName('lightwell-ribs') as THREE.InstancedMesh;
+    const detail = handle.root.getObjectByName('lightwell-detail') as THREE.Mesh;
+    expect(fixtures).toBeDefined();
+    expect(detail).toBeDefined();
+    // No hoop can cross the camera plane: the tori are gone.
+    expect(handle.root.getObjectByName('lightwell-rings')).toBeUndefined();
+
     const before = new THREE.Matrix4();
-    rings.getMatrixAt(0, before);
+    fixtures.getMatrixAt(0, before);
     handle.update(0.5, 0.5);
     const still = new THREE.Matrix4();
-    rings.getMatrixAt(0, still);
+    fixtures.getMatrixAt(0, still);
     expect(still.equals(before)).toBe(true);
+
     handle.setFlow?.(1);
-    handle.update(0.5, 1);
-    const moved = new THREE.Matrix4();
-    rings.getMatrixAt(0, moved);
-    expect(moved.equals(before)).toBe(false);
-    // Falling body: the fixtures sweep upward past the eye.
-    expect(moved.elements[13]).toBeGreaterThan(before.elements[13]);
+    let previousY = new THREE.Vector3().setFromMatrixPosition(before).y;
+    const offsets: number[] = [];
+    for (let i = 0; i < 60; i += 1) {
+      handle.update(1 / 30, 0.5 + i / 30);
+      fixtures.getMatrixAt(0, still);
+      const y = new THREE.Vector3().setFromMatrixPosition(still).y;
+      // Upward, never down (a wrap drops it by the band length once).
+      expect(y).toBeGreaterThanOrEqual(previousY - 40.1);
+      previousY = y;
+      offsets.push((detail.material as THREE.MeshBasicMaterial).map?.offset.y ?? -1);
+    }
+    // Headless hosts have no canvas, so the skin texture only exists in a
+    // browser; when it does, it must scroll every frame.
+    if (!offsets.includes(-1)) {
+      const moved = offsets.filter((value, i) => i > 0 && value !== offsets[i - 1]);
+      expect(moved.length).toBeGreaterThan(30);
+    }
     handle.dispose();
   });
-
   it('disposes idempotently', () => {
     const { handle } = build('shore');
     expect(() => {
