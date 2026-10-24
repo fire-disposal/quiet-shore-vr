@@ -608,6 +608,9 @@ internal class BluetoothControl(
                 return
             }
         }
+        // One line per operator action: the only reliable way to tell a dead
+        // tablet path from a dead page path in the field.
+        Log.i(TAG, "ble ${addressOf(device) ?: "?"} $raw")
         handleCommandWrite(device, requestId, raw)
     }
 

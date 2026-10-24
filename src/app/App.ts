@@ -320,6 +320,15 @@ export class QuietShoreApp {
           // (`performance.now()`); the XR frame timestamp can live in a
           // different epoch and would never close the window.
           const sampleNow = performance.now();
+          // A stalled frame loop must not trap the operator in a window that
+          // never closes; give the sample a hard deadline.
+          if (sampleNow - this.samplingStartedAt > 3000) {
+            this.calibrationSampler.reset();
+            this.capturePending = false;
+            this.calibrationOverlay?.setProgress(null);
+            this.calibrationOverlay?.setHint('记录超时，请再按一次');
+            return;
+          }
           this.calibrationOverlay?.setProgress(
             (sampleNow - this.samplingStartedAt) / CALIBRATION_SAMPLE_MS
           );
@@ -416,6 +425,11 @@ export class QuietShoreApp {
   }
 
   private bind(): void {
+    // A thrown frame must not leave a silently frozen page: surface it once.
+    window.addEventListener('error', (event) => {
+      const message = event.message || '未知错误';
+      this.start.setStatus(`页面出错：${message}`, 'error');
+    });
     // The headset's physical button reaches a page in two different shapes
     // depending on the runtime: an XR `select` (bound in enterVR) or a DOM
     // event. Both mean "the patient pressed confirm"; both are debounced by

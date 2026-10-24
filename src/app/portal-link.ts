@@ -96,6 +96,8 @@ const STATE_MS = 1000;
 /** Denser readback while a view animation or a sit-up transition is moving. */
 const STATE_MOVING_MS = 200;
 const RECONNECT_BASE_MS = 300;
+/** After this long without a socket the page reloads itself once. */
+const SELF_HEAL_MS = 15000;
 const RECONNECT_MAX_MS = 5000;
 
 /** Map the collected snapshot onto the widget state payload. */
@@ -208,6 +210,7 @@ export class PortalLink {
   private poseTimer: number | null = null;
   private stateTimer: number | null = null;
   private retries = 0;
+  private lastOpenAt = 0;
   private running = false;
   private flushScheduled = false;
   private pending: PortalCommand[] = [];
@@ -293,6 +296,24 @@ export class PortalLink {
   private scheduleReconnect(): void {
     if (!this.running || this.retryTimer != null) {
       return;
+    }
+    // A page whose socket never comes back is unreachable forever: the loopback
+    // server can restart while the tab stays open. Reloading the tab is the only
+    // recovery the page can do by itself, so do it once per half minute.
+    const now = performance.now();
+    const since = this.lastOpenAt || 0;
+    if (since === 0 || now - since > SELF_HEAL_MS) {
+      try {
+        const KEY = 'qs:lastReload';
+        const last = Number(window.sessionStorage?.getItem(KEY) ?? '0');
+        if (now - last > 30000) {
+          window.sessionStorage?.setItem(KEY, String(now));
+          window.setTimeout(() => window.location.reload(), 200);
+          return;
+        }
+      } catch {
+        // Storage can be unavailable (private mode, tests): retry normally.
+      }
     }
     this.retries += 1;
     const delay = Math.min(
