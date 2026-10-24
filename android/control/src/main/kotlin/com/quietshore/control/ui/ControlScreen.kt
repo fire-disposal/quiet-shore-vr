@@ -281,6 +281,16 @@ private fun ControlTopBar(
                 SignalBars(rssi = state.rssi)
                 Spacer(Modifier.width(8.dp))
                 ConnectionChip(phase = state.phase, stale = state.stateStale)
+                // Mirror camera, left of the status block: it is about what the
+                // operator is looking at, not about which panel is open, so it
+                // is separated from the tab row by the flexible gap below.
+                Spacer(Modifier.width(if (compact) 8.dp else 14.dp))
+                for (option in MirrorMode.entries) {
+                    TabButton(
+                        option.label,
+                        state.mirrorMode == option
+                    ) { onMirrorModeChange(option) }
+                }
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (infoOpen) "▾" else "▸",
@@ -294,14 +304,6 @@ private fun ControlTopBar(
             TextButton(onClick = onOpenInfo) {
                 Text("说明", color = QuietPalette.TextSecondary)
             }
-            // Mirror camera: two states, one tap each, never both lit.
-            for (option in MirrorMode.entries) {
-                TabButton(
-                    option.label,
-                    state.mirrorMode == option
-                ) { onMirrorModeChange(option) }
-            }
-            Spacer(Modifier.width(6.dp))
             TabButton("控制", tab == PanelTab.MOTION) { onSelectTab(PanelTab.MOTION) }
             TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
             TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }

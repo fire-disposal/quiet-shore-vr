@@ -10,8 +10,8 @@ import com.quietshore.control.protocol.TelemetryPose
  */
 /** Which camera the mirror uses: the patient's own, or a pulled-back view. */
 enum class MirrorMode(val label: String) {
-    PATIENT("患者"),
-    OVERVIEW("全局")
+    PATIENT("VR视角"),
+    OVERVIEW("全局视角")
 }
 
 enum class SessionMode(val wire: String, val label: String) {
