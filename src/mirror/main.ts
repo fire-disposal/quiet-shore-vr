@@ -238,7 +238,11 @@ function settleFloor(): void {
   // the washroom's floor 1.7 m too low, so the patient view was a wall far
   // below and the room looked enormous.
   const sceneEye = getSceneDefinition(sceneId)?.eyeY ?? state.eyeHeight ?? 1.7;
-  const base = state.session ? -sceneEye : 0;
+  // Unconditional: the camera lives in the page's `local` frame, where the eye
+  // is the origin, so the art only lands at eye level because it is dropped by
+  // its own eye height. Gating that on `state.session` put the camera on the
+  // floor of an unshifted room whenever the session flag was not there yet.
+  const base = -sceneEye;
   // The buoyancy arrives already applied: the mirror only adds it to the base
   // the page uses and never recomputes the curve.
   sceneHost.setFloorOffset(base + applied.floatMm / 1000);
@@ -314,12 +318,14 @@ function applyOverview(): void {
   gazeDir.set(0, 0, -1).applyQuaternion(patientQuat).normalize();
   headUp.set(0, 1, 0).applyQuaternion(patientQuat).normalize();
 
-  // Pulled back along the gaze and raised: a three-quarter view of the head.
+  // Pulled back along the gaze and raised to a technician's height: the eye is
+  // 1.7 m above the art floor, so 1.5 m more puts the diorama at ~3.2 m — high
+  // enough to see the room, low enough not to read as a floor plan.
   camera.position
     .copy(eyePoint)
     .addScaledVector(gazeDir, -3.1)
-    .addScaledVector(upAxis, 2.3);
-  lookAt.copy(eyePoint).addScaledVector(gazeDir, 1.1);
+    .addScaledVector(upAxis, 1.5);
+  lookAt.copy(eyePoint).addScaledVector(gazeDir, 1.0);
   camera.up.copy(upAxis);
   camera.lookAt(lookAt);
 

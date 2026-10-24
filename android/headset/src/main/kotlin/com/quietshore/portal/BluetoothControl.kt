@@ -134,6 +134,10 @@ internal class BluetoothControl(
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
     private var susCharacteristic: BluetoothGattCharacteristic? = null
+    /** Negotiated ATT MTU; the JSON channel sizes its chunks from it. */
+    private var mtu = 23
+    /** Rotating chunk id for the JSON channel. */
+    private var jsonChunkId = 0
     private var stateSeq = 0
     private var advertiser: BluetoothLeAdvertiser? = null
 
@@ -445,10 +449,25 @@ internal class BluetoothControl(
         notifyValue(telemetryCharacteristic, ControlProtocol.encodeTelemetry(pose))
     }
 
-    /** Forwards one SUS sheet (UTF-8 JSON) to the controlling tablet. */
+    /** Forwards one SUS sheet as a JSON-channel document. */
     fun publishSus(json: String) {
         lastSus = json
-        notifyValue(susCharacteristic, json.toByteArray(StandardCharsets.UTF_8))
+        publishJson("{\"t\":\"sus\",\"d\":$json}")
+    }
+
+    /**
+     * Publishes one document on the JSON channel, split into chunks that fit
+     * the negotiated MTU. Everything event-driven rides here, so adding a field
+     * never costs a state-frame version.
+     */
+    fun publishJson(json: String) {
+        val payload = json.toByteArray(StandardCharsets.UTF_8)
+        val perChunk = (mtu - 3 - ControlProtocol.chunkHeaderBytes).coerceAtLeast(1)
+        val id = jsonChunkId
+        jsonChunkId = (jsonChunkId + 1) and 0xFF
+        for (chunk in ControlProtocol.encodeJsonChunks(payload, perChunk, id)) {
+            notifyValue(susCharacteristic, chunk)
+        }
     }
 
     fun publishState(state: ControlState) {
@@ -802,6 +821,10 @@ internal class BluetoothControl(
     }
 
     private val callback = object : BluetoothGattServerCallback() {
+    override fun onMtuChanged(device: BluetoothDevice, negotiatedMtu: Int) {
+        mtu = negotiatedMtu.coerceAtLeast(23)
+    }
+
     override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val address = addressOf(device) ?: return
             if (newState == BluetoothProfile.STATE_CONNECTED) {

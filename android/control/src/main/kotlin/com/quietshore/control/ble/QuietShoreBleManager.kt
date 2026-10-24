@@ -6,6 +6,7 @@ import android.content.Context
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.protocol.JsonAssembler
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import java.nio.charset.StandardCharsets
@@ -36,8 +37,8 @@ class QuietShoreBleManager(
         fun onStatus(raw: String)
         fun onTelemetry(pose: TelemetryPose)
         fun onControlState(state: ControlState)
-        /** One SUS sheet as UTF-8 JSON, straight from the headset. */
-        fun onSus(json: String)
+        /** One JSON-channel document: `topic` + its JSON payload. */
+        fun onJson(topic: String, data: String)
         fun onSignal(rssi: Int)
         fun onFailure(message: String)
     }
@@ -46,7 +47,9 @@ class QuietShoreBleManager(
     private var statusCharacteristic: BluetoothGattCharacteristic? = null
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
-    private var susCharacteristic: BluetoothGattCharacteristic? = null
+    private var jsonCharacteristic: BluetoothGattCharacteristic? = null
+    /** Partials of the chunked JSON channel; cleared on every new connection. */
+    private val jsonAssembler = JsonAssembler()
 
     /** Set once per connection so `CONNECTION_PRIORITY_HIGH` is not re-sent. */
     private var highPriorityRequested = false
@@ -60,7 +63,7 @@ class QuietShoreBleManager(
             statusCharacteristic = service.getCharacteristic(ControlProtocol.statusUuid)
             telemetryCharacteristic = service.getCharacteristic(ControlProtocol.telemetryUuid)
             stateCharacteristic = service.getCharacteristic(ControlProtocol.stateUuid)
-            susCharacteristic = service.getCharacteristic(ControlProtocol.susUuid)
+            jsonCharacteristic = service.getCharacteristic(ControlProtocol.susUuid)
             // SUS is optional: a headset that predates the characteristic keeps
             // working, it simply never reports a sheet.
             return commandCharacteristic != null &&
@@ -95,11 +98,19 @@ class QuietShoreBleManager(
                     ControlProtocol.decodeState(bytes)?.let(events::onControlState)
                 }
             }
-            susCharacteristic?.let { characteristic ->
+            jsonCharacteristic?.let { characteristic ->
                 setNotificationCallback(characteristic).with { _, data ->
                     data.value?.let { bytes ->
-                        if (bytes.isNotEmpty()) {
-                            events.onSus(String(bytes, StandardCharsets.UTF_8).trim())
+                        // Chunk first, parse second: a document may span several
+                        // notifications, and a damaged one is dropped whole.
+                        jsonAssembler.add(bytes)?.let { document ->
+                            val json = String(document, StandardCharsets.UTF_8)
+                            try {
+                                val root = org.json.JSONObject(json)
+                                events.onJson(root.optString("t"), root.optJSONObject("d")?.toString() ?: json)
+                            } catch (error: org.json.JSONException) {
+                                // A malformed document is ignored; the next one supersedes it.
+                            }
                         }
                     }
                 }
@@ -114,7 +125,7 @@ class QuietShoreBleManager(
                     .add(enableNotifications(status))
                     .add(enableNotifications(telemetry))
                     .add(enableNotifications(state))
-                susCharacteristic?.let { queue.add(enableNotifications(it)) }
+                jsonCharacteristic?.let { queue.add(enableNotifications(it)) }
                 queue
                     .done {
                         // Once per connection, after notifications are live: the
@@ -142,7 +153,8 @@ class QuietShoreBleManager(
             statusCharacteristic = null
             telemetryCharacteristic = null
             stateCharacteristic = null
-            susCharacteristic = null
+            jsonCharacteristic = null
+            jsonAssembler.reset()
             highPriorityRequested = false
         }
     }

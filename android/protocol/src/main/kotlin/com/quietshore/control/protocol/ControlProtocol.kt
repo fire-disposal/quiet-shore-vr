@@ -21,11 +21,18 @@ object ControlProtocol {
     val stateUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000005")
 
     /**
-     * Completed SUS sheets, headset → tablet. A UTF-8 JSON object, notify-only,
-     * one notification per sheet. The 20/28-byte state frame is frozen by the
-     * wire contract, so this is the one channel that carries a record.
+     * The JSON channel, headset → tablet: every event-driven document (SUS
+     * sheets, session/flag changes, settings echo) rides here, split into
+     * `[id][index][total]` chunks so nothing depends on the ATT MTU or on a
+     * fixed-width frame. New data means a new `"t"` topic, never a new frame
+     * version. The UUID predates the split and stays for wire stability.
      */
     val susUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000006")
+
+    /** Chunk header of the JSON channel: id, index, total — one byte each. */
+    const val chunkHeaderBytes: Int = 3
+    /** Chunks allowed per document; 255 is the envelope's own limit. */
+    const val maxChunks: Int = 255
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
@@ -627,6 +634,36 @@ object ControlProtocol {
         buffer.putFloat(state.worldYM)
         buffer.putFloat(state.worldZM)
         return target
+    }
+
+    /**
+     * Splits one UTF-8 document into `[id][index][total][payload]` chunks.
+     *
+     * [chunkPayload] is what the link can carry per notification *after* the
+     * header; the caller derives it from the negotiated MTU. Documents that do
+     * not fit in [maxChunks] are refused rather than truncated.
+     */
+    fun encodeJsonChunks(
+        payload: ByteArray,
+        chunkPayload: Int,
+        id: Int
+    ): List<ByteArray> {
+        require(chunkPayload > 0) { "chunkPayload must be positive" }
+        val size = payload.size.coerceAtLeast(1)
+        val total = (size + chunkPayload - 1) / chunkPayload
+        require(total <= maxChunks) { "document needs $total chunks" }
+        val chunks = ArrayList<ByteArray>(total)
+        for (index in 0 until total) {
+            val from = index * chunkPayload
+            val to = minOf(payload.size, from + chunkPayload)
+            val chunk = ByteArray(chunkHeaderBytes + (to - from))
+            chunk[0] = (id and 0xFF).toByte()
+            chunk[1] = index.toByte()
+            chunk[2] = total.toByte()
+            System.arraycopy(payload, from, chunk, chunkHeaderBytes, to - from)
+            chunks.add(chunk)
+        }
+        return chunks
     }
 
     /** Only the v12 shape exists; both sides ship together. */

@@ -18,6 +18,7 @@ import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.data.SusStore
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.SusResult
+import org.json.JSONException
 import org.json.JSONObject
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.voice.VoiceCatalog
@@ -620,7 +621,43 @@ class ControlViewModel(application: Application) :
      * to the persisted history and mirror the answers into the live sheet so
      * the operator sees what the patient just filed.
      */
-    override fun onSus(json: String) {
+    override fun onJson(topic: String, data: String) {
+        when (topic) {
+            "sus" -> handleSus(data)
+            "flags" -> applyFlags(data)
+            // Unknown topics are ignored: a newer headset may publish more.
+            else -> Unit
+        }
+    }
+
+    /**
+     * Session/flag readback from the JSON channel. These used to be packed into
+     * the state frame, where every addition cost a version bump.
+     */
+    private fun applyFlags(data: String) {
+        val json = try {
+            JSONObject(data)
+        } catch (error: JSONException) {
+            Log.w(TAG, "flags payload rejected: ${error.message}")
+            return
+        }
+        _uiState.update { current ->
+            current.copy(
+                control = current.control.copy(
+                    scene = json.optString("scene", current.control.scene),
+                    session = json.optBoolean("session", current.control.session),
+                    calibrating = json.optBoolean("calibrating", current.control.calibrating),
+                    postureMode = json.optBoolean("postureMode", current.control.postureMode),
+                    sitUpActive = json.optBoolean("sitUpActive", current.control.sitUpActive),
+                    hold = json.optBoolean("hold", current.control.hold),
+                    voiceAuto = json.optBoolean("voiceAuto", current.control.voiceAuto),
+                    cueEnabled = json.optBoolean("cueEnabled", current.control.cueEnabled)
+                )
+            )
+        }
+    }
+
+    private fun handleSus(json: String) {
         val result = try {
             decodeSus(json)
         } catch (error: Exception) {

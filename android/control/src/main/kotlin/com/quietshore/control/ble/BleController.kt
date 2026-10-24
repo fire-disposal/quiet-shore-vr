@@ -44,7 +44,8 @@ class BleController(
         fun onDisconnected()
         fun onTelemetry(pose: TelemetryPose)
         fun onControlState(state: ControlState)
-        fun onSus(json: String)
+        /** One JSON-channel document: topic plus its payload. */
+        fun onJson(topic: String, data: String)
         fun onSignal(rssi: Int)
         /** Negotiated ATT MTU, or [code] non-zero when negotiation failed. */
         fun onMtu(mtu: Int, code: Int)
@@ -849,10 +850,10 @@ class BleController(
             }
         }
 
-        override fun onSus(json: String) {
+        override fun onJson(topic: String, data: String) {
             mainHandler.post {
                 if (isCurrent()) {
-                    listener.onSus(json)
+                    listener.onJson(topic, data)
                 }
             }
         }

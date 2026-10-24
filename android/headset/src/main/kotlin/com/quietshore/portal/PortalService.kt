@@ -138,6 +138,8 @@ class PortalService : Service() {
         const val PAGE_RELAUNCH_COOLDOWN_MS = 30_000L
         /** Stop-fade breathing room before the console comes forward. */
         const val SESSION_RETURN_MS = 2000L
+        /** Change-driven flags, with this heartbeat so a reconnect catches up. */
+        const val FLAGS_HEARTBEAT_MS = 1000L
         const val NO_STORE = "no-store, no-cache, must-revalidate"
 
         /** Page command replayed once whenever the console loses its lease. */
@@ -645,8 +647,8 @@ class PortalService : Service() {
             "state" -> json.optJSONObject("data")?.let(::applyState)
             "telemetry" -> json.optJSONObject("data")?.let(::applyTelemetry)
             "ack" -> json.optInt("seq", -1).takeIf { it >= 0 }?.let(::ackCommands)
-            // Completed SUS sheets ride their own characteristic: the state
-            // frame is a fixed size and has no room for a record.
+            // Completed SUS sheets ride the JSON channel: the state frame is
+            // a fixed size and has no room for a record.
             "sus" -> json.optJSONObject("data")?.let { data ->
                 bluetooth?.publishSus(data.toString())
             }
@@ -1147,6 +1149,37 @@ class PortalService : Service() {
         )
         lastState = state
         bluetooth?.publishState(state)
+        publishFlags(state)
+    }
+
+    /** Last flags document published on the JSON channel, and when. */
+    private var lastFlagsJson: String = ""
+    private var lastFlagsAt: Long = 0L
+
+    /**
+     * Session/flags readback on the JSON channel: change-driven, with a 1 s
+     * heartbeat so a tablet that reconnects mid-session catches up. These are
+     * the fields that used to cost a state-frame version every time.
+     */
+    private fun publishFlags(state: ControlState) {
+        val doc = org.json.JSONObject().apply {
+            put("t", "flags")
+            put("scene", state.scene)
+            put("session", state.session)
+            put("calibrating", state.calibrating)
+            put("postureMode", state.postureMode)
+            put("sitUpActive", state.sitUpActive)
+            put("hold", state.hold)
+            put("voiceAuto", state.voiceAuto)
+            put("cueEnabled", state.cueEnabled)
+        }.toString()
+        val now = System.currentTimeMillis()
+        if (doc == lastFlagsJson && now - lastFlagsAt < FLAGS_HEARTBEAT_MS) {
+            return
+        }
+        lastFlagsJson = doc
+        lastFlagsAt = now
+        bluetooth?.publishJson(doc)
     }
 
     private fun readJson(headers: Map<String, String>, input: InputStream): JSONObject {
