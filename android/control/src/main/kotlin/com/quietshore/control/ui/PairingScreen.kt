@@ -159,11 +159,22 @@ private fun PairingIntro(
             color = QuietPalette.TextSecondary
         )
         Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
-        StepRow("1", "打开头显", compact)
-        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
-        StepRow("2", "搜索并连接头显", compact)
-        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
-        StepRow("3", "平板接管控制", compact)
+        val steps = listOf(
+            "1" to "打开头显",
+            "2" to "搜索并连接头显",
+            "3" to "平板接管控制",
+            "4" to "协助患者戴好头显",
+            "5" to "「场景」页选场景并进入",
+            "6" to "「控制」页调世界修正与视角",
+            "7" to "结束后在「SUS」页施测",
+            "8" to "摘下头显，记录反馈"
+        )
+        for ((index, step) in steps.withIndex()) {
+            StepRow(step.first, step.second, compact)
+            if (index != steps.lastIndex) {
+                Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
+            }
+        }
     }
 }
 
