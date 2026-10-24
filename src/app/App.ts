@@ -386,8 +386,16 @@ export class QuietShoreApp {
     this.started = true;
     this.lastFrame = 0;
     this.link.start();
-    // Cues are shipped with the page; a missing manifest simply leaves voice off.
-    void this.voice.load();
+    // Cues are shipped with the page; a missing manifest leaves voice off, and
+    // the entry screen says so instead of failing silently.
+    if (typeof location !== 'undefined' && location.search.includes('debug')) {
+      // Field diagnostics: `?debug=1` exposes the player so a desktop browser
+      // can exercise the same code path the headset runs.
+      (window as unknown as Record<string, unknown>).QuietShoreVoice = this.voice;
+    }
+    void this.voice.load().then((ready) => {
+      this.start.setHint(ready ? '语音已就绪' : `语音未加载：${this.voice.lastError()}`);
+    });
     void this.detectXR();
   }
 
@@ -678,7 +686,12 @@ export class QuietShoreApp {
       return;
     }
     if (command.startsWith('voice:play:')) {
-      void this.voice.play(command.slice('voice:play:'.length));
+      const id = command.slice('voice:play:'.length);
+      void this.voice.play(id).then((played) => {
+        if (!played) {
+          this.start.setHint(`语音播放失败：${this.voice.lastError()}`);
+        }
+      });
       return;
     }
     if (command.startsWith('voice:seq:')) {

@@ -114,6 +114,8 @@ export interface VoicePlayerApi {
   load(): Promise<boolean>;
   /** Manifest index of a cue id, or -1; the wire carries this byte. */
   indexOf(id: string): number;
+  /** Empty when the last load succeeded. */
+  lastError(): string;
   isReady(): boolean;
   setSet(set: VoiceSet): void;
   getSet(): VoiceSet;
@@ -130,11 +132,15 @@ const MANIFEST_URL = `${BASE}/manifest.json`;
 export function createVoicePlayer(): VoicePlayerApi {
   let manifest: VoiceManifest | null = null;
   let loading: Promise<boolean> | null = null;
+  /** Last failure, shown on the entry screen so silence is never a mystery. */
+  let lastError = '';
   let set: VoiceSet = 'male';
   let volume = 0.9;
 
   const decoded = new Map<string, AudioBuffer>();
   let source: AudioBufferSourceNode | null = null;
+  /** Fallback path when decodeAudioData refuses the clip (Gecko on Android). */
+  let element: HTMLAudioElement | null = null;
   let activeId: string | null = null;
   let activeSequence: SequenceName | null = null;
   let sequenceTimer: number | null = null;
@@ -164,11 +170,13 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
     const file = fileById(id);
     if (!file) {
+      lastError = manifest ? `缺少 ${id}` : '清单未加载';
       return null;
     }
     try {
       const response = await fetch(urlFor(file));
       if (!response.ok) {
+        lastError = `音频 ${response.status}`;
         return null;
       }
       const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
@@ -184,6 +192,10 @@ export function createVoicePlayer(): VoicePlayerApi {
   }
 
   function stopSource(): void {
+    if (element) {
+      element.pause();
+      element = null;
+    }
     if (source) {
       try {
         source.stop();
@@ -203,8 +215,11 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
     const token = ++stopToken;
     const buffer = await bufferFor(id);
-    if (!buffer || token !== stopToken) {
+    if (token !== stopToken) {
       return false;
+    }
+    if (!buffer) {
+      return playWithElement(id, volume, token);
     }
     stopSource();
     // Unity here: the bus already carries the cue level.
@@ -225,6 +240,39 @@ export function createVoicePlayer(): VoicePlayerApi {
     source = next;
     activeId = id;
     next.start();
+    return true;
+  }
+
+  function playWithElement(id: string, level: number, token: number): boolean {
+    const file = fileById(id);
+    if (!file) {
+      return false;
+    }
+    stopSource();
+    const audio = new Audio(urlFor(file));
+    audio.volume = Math.max(0, Math.min(1, level));
+    audio.onended = () => {
+      if (element === audio) {
+        element = null;
+        activeId = null;
+        releaseDuck();
+      }
+    };
+    void audio.play().then(
+      () => {
+        if (token !== stopToken) {
+          audio.pause();
+          return;
+        }
+        element = audio;
+        activeId = id;
+        duckScene(true);
+      },
+      () => {
+        lastError = '播放被拒绝';
+        element = null;
+      }
+    );
     return true;
   }
 
@@ -291,20 +339,24 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
     loading = (async () => {
       try {
-        const response = await fetch(MANIFEST_URL);
+        const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
         if (!response.ok) {
+          lastError = `清单 ${response.status}`;
           return false;
         }
         const parsed = (await response.json()) as VoiceManifest;
         if (!parsed?.voices?.male?.files?.length) {
+          lastError = '清单为空';
           return false;
         }
+        lastError = '';
         manifest = parsed;
         // Prime the lines a session reaches first; failures are cosmetic.
-        const prime = ['v-safe-1', 'v-gate-1', 'v-cal-1', 'v-enter-1', 'v-relax-1', 'v-close-1'];
+        const prime = ['v-safe-1', 'v-wear-1', 'v-cal-1', 'v-about-1', 'v-relax-1', 'v-close-1'];
         void Promise.all(prime.map((id) => bufferFor(id)));
         return true;
-      } catch {
+      } catch (error) {
+        lastError = `清单读取失败`;
         return false;
       } finally {
         loading = null;
@@ -317,6 +369,7 @@ export function createVoicePlayer(): VoicePlayerApi {
     load,
     indexOf: (id: string) => manifest?.voices[set]?.files.findIndex((f) => f.id === id) ?? -1,
     isReady: () => manifest !== null,
+    lastError: () => lastError,
     setSet(next: VoiceSet): void {
       if (next !== set) {
         set = next;
