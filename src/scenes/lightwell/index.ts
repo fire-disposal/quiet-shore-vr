@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
 import { createRandom, makeTexture } from '../shared/canvas';
+import { smootherstep } from '../../core/xr/drivers/curve';
 
 /**
  * The light well: a very tall shaft the patient is standing in.
@@ -50,18 +51,22 @@ const EYE_Y = 1.7;
 const FIXTURE_COUNT = 6;
 const FIXTURE_BAND = 60;
 /**
- * Terminal speed approached with an exponential ease.
+ * A fall, not a slide: accelerate along an S-curve, then hold terminal speed.
  *
- * The field pass replaced the gravity/drag model: its release jerked from
- * 1.8 m/s² and hung near the top of the ease. The rate form starts at
- * EASE_RATE · speed (≈ 0.49 m/s², a gentle release) and decays as the speed
- * closes on target, so the fall both starts softly and lands smoothly.
+ * An exponential ease is fastest the instant it starts and then decays — the
+ * profile of something *gliding*. A falling body starts slow and keeps picking
+ * up until drag balances it, so the speed follows smootherstep over
+ * ACCEL_SECONDS and then stays at TERMINAL_SPEED. At the near wall (3 m) the
+ * terminal speed is 5.7 °/s: brisk, still inside the comfort budget.
  */
-/** 0.30 m/s at the 8.3 m shelf radius is 2.1 °/s, inside the near-field budget;
- *  weightlessness reads slower than descent does. */
 const TERMINAL_SPEED = 0.3;
-/** 1/s: ~63% of terminal after one second, asymptotic after that. */
-const EASE_RATE = 1.4;
+/** Time to reach terminal speed; longer reads as drift, shorter as a snap. */
+const ACCEL_SECONDS = 2.2;
+/**
+ * Low flow must be *much* slower than high flow, or the well always looks like
+ * it falls at one speed. The flow scale is convex for that reason.
+ */
+const FLOW_EXPONENT = 1.6;
 /** Stop is a brake, not drag: this cue must die quickly. */
 const BRAKE = 2.6;
 
@@ -294,6 +299,8 @@ export function createLightWell(): LightWellParts {
   // Motion state in metres per second, not in "flow units": the shelves and the
   // wall scroll share one speed, so the picture stays physically consistent.
   let speed = 0;
+  /** Seconds spent accelerating on the current fall. */
+  let accelSeconds = 0;
   let targetFlow = 0;
   let swayTime = 0;
 
@@ -303,15 +310,15 @@ export function createLightWell(): LightWellParts {
       targetFlow = Number.isFinite(next) ? Math.min(1, Math.max(0, next)) : 0;
     },
     update(dt: number): void {
-      const targetSpeed = TERMINAL_SPEED * targetFlow;
+      const targetSpeed =
+        TERMINAL_SPEED * Math.pow(Math.min(1, Math.max(0, targetFlow)), FLOW_EXPONENT);
       if (targetSpeed > 0 && speed < targetSpeed) {
-        // Exponential ease: strongest acceleration right at release, decaying
-        // to zero as the speed closes on target — soft start, smooth landing.
-        speed = Math.min(
-          targetSpeed,
-          speed + (targetSpeed - speed) * Math.min(1, EASE_RATE * dt)
-        );
+        // S-curve up to terminal: slow release, quickening middle, settle.
+        accelSeconds = Math.min(ACCEL_SECONDS, accelSeconds + dt);
+        const desired = targetSpeed * smootherstep(accelSeconds / ACCEL_SECONDS);
+        speed = Math.max(speed, Math.min(targetSpeed, desired));
       } else {
+        accelSeconds = Math.max(0, accelSeconds - dt);
         speed = Math.max(targetSpeed, speed - BRAKE * dt);
       }
       if (speed <= 0.0001) {
