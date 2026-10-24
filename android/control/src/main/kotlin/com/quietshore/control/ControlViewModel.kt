@@ -396,13 +396,6 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
     }
 
-    fun playVoiceSequence(name: String) {
-        if (name !in VoiceCatalog.SEQUENCES) {
-            return
-        }
-        sendCommand(ControlProtocol.VOICE_PREFIX + "seq:" + name)
-    }
-
     // ── SUS ────────────────────────────────────────────────────────────────
     /**
      * The headset reads each statement as it appears; this is the operator's

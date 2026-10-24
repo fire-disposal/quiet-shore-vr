@@ -51,7 +51,11 @@ fun VoicePanel(
     // a claim on the world, so it does not need the control grant. Before, the
     // buttons were simply dead without explaining why.
     val connected = state.phase == com.quietshore.control.ble.BlePhase.READY
-    var expanded by remember { mutableStateOf(emptySet<String>()) }
+    // Every group starts open: a sentence the operator has to expand first is
+    // a sentence they will not use mid-session.
+    var expanded by remember {
+        mutableStateOf(VoiceCatalog.LINES.map { it.group }.toSet())
+    }
 
     Surface(
         modifier = modifier,
@@ -82,19 +86,10 @@ fun VoicePanel(
                 modifier = Modifier.fillMaxWidth()
             ) { Text("停止播放") }
 
-            Seed("播放") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (name in VoiceCatalog.SEQUENCES) {
-                        OutlinedButton(
-                            onClick = { actions.onVoiceSequence(name) },
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        ) { Text(sequenceLabel(name)) }
-                    }
-                }
-            }
-
-            Seed("全部 ${VoiceCatalog.LINES.size} 句") {
+            // No sequence buttons: the operator reads down the script and taps
+            // the sentence the patient should hear. Sequences still exist on the
+            // headset for the field socket; they are no longer a tablet control.
+            Seed("台词（点一句播一句 · 共 ${VoiceCatalog.LINES.size} 句）") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     for ((group, lines) in VoiceCatalog.LINES.groupBy { it.group }) {
                         val open = group in expanded
@@ -227,10 +222,4 @@ private fun Seed(title: String, content: @Composable () -> Unit) {
     }
 }
 
-private fun sequenceLabel(name: String): String = when (name) {
-    "start" -> "开始"
-    "imagine" -> "想象"
-    "relax" -> "放松"
-    "close" -> "收束"
-    else -> name
-}
+
