@@ -53,6 +53,10 @@ import { parseViewAnim, parseViewOrient } from './view-command';
 import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent, type SessionState } from './session';
 
 const MAX_DT = 0.25;
+/** Calibration → the "imagine sitting up" cue. */
+const AUTO_RISE_CUE_MS = 6000;
+/** The cue ends → the world starts turning. */
+const AUTO_RISE_GAP_MS = 2000;
 // Sit-up performance: the confirm key toggles between the supine frame and
 // the standing frame. 6 s keeps the turn decisive; the flow cue carries the
 // perceived rise, the rotation only sets which way is up.
@@ -105,6 +109,8 @@ export class QuietShoreApp {
   private readonly snapshot = new SceneSnapshot();
   /** The one description of applied motion and what may still be asked. */
   private plan: MotionPlan | null = null;
+  /** Token for the scheduled auto-rise; any operator action bumps it. */
+  private autoRiseToken = 0;
   private controlMode = false;
 
   private eyeHeight: number;
@@ -1101,9 +1107,43 @@ export class QuietShoreApp {
     this.world.hold(false);
     if (this.session && this.handle) {
       this.startSceneAudio();
+      this.scheduleAutoRise();
     }
     this.link.sendStateNow();
     this.updateHud(performance.now());
+  }
+
+  /**
+   * Six seconds after calibration the patient is told what is about to happen;
+   * two seconds after that line ends, the world begins its rise. The cue comes
+   * before the motion on purpose — a world that turns without warning is the
+   * one thing a supine patient cannot brace for.
+   */
+  private scheduleAutoRise(): void {
+    const token = ++this.autoRiseToken;
+    const cancelled = (): boolean => token !== this.autoRiseToken || !this.session;
+
+    window.setTimeout(() => {
+      if (cancelled()) {
+        return;
+      }
+      const clipMs = this.voice.clipMs('v-rise-1') || 3500;
+      void this.voice.play('v-rise-1');
+      window.setTimeout(() => {
+        if (cancelled() || !this.world.state().ready) {
+          return;
+        }
+        this.world.setDuration(this.world.state().durationMs);
+        if (this.world.rise(1)) {
+          this.start.setStatus('正在起身：世界缓缓转向站立视角', 'ok');
+        }
+      }, clipMs + AUTO_RISE_GAP_MS);
+    }, AUTO_RISE_CUE_MS);
+  }
+
+  /** Any operator intent cancels the scheduled rise; it never fights a button. */
+  private cancelAutoRise(): void {
+    this.autoRiseToken += 1;
   }
 
   /** Bring the 3D stage up: audio, input layers, render loop. */
@@ -1313,6 +1353,8 @@ export class QuietShoreApp {
         );
         return;
       case 'posture':
+        // The operator's ramp wins: drop any scheduled automatic rise.
+        this.cancelAutoRise();
         if (command.target === 'stop') {
           // The capture already drives posture to neutral; do not freeze it.
           if (!this.capturePending) {

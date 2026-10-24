@@ -84,9 +84,8 @@ export interface SequenceStep {
  */
 export const SEQUENCES: Readonly<Record<SequenceName, readonly SequenceStep[]>> = {
   start: [
-    // One intro before the headset goes on, then the three things a patient
-    // must hear before anything moves.
-    { id: 'v-about-1', gapMs: 4000 },
+    // Straight to the practical instruction: the purpose is explained by the
+    // nurse, and the old 25-second intro said the same three things twice.
     { id: 'v-wear-1', gapMs: 6000 },
     { id: 'v-safe-1', gapMs: 4000 },
     { id: 'v-cal-1', gapMs: 3000 },
@@ -124,6 +123,8 @@ export interface VoicePlayerApi {
   load(): Promise<boolean>;
   /** Manifest index of a cue id, or -1; the wire carries this byte. */
   indexOf(id: string): number;
+  /** Clip length in milliseconds, 0 when the id is not in the manifest. */
+  clipMs(id: string): number;
   /** Empty when the last load succeeded. */
   lastError(): string;
   isReady(): boolean;
@@ -387,7 +388,7 @@ export function createVoicePlayer(): VoicePlayerApi {
         lastError = '';
         manifest = parsed;
         // Prime the lines a session reaches first; failures are cosmetic.
-        const prime = ['v-safe-1', 'v-wear-1', 'v-cal-1', 'v-about-1', 'v-relax-1', 'v-close-1'];
+        const prime = ['v-safe-1', 'v-wear-1', 'v-cal-1', 'v-rise-1', 'v-relax-1', 'v-close-1'];
         void Promise.all(prime.map((id) => bufferFor(id)));
         return true;
       } catch (error) {
@@ -403,6 +404,7 @@ export function createVoicePlayer(): VoicePlayerApi {
   return {
     load,
     indexOf: (id: string) => manifest?.voices[set]?.files.findIndex((f) => f.id === id) ?? -1,
+    clipMs: (id: string) => manifest?.voices[set]?.files.find((f) => f.id === id)?.ms ?? 0,
     isReady: () => manifest !== null,
     lastError: () => lastError,
     setSet(next: VoiceSet): void {
