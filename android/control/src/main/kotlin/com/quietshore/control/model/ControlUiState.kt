@@ -8,6 +8,12 @@ import com.quietshore.control.protocol.TelemetryPose
  * Session mode. Chosen by the operator before a session and never switched in
  * flight; the patient's confirm key only starts and stops.
  */
+/** Which camera the mirror uses: the patient's own, or a pulled-back view. */
+enum class MirrorMode(val label: String) {
+    PATIENT("患者"),
+    OVERVIEW("全局")
+}
+
 enum class SessionMode(val wire: String, val label: String) {
     FLOAT("float", "漂浮"),
     POSTURE("posture", "起身")
@@ -47,6 +53,8 @@ data class ControlUiState(
     val susVoice: Boolean = true,
     /** Operator switch for the headset subtitle card; on by default. */
     val subtitles: Boolean = true,
+    /** Mirror camera: the patient's view (default) or the room overview. */
+    val mirrorMode: MirrorMode = MirrorMode.PATIENT,
     /** Operator's extra pitch correction, kept for the slider thumb. */
     val viewPitchTarget: Int = 0,
     /** True while the SUS scale is open in the headset. */

@@ -41,6 +41,17 @@ fun SceneMirror(
     // nothing to show, and a continuously rendering WebGL canvas is the most
     // expensive thing on this tablet.
     val live = state.phase == com.quietshore.control.ble.BlePhase.READY
+    // The camera mode is local to this WebView: no link traffic, so it is
+    // pushed straight to the page whenever the operator flips the top-bar tab.
+    LaunchedEffect(state.mirrorMode) {
+        webView.value?.evaluateJavascript(
+            "window.QuietShoreMirror && window.QuietShoreMirror.setMode(" +
+                "'" + if (state.mirrorMode == com.quietshore.control.model.MirrorMode.OVERVIEW)
+                    "overview" else "patient" + "')",
+            null
+        )
+    }
+
     LaunchedEffect(live) {
         val view = webView.value ?: return@LaunchedEffect
         view.evaluateJavascript(

@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
@@ -108,6 +109,7 @@ fun ControlScreen(
                 infoOpen = infoOpen,
                 tab = tab,
                 onSelectTab = { tab = it },
+                onMirrorModeChange = actions.onMirrorModeChange,
                 onToggleInfo = { infoOpen = !infoOpen },
                 onOpenInfo = onOpenInfo,
                 onDisconnect = actions.onDisconnect
@@ -229,6 +231,7 @@ private fun ControlTopBar(
     infoOpen: Boolean,
     tab: PanelTab,
     onSelectTab: (PanelTab) -> Unit,
+    onMirrorModeChange: (MirrorMode) -> Unit,
     onToggleInfo: () -> Unit,
     onOpenInfo: () -> Unit,
     onDisconnect: () -> Unit
@@ -291,6 +294,14 @@ private fun ControlTopBar(
             TextButton(onClick = onOpenInfo) {
                 Text("说明", color = QuietPalette.TextSecondary)
             }
+            // Mirror camera: two states, one tap each, never both lit.
+            for (option in MirrorMode.entries) {
+                TabButton(
+                    option.label,
+                    state.mirrorMode == option
+                ) { onMirrorModeChange(option) }
+            }
+            Spacer(Modifier.width(6.dp))
             TabButton("控制", tab == PanelTab.MOTION) { onSelectTab(PanelTab.MOTION) }
             TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
             TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }

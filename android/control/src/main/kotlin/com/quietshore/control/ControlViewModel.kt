@@ -12,6 +12,7 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
+import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.SessionMode
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.data.SusStore
@@ -397,6 +398,14 @@ class ControlViewModel(application: Application) :
     }
 
     // ── SUS ────────────────────────────────────────────────────────────────
+    /**
+     * Mirror camera mode. Purely local: the mirror is a WebView on this tablet,
+     * so no link traffic is involved.
+     */
+    fun setMirrorMode(mode: MirrorMode) {
+        _uiState.update { it.copy(mirrorMode = mode) }
+    }
+
     /**
      * Subtitle card in the headset: the spoken line, below the centre of the
      * view, while the audio runs. Off hides it without stopping the audio.

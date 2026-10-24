@@ -1,5 +1,6 @@
 package com.quietshore.control.ui
 
+import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.SessionMode
 
 /** Callbacks the control screen needs; keeps screens free of the ViewModel. */
@@ -20,6 +21,7 @@ data class ControlActions(
     val onGazeDwellChange: (Boolean) -> Unit,
     val onSusVoiceChange: (Boolean) -> Unit,
     val onSubtitlesChange: (Boolean) -> Unit,
+    val onMirrorModeChange: (MirrorMode) -> Unit,
     /** Opens the SUS scale in the headset; it is answered by gaze. */
     val onSusOpen: () -> Unit,
     val onSusClose: () -> Unit,

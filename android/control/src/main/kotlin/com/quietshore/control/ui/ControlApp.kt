@@ -138,6 +138,7 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onGazeDwellChange = viewModel::setGazeDwell,
                 onSusVoiceChange = viewModel::setSusVoice,
                 onSubtitlesChange = viewModel::setSubtitles,
+                onMirrorModeChange = viewModel::setMirrorMode,
                 onSusOpen = viewModel::openSus,
                 onSusClose = viewModel::closeSus,
                 onEnterTraining = viewModel::enterTraining,

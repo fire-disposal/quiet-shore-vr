@@ -27,6 +27,9 @@ const TAU = Math.PI * 2;
  */
 const SMOOTH_TAU_S = 0.12;
 
+/** The patient's own view, or a pulled-back view of where the patient is. */
+type MirrorMode = 'patient' | 'overview';
+
 interface MirrorState {
   /** Scene loaded on the headset; the mirror rebuilds when it changes. */
   scene?: string;
@@ -108,6 +111,8 @@ const applied = {
 };
 /** False until the first payload, which snaps instead of easing in from zero. */
 let primed = false;
+/** Patient view by default; the operator can pull back to the overview. */
+let mode: MirrorMode = 'patient';
 let sceneId = SCENE.id;
 let sceneName = SCENE.name.zh;
 /** Last scene name reported as unknown, so the console is not spammed at 5 Hz. */
@@ -213,11 +218,12 @@ function smooth(dt: number): void {
 }
 
 function settleFloor(): void {
-  const eyeHeight = state.eyeHeight ?? 1.7;
-  // Same rule as the headset: content sits one eye-height below the eyes while
-  // a session runs. The posture branch rotates the world base instead of
-  // moving the floor, so it needs no extra term here.
-  const base = state.session ? -eyeHeight : 0;
+  // Same rule as the headset: the content is dropped by the **scene's** eye
+  // height, not the operator's measured one. Using `state.eyeHeight` here put
+  // the washroom's floor 1.7 m too low, so the patient view was a wall far
+  // below and the room looked enormous.
+  const sceneEye = getSceneDefinition(sceneId)?.eyeY ?? state.eyeHeight ?? 1.7;
+  const base = state.session ? -sceneEye : 0;
   // The buoyancy arrives already applied: the mirror only adds it to the base
   // the page uses and never recomputes the curve.
   sceneHost.setFloorOffset(base + applied.floatMm / 1000);
@@ -225,12 +231,101 @@ function settleFloor(): void {
   sceneHost.content.rotation.x = applied.swayDeg * DEG;
 }
 
+/**
+ * The patient, as a view frustum.
+ *
+ * No body, no head: in the overview the operator only needs to see where the
+ * patient stands and what the field of view covers. A wireframe frustum does
+ * that in one object — apex at the eye, opening along the gaze, sized to the
+ * headset's field of view — and it cannot be mistaken for a person.
+ */
+const overview = new THREE.Group();
+overview.name = 'mirror-overview';
+overview.visible = false;
+scene.add(overview);
+
+/** Half-angles of the headset's usable field of view, degrees. */
+const FOV_HALF_H = 42;
+const FOV_HALF_V = 38;
+const FOV_LENGTH = 1.5;
+
+const frustumGeometry = (() => {
+  const halfW = Math.tan((FOV_HALF_H * Math.PI) / 180) * FOV_LENGTH;
+  const halfH = Math.tan((FOV_HALF_V * Math.PI) / 180) * FOV_LENGTH;
+  // Local frame: apex at the origin, axis along -Z, up along +Y.
+  const far = -FOV_LENGTH;
+  const corners: [number, number][] = [
+    [-halfW, halfH],
+    [halfW, halfH],
+    [halfW, -halfH],
+    [-halfW, -halfH]
+  ];
+  const positions: number[] = [];
+  for (const [x, y] of corners) {
+    positions.push(0, 0, 0, x, y, far);
+  }
+  for (let i = 0; i < 4; i += 1) {
+    const a = corners[i];
+    const b = corners[(i + 1) % 4];
+    positions.push(a[0], a[1], far, b[0], b[1], far);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  return geometry;
+})();
+const frustumMaterial = new THREE.LineBasicMaterial({
+  color: 0xdff3e6,
+  transparent: true,
+  opacity: 0.7,
+  depthTest: false,
+  depthWrite: false,
+  toneMapped: false
+});
+const frustum = new THREE.LineSegments(frustumGeometry, frustumMaterial);
+frustum.name = 'mirror-frustum';
+frustum.renderOrder = 3000;
+overview.add(frustum);
+
+const eyePoint = new THREE.Vector3();
+const gazeDir = new THREE.Vector3();
+const headUp = new THREE.Vector3();
+const upAxis = new THREE.Vector3(0, 1, 0);
+const lookAt = new THREE.Vector3();
+const basis = new THREE.Matrix4();
+
+function applyOverview(): void {
+  const patientQuat = camera.quaternion.clone();
+  eyePoint.copy(camera.position);
+  gazeDir.set(0, 0, -1).applyQuaternion(patientQuat).normalize();
+  headUp.set(0, 1, 0).applyQuaternion(patientQuat).normalize();
+
+  // Pulled back along the gaze and raised: a three-quarter view of the head.
+  camera.position
+    .copy(eyePoint)
+    .addScaledVector(gazeDir, -3.1)
+    .addScaledVector(upAxis, 2.3);
+  lookAt.copy(eyePoint).addScaledVector(gazeDir, 1.1);
+  camera.up.copy(upAxis);
+  camera.lookAt(lookAt);
+
+  // Frustum: local -Z along the gaze, local +Y along the patient's up.
+  basis.makeBasis(
+    new THREE.Vector3().crossVectors(headUp, gazeDir).normalize(),
+    headUp,
+    gazeDir.clone().negate()
+  );
+  frustum.position.copy(eyePoint);
+  frustum.quaternion.setFromRotationMatrix(basis);
+  overview.visible = true;
+}
+
 function applyCamera(): void {
-  const eyeHeight = state.eyeHeight ?? 1.7;
   if (hasPose) {
     camera.position.set(applied.x, applied.y, applied.z);
   } else {
-    camera.position.set(0, eyeHeight, 0);
+    // The XR reference origin is the headset itself, not the floor: a fallback
+    // at `eyeHeight` put the eye 1.7 m above the room.
+    camera.position.set(0, 0, 0);
   }
   // The patient sees content rotated by the world shell; undo that rotation
   // here, so calibration, view and posture offsets are visible in the mirror.
@@ -241,6 +336,25 @@ function applyCamera(): void {
     { yaw: applied.yaw, pitch: applied.pitch, roll: applied.roll },
     { x: camera.position.x, y: camera.position.y, z: camera.position.z }
   );
+  camera.up.set(0, 1, 0);
+  if (mode === 'overview') {
+    applyOverview();
+  } else {
+    overview.visible = false;
+    camera.fov = 72;
+    camera.updateProjectionMatrix();
+    return;
+  }
+  camera.fov = 58;
+  camera.updateProjectionMatrix();
+}
+
+/** Operator view: the patient's own view, or a pulled-back diorama. */
+function setMode(next: MirrorMode): void {
+  if (next !== 'patient' && next !== 'overview') {
+    return;
+  }
+  mode = next;
 }
 
 function frame(now: number): void {
@@ -296,6 +410,23 @@ function onState(json: string): void {
 Object.assign(window, {
   QuietShoreMirror: {
     onState,
+    setMode,
+    getMode: () => mode,
+    /** Field diagnostics: where the camera and the art actually are. */
+    debug: () => ({
+      mode,
+      scene: sceneId,
+      camera: camera.position.toArray().map((n) => Math.round(n * 100) / 100),
+      quaternion: camera.quaternion.toArray().map((n) => Math.round(n * 1000) / 1000),
+      contentY: Math.round(sceneHost.content.position.y * 100) / 100,
+      hasPose,
+      applied: {
+        yaw: Math.round(applied.yaw * 1000) / 1000,
+        pitch: Math.round(applied.pitch * 1000) / 1000,
+        worldYaw: Math.round(applied.worldYaw * 1000) / 1000,
+        worldPitch: Math.round(applied.worldPitch * 1000) / 1000
+      }
+    }),
     start,
     stop,
     resize
