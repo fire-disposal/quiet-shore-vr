@@ -38,6 +38,7 @@ import { parseRemoteCommand } from './commands';
 import { buildSusPayload } from './sus';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { PortalLink, stateFromSnapshot } from './portal-link';
+import { primeVoiceRoute } from '../audio/voice';
 import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
 import {
   createViewMotionController,
@@ -645,7 +646,7 @@ export class QuietShoreApp {
     this.enterPending = true;
     this.start.setEnterBusy(true);
     this.start.setStatus(this.strings.entering);
-    void unlockAudio();
+    void unlockAudio().then(() => primeVoiceRoute());
     try {
       // Do not await a paint here: requestSession must stay in the same
       // transient user-activation window as the right-side confirm click.
@@ -1096,7 +1097,7 @@ export class QuietShoreApp {
       return;
     }
     this.previewing = true;
-    void unlockAudio();
+    void unlockAudio().then(() => primeVoiceRoute());
     if (this.handle) {
       this.handle.root.visible = true;
     }

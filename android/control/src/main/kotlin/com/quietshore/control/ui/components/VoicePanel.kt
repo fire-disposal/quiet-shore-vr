@@ -47,7 +47,10 @@ fun VoicePanel(
     actions: ControlActions,
     modifier: Modifier = Modifier
 ) {
-    val connected = state.sessionActive || state.controlGranted
+    // Enabled whenever the link is up: a voice command is a play request, not
+    // a claim on the world, so it does not need the control grant. Before, the
+    // buttons were simply dead without explaining why.
+    val connected = state.phase == com.quietshore.control.ble.BlePhase.READY
     var expanded by remember { mutableStateOf(emptySet<String>()) }
 
     Surface(
@@ -63,6 +66,13 @@ fun VoicePanel(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             NowPlaying(state = state)
+            if (!connected) {
+                Text(
+                    text = "链路未就绪：头显未连接时语音不可发送",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
 
             // One transport action. The four sequence buttons below are the
             // play controls; a duplicate "开始提示" only made the panel longer.

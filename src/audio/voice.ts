@@ -13,7 +13,40 @@ import { duckScene, getAudioContext, getVoiceBus } from './audio';
  * voice is supposed to explain.
  */
 
+/** Voice set; clips are pre-generated per set. */
 export type VoiceSet = 'male' | 'female';
+
+/**
+ * Establish the audio route before the operator presses anything.
+ *
+ * On the headset the first sound a page makes can make Android renegotiate the
+ * Bluetooth route, and while that happens the control link drops (observed: a
+ * `voice:seq:*` command answered by a disconnect three seconds later, after
+ * which playback worked instantly). A silent 120 ms buffer at start-up puts
+ * the media route in place while nothing clinical is happening.
+ */
+export async function primeVoiceRoute(): Promise<void> {
+  const ctx = getAudioContext();
+  const bus = getVoiceBus();
+  if (!ctx || !bus) {
+    return;
+  }
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  const frames = Math.max(1, Math.ceil(ctx.sampleRate * 0.12));
+  const source = ctx.createBufferSource();
+  source.buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
+  const gain = ctx.createGain();
+  gain.gain.value = 0.0001;
+  source.connect(gain);
+  gain.connect(bus);
+  source.onended = () => {
+    source.disconnect();
+    gain.disconnect();
+  };
+  source.start();
+}
 
 export interface VoiceFile {
   id: string;

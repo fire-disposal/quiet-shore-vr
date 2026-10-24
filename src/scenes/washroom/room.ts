@@ -11,103 +11,314 @@ import {
  * One calm standing washroom, built to real dimensions around a single
  * wall-hung urinal.
  *
- * The viewer stands at the origin facing -Z: the wall is 0.55 m ahead, the
- * bowl projects to 0.28 m, the rim is at 1.00 m — the geometry a 1.7 m man
- * actually stands in front of, not a showroom approximation.
+ * The viewer stands at the origin facing -Z: the wall is 0.85 m ahead, the
+ * bowl lip is at 1.00 m and projects 0.30 m. That is the geometry a 1.7 m man
+ * actually stands in front of.
  *
- * Everything is baked: two lights (one hemisphere, one soft key), no shadows,
- * no post-processing, no transparency. Seven draws, no full-screen passes
- * beyond the room itself, so the frame budget goes to supersampling.
+ * Everything is vertices, written here: no imported mesh, no primitive that a
+ * revolve could not produce. The scene is merged down to one draw per material
+ * (ceramic, metal, dark, oak, walls, floor, ceiling, light) so the detail below
+ * costs triangles, not draw calls.
  *
- * The palette is the one already spoken for in the product: pale sage
- * micro-cement, warm stone, white ceramic, brushed steel, light oak.
+ * Palette: pale sage micro-cement, warm stone, white ceramic, brushed steel,
+ * light oak.
  */
 
 const ROOM_WIDTH = 2.4;
 const ROOM_DEPTH = 2.4;
 const ROOM_HEIGHT = 2.55;
-/**
- * Wall to eye: 0.85 m. A man at a urinal stands 0.4–0.6 m from the lip, and
- * the lip projects 0.34 m, so this is the real distance, not a showroom one.
- */
 const BACK_Z = -0.85;
 const FRONT_Z = BACK_Z + ROOM_DEPTH;
 
-/** Texture repeats per metre; the wall texture spans ~2 m. */
 const WALL_UV = 0.5;
 const FLOOR_UV = 0.5;
 
 type Vec3 = [number, number, number];
 
-interface Surface {
-  /** Bottom-left, bottom-right, top-right, top-left, as seen from the front. */
-  corners: [Vec3, Vec3, Vec3, Vec3];
-  /** Per-corner brightness, used as cheap baked occlusion. */
-  tint: [number, number, number, number];
-  uv: number;
-}
+/** Wall reveal: basin rim height, lip projection, and the bowl axis tilt. */
+const LIP_Y = 1.0;
+const LIP_R = 0.105;
 
 /**
- * Merge coplanar quads into one geometry. Vertex tints stand in for ambient
- * occlusion at the floor line, which is the only shading a flat wall needs.
+ * A geometry accumulator.
+ *
+ * Every helper writes positions, normals, uvs, vertex tints and indices into
+ * the same arrays, so a whole material can be one mesh. Tints are the only
+ * shading trick used (no shadows, no AO pass): they darken a vertex where two
+ * convex pieces meet.
  */
-function buildSurfaces(surfaces: readonly Surface[]): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const uvs: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
+class MeshBuilder {
+  private readonly positions: number[] = [];
+  private readonly normals: number[] = [];
+  private readonly uvs: number[] = [];
+  private readonly colors: number[] = [];
+  private readonly indices: number[] = [];
 
-  for (let s = 0; s < surfaces.length; s += 1) {
-    const surface = surfaces[s];
-    const base = positions.length / 3;
-    const [a, b, c, d] = surface.corners;
-    const width = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * surface.uv;
-    const height = Math.hypot(d[0] - a[0], d[1] - a[1], d[2] - a[2]) * surface.uv;
+  /** One quad from four corners, wound counter-clockwise seen from outside. */
+  quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, tint = 1, uvScale = 1): void {
+    const base = this.positions.length / 3;
     const corners = [a, b, c, d];
+    const width = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * uvScale;
+    const height = Math.hypot(d[0] - a[0], d[1] - a[1], d[2] - a[2]) * uvScale;
     const cornerUvs: [number, number][] = [[0, 0], [width, 0], [width, height], [0, height]];
-    for (let i = 0; i < 4; i += 1) {
-      const corner = corners[i];
-      positions.push(corner[0], corner[1], corner[2]);
-      uvs.push(cornerUvs[i][0], cornerUvs[i][1]);
-      const tint = surface.tint[i];
-      colors.push(tint, tint, tint);
-    }
-    // Normal from the winding; three recomputes nothing when supplied.
     const e1 = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
     const e2 = new THREE.Vector3(d[0] - a[0], d[1] - a[1], d[2] - a[2]);
     const normal = e1.cross(e2).normalize();
     for (let i = 0; i < 4; i += 1) {
-      normals.push(normal.x, normal.y, normal.z);
+      const corner = corners[i];
+      this.positions.push(corner[0], corner[1], corner[2]);
+      this.normals.push(normal.x, normal.y, normal.z);
+      this.uvs.push(cornerUvs[i][0], cornerUvs[i][1]);
+      this.colors.push(tint, tint, tint);
     }
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
-  return geometry;
+  /**
+   * Axis-aligned box from its centre and size. Six quads, no shared vertices:
+   * a box has hard edges, and welding them would round the corners.
+   */
+  box(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, tint = 1): void {
+    this.quad(
+      [cx - sx / 2, cy - sy / 2, cz + sz / 2],
+      [cx + sx / 2, cy - sy / 2, cz + sz / 2],
+      [cx + sx / 2, cy + sy / 2, cz + sz / 2],
+      [cx - sx / 2, cy + sy / 2, cz + sz / 2],
+      tint
+    );
+    this.quad(
+      [cx + sx / 2, cy - sy / 2, cz - sz / 2],
+      [cx - sx / 2, cy - sy / 2, cz - sz / 2],
+      [cx - sx / 2, cy + sy / 2, cz - sz / 2],
+      [cx + sx / 2, cy + sy / 2, cz - sz / 2],
+      tint
+    );
+    this.quad(
+      [cx - sx / 2, cy + sy / 2, cz + sz / 2],
+      [cx + sx / 2, cy + sy / 2, cz + sz / 2],
+      [cx + sx / 2, cy + sy / 2, cz - sz / 2],
+      [cx - sx / 2, cy + sy / 2, cz - sz / 2],
+      tint
+    );
+    this.quad(
+      [cx - sx / 2, cy - sy / 2, cz - sz / 2],
+      [cx + sx / 2, cy - sy / 2, cz - sz / 2],
+      [cx + sx / 2, cy - sy / 2, cz + sz / 2],
+      [cx - sx / 2, cy - sy / 2, cz + sz / 2],
+      tint
+    );
+    this.quad(
+      [cx - sx / 2, cy - sy / 2, cz - sz / 2],
+      [cx - sx / 2, cy - sy / 2, cz + sz / 2],
+      [cx - sx / 2, cy + sy / 2, cz + sz / 2],
+      [cx - sx / 2, cy + sy / 2, cz - sz / 2],
+      tint
+    );
+    this.quad(
+      [cx + sx / 2, cy - sy / 2, cz + sz / 2],
+      [cx + sx / 2, cy - sy / 2, cz - sz / 2],
+      [cx + sx / 2, cy + sy / 2, cz - sz / 2],
+      [cx + sx / 2, cy + sy / 2, cz + sz / 2],
+      tint
+    );
+  }
+
+  /**
+   * Surface of revolution around +Y from a 2-D profile `[radius, height]`.
+   *
+   * The profile is walked mouth-to-throat, so the shell's outside faces away
+   * from the axis. Normals come from the profile tangent (rotated), which is
+   * what makes the rolled lip read as a curve rather than a chamfer.
+   *
+   * `arc` limits the sweep: the back half of a wall-hung bowl is inside the
+   * wall, so only the front half is emitted.
+   */
+  revolve(
+    profile: readonly (readonly [number, number])[],
+    segments: number,
+    options: {
+      arc?: number;
+      /** Where the sweep starts; the default centres it on +X. */
+      start?: number;
+      tint?: (index: number) => number;
+      uvScale?: number;
+      /** Close the flat back where the arc stops, if the sweep is partial. */
+      cap?: boolean;
+    } = {}
+  ): void {
+    const arc = options.arc ?? Math.PI * 2;
+    const startAngle = options.start ?? -arc / 2;
+    const closed = Math.abs(arc - Math.PI * 2) < 1e-6;
+    const tintFor = options.tint ?? (() => 1);
+    const uvScale = options.uvScale ?? 1;
+    const rings = profile.length;
+    const cols = closed ? segments : segments + 1;
+
+    // Profile normals in the (radius, height) plane, averaged per point.
+    const profileNormals: [number, number][] = profile.map((_point, i) => {
+      const prev = profile[Math.max(0, i - 1)];
+      const next = profile[Math.min(rings - 1, i + 1)];
+      const dr = next[0] - prev[0];
+      const dy = next[1] - prev[1];
+      const length = Math.hypot(dr, dy) || 1;
+      return [dy / length, -dr / length];
+    });
+
+    const base = this.positions.length / 3;
+    for (let c = 0; c < cols; c += 1) {
+      const angle = startAngle + (c / segments) * arc;
+      const sin = Math.sin(angle);
+      const cos = Math.cos(angle);
+      for (let r = 0; r < rings; r += 1) {
+        const [radius, height] = profile[r];
+        const normal = profileNormals[r];
+        this.positions.push(cos * radius, height, sin * radius);
+        this.normals.push(cos * normal[0], normal[1], sin * normal[0]);
+        this.uvs.push((c / segments) * uvScale, height * uvScale);
+        const tint = tintFor(r);
+        this.colors.push(tint, tint, tint);
+      }
+    }
+    for (let c = 0; c < segments; c += 1) {
+      const nextCol = closed ? (c + 1) % cols : c + 1;
+      for (let r = 0; r < rings - 1; r += 1) {
+        const a = base + c * rings + r;
+        const b = base + nextCol * rings + r;
+        this.indices.push(a, a + 1, b, b, a + 1, b + 1);
+      }
+    }
+
+    if (options.cap && !closed) {
+      // Flat back: a fan from the axis out to the first and last profile point.
+      const first = profile[0];
+      const last = profile[rings - 1];
+      const left = startAngle;
+      const right = startAngle + arc;
+      const lx = Math.cos(left);
+      const lz = Math.sin(left);
+      const rx = Math.cos(right);
+      const rz = Math.sin(right);
+      const capBase = this.positions.length / 3;
+      const corners: Vec3[] = [
+        [lx * first[0], first[1], lz * first[0]],
+        [rx * first[0], first[1], rz * first[0]],
+        [rx * last[0], last[1], rz * last[0]],
+        [lx * last[0], last[1], lz * last[0]]
+      ];
+      const normal = new THREE.Vector3(lz - rz, 0, rx - lx).normalize();
+      for (const corner of corners) {
+        this.positions.push(corner[0], corner[1], corner[2]);
+        this.normals.push(normal.x, normal.y, normal.z);
+        this.uvs.push(0, 0);
+        this.colors.push(0.86, 0.86, 0.86);
+      }
+      this.indices.push(capBase, capBase + 1, capBase + 2, capBase, capBase + 2, capBase + 3);
+    }
+  }
+
+  /** Flat disc facing `normal` (only ±Y and ±Z are used here). */
+  disc(
+    cx: number,
+    cy: number,
+    cz: number,
+    radius: number,
+    segments: number,
+    facing: 'up' | 'down' | 'front',
+    tint = 1
+  ): void {
+    const base = this.positions.length / 3;
+    const normal: Vec3 =
+      facing === 'up' ? [0, 1, 0] : facing === 'down' ? [0, -1, 0] : [0, 0, 1];
+    this.positions.push(cx, cy, cz);
+    this.normals.push(normal[0], normal[1], normal[2]);
+    this.uvs.push(0, 0);
+    this.colors.push(tint, tint, tint);
+    for (let i = 0; i <= segments; i += 1) {
+      const angle = (i / segments) * Math.PI * 2;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const px = facing === 'up' || facing === 'down' ? cx + x : cx + x;
+      const py = facing === 'up' || facing === 'down' ? cy : cy + z;
+      const pz = facing === 'up' || facing === 'down' ? cz + z : cz;
+      this.positions.push(px, py, pz);
+      this.normals.push(normal[0], normal[1], normal[2]);
+      this.uvs.push(x / (radius * 2) + 0.5, pz / (radius * 2) + 0.5);
+      this.colors.push(tint, tint, tint);
+    }
+    for (let i = 0; i < segments; i += 1) {
+      this.indices.push(base, base + 1 + i, base + 2 + i);
+    }
+  }
+
+  /** Append another geometry's attributes, keeping one draw per material. */
+  merge(geometry: THREE.BufferGeometry): void {
+    const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+    const normal = geometry.getAttribute('normal') as THREE.BufferAttribute | undefined;
+    const uv = geometry.getAttribute('uv') as THREE.BufferAttribute | undefined;
+    const color = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    const base = this.positions.length / 3;
+    for (let i = 0; i < position.count; i += 1) {
+      this.positions.push(position.getX(i), position.getY(i), position.getZ(i));
+      this.normals.push(
+        normal ? normal.getX(i) : 0,
+        normal ? normal.getY(i) : 1,
+        normal ? normal.getZ(i) : 0
+      );
+      this.uvs.push(uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0);
+      this.colors.push(
+        color ? color.getX(i) : 1,
+        color ? color.getY(i) : 1,
+        color ? color.getZ(i) : 1
+      );
+    }
+    const index = geometry.getIndex();
+    if (index) {
+      for (let i = 0; i < index.count; i += 1) {
+        this.indices.push(base + index.getX(i));
+      }
+    } else {
+      for (let i = 0; i < position.count; i += 1) {
+        this.indices.push(base + i);
+      }
+    }
+  }
+
+  build(): THREE.BufferGeometry {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(this.normals, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(this.uvs, 2));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3));
+    geometry.setIndex(this.indices);
+    return geometry;
+  }
+
+  get triangleCount(): number {
+    return this.indices.length / 3;
+  }
 }
 
 /**
- * Bowl geometry: a funnel from the oval mouth at the front to a narrow throat
- * at the wall. That is what a urinal is from the patient's side — an opening
- * that slopes down and away — and it reads correctly without a rim curve.
+ * The bowl profile, mouth first.
+ *
+ * `[radius, height]` in bowl-local metres: the rolled lip, then the throat
+ * narrowing to a 25 mm drain. Heights are negative because the bowl runs down
+ * away from its mouth.
  */
-const BOWL_CENTER_Y = 0.68;
-const BOWL_CENTER_Z = -0.63;
-const BOWL_LIP_RADIUS = 0.21;
-const BOWL_DEPTH = 0.42;
-/** Vertical stretch: urinal mouths are taller than they are wide. */
-const BOWL_ASPECT = 1.15;
-/**
- * Mouth tilt, radians. A urinal is not a funnel aimed at the user: its lip
- * faces up and out, and the bowl runs down to a throat at the wall.
- */
-const BOWL_TILT = 0.62;
+const BOWL_PROFILE: readonly (readonly [number, number])[] = [
+  [0.104, 0.0],
+  [0.1055, 0.006],
+  [0.1045, 0.014],
+  [0.0995, 0.015],
+  [0.0975, 0.010],
+  [0.094, -0.02],
+  [0.086, -0.06],
+  [0.072, -0.105],
+  [0.055, -0.145],
+  [0.038, -0.175],
+  [0.026, -0.19],
+  [0.0, -0.192]
+];
 
 export interface RoomLayer {
   root: THREE.Group;
@@ -124,11 +335,9 @@ export function createRoom(): RoomLayer {
   const ceramicMap = ceramicTexture();
   const oakMap = oakTexture();
   const metalMap = metalTexture();
-  if (wallMap) disposables.push(wallMap);
-  if (floorMap) disposables.push(floorMap);
-  if (ceramicMap) disposables.push(ceramicMap);
-  if (oakMap) disposables.push(oakMap);
-  if (metalMap) disposables.push(metalMap);
+  for (const map of [wallMap, floorMap, ceramicMap, oakMap, metalMap]) {
+    if (map) disposables.push(map);
+  }
 
   const wallMaterial = new THREE.MeshLambertMaterial({
     ...(wallMap ? { map: wallMap } : {}),
@@ -148,183 +357,238 @@ export function createRoom(): RoomLayer {
     vertexColors: true,
     side: THREE.DoubleSide
   });
-  const panelMaterial = new THREE.MeshLambertMaterial({
-    ...(ceramicMap ? { map: ceramicMap } : {}),
-    color: ceramicMap ? 0xffffff : 0xf6f4ef,
-    side: THREE.DoubleSide
-  });
   const oakMaterial = new THREE.MeshLambertMaterial({
     ...(oakMap ? { map: oakMap } : {}),
     color: oakMap ? 0xffffff : 0xc2a176,
+    vertexColors: true,
     side: THREE.DoubleSide
   });
   const metalMaterial = new THREE.MeshLambertMaterial({
     ...(metalMap ? { map: metalMap } : {}),
     color: metalMap ? 0xffffff : 0xb7bcc0,
+    vertexColors: true,
     emissive: 0x0e1012
   });
-  disposables.push(wallMaterial, floorMaterial, ceilingMaterial, ceramicMaterial, panelMaterial, oakMaterial, metalMaterial);
+  const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x4b514c, vertexColors: true });
+  disposables.push(
+    wallMaterial,
+    floorMaterial,
+    ceilingMaterial,
+    ceramicMaterial,
+    oakMaterial,
+    metalMaterial,
+    darkMaterial
+  );
 
-  const wallGeometry = buildSurfaces([
-    {
-      // Back wall, seen from the room (+Z normal).
-      corners: [
-        [-ROOM_WIDTH / 2, 0, BACK_Z],
-        [ROOM_WIDTH / 2, 0, BACK_Z],
-        [ROOM_WIDTH / 2, ROOM_HEIGHT, BACK_Z],
-        [-ROOM_WIDTH / 2, ROOM_HEIGHT, BACK_Z]
-      ],
-      tint: [0.82, 0.82, 1.0, 1.0],
-      uv: WALL_UV
-    },
-    {
-      // Left wall, facing +X.
-      corners: [
-        [-ROOM_WIDTH / 2, 0, FRONT_Z],
-        [-ROOM_WIDTH / 2, 0, BACK_Z],
-        [-ROOM_WIDTH / 2, ROOM_HEIGHT, BACK_Z],
-        [-ROOM_WIDTH / 2, ROOM_HEIGHT, FRONT_Z]
-      ],
-      tint: [0.84, 0.84, 1.0, 1.0],
-      uv: WALL_UV
-    },
-    {
-      // Wall behind the patient, facing -Z: turning around finds a room, not a void.
-      corners: [
-        [ROOM_WIDTH / 2, 0, FRONT_Z],
-        [-ROOM_WIDTH / 2, 0, FRONT_Z],
-        [-ROOM_WIDTH / 2, ROOM_HEIGHT, FRONT_Z],
-        [ROOM_WIDTH / 2, ROOM_HEIGHT, FRONT_Z]
-      ],
-      tint: [0.78, 0.78, 0.95, 0.95],
-      uv: WALL_UV
-    }
-  ]);
-  const walls = new THREE.Mesh(wallGeometry, wallMaterial);
+  // ── Walls, skirting and the door reveal ─────────────────────────────────
+  const wallBuilder = new MeshBuilder();
+  wallBuilder.quad(
+    [-ROOM_WIDTH / 2, 0, BACK_Z],
+    [ROOM_WIDTH / 2, 0, BACK_Z],
+    [ROOM_WIDTH / 2, ROOM_HEIGHT, BACK_Z],
+    [-ROOM_WIDTH / 2, ROOM_HEIGHT, BACK_Z],
+    0.92,
+    WALL_UV
+  );
+  wallBuilder.quad(
+    [-ROOM_WIDTH / 2, 0, FRONT_Z],
+    [-ROOM_WIDTH / 2, 0, BACK_Z],
+    [-ROOM_WIDTH / 2, ROOM_HEIGHT, BACK_Z],
+    [-ROOM_WIDTH / 2, ROOM_HEIGHT, FRONT_Z],
+    0.9,
+    WALL_UV
+  );
+  wallBuilder.quad(
+    [ROOM_WIDTH / 2, 0, FRONT_Z],
+    [-ROOM_WIDTH / 2, 0, FRONT_Z],
+    [-ROOM_WIDTH / 2, ROOM_HEIGHT, FRONT_Z],
+    [ROOM_WIDTH / 2, ROOM_HEIGHT, FRONT_Z],
+    0.88,
+    WALL_UV
+  );
+  // Skirting: 60 mm tall, 12 mm proud, darker at its own top edge.
+  const skirt = 0.06;
+  const proud = 0.012;
+  wallBuilder.quad(
+    [-ROOM_WIDTH / 2, 0, BACK_Z + proud],
+    [ROOM_WIDTH / 2, 0, BACK_Z + proud],
+    [ROOM_WIDTH / 2, skirt, BACK_Z + proud],
+    [-ROOM_WIDTH / 2, skirt, BACK_Z + proud],
+    0.74
+  );
+  wallBuilder.quad(
+    [-ROOM_WIDTH / 2, skirt, BACK_Z + proud],
+    [ROOM_WIDTH / 2, skirt, BACK_Z + proud],
+    [ROOM_WIDTH / 2, skirt, BACK_Z],
+    [-ROOM_WIDTH / 2, skirt, BACK_Z],
+    0.66
+  );
+  wallBuilder.quad(
+    [-ROOM_WIDTH / 2, 0, BACK_Z],
+    [-ROOM_WIDTH / 2, 0, BACK_Z + proud],
+    [-ROOM_WIDTH / 2, skirt, BACK_Z + proud],
+    [-ROOM_WIDTH / 2, skirt, BACK_Z],
+    0.7
+  );
+  wallBuilder.quad(
+    [ROOM_WIDTH / 2, 0, BACK_Z + proud],
+    [ROOM_WIDTH / 2, 0, BACK_Z],
+    [ROOM_WIDTH / 2, skirt, BACK_Z],
+    [ROOM_WIDTH / 2, skirt, BACK_Z + proud],
+    0.7
+  );
+  const walls = new THREE.Mesh(wallBuilder.build(), wallMaterial);
   walls.name = 'washroom-walls';
   root.add(walls);
-  disposables.push(wallGeometry);
+  disposables.push(walls.geometry);
 
-  const floorGeometry = buildSurfaces([
-    {
-      corners: [
-        [-ROOM_WIDTH / 2, 0, FRONT_Z],
-        [ROOM_WIDTH / 2, 0, FRONT_Z],
-        [ROOM_WIDTH / 2, 0, BACK_Z],
-        [-ROOM_WIDTH / 2, 0, BACK_Z]
-      ],
-      // Darker at the wall end: the only floor shading worth baking.
-      tint: [1.0, 1.0, 0.82, 0.82],
-      uv: FLOOR_UV
-    }
-  ]);
-  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+  const floorBuilder = new MeshBuilder();
+  floorBuilder.quad(
+    [-ROOM_WIDTH / 2, 0, FRONT_Z],
+    [ROOM_WIDTH / 2, 0, FRONT_Z],
+    [ROOM_WIDTH / 2, 0, BACK_Z],
+    [-ROOM_WIDTH / 2, 0, BACK_Z],
+    0.96,
+    FLOOR_UV
+  );
+  const floor = new THREE.Mesh(floorBuilder.build(), floorMaterial);
   floor.name = 'washroom-floor';
   root.add(floor);
-  disposables.push(floorGeometry);
+  disposables.push(floor.geometry);
 
-  const ceilingGeometry = new THREE.PlaneGeometry(ROOM_WIDTH, ROOM_DEPTH);
-  ceilingGeometry.rotateX(Math.PI / 2);
-  const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+  const ceiling = new THREE.Mesh(
+    (() => {
+      const geometry = new THREE.PlaneGeometry(ROOM_WIDTH, ROOM_DEPTH);
+      geometry.rotateX(Math.PI / 2);
+      return geometry;
+    })(),
+    ceilingMaterial
+  );
   ceiling.name = 'washroom-ceiling';
   ceiling.position.set(0, ROOM_HEIGHT, BACK_Z + ROOM_DEPTH / 2);
   root.add(ceiling);
-  disposables.push(ceilingGeometry);
+  disposables.push(ceiling.geometry);
 
-  // Privacy screen on the right: light oak, one panel, no hardware.
-  const screenGeometry = new THREE.PlaneGeometry(0.62, 2.05);
-  const screen = new THREE.Mesh(screenGeometry, oakMaterial);
-  screen.name = 'washroom-screen';
-  screen.position.set(0.98, 1.025, BACK_Z + 0.31);
-  screen.rotation.y = -Math.PI / 2;
-  root.add(screen);
-  disposables.push(screenGeometry);
-
-  // Bowl: funnel from the oval mouth, tilted up and out, to the throat at the
-  // wall. That tilt is what separates a urinal from a funnel aimed at the eye.
-  const bowlGeometry = new THREE.CylinderGeometry(BOWL_LIP_RADIUS, 0.07, BOWL_DEPTH, 24, 1, true);
-  // Depth cue without shadows: darken towards the throat by baking it into the
-  // vertex colour, the cheapest shading this GPU can do.
-  {
-    const position = bowlGeometry.getAttribute('position') as THREE.BufferAttribute;
-    const colors = new Float32Array(position.count * 3);
-    for (let i = 0; i < position.count; i += 1) {
-      const t = (position.getY(i) + BOWL_DEPTH / 2) / BOWL_DEPTH;
-      const shade = 0.55 + 0.45 * Math.min(1, Math.max(0, t));
-      colors[i * 3] = shade;
-      colors[i * 3 + 1] = shade;
-      colors[i * 3 + 2] = shade;
-    }
-    bowlGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  // ── Oak: privacy screen, its post, and the door reveal behind the viewer ─
+  const oakBuilder = new MeshBuilder();
+  oakBuilder.box(0.98, 1.025, BACK_Z + 0.31, 0.028, 2.05, 0.62);
+  oakBuilder.box(0.98, 0.02, BACK_Z + 0.03, 0.05, 0.04, 0.06);
+  oakBuilder.box(0.98, 2.04, BACK_Z + 0.03, 0.05, 0.04, 0.06);
+  // Door reveal on the wall behind the patient: jambs and head, 0.9 × 2.1.
+  for (const [x, y, sy] of [
+    [-0.45, 1.05, 2.1],
+    [0.45, 1.05, 2.1]
+  ] as const) {
+    oakBuilder.box(x, y, FRONT_Z - 0.02, 0.05, sy, 0.04, 0.92);
   }
-  bowlGeometry.rotateX(Math.PI / 2);
-  bowlGeometry.scale(1, BOWL_ASPECT, 1);
-  bowlGeometry.rotateX(-BOWL_TILT);
-  const urinal = new THREE.Mesh(bowlGeometry, ceramicMaterial);
-  urinal.name = 'washroom-urinal';
-  urinal.position.set(0, BOWL_CENTER_Y, BOWL_CENTER_Z);
-  root.add(urinal);
-  disposables.push(bowlGeometry);
+  oakBuilder.box(0, 2.1, FRONT_Z - 0.02, 0.95, 0.05, 0.04, 0.92);
+  const oak = new THREE.Mesh(oakBuilder.build(), oakMaterial);
+  oak.name = 'washroom-oak';
+  root.add(oak);
+  disposables.push(oak.geometry);
 
-  // Lip centre, derived from the same tilt so the rim lands on the mouth.
-  const lipY = BOWL_CENTER_Y + Math.sin(BOWL_TILT) * (BOWL_DEPTH / 2);
-  const lipZ = BOWL_CENTER_Z + Math.cos(BOWL_TILT) * (BOWL_DEPTH / 2);
+  // ── Ceramic: back plate + revolved bowl with a rolled lip ───────────────
+  const ceramic = new MeshBuilder();
 
-  // Rim: the only edge a man actually sees, so it gets its own thin ring.
-  const rimGeometry = new THREE.TorusGeometry(BOWL_LIP_RADIUS, 0.012, 8, 28);
-  rimGeometry.scale(1, BOWL_ASPECT, 1);
-  rimGeometry.rotateX(-BOWL_TILT);
-  const rimMaterial = new THREE.MeshLambertMaterial({ color: 0xfbfaf6 });
-  const rim = new THREE.Mesh(rimGeometry, rimMaterial);
-  rim.name = 'washroom-urinal-rim';
-  rim.position.set(0, lipY, lipZ);
-  root.add(rim);
-  disposables.push(rimGeometry, rimMaterial);
+  // Ceramic shroud: the fixture's body on the wall, a curved slab rather than a
+  // card. A flat card read as a poster taped to the wall.
+  {
+    // Built around the local axis first: a revolve is centred on the origin,
+    // and a shroud left there sits around the patient's knees.
+    const shroudBuilder = new MeshBuilder();
+    // Kept shallow: a deep shroud sits in front of the bowl and turns the
+    // fixture into a slab with a slot cut in it.
+    shroudBuilder.revolve(
+      [
+        [0.112, 0.60],
+        [0.128, 0.64],
+        [0.128, 1.01],
+        [0.112, 1.05]
+      ],
+      18,
+      { arc: 1.5, start: Math.PI / 2 - 0.75, tint: () => 0.93, uvScale: 1.6 }
+    );
+    const shroud = shroudBuilder.build();
+    shroud.translate(0, 0, BACK_Z + 0.02);
+    ceramic.merge(shroud);
+    shroud.dispose();
+  }
 
-  // Throat: a dark disc closing the narrow end, so the bowl does not read as
-  // an open cone with the wall showing through it.
-  const throatGeometry = new THREE.CircleGeometry(0.07, 20);
-  throatGeometry.rotateX(-BOWL_TILT);
-  const throatMaterial = new THREE.MeshBasicMaterial({ color: 0x4b514c });
-  const throat = new THREE.Mesh(throatGeometry, throatMaterial);
-  throat.name = 'washroom-urinal-throat';
-  throat.position.set(
-    0,
-    BOWL_CENTER_Y - Math.sin(BOWL_TILT) * (BOWL_DEPTH / 2),
-    BOWL_CENTER_Z - Math.cos(BOWL_TILT) * (BOWL_DEPTH / 2)
+  // Bowl: the mouth sits at the lip height and faces up-and-out; the throat
+  // runs down and back into the wall. The emitted half is the front one, so the
+  // missing half is the part already inside the wall.
+  const bowlTilt = 0.62;
+  const bowlDepth = 0.30;
+  const profileDepth = Math.abs(BOWL_PROFILE[BOWL_PROFILE.length - 1][1]);
+  const bowlScaleY = bowlDepth / profileDepth;
+  const mouth = new THREE.Vector3(0, LIP_Y, BACK_Z + 0.30);
+  const throatPoint = new THREE.Vector3(
+    mouth.x,
+    mouth.y - Math.cos(bowlTilt) * bowlDepth,
+    mouth.z - Math.sin(bowlTilt) * bowlDepth
   );
+  const bowlShell = new MeshBuilder();
+  bowlShell.revolve(BOWL_PROFILE, 26, {
+    arc: Math.PI,
+    start: 0,
+    tint: (index) => {
+      // Darker into the throat: the only depth cue without shadows.
+      const d = 1 - index / (BOWL_PROFILE.length - 1);
+      return 0.6 + 0.38 * d;
+    },
+    uvScale: 1.4
+  });
+  const bowlGeometry = bowlShell.build();
+  bowlGeometry.scale(1, bowlScaleY, 1);
+  bowlGeometry.rotateX(bowlTilt);
+  bowlGeometry.translate(mouth.x, mouth.y, mouth.z);
+  ceramic.merge(bowlGeometry);
+  bowlGeometry.dispose();
+
+  const ceramicMesh = new THREE.Mesh(ceramic.build(), ceramicMaterial);
+  ceramicMesh.name = 'washroom-urinal';
+  root.add(ceramicMesh);
+  disposables.push(ceramicMesh.geometry);
+
+  // ── Metal: flush plate, pipe into the bowl, brackets, floor drain ────────
+  const metal = new MeshBuilder();
+  metal.box(0, 1.42, BACK_Z + 0.007, 0.16, 0.115, 0.014, 0.9);
+  // Pipe: flush plate down the wall, then a short spout into the mouth.
+  metal.box(0, 1.30, BACK_Z + 0.03, 0.032, 0.22, 0.032, 0.86);
+  metal.box(0, 1.19, BACK_Z + 0.06, 0.028, 0.14, 0.028, 0.8);
+  // Spout reaches the mouth's back edge: a nozzle that stops short reads as a
+  // second, floating fixture.
+  metal.box(0, 1.045, BACK_Z + 0.235, 0.045, 0.022, 0.30, 0.78);
+  metal.box(0, 1.028, BACK_Z + 0.375, 0.05, 0.03, 0.05, 0.7);
+  // Two wall brackets under the bowl.
+  for (const x of [-0.11, 0.11]) {
+    metal.box(x, 0.66, BACK_Z + 0.05, 0.035, 0.03, 0.11, 0.8);
+  }
+  // Floor drain: a 150 mm square grate under the bowl.
+  const drainZ = BACK_Z + 0.34;
+  for (let i = 0; i < 5; i += 1) {
+    const offset = -0.06 + i * 0.03;
+    metal.box(offset, 0.003, drainZ, 0.012, 0.006, 0.14, 0.55);
+  }
+  metal.box(0, 0.003, drainZ - 0.07, 0.15, 0.006, 0.012, 0.5);
+  metal.box(0, 0.003, drainZ + 0.07, 0.15, 0.006, 0.012, 0.5);
+  const metalMesh = new THREE.Mesh(metal.build(), metalMaterial);
+  metalMesh.name = 'washroom-metal';
+  root.add(metalMesh);
+  disposables.push(metalMesh.geometry);
+
+  // ── Dark: the drain throat and the hole behind the grate ────────────────
+  const dark = new MeshBuilder();
+  dark.box(0, 0.0015, drainZ, 0.15, 0.002, 0.15, 0.35);
+  // The bowl's throat: a dark cap so the bowl does not read as a hollow cone
+  // with the wall showing through it.
+  dark.box(throatPoint.x, throatPoint.y, throatPoint.z, 0.05, 0.03, 0.05, 0.3);
+  const throat = new THREE.Mesh(dark.build(), darkMaterial);
+  throat.name = 'washroom-dark';
   root.add(throat);
-  disposables.push(throatGeometry, throatMaterial);
+  disposables.push(throat.geometry);
 
-  // Ceramic back panel, rounded: the fixture's outline on the wall.
-  const panelWidth = 0.3;
-  const panelHeight = 0.48;
-  const panelRadius = 0.07;
-  const panelShape = new THREE.Shape();
-  panelShape.moveTo(-panelWidth / 2 + panelRadius, -panelHeight / 2);
-  panelShape.lineTo(panelWidth / 2 - panelRadius, -panelHeight / 2);
-  panelShape.quadraticCurveTo(panelWidth / 2, -panelHeight / 2, panelWidth / 2, -panelHeight / 2 + panelRadius);
-  panelShape.lineTo(panelWidth / 2, panelHeight / 2 - panelRadius);
-  panelShape.quadraticCurveTo(panelWidth / 2, panelHeight / 2, panelWidth / 2 - panelRadius, panelHeight / 2);
-  panelShape.lineTo(-panelWidth / 2 + panelRadius, panelHeight / 2);
-  panelShape.quadraticCurveTo(-panelWidth / 2, panelHeight / 2, -panelWidth / 2, panelHeight / 2 - panelRadius);
-  panelShape.lineTo(-panelWidth / 2, -panelHeight / 2 + panelRadius);
-  panelShape.quadraticCurveTo(-panelWidth / 2, -panelHeight / 2, -panelWidth / 2 + panelRadius, -panelHeight / 2);
-  const backPlateGeometry = new THREE.ShapeGeometry(panelShape, 6);
-  const backPlate = new THREE.Mesh(backPlateGeometry, panelMaterial);
-  backPlate.name = 'washroom-urinal-back';
-  backPlate.position.set(0, 0.82, BACK_Z + 0.008);
-  root.add(backPlate);
-  disposables.push(backPlateGeometry);
-
-  const plateGeometry = new THREE.BoxGeometry(0.16, 0.11, 0.012);
-  const plate = new THREE.Mesh(plateGeometry, metalMaterial);
-  plate.name = 'washroom-flush-plate';
-  plate.position.set(0, 1.24, BACK_Z + 0.007);
-  root.add(plate);
-  disposables.push(plateGeometry);
-
-  // Recessed light above the bowl: an emissive-looking plane, not a light source.
+  // Recessed light above the bowl: an emissive-looking plane.
   const lightGeometry = new THREE.PlaneGeometry(0.26, 0.9);
   lightGeometry.rotateX(Math.PI / 2);
   const lightMaterial = new THREE.MeshBasicMaterial({
@@ -339,9 +603,7 @@ export function createRoom(): RoomLayer {
   disposables.push(lightGeometry, lightMaterial);
 
   // Two lights, no shadows: a soft sky/ground mix plus a warm key from above
-  // and slightly behind the viewer, so the bowl gets a readable gradient.
-  // Total irradiance stays under 1.0: no tone mapping, so anything above it
-  // would clip the white ceramic into a flat silhouette.
+  // and behind the viewer.
   const hemisphere = new THREE.HemisphereLight(0xfffaf0, 0x8f8879, 0.82);
   const key = new THREE.DirectionalLight(0xfff1dc, 0.42);
   key.position.set(0.6, 2.4, 1.4);

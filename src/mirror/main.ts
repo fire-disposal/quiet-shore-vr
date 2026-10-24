@@ -93,13 +93,18 @@ let lastFrame = 0;
 const target = {
   yaw: 0, pitch: 0, roll: 0,
   worldYaw: 0, worldPitch: 0, worldRoll: 0,
-  floatMm: 0, swayDeg: 0
+  floatMm: 0, swayDeg: 0,
+  /** Device-frame eye position from telemetry, metres. */
+  x: 0, y: 1.7, z: 0
 };
+/** False until a payload carries a finite pose. */
+let hasPose = false;
 /** What this frame renders; eased toward `target` to hide the 5 Hz feed. */
 const applied = {
   yaw: 0, pitch: 0, roll: 0,
   worldYaw: 0, worldPitch: 0, worldRoll: 0,
-  floatMm: 0, swayDeg: 0
+  floatMm: 0, swayDeg: 0,
+  x: 0, y: 1.7, z: 0
 };
 /** False until the first payload, which snaps instead of easing in from zero. */
 let primed = false;
@@ -121,9 +126,20 @@ function setTarget(next: MirrorState): void {
   // The telemetry pose is already in radians; only the world angles (state
   // frame) are degrees. Scaling the pose by DEG made a 40° head turn move the
   // mirror by 0.7°.
-  target.yaw = pose?.yaw ?? 0;
-  target.pitch = pose?.pitch ?? 0;
-  target.roll = pose?.roll ?? 0;
+  //
+  // A payload without a pose must not move the camera: the state frame and the
+  // telemetry frame arrive on different cadences, and resetting to zero on a
+  // missing sample makes the mirror swing at the payload rate ("jittering, and
+  // never following the head").
+  if (pose && Number.isFinite(pose.yaw) && Number.isFinite(pose.pitch)) {
+    target.yaw = pose.yaw as number;
+    target.pitch = pose.pitch as number;
+    target.roll = Number.isFinite(pose.roll) ? (pose.roll as number) : 0;
+    if (Number.isFinite(pose.x)) target.x = pose.x as number;
+    if (Number.isFinite(pose.y)) target.y = pose.y as number;
+    if (Number.isFinite(pose.z)) target.z = pose.z as number;
+    hasPose = true;
+  }
   target.worldYaw = (next.worldYaw ?? 0) * DEG;
   target.worldPitch = (next.worldPitch ?? 0) * DEG;
   target.worldRoll = (next.worldRoll ?? 0) * DEG;
@@ -141,6 +157,9 @@ function setTarget(next: MirrorState): void {
   applied.worldRoll = target.worldRoll;
   applied.floatMm = target.floatMm;
   applied.swayDeg = target.swayDeg;
+  applied.x = target.x;
+  applied.y = target.y;
+  applied.z = target.z;
 }
 
 /** Swap to the reported scene when the registry can build it. */
@@ -188,6 +207,9 @@ function smooth(dt: number): void {
   applied.worldRoll += (target.worldRoll - applied.worldRoll) * alpha;
   applied.floatMm += (target.floatMm - applied.floatMm) * alpha;
   applied.swayDeg += (target.swayDeg - applied.swayDeg) * alpha;
+  applied.x += (target.x - applied.x) * alpha;
+  applied.y += (target.y - applied.y) * alpha;
+  applied.z += (target.z - applied.z) * alpha;
 }
 
 function settleFloor(): void {
@@ -204,9 +226,12 @@ function settleFloor(): void {
 }
 
 function applyCamera(): void {
-  const pose = state.pose;
   const eyeHeight = state.eyeHeight ?? 1.7;
-  camera.position.set(pose?.x ?? 0, pose?.y ?? eyeHeight, pose?.z ?? 0);
+  if (hasPose) {
+    camera.position.set(applied.x, applied.y, applied.z);
+  } else {
+    camera.position.set(0, eyeHeight, 0);
+  }
   // The patient sees content rotated by the world shell; undo that rotation
   // here, so calibration, view and posture offsets are visible in the mirror.
   // Roll is the head's own, so it stays in the YXZ head rotation.
@@ -214,7 +239,7 @@ function applyCamera(): void {
     camera,
     { yaw: applied.worldYaw, pitch: applied.worldPitch, roll: applied.worldRoll },
     { yaw: applied.yaw, pitch: applied.pitch, roll: applied.roll },
-    { x: pose?.x ?? 0, y: camera.position.y, z: pose?.z ?? 0 }
+    { x: camera.position.x, y: camera.position.y, z: camera.position.z }
   );
 }
 
