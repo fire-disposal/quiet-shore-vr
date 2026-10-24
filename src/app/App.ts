@@ -836,30 +836,10 @@ export class QuietShoreApp {
     if (this.lifecycle.mode === value) {
       return;
     }
-    this.dispatch({ type: 'mode', mode: value });
-    if (value === 'posture') {
-      this.armPostureAt(1);
-    } else {
-      this.stopSitUp();
-      this.sitUpReady = this.sitUpPath !== null;
-      this.applyFrame();
-    }
-    this.start.setStatus(value === 'posture' ? '已切到起身' : '已切回漂浮', 'ok');
+    // The two modes run in different world frames: switching mid-session would
+    // snap the world by ~90°, so the mode stays a start parameter (core.md §4).
+    this.start.setStatus('模式只能在会话开始前选择', 'error');
     this.link.sendStateNow();
-    this.updateHud(performance.now());
-  }
-
-  /** Arms the sit-up layer at [t] (0 = supine, 1 = standing) with no motion. */
-  private armPostureAt(t: number): void {
-    this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
-    this.sitUpReference = {
-      position: this.headPose.position.clone(),
-      quaternion: this.headPose.quaternion.clone()
-    };
-    this.sitUpMotion.reset();
-    this.sitUpMotion.seek(t);
-    this.sitUpReady = true;
-    this.applyFrame();
   }
 
   /**
