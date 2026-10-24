@@ -63,7 +63,8 @@ stateDiagram-v2
 切换链路：平板 `scene:<id>` → 头显校验并存入启动参数 → 转发给页面 → 页面在会话外重建场景；平板与镜像都从 state 回读已加载的场景，不各自记一份选择。
 
 - 场景内不出现人物；不出现病床、监护仪与任何文字标牌。
-- 环境音随场景声明（`stream` / `lake`），音量低于护理人员说话声。
+- 环境音随场景声明（`stream` / `lake`），音量低于护理人员说话声；**默认不启动**，由平板的水声开关开启。
+- 环境音播放器是双路交叉淡化：两路同一片段以 ±0.6% 的速率错开循环，每 11–19 秒随机交换一次并重新取随机起点，叠加 6–15 秒一次的短片段细节（0.14–0.28 电平），避免 16 秒片段被听出循环。
 - 没有画质挡位：三个场景共用同一套渲染参数（`XR_SCALE = 1.25`、AA 开）。
 
 ### 5.1 场景接口约定
@@ -72,8 +73,7 @@ stateDiagram-v2
 
 ```ts
 interface SceneDefinition extends SceneSummary {
-  posture: 'standing' | 'supine';   // 这幅景是按哪种体位画的
-  eyeY: number;                     // 该体位下眼睛在内容坐标里的高度
+  eyeY: number;                     // 作者把眼睛放在内容坐标的哪个高度
   build(ctx: SceneBuildContext): SceneHandle;
 }
 
@@ -92,7 +92,7 @@ interface SceneHandle {
 ```
 
 - 没有画质挡位：渲染参数写死在 `src/core/xr/renderer.ts`。
-- 场景声明 `posture` 与 `eyeY`，应用据此选世界帧（见 `docs/animation.md`）；不再向下传眼高。
+- 场景声明 `eyeY`，应用据此放置画面（见 `docs/animation.md`）；不再向下传眼高。
 - 音频在场景定义中声明；场景构建器不直接调用音频 API；App 不按场景 ID 选择音频。
 - `root` 只含场景内容，不含相机、HUD、准星或控制对象。
 - `update` 不读写会话状态，不做网络或 BLE。

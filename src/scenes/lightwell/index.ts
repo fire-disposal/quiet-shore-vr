@@ -322,7 +322,7 @@ export const lightwellScene = defineScene(
   },
   // Supine inside the shaft: `EYE_Y` is where the rings centre, so it is also
   // where the eye belongs.
-  { posture: 'supine', eyeY: 1.7 },
+  { eyeY: 1.7 },
   function () {
     const parts = createLightWell();
     const settings: SceneSettings = {

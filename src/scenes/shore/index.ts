@@ -44,7 +44,7 @@ export const shoreScene = defineScene(
   },
   // Drawn for a body on its back on the water: the eye rides 0.45 m above the
   // surface, which is the sit-up path's lying eye height.
-  { posture: 'supine', eyeY: 0.45 },
+  { eyeY: 0.45 },
   function () {
     const root = new THREE.Group();
     root.name = 'shore';

@@ -45,8 +45,8 @@ export interface WorldRuntimeState {
 }
 
 export interface WorldRuntimeApi {
-  /** A new scene: its authored eye decides the frame from now on. */
-  setScene(placement: { posture: 'standing' | 'supine'; eyeY: number }): void;
+  /** A new scene: its authored eye decides the placement from now on. */
+  setScene(placement: { eyeY: number }): void;
   /**
    * Adopt the orientation the patient is holding as the world frame, prepare
    * the sit-up path, and hand the world to the frame the mode calls for.
@@ -56,6 +56,12 @@ export interface WorldRuntimeApi {
   clearBase(): void;
   /** Advance the sit-up ramp (or the comfort posture) and write the base. */
   update(dt: number): void;
+  /**
+   * Freeze every world motion. The calibration card asks the patient to hold
+   * still, so nothing may move the world underneath it: not a posture
+   * transition, not the buoyancy settle, not a stale ramp.
+   */
+  hold(frozen: boolean): void;
   /** 1 = rise, 0 = lie back; refuses (false) when no path is prepared. */
   rise(target: 0 | 1): boolean;
   stopRise(): void;
@@ -75,7 +81,6 @@ const DEFAULT_HIP = 0.45;
 export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   const { shell, comfort, eyeHeight, setBaseOffset, mode } = deps;
 
-  let posture: 'standing' | 'supine' = 'standing';
   let eyeY = 1.7;
   let plan: FramePlan = { base: 'calibrated', offsetY: 0 };
 
@@ -89,6 +94,8 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   const motion: SitUpMotionApi = createSitUpMotion({ durationMs: 12000 });
   /** True while the sit-up path poses the base (mirrors `plan.base`). */
   let posed = false;
+  /** Set while the calibration card is up; `update` becomes a no-op. */
+  let held = false;
 
   function applyTransform(): void {
     const shellApi = shell();
@@ -100,7 +107,6 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
 
   function apply(): void {
     plan = planFrame({
-      posture,
       mode: mode(),
       eyeY,
       standEyeHeight: standHeight(),
@@ -159,6 +165,9 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   }
 
   function update(dt: number): void {
+    if (held) {
+      return;
+    }
     if (posed) {
       if (motion.update(dt)) {
         applyTransform();
@@ -208,7 +217,6 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
 
   return {
     setScene: (placement) => {
-      posture = placement.posture;
       eyeY = placement.eyeY;
     },
     calibrate,
@@ -218,6 +226,9 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     stopRise: () => motion.stop(),
     setDuration: (ms) => motion.setDuration(ms),
     setEyeHeight,
+    hold: (frozen) => {
+      held = frozen;
+    },
     isRising: () => motion.moving,
     apply,
     state,

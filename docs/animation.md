@@ -25,8 +25,12 @@ flowchart TB
 
 | 会话模式 | base | content 帧偏移 | 漂浮 |
 | --- | --- | --- | --- |
-| 漂浮 `float` | 已校准帧 `q0` | `-eyeHeight`（头显内） | 开 |
-| 起身 `posture` | 起身逆变换 | `0` | 关 |
+| 漂浮 `float` | 已校准帧 `q0` | `-eyeY`（场景声明） | 开 |
+| 起身 `posture` | 起身逆变换 | `视点高度 - eyeY` | 关 |
+
+漂浮模式对所有场景都用已校准帧：校准就是患者说"这是我的前方"，只有这一帧能让画面
+落在视线中央。早期的"按场景体位选帧"会用头部倾角旋转画面，对称的光井因此偏到一侧、
+看起来像贴在视线上。校准期间 `world.hold(true)` 冻结所有世界运动。
 
 ## 2 关键约束：漂浮沿"视觉竖直"
 
@@ -85,16 +89,17 @@ A5 的量化证据（复现栈 = comfort + world-shell + situp-path，头部为�
 
 | 字段 | 含义 | 取值 |
 | --- | --- | --- |
-| `posture` | 这幅景是按哪种体位画的 | `washroom: standing`；`shore`、`lightwell`: `supine` |
-| `eyeY` | 该体位下眼睛在内容坐标里的高度（米） | washroom 1.70；shore 0.45；lightwell 1.70 |
+| `eyeY` | 作者把眼睛放在内容坐标的哪个高度（米） | washroom 1.70；shore 0.45；lightwell 1.70 |
 
 `planFrame()`（`src/core/xr/world-frame.ts`）是唯一的选帧处：
 
-| 场景 / 模式 | base | 内容偏移 |
-| --- | --- | --- |
-| standing / 漂浮 | 已校准帧 | `-eyeY` |
-| standing / 起身 | 起身路径 | `视点高度 - eyeY` |
-| supine / 两种模式 | 起身路径（t 由命令驱动） | `躺卧眼高 - eyeY` |
+| 场景 | `eyeY` |
+| --- | --- |
+| `washroom` | 1.70（地面在眼下方 1.7 m） |
+| `shore` | 0.45（水面在眼下方 0.45 m） |
+| `lightwell` | 1.70（环带中心） |
+
+选帧只由模式决定：漂浮 → 已校准帧、偏移 `-eyeY`；起身 → 起身路径、偏移 `视点高度 - eyeY`。
 
 同时删掉了两个错位来源：
 

@@ -24,11 +24,9 @@ import {
   disposeAudio,
   playSceneAudio,
   preloadSceneAudio,
-  setAudioMuted,
   setBuoyancySwell,
   setDuckDepth,
   stopAudio,
-  toggleMuted,
   unlockAudio
 } from '../audio/audio';
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
@@ -147,7 +145,8 @@ export class QuietShoreApp {
   /** Debounce for the single physical confirm: `select*` plus DOM fallbacks. */
   private selectHandledAt = 0;
   private showPerf: boolean;
-  private audioMuted = false;
+  /** Scene bed. Off until the operator starts it; voice cues are independent. */
+  private sceneBedOn = false;
   private lastFrame = 0;
   private elapsed = 0;
   private frames = 0;
@@ -870,7 +869,9 @@ export class QuietShoreApp {
     if (!this.handle) {
       return;
     }
-    // The capture owns the world frame until it lands.
+    // The capture owns the world frame until it lands, and nothing else may
+    // move the world while the card asks the patient to hold still.
+    this.world.hold(true);
     this.world.clearBase();
     this.viewMotion.reset();
     this.comfort?.setPosture(
@@ -984,6 +985,7 @@ export class QuietShoreApp {
     // The runtime prepares the sit-up path for every session and hands the
     // world to whichever frame the mode and the scene's authored eye call for.
     this.world.calibrate(orientation, this.headPose.position);
+    this.world.hold(false);
     if (this.session && this.handle) {
       this.startSceneAudio();
     }
@@ -1181,11 +1183,9 @@ export class QuietShoreApp {
         this.exitAll();
         return;
       case 'audio':
-        if (command.state === 'toggle') {
-          this.toggleAudio();
-        } else {
-          this.applyAudioMuted(command.state === 'off');
-        }
+        this.applySceneBed(
+          command.state === 'toggle' ? !this.sceneBedOn : command.state === 'on'
+        );
         return;
       case 'posture':
         if (command.target === 'stop') {
@@ -1315,21 +1315,22 @@ export class QuietShoreApp {
     this.start.setStatus('已停止虚拟起身', 'ok');
   }
 
-  private applyAudioMuted(next: boolean): void {
-    setAudioMuted(next);
-    this.audioMuted = next;
-    this.link.sendStateNow();
-    this.updateHud(performance.now());
-  }
-
-  private toggleAudio(): void {
-    this.audioMuted = toggleMuted();
+  private applySceneBed(on: boolean): void {
+    this.sceneBedOn = on;
+    if (on) {
+      this.startSceneAudio();
+    } else {
+      this.stopSceneAudio();
+    }
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
 
   private startSceneAudio(): void {
-    playSceneAudio(SCENE.audio);
+    if (!this.sceneBedOn) {
+      return;
+    }
+    playSceneAudio(this.host.definition?.audio);
   }
 
   private stopSceneAudio(): void {
@@ -1427,7 +1428,7 @@ export class QuietShoreApp {
       triangles,
       draws,
       `p95 ${budget.p95Ms.toFixed(0)}ms`,
-      this.audioMuted ? '声关' : '声开'
+      this.sceneBedOn ? '水声开' : '水声关'
     ].join('  ');
     this.hud.setStats(this.fps, summary);
   }
@@ -1442,26 +1443,23 @@ export class QuietShoreApp {
       return 0;
     }
     const posture = this.world.state();
-    if (posture.posturePosesBase) {
-      if (!posture.sitUpMoving) {
-        return 0;
-      }
-      // Lowering (or a stopped ramp) freezes the motes: only rising reads as
-      // weightlessness. A small floor makes the first frames move immediately.
+    if (posture.posturePosesBase && posture.sitUpMoving) {
+      // The rise owns the scene while it runs. Lowering (or a stopped ramp)
+      // freezes the motes: only rising reads as weightlessness.
       if (posture.sitUpTarget <= posture.sitUpT) {
         return 0;
       }
       const rate = posture.path?.pitchRateAt(posture.sitUpT, SITUP_DURATION_MS) ?? 0;
       return Math.max(CUE_IDLE_FLOW, Math.min(1, rate / CUE_FULL_DEG_PER_S));
     }
+    // Everything else — both modes, both frames — is driven by the buoyancy.
+    // Gating this on "the sit-up does not pose the base" froze the light well's
+    // rings for a whole session, which read as a still image glued to the view.
     const comfort = this.comfort;
-    if (!comfort || !comfort.isPostureMoving()) {
-      // In float mode the motes rise with the buoyancy: amplitude over the
-      // envelope is the flow, so a stopped drift fades them out with the cue's
-      // own tau instead of cutting them.
-      return this.floating.getFlow();
+    if (comfort?.isPostureMoving()) {
+      return comfort.getPosturePhase() === 'rising' ? 1 : 0;
     }
-    return comfort.getPosturePhase() === 'rising' ? 1 : 0;
+    return this.floating.getFlow();
   }
 
   /** Collect the facts telemetry, the HUD and command handlers all read. */
@@ -1493,7 +1491,7 @@ export class QuietShoreApp {
       calibrating: this.lifecycle.phase === 'calibrating',
       calibrated: comfort?.isCalibrated() ?? false,
       postureMode: this.lifecycle.mode === 'posture',
-      audioMuted: this.audioMuted,
+      audioMuted: !this.sceneBedOn,
       eyeHeight: this.eyeHeight,
       worldYawDeg: THREE.MathUtils.radToDeg(this.worldEuler.y),
       worldPitchDeg: THREE.MathUtils.radToDeg(this.worldEuler.x),

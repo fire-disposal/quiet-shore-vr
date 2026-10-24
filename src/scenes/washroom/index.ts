@@ -36,7 +36,7 @@ export const washroomScene = defineScene(
   },
   // Standing scale: the floor is at content y=0 and the eye that sees the
   // urinal at 1.00 m sits at 1.70 m.
-  { posture: 'standing', eyeY: 1.7 },
+  { eyeY: 1.7 },
   function () {
     const room = createRoom();
     const settings: SceneSettings = {

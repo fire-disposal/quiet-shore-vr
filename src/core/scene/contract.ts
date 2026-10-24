@@ -25,9 +25,6 @@ export interface SceneBuildContext {
   registry: ResourceRegistry;
 }
 
-/** Which eye the art was authored for; decides the frame a session runs in. */
-export type ScenePosture = 'standing' | 'supine';
-
 /**
  * App-computed buoyancy for one frame. The app owns the envelope (attack,
  * release, stop); a scene that implements `applyBuoyancy` only decides *where*
@@ -83,15 +80,10 @@ export interface SceneSummary {
 
 export interface SceneDefinition extends SceneSummary {
   /**
-   * The eye the art was authored for. `standing` scenes are laid out for a
-   * viewer on their feet (a floor below them); `supine` scenes for a viewer on
-   * their back (the sky above). The floating mode picks the matching world
-   * frame, so neither kind is shown from the wrong eye.
-   */
-  posture: ScenePosture;
-  /**
-   * Content-space Y of that eye. The frame places the art by it, which is why
-   * the app never needs a global `-eyeHeight` fudge.
+   * Content-space Y of the eye the art was authored for. The frame places the
+   * art by it, which is why the app never needs a global `-eyeHeight` fudge:
+   * the washroom's floor is 1.70 m below its eye, the lake sits 0.45 m below
+   * the shore's, the light well centres its rings on its own.
    */
   eyeY: number;
   build(ctx: SceneBuildContext): SceneHandle;

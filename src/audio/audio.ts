@@ -3,6 +3,7 @@ import streamUrl from './stream.mp3';
 import rainUrl from './rain.mp3';
 import type { AudioTrack } from './types';
 import type { SceneAudio } from './types';
+import { planDetail, planSwap } from './bed-schedule';
 
 export type { AudioTrack } from './types';
 
@@ -26,16 +27,29 @@ let duckDepthDb = 12;
 let swell: GainNode | null = null;
 let swellDepth: GainNode | null = null;
 let swellLfo: OscillatorNode | null = null;
-interface Bed {
-  /** Two decorrelated copies when stereo width > 0, otherwise one. */
-  sources: AudioBufferSourceNode[];
+/**
+ * One ambience lane: a looping source with its own cross-fade gain and panner.
+ * Two lanes exist per bed; exactly one is open at a time.
+ */
+interface Lane {
   gain: GainNode;
+  panner: StereoPannerNode | null;
+  source: AudioBufferSourceNode | null;
+}
+
+interface Bed {
+  lanes: Lane[];
+  gain: GainNode;
+  /** Which lane is audible; the other is being re-seeded behind the fade. */
+  active: number;
+  /** Lane-swap and detail timers, cleared on stop. */
+  timers: number[];
+  stopped: boolean;
 }
 let current: Bed | null = null;
 /** Identity of the running bed; a width or volume change rebuilds it. */
 let currentKey = '';
 const buffers: Partial<Record<AudioTrack, AudioBuffer>> = {};
-let muted = false;
 let playing = false;
 let token = 0;
 let currentTrack: AudioTrack | null = null;
@@ -49,7 +63,7 @@ function ensureContext(): AudioContext | null {
     }
     context = new Ctor();
     master = context.createGain();
-    master.gain.value = muted ? 0 : VOLUME;
+    master.gain.value = VOLUME;
     master.connect(context.destination);
     // Tracks feed the swell bus, which breathes with the buoyancy, then the
     // duck bus, which the voice player pulls down while a cue is speaking.
@@ -140,57 +154,165 @@ export function playTrack(track: AudioTrack, options: PlayOptions = {}): void {
     const now = context.currentTime;
     const fade = Math.max(0, (options.fadeMs ?? FADE_SECONDS * 1000) / 1000);
 
-    // The bed's own envelope. Sources sit below it so a two-source bed and a
-    // one-source bed fade identically.
-    const gain = context.createGain();
+    // The bed's own envelope. Everything below fades with it, so a lane swap
+    // is invisible from outside.
+    const ctx = context;
+    const gain = ctx.createGain();
     gain.gain.value = 0;
     gain.connect(swell ?? master);
 
-    // A dry mono loop reads as a point source in the middle of the head. Two
-    // copies started at different points of the same loop, panned apart, give
-    // a wide bed with no extra assets and no cancellation at the centre.
-    const stereo = width > 0.02 && typeof context.createStereoPanner === 'function';
-    const pans = stereo ? [-width, width] : [0];
-    const sources: AudioBufferSourceNode[] = [];
-    const share = pans.length > 1 ? 0.5 : 1;
-    for (let i = 0; i < pans.length; i += 1) {
-      const source = ctxSource(context, buffer, options.loop ?? true);
-      const level = context.createGain();
-      level.gain.value = share;
-      source.connect(level);
+    const stereo = width > 0.02 && typeof ctx.createStereoPanner === 'function';
+    const lanes: Lane[] = [0, 1].map((index) => {
+      const laneGain = ctx.createGain();
+      laneGain.gain.value = index === 0 ? 1 : 0;
+      let panner: StereoPannerNode | null = null;
       if (stereo) {
-        const panner = context.createStereoPanner();
-        panner.pan.value = pans[i];
-        level.connect(panner);
+        panner = ctx.createStereoPanner();
+        // The two lanes sit on opposite sides so a swap also widens the image
+        // instead of collapsing it to the centre.
+        panner.pan.value = index === 0 ? -width : width;
+        laneGain.connect(panner);
         panner.connect(gain);
       } else {
-        level.connect(gain);
+        laneGain.connect(gain);
       }
-      const offset = pans.length > 1 ? (buffer.duration * 0.37 * i) % buffer.duration : 0;
-      source.start(now, offset);
-      sources.push(source);
-    }
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(volume, now + fade);
+      return { gain: laneGain, panner, source: null };
+    });
 
-    const old = current;
-    current = { sources, gain };
-    currentKey = key;
-    if (old) {
-      old.gain.gain.cancelScheduledValues(now);
-      old.gain.gain.setValueAtTime(old.gain.gain.value, now);
-      old.gain.gain.linearRampToValueAtTime(0, now + fade);
-      for (const source of old.sources) {
+    const bed: Bed = {
+      lanes,
+      gain,
+      active: 0,
+      timers: [],
+      stopped: false
+    };
+
+    /** (Re)start one lane at a random point and rate, at its current level. */
+    const seed = (lane: Lane): void => {
+      if (!context || bed.stopped) {
+        return;
+      }
+      const plan = planSwap(Math.random, buffer.duration);
+      if (lane.source) {
         try {
-          source.stop(now + fade + 0.05);
+          lane.source.stop();
         } catch {
           // already stopped
         }
+        lane.source.disconnect();
       }
+      const source = ctxSource(context, buffer, true);
+      source.playbackRate.value = plan.rate;
+      source.connect(lane.gain);
+      try {
+        source.start(context.currentTime, plan.offsetS);
+      } catch {
+        // context closing
+      }
+      lane.source = source;
+    };
+
+    const scheduleSwap = (): void => {
+      const plan = planSwap(Math.random, buffer.duration);
+      const timer = window.setTimeout(() => {
+        if (bed.stopped || !context) {
+          return;
+        }
+        const from = bed.lanes[bed.active];
+        const to = bed.lanes[1 - bed.active];
+        const at = context.currentTime;
+        // Cross-fade: the outgoing lane falls while the incoming rises, so the
+        // sum stays at unit level and no loop point is ever bare.
+        from.gain.gain.cancelScheduledValues(at);
+        from.gain.gain.setValueAtTime(from.gain.gain.value, at);
+        from.gain.gain.linearRampToValueAtTime(0, at + plan.fadeS);
+        to.gain.gain.cancelScheduledValues(at);
+        to.gain.gain.setValueAtTime(to.gain.gain.value, at);
+        to.gain.gain.linearRampToValueAtTime(1, at + plan.fadeS);
+        bed.active = 1 - bed.active;
+        // Re-seed the now-silent lane after the fade, at a new point and rate.
+        const reseed = window.setTimeout(() => seed(from), plan.fadeS * 1000 + 150);
+        bed.timers.push(reseed);
+        scheduleSwap();
+      }, plan.swapAfterS * 1000);
+      bed.timers.push(timer);
+    };
+
+    /**
+     * Short, quiet overlapping passes: a ripple or a shift in the stream. They
+     * are what stops a two-lane bed from reading as one steady hiss.
+     */
+    const scheduleDetail = (): void => {
+      const plan = planDetail(Math.random, buffer.duration);
+      const timer = window.setTimeout(() => {
+        if (bed.stopped || !context) {
+          return;
+        }
+        const at = context.currentTime;
+        const envelope = context.createGain();
+        envelope.gain.value = 0;
+        envelope.connect(gain);
+        const source = ctxSource(context, buffer, false);
+        source.playbackRate.value = 1 + (Math.random() - 0.5) * 0.01;
+        source.connect(envelope);
+        const attack = Math.min(1.2, plan.lengthS / 3);
+        envelope.gain.setValueAtTime(0, at);
+        envelope.gain.linearRampToValueAtTime(plan.gain, at + attack);
+        envelope.gain.setValueAtTime(plan.gain, at + plan.lengthS - attack);
+        envelope.gain.linearRampToValueAtTime(0, at + plan.lengthS);
+        try {
+          source.start(at, plan.offsetS, plan.lengthS);
+          source.stop(at + plan.lengthS + 0.05);
+        } catch {
+          // context closing
+        }
+        source.onended = () => {
+          source.disconnect();
+          envelope.disconnect();
+        };
+        scheduleDetail();
+      }, plan.afterS * 1000);
+      bed.timers.push(timer);
+    };
+
+    seed(lanes[0]);
+    seed(lanes[1]);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(volume, now + fade);
+    scheduleSwap();
+    scheduleDetail();
+
+    const old = current;
+    current = bed;
+    currentKey = key;
+    if (old) {
+      fadeOutBed(old, now, fade);
     }
   }).catch(() => {
     requestedTrack = null;
   });
+}
+
+/** Fade a bed out and stop its sources and timers. */
+function fadeOutBed(bed: Bed, now: number, fade: number): void {
+  bed.stopped = true;
+  for (const timer of bed.timers) {
+    window.clearTimeout(timer);
+  }
+  bed.timers.length = 0;
+  bed.gain.gain.cancelScheduledValues(now);
+  bed.gain.gain.setValueAtTime(bed.gain.gain.value, now);
+  bed.gain.gain.linearRampToValueAtTime(0, now + fade);
+  for (const lane of bed.lanes) {
+    const source = lane.source;
+    if (source) {
+      try {
+        source.stop(now + fade + 0.05);
+      } catch {
+        // already stopped
+      }
+    }
+  }
 }
 
 function ctxSource(
@@ -210,17 +332,7 @@ export function stopAudio(): void {
   currentTrack = null;
   token += 1;
   if (current && context) {
-    const now = context.currentTime;
-    current.gain.gain.cancelScheduledValues(now);
-    current.gain.gain.setValueAtTime(current.gain.gain.value, now);
-    current.gain.gain.linearRampToValueAtTime(0, now + 0.4);
-    for (const source of current.sources) {
-      try {
-        source.stop(now + 0.5);
-      } catch {
-        // already stopped
-      }
-    }
+    fadeOutBed(current, context.currentTime, 0.4);
   }
   current = null;
   currentKey = '';
@@ -284,25 +396,6 @@ export function playSceneAudio(audio: SceneAudio | undefined): void {
     loop: audio.loop,
     width: audio.width
   });
-}
-
-function setMuted(next: boolean): void {
-  muted = next;
-  if (master && context) {
-    const now = context.currentTime;
-    master.gain.cancelScheduledValues(now);
-    master.gain.setValueAtTime(master.gain.value, now);
-    master.gain.linearRampToValueAtTime(muted ? 0 : VOLUME, now + 0.2);
-  }
-}
-
-export function setAudioMuted(next: boolean): void {
-  setMuted(next);
-}
-
-export function toggleMuted(): boolean {
-  setMuted(!muted);
-  return muted;
 }
 
 export function disposeAudio(): void {

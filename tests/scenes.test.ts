@@ -31,14 +31,8 @@ function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
 
 describe('scene registry', () => {
   it('declares the eye its art was authored for', () => {
-    const placement = Object.fromEntries(
-      SCENES.map((scene) => [scene.id, `${scene.posture}@${scene.eyeY}`])
-    );
-    expect(placement).toEqual({
-      washroom: 'standing@1.7',
-      shore: 'supine@0.45',
-      lightwell: 'supine@1.7'
-    });
+    const placement = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.eyeY]));
+    expect(placement).toEqual({ washroom: 1.7, shore: 0.45, lightwell: 1.7 });
     for (const scene of SCENES) {
       expect(Number.isFinite(scene.eyeY)).toBe(true);
       expect(scene.eyeY).toBeGreaterThan(0);

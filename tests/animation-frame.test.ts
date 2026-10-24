@@ -9,16 +9,15 @@ import type { PoseLike } from '../src/core/xr/types';
 
 /** What the patient sees: a distant point in head-local frame. */
 function stack(options: {
-  posture: 'standing' | 'supine';
   mode: 'float' | 'posture';
+  eyeY?: number;
   t?: number;
   bob?: number;
 }) {
   const standEyeHeight = 1.7;
   const path = new SitUpPath({ standEyeHeight });
-  const eyeY = options.posture === 'standing' ? 1.7 : 0.45;
+  const eyeY = options.eyeY ?? 1.7;
   const plan = planFrame({
-    posture: options.posture,
     mode: options.mode,
     eyeY,
     standEyeHeight,
@@ -63,28 +62,26 @@ function elevationDeg(local: THREE.Vector3): number {
 describe('frame planner', () => {
   const base = { eyeY: 1.7, standEyeHeight: 1.7, lyingEyeHeight: 0.45 };
 
-  it('gives a standing scene the calibrated frame in the floating mode', () => {
-    expect(planFrame({ ...base, posture: 'standing', mode: 'float' })).toEqual({
+  it('gives the floating mode the calibrated frame and puts the eye at its Y', () => {
+    expect(planFrame({ ...base, mode: 'float' })).toEqual({ base: 'calibrated', offsetY: -1.7 });
+    // The shore's eye sits 0.45 m above its water, so the art drops by 0.45.
+    expect(planFrame({ ...base, mode: 'float', eyeY: 0.45 })).toEqual({
       base: 'calibrated',
-      offsetY: -1.7
+      offsetY: -0.45
     });
   });
 
-  it('keeps a supine scene in the sit-up frame in both modes', () => {
-    const supine = { ...base, posture: 'supine' as const, eyeY: 0.45 };
-    expect(planFrame({ ...supine, mode: 'float' })).toEqual({ base: 'situp', offsetY: 0 });
-    expect(planFrame({ ...supine, mode: 'posture' })).toEqual({ base: 'situp', offsetY: 0 });
-  });
-
-  it('moves the standing art by however far the eye setting moved', () => {
-    const plan = planFrame({ ...base, posture: 'standing', mode: 'posture', standEyeHeight: 1.55 });
+  it('gives the posture mode the sit-up frame in every scene', () => {
+    expect(planFrame({ ...base, mode: 'posture' })).toEqual({ base: 'situp', offsetY: 0 });
+    // The rise ends with the camera at the operator's setting, so the art moves
+    // by however far that setting is from the authored eye.
+    const plan = planFrame({ ...base, mode: 'posture', standEyeHeight: 1.55 });
     expect(plan.base).toBe('situp');
     expect(plan.offsetY).toBeCloseTo(-0.15, 9);
   });
 
   it('never produces a non-finite offset', () => {
     const plan = planFrame({
-      posture: 'standing',
       mode: 'float',
       eyeY: Number.NaN,
       standEyeHeight: Number.NaN,
@@ -116,22 +113,22 @@ describe('visual up', () => {
 
 describe('what the patient sees', () => {
   it('the calibrated frame gives a supine patient a standing view', () => {
-    const { horizon, plan } = stack({ posture: 'standing', mode: 'float' });
+    const { horizon, plan } = stack({ mode: 'float' });
     expect(plan.base).toBe('calibrated');
     expect(Math.abs(elevationDeg(horizon))).toBeLessThan(5);
   });
 
   it('the sit-up frame starts supine and ends standing', () => {
-    const supine = stack({ posture: 'supine', mode: 'float', t: 0 });
-    const standing = stack({ posture: 'supine', mode: 'float', t: 1 });
+    const supine = stack({ mode: 'posture', t: 0 });
+    const standing = stack({ mode: 'posture', t: 1 });
     expect(elevationDeg(supine.horizon)).toBeLessThan(-80);
     expect(Math.abs(elevationDeg(standing.horizon))).toBeLessThan(5);
   });
 
   it('the heave reads as up and down in both frames', () => {
-    for (const posture of ['standing', 'supine'] as const) {
-      const rest = stack({ posture, mode: 'float', bob: 0 });
-      const lifted = stack({ posture, mode: 'float', bob: 0.065 });
+    for (const mode of ['float', 'posture'] as const) {
+      const rest = stack({ mode, bob: 0 });
+      const lifted = stack({ mode, bob: 0.065 });
       const rise = Math.abs(elevationDeg(lifted.horizon) - elevationDeg(rest.horizon));
       const depth = Math.abs(lifted.horizon.z - rest.horizon.z);
       // Lifting the world moves it up in view and does not push it at the face:
