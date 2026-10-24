@@ -77,7 +77,10 @@ const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
 /** How deep the water bed breathes with the buoyancy; 0.12 is audible, not pumping. */
 const SWELL_AUDIO_DEPTH = 0.12;
 /** The stable window the operator (or the patient's button) starts. */
-const CALIBRATION_SAMPLE_MS = 900;
+/** Hold-still window before the countdown starts (1.2 s × 1.5). */
+const CALIBRATION_HOLD_MS = 1800;
+/** Countdown, also the averaging window (2 s × 1.5). */
+const CALIBRATION_COUNTDOWN_MS = 3000;
 /** Spread allowed inside that window before it is rejected. */
 const CALIBRATION_MAX_DEVIATION_DEG = 6;
 /** The card must stay readable even when the sample lands immediately. */
@@ -162,8 +165,13 @@ export class QuietShoreApp {
   private captureAttempts = 0;
   /** Wall clock when the stable window started; drives the card's bar. */
   private samplingStartedAt = 0;
+  private calibPhase: 'settling' | 'countdown' = 'settling';
+  private calibRef: THREE.Quaternion | null = null;
+  private calibStableMs = 0;
+  private calibCountdownAt = 0;
+  private lastCalibrationFrame = 0;
   private readonly calibrationSampler = createCalibrationSampler({
-    durationMs: CALIBRATION_SAMPLE_MS,
+    durationMs: CALIBRATION_COUNTDOWN_MS,
     maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
   });
   /** Technician's buoyancy choice, 0..FLOAT_MAX_LEVEL. */
@@ -317,29 +325,8 @@ export class QuietShoreApp {
         );
         this.hud.update(this.headPose, dt, now);
         this.calibrationOverlay?.update(dt, now, this.headPose);
-        if (this.calibrationSampler.isActive()) {
-          // The sampler's clock is the one `triggerCalibration` started with
-          // (`performance.now()`); the XR frame timestamp can live in a
-          // different epoch and would never close the window.
-          const sampleNow = performance.now();
-          // A stalled frame loop must not trap the operator in a window that
-          // never closes; give the sample a hard deadline.
-          if (sampleNow - this.samplingStartedAt > 3000) {
-            // A stalled loop must not trap the session behind the card.
-            this.calibrationSampler.reset();
-            this.capturePending = false;
-            this.calibrationOverlay?.setProgress(null);
-            this.calibrationOverlay?.setHint('使用当前朝向');
-            this.applyCalibration(this.headPose.quaternion);
-            return;
-          }
-          this.calibrationOverlay?.setProgress(
-            (sampleNow - this.samplingStartedAt) / CALIBRATION_SAMPLE_MS
-          );
-          const result = this.calibrationSampler.add(this.headPose.quaternion, sampleNow);
-          if (result) {
-            this.finishCalibration(result);
-          }
+        if (this.lifecycle.phase === 'calibrating' && this.xr.isPresenting) {
+          this.stepCalibration(performance.now());
         }
       }
     });
@@ -932,78 +919,96 @@ export class QuietShoreApp {
     this.sitUpReference = null;
     this.sitUpMotion.reset();
     this.sitUpBase0.identity();
-    // Start level: the operator's pitch correction is dropped and the sit-up
-    // base pose is released so comfort owns the world again.
     this.viewMotion.reset();
     this.shell?.setBasePose(null);
     this.comfort?.setPosture(
       { worldPitchDeg: 0, worldRollDeg: 0, riseM: 0 },
       POSTURE_LIMITS.minDurationMs
     );
-    // Calibrate first, then show the scene: the patient should not see a world
-    // that is about to be re-oriented under them. The scene is swapped for
-    // black until the heading lands.
-    // The card carries its own opaque overlay; the scene is not touched.
     this.input.setLayers(false, false);
 
-    // Explicit calibration step: the card tells the patient what is happening,
-    // the confirm key records immediately, and the card records by itself if
-    // they do nothing, with a progress bar so the wait is legible.
     this.calibrationOverlay ??= createCalibrationOverlay({
       scene: this.scene,
       theme: DEFAULT_SPATIAL_THEME
     });
-    this.calibrationOverlay.setHint('');
     this.calibrationOverlay.show();
-    // Fail-open: the window starts on its own, so "record the heading" can
-    // never gate entry. Manual triggers still restart it, and the operator can
-    // re-run it at any time from the tablet or the headset button.
-    this.triggerCalibration();
+    this.restartCalibration();
     this.link.sendStateNow();
   }
 
   /**
-   * Starts the stable window. Called by the headset button and by the tablet's
-   * calibrate command — the two are equivalent, and a second call while a
-   * window is running is ignored.
+   * The flow the operator remembers from the earlier build: hold still, watch
+   * the bar fill, done. No key is required, because the physical button never
+   * reaches a page in this browser's immersive mode.
    */
-  private triggerCalibration(): void {
-    if (!this.calibrationOverlay || this.calibrationSampler.isActive()) {
+  private restartCalibration(): void {
+    this.calibPhase = 'settling';
+    this.calibRef = null;
+    this.calibStableMs = 0;
+    this.calibCountdownAt = 0;
+    this.lastCalibrationFrame = 0;
+    this.capturePending = true;
+    this.calibrationOverlay?.setHint('保持不动…');
+    this.calibrationOverlay?.setProgress(0);
+    this.calibrationSampler.reset();
+    this.start.setStatus('正在记录起始朝向', 'ok');
+  }
+
+  /** Called every frame while the card is up. */
+  private stepCalibration(nowMs: number): void {
+    const head = this.headPose.quaternion;
+    if (this.calibPhase === 'settling') {
+      if (!this.calibRef) {
+        this.calibRef = head.clone();
+      }
+      const dot = Math.abs(
+        this.calibRef.x * head.x +
+          this.calibRef.y * head.y +
+          this.calibRef.z * head.z +
+          this.calibRef.w * head.w
+      );
+      const deviation = (2 * Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+      if (deviation > CALIBRATION_MAX_DEVIATION_DEG) {
+        // Moved: restart the window from the new pose instead of failing.
+        this.calibRef = head.clone();
+        this.calibStableMs = 0;
+      } else if (this.lastCalibrationFrame > 0) {
+        this.calibStableMs += nowMs - this.lastCalibrationFrame;
+      }
+      this.lastCalibrationFrame = nowMs;
+      this.calibrationOverlay?.setProgress(
+        Math.min(1, this.calibStableMs / CALIBRATION_HOLD_MS)
+      );
+      if (this.calibStableMs >= CALIBRATION_HOLD_MS) {
+        this.calibPhase = 'countdown';
+        this.calibCountdownAt = nowMs;
+        this.calibrationSampler.start(nowMs);
+        this.calibrationOverlay?.setHint('即将记录…');
+      }
       return;
     }
-    this.capturePending = true;
-    this.captureAttempts = 0;
-    this.calibrationOverlay.setHint('');
-    this.calibrationOverlay.setProgress(0);
-    this.samplingStartedAt = performance.now();
-    this.calibrationSampler.start(this.samplingStartedAt);
-    this.start.setStatus('正在记录起始朝向', 'ok');
+
+    this.calibrationSampler.add(head, nowMs);
+    const elapsed = nowMs - this.calibCountdownAt;
+    this.calibrationOverlay?.setProgress(Math.min(1, elapsed / CALIBRATION_COUNTDOWN_MS));
+    if (elapsed >= CALIBRATION_COUNTDOWN_MS) {
+      const result = this.calibrationSampler.add(head, nowMs);
+      this.finishCalibration(result);
+    }
   }
 
   private finishCalibration(result: {
     ok: boolean;
     quaternion?: { x: number; y: number; z: number; w: number };
     deviationDeg: number;
-  }): void {
+  } | null): void {
     this.capturePending = false;
     this.calibrationOverlay?.setProgress(null);
-    if (!result.ok || !result.quaternion) {
-      this.captureAttempts += 1;
-      if (this.captureAttempts < 3) {
-        this.calibrationOverlay?.setHint('检测到晃动，正在重试…');
-        this.triggerCalibration();
-        return;
-      }
-      // Never block the scene on a shaky head: take the current pose.
+    if (!result || !result.ok || !result.quaternion) {
+      // A wobbly countdown still has to produce a world frame: take the pose
+      // the patient is holding right now and move on.
       this.calibrationOverlay?.setHint('使用当前朝向');
       this.applyCalibration(this.headPose.quaternion);
-      return;
-    }
-    // Give the card a minimum on-screen time: a 900 ms flash is unreadable and
-    // leaves no window for a manual press.
-    const remaining = Math.max(0, CALIBRATION_MIN_VISIBLE_MS - (performance.now() - this.samplingStartedAt));
-    if (remaining > 0) {
-      window.setTimeout(() => this.applyCalibration(result.quaternion!), remaining);
       return;
     }
     this.applyCalibration(result.quaternion);
@@ -1098,9 +1103,7 @@ export class QuietShoreApp {
       return;
     }
     if (this.lifecycle.phase === 'calibrating') {
-      // The card is already up: the operator's button starts the window
-      // instead of throwing away the frame and re-arming it.
-      this.triggerCalibration();
+      this.restartCalibration();
       return;
     }
     this.beginCalibration();
@@ -1482,10 +1485,9 @@ export class QuietShoreApp {
    */
   private onSelectShort(source: string = 'xr'): void {
     if (this.lifecycle.phase === 'calibrating') {
-      // Which channel fired is the question that matters in the field: show it
-      // on the card while the window is up.
+      // The flow runs by itself; a confirm simply ends the wait early.
       this.calibrationOverlay?.setHint(`确认来源：${source}`);
-      this.triggerCalibration();
+      this.applyCalibration(this.headPose.quaternion);
       return;
     }
     // Outside a session the confirm key is the entry gesture; nothing else.

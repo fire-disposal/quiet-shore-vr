@@ -39,7 +39,7 @@ const TITLE = '记录起始朝向';
 const BODY = [
   '保持现在的姿势，看向前方。',
   '将以您面向的方向生成场景。',
-  '按头显右侧按钮开始记录。'
+  '保持不动即可，无需按键。'
 ];
 
 export function createCalibrationOverlay(
