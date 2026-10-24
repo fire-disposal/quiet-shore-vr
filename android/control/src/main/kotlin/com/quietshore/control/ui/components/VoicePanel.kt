@@ -64,25 +64,15 @@ fun VoicePanel(
         ) {
             NowPlaying(state = state)
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { actions.onVoiceSequence("start") },
-                    enabled = connected,
-                    modifier = Modifier.weight(1f)
-                ) { Text("开始提示") }
-                Button(
-                    onClick = { actions.onVoiceSequence("relax") },
-                    enabled = connected,
-                    modifier = Modifier.weight(1f)
-                ) { Text("放松指导") }
-                OutlinedButton(
-                    onClick = actions.onVoiceStop,
-                    enabled = connected,
-                    modifier = Modifier.weight(1f)
-                ) { Text("停止") }
-            }
+            // One transport action. The four sequence buttons below are the
+            // play controls; a duplicate "开始提示" only made the panel longer.
+            OutlinedButton(
+                onClick = actions.onVoiceStop,
+                enabled = connected,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("停止播放") }
 
-            Seed("序列") {
+            Seed("播放") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (name in VoiceCatalog.SEQUENCES) {
                         OutlinedButton(

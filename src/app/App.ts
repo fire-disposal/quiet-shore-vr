@@ -323,10 +323,12 @@ export class QuietShoreApp {
           // A stalled frame loop must not trap the operator in a window that
           // never closes; give the sample a hard deadline.
           if (sampleNow - this.samplingStartedAt > 3000) {
+            // A stalled loop must not trap the session behind the card.
             this.calibrationSampler.reset();
             this.capturePending = false;
             this.calibrationOverlay?.setProgress(null);
-            this.calibrationOverlay?.setHint('记录超时，请再按一次');
+            this.calibrationOverlay?.setHint('使用当前朝向');
+            this.applyCalibration(this.headPose.quaternion);
             return;
           }
           this.calibrationOverlay?.setProgress(
@@ -942,6 +944,10 @@ export class QuietShoreApp {
     });
     this.calibrationOverlay.setHint('');
     this.calibrationOverlay.show();
+    // Fail-open: the window starts on its own, so "record the heading" can
+    // never gate entry. Manual triggers still restart it, and the operator can
+    // re-run it at any time from the tablet or the headset button.
+    this.triggerCalibration();
     this.link.sendStateNow();
   }
 
@@ -971,10 +977,15 @@ export class QuietShoreApp {
     this.capturePending = false;
     this.calibrationOverlay?.setProgress(null);
     if (!result.ok || !result.quaternion) {
-      // Stay on the card and wait for another explicit trigger; a shaky window
-      // is a normal event, not a reason to end the session.
-      this.calibrationOverlay?.setHint('检测到晃动，保持不动后再按一次');
-      this.start.setStatus('校准未记录：请保持不动后重试', 'error');
+      this.captureAttempts += 1;
+      if (this.captureAttempts < 3) {
+        this.calibrationOverlay?.setHint('检测到晃动，正在重试…');
+        this.triggerCalibration();
+        return;
+      }
+      // Never block the scene on a shaky head: take the current pose.
+      this.calibrationOverlay?.setHint('使用当前朝向');
+      this.applyCalibration(this.headPose.quaternion);
       return;
     }
     this.applyCalibration(result.quaternion);

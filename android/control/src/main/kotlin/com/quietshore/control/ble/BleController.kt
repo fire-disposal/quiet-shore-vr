@@ -426,6 +426,7 @@ class BleController(
             )
             return
         }
+        Log.i("QuietShoreControl", "send $command")
         enqueueCommand(command)
     }
 

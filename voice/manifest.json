@@ -5,16 +5,16 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 112994,
+      "totalMs": 111788,
       "files": [
         {
           "id": "v-about-1",
           "group": "说明",
           "file": "male/v-about-1.mp3",
-          "ms": 19972,
-          "bytes": 120476,
-          "sha256": "96e64467c828da1e56294401bfcc214b7bd41a7a425f7d29938a525249e623cd",
-          "textHash": "121f364706a5f805"
+          "ms": 18935,
+          "bytes": 114140,
+          "sha256": "244006671d0e4056b9e79ea8635cc246ce4fa85f4ee64311a86de0eb13c7a9fb",
+          "textHash": "1e396484b7e236ae"
         },
         {
           "id": "v-wear-1",
@@ -146,10 +146,10 @@
           "id": "v-thanks-1",
           "group": "说明",
           "file": "male/v-thanks-1.mp3",
-          "ms": 4592,
-          "bytes": 28172,
-          "sha256": "374285668a716f8914a22872fc291e9b5a7670b671b677634fa32b4ce1e52dcc",
-          "textHash": "867d8f79766a00e9"
+          "ms": 4423,
+          "bytes": 27164,
+          "sha256": "e6636c90286d0aa175e66603db6e4d5d67728324c2948f6af2191762dcc8bd43",
+          "textHash": "9d95f11405a9705b"
         },
         {
           "id": "v-sus-intro",
@@ -255,16 +255,16 @@
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 128074,
+      "totalMs": 124687,
       "files": [
         {
           "id": "v-about-1",
           "group": "说明",
           "file": "female/v-about-1.mp3",
-          "ms": 24408,
-          "bytes": 146972,
-          "sha256": "cbdaef87eb5344f11fa5aa50a454bb3f211a9db0cde01bac3ca00d9114b55cf1",
-          "textHash": "121f364706a5f805"
+          "ms": 21467,
+          "bytes": 129404,
+          "sha256": "7054e634add0f0049158213cf85b83d527d2e28dd9cb30d95790d09ea13b557d",
+          "textHash": "1e396484b7e236ae"
         },
         {
           "id": "v-wear-1",
@@ -396,10 +396,10 @@
           "id": "v-thanks-1",
           "group": "说明",
           "file": "female/v-thanks-1.mp3",
-          "ms": 5272,
-          "bytes": 32204,
-          "sha256": "3d20041f753451dc7fe3ee84f0ee068ed0a258f693bda3890c6d62ae15978070",
-          "textHash": "867d8f79766a00e9"
+          "ms": 4826,
+          "bytes": 29612,
+          "sha256": "108daa9263fd7f6db1be16080d42b7b468bc3999256057f95c9b7d24bc731d5c",
+          "textHash": "9d95f11405a9705b"
         },
         {
           "id": "v-sus-intro",
@@ -503,5 +503,5 @@
       ]
     }
   },
-  "generatedAt": "2026-10-24T10:01:00+08:00"
+  "generatedAt": "2026-10-24T10:08:24+08:00"
 }
