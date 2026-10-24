@@ -253,8 +253,8 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       return;
     }
     phase = 'finish';
-    surface.setTitle('SUS · 已完成');
-    surface.setBody('十道题已全部作答。\n请注视下方「完成」结束。');
+    surface.setTitle('最后一步');
+    surface.setBody('十道题都答完了。\n再看向下面的「完成」，我们就结束。');
     for (const button of optionButtons) {
       button.object.visible = false;
     }
@@ -270,8 +270,8 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       return;
     }
     phase = 'thanks';
-    surface.setTitle('感谢参与');
-    surface.setBody('可以摘下头显了。\n如果有任何感受或建议，\n请告诉身边的工作人员。');
+    surface.setTitle('谢谢您');
+    surface.setBody('可以摘下来了，慢慢来。\n有什么想说的，\n随时告诉身边的护士或医生。');
     nextButton.object.visible = false;
     registerTargets();
     options.onFinish?.();
@@ -289,6 +289,14 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     }
     page = next;
     render();
+    // Re-register after the card changed: the gaze is very likely still parked
+    // on the option it just picked, and that button now belongs to the next
+    // statement. Fresh registrations drop the latch and the accumulated
+    // progress, so a held gaze has to start the dwell over instead of sliding
+    // an accidental answer in (the occasional misfire this replaces).
+    if (open && phase === 'questions') {
+      registerTargets();
+    }
   }
 
   function record(value: number): void {
@@ -299,7 +307,11 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     options.onAnswer?.(page, value);
     render();
     if (page < SUS_STATEMENTS.length - 1) {
+      // move() re-registers: the answered button must not carry its latch into
+      // the next statement.
       move(1);
+    } else if (open) {
+      registerTargets();
     }
   }
 
