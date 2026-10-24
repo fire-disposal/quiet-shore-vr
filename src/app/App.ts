@@ -1371,8 +1371,10 @@ export class QuietShoreApp {
     }
   }
 
-  private onFrame = (): void => {
-    const now = performance.now();
+  private onFrame = (frameTime?: number): void => {
+    // The XR frame timestamp is the one the compositor will present; reading
+    // performance.now() here mixes two clocks and jitters the easing.
+    const now = frameTime !== undefined ? frameTime : performance.now();
     const dt = this.lastFrame > 0 ? Math.min((now - this.lastFrame) / 1000, MAX_DT) : 0;
     this.lastFrame = now;
     this.elapsed += dt;

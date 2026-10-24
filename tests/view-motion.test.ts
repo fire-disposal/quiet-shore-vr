@@ -7,6 +7,7 @@ import {
   VIEW_PRESET_CODES,
   VIEW_PRESETS,
   VIEW_PITCH_MAX_DEG_PER_S,
+  VIEW_ACCEL_MAX_DEG_PER_S2,
   LOOK_YAW_LIMIT_DEG,
   type ViewMotionControllerApi
 } from '../src/core/xr/view-motion';
@@ -308,6 +309,40 @@ describe('view motion controller', () => {
     harness.step(2);
     expect(harness.controller.getLookYawDeg()).toBe(frozenYaw);
     expect(harness.controller.getUpGazeDeg()).toBe(frozenPitch);
+  });
+
+  it('ramps into the speed cap instead of stepping to it', () => {
+    const harness = createHarness();
+    harness.controller.setTarget(0, 60);
+    const before = harness.controller.getUpGazeDeg();
+    harness.controller.update(1 / 60);
+    const firstDelta = harness.controller.getUpGazeDeg() - before;
+    // A first-order tracker would move at the 15 °/s cap on frame one (0.25°).
+    expect(firstDelta).toBeGreaterThan(0);
+    expect(firstDelta).toBeLessThanOrEqual(VIEW_ACCEL_MAX_DEG_PER_S2 / 60 + 1e-6);
+  });
+
+  it('never exceeds its rate cap and never overshoots', () => {
+    const harness = createHarness();
+    harness.controller.setTarget(0, 80);
+    let previous = harness.controller.getUpGazeDeg();
+    let maxStep = 0;
+    for (let i = 0; i < 480; i += 1) {
+      harness.controller.update(1 / 60);
+      const current = harness.controller.getUpGazeDeg();
+      maxStep = Math.max(maxStep, Math.abs(current - previous));
+      previous = current;
+      expect(current).toBeLessThanOrEqual(80 + 1e-6);
+    }
+    expect(maxStep).toBeLessThanOrEqual(VIEW_PITCH_MAX_DEG_PER_S / 60 + 1e-6);
+    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(80, 2);
+  });
+
+  it('lands a 10° step well inside a second and a half', () => {
+    const harness = createHarness();
+    harness.controller.setTarget(0, 10);
+    harness.step(1.5);
+    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(10, 2);
   });
 
   it('recenter also unwinds yaw to zero', () => {

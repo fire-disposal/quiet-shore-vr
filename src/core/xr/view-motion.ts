@@ -26,7 +26,7 @@
 
 import { clampSigned } from './angle';
 import { cycle, smootherstep } from './drivers/curve';
-import { approachGap } from './drivers/track';
+import { stepTrack, type TrackState } from './drivers/track';
 import type { WorldRotation } from './frame';
 
 export type ViewAnimState = 'idle' | 'playing' | 'held';
@@ -133,6 +133,11 @@ export const VIEW_PRESET_CODES: Readonly<Record<ViewPresetCode, number>> = {
 export const VIEW_TRACK_TAU_S = 0.25;
 export const VIEW_PITCH_MAX_DEG_PER_S = 15;
 export const VIEW_YAW_MAX_DEG_PER_S = 30;
+/**
+ * Onset ramp. A 0→15 °/s step at a frame boundary is felt as a tug on the view;
+ * 60 °/s² spreads it over 0.25 s without changing the steady-state speed.
+ */
+export const VIEW_ACCEL_MAX_DEG_PER_S2 = 60;
 /** Below this the remaining gap is invisible; settle so state can go idle. */
 const SNAP_DEG = 0.05;
 /** Average yaw speed when `recenter` unwinds a large turn. */
@@ -211,8 +216,7 @@ interface TimedSegment {
   curve: ViewPresetCurve;
 }
 
-interface Channel {
-  value: number;
+interface Channel extends TrackState {
   target: number;
   /** Non-null while a fixed-duration curve owns the channel. */
   timed: TimedSegment | null;
@@ -232,6 +236,7 @@ function advance(channel: Channel, dt: number): boolean {
     if (segment.elapsedMs >= segment.durationMs) {
       channel.value = segment.end;
       channel.target = segment.end;
+      channel.velocity = 0;
       channel.timed = null;
       return true;
     }
@@ -245,10 +250,12 @@ function advance(channel: Channel, dt: number): boolean {
     return landed;
   }
   const before = channel.value;
-  channel.value += approachGap(gap, dt, VIEW_TRACK_TAU_S, channel.maxDegPerS);
-  if (Math.abs(channel.target - channel.value) < SNAP_DEG) {
-    channel.value = channel.target;
-  }
+  stepTrack(channel, channel.target, dt, {
+    tauS: VIEW_TRACK_TAU_S,
+    maxDegPerS: channel.maxDegPerS,
+    maxDegPerS2: VIEW_ACCEL_MAX_DEG_PER_S2,
+    snapDeg: SNAP_DEG
+  });
   return channel.value !== before;
 }
 
@@ -260,8 +267,20 @@ export function createViewMotionController(options: {
   let state: ViewAnimState = 'idle';
   let presetId: ViewPresetId | null = null;
 
-  const yaw: Channel = { value: 0, target: 0, timed: null, maxDegPerS: VIEW_YAW_MAX_DEG_PER_S };
-  const pitch: Channel = { value: 0, target: 0, timed: null, maxDegPerS: VIEW_PITCH_MAX_DEG_PER_S };
+  const yaw: Channel = {
+    value: 0,
+    velocity: 0,
+    target: 0,
+    timed: null,
+    maxDegPerS: VIEW_YAW_MAX_DEG_PER_S
+  };
+  const pitch: Channel = {
+    value: 0,
+    velocity: 0,
+    target: 0,
+    timed: null,
+    maxDegPerS: VIEW_PITCH_MAX_DEG_PER_S
+  };
 
   function startSegment(
     channel: Channel,
@@ -272,6 +291,8 @@ export function createViewMotionController(options: {
     curve: ViewPresetCurve
   ): void {
     channel.target = end;
+    // A fixed-duration curve owns position; any tracker velocity would fight it.
+    channel.velocity = 0;
     channel.timed = { start, peak, end, elapsedMs: 0, durationMs, curve };
   }
 
@@ -340,6 +361,8 @@ export function createViewMotionController(options: {
     // targets, never snap, and drop any preset playback.
     yaw.timed = null;
     pitch.timed = null;
+    yaw.velocity = 0;
+    pitch.velocity = 0;
     presetId = null;
     yaw.target = lookYawDeg;
     pitch.target = upGazeDeg;
@@ -358,6 +381,8 @@ export function createViewMotionController(options: {
     }
     yaw.timed = null;
     pitch.timed = null;
+    yaw.velocity = 0;
+    pitch.velocity = 0;
     yaw.target = yaw.value;
     pitch.target = pitch.value;
     state = 'held';
@@ -366,6 +391,8 @@ export function createViewMotionController(options: {
   function reset(): void {
     yaw.timed = null;
     pitch.timed = null;
+    yaw.velocity = 0;
+    pitch.velocity = 0;
     presetId = null;
     state = 'idle';
     yaw.value = 0;
