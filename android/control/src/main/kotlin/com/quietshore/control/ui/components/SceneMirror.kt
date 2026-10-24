@@ -91,6 +91,7 @@ private fun mirrorPayload(state: ControlUiState): String {
     val control = state.control
     val pose = state.pose
     return JSONObject().apply {
+        put("scene", control.scene)
         put("session", control.session)
         put("eyeHeight", control.eyeHeight.toDouble())
         put("worldYaw", control.worldYaw.toDouble())
@@ -111,5 +112,7 @@ private fun mirrorPayload(state: ControlUiState): String {
                 }
             )
         }
+        // floatMm, swayDeg and pose.roll arrive with the state frame (v11);
+        // until then the mirror renders no buoyancy and no head roll.
     }.toString()
 }
