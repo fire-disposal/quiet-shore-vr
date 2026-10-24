@@ -118,6 +118,8 @@ export class QuietShoreApp {
     maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
   });
   private calibStatus: CalibrationStatus = 'done';
+  /** Dev-only flow override for scene inspection (see `debug.flow`). */
+  private previewFlow: number | null = null;
   /** Buoyancy: level, profile, envelope and the content offset it rides on. */
   private readonly floating: FloatingApi;
   /** Base pose: calibration frame, sit-up path and the placement that goes with them. */
@@ -379,6 +381,15 @@ export class QuietShoreApp {
           contentY: this.host.content.position.y,
           upGazeDeg: this.viewMotion.getUpGazeDeg()
         }),
+        /**
+         * Desktop check: hold the scene flow (0..1) so a scene's own animation
+         * can be inspected without a session. `null` returns control to the
+         * buoyancy.
+         */
+        flow: (value: number | null) => {
+          this.previewFlow = value === null ? null : Math.min(1, Math.max(0, value));
+          return this.previewFlow;
+        },
         /** Desktop check: where the SUS panel actually is, if it is open. */
         sus: () => {
           const panel = this.susPanel;
@@ -1451,6 +1462,9 @@ export class QuietShoreApp {
    * report 0, which freezes the motes and fades them with the cue's own τ.
    */
   private computeCueFlow(): number {
+    if (this.previewFlow !== null) {
+      return this.previewFlow;
+    }
     if (this.capturePending) {
       return 0;
     }

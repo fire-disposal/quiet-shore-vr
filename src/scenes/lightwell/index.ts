@@ -24,9 +24,17 @@ const SHAFT_RADIUS = 9;
 const SHAFT_HEIGHT = 120;
 const EYE_Y = 1.7;
 
-/** Ring band: they live within ±RING_BAND and fade out before wrapping. */
-const RING_COUNT = 13;
-const RING_GAP = 7;
+/**
+ * Ring band: they live within ±RING_BAND and fade out before wrapping.
+ *
+ * Nine rings, ten metres apart, and slow. Thirteen rings seven metres apart at
+ * 0.85 m/s read as a continuous wall of hard-edged hoops sweeping the whole
+ * view — busy to the point of discomfort, and a large-area bright/dark
+ * alternation nobody needs in front of a patient. The band is still 90 m tall,
+ * so the well keeps its depth; the crossings are now ~28 s apart.
+ */
+const RING_COUNT = 9;
+const RING_GAP = 10;
 const RING_BAND = RING_COUNT * RING_GAP;
 /**
  * Terminal-velocity motion with a real drag term.
@@ -38,7 +46,8 @@ const RING_BAND = RING_COUNT * RING_GAP;
  * falling through air does. A constant-rate ramp (the previous version) snaps
  * from accelerating to coasting, and exponential easing never settles at all.
  */
-const TERMINAL_SPEED = 0.85;
+/** 0.35 m/s at the 8.3 m ring radius is 2.4 °/s, inside the near-field budget. */
+const TERMINAL_SPEED = 0.35;
 /** Visual gravity, m/s². Sets how briskly the stack gets going. */
 const GRAVITY = 1.8;
 /** Drag coefficient chosen so gravity and drag balance at TERMINAL_SPEED. */
@@ -159,7 +168,7 @@ export function createLightWell(): LightWellParts {
     SHAFT_RADIUS - 0.72,
     SHAFT_RADIUS - 0.04,
     0.45,
-    12,
+    24,
     1,
     true
   );
@@ -187,7 +196,9 @@ export function createLightWell(): LightWellParts {
   ribs.frustumCulled = false;
   root.add(ribs);
 
-  const ringGeometry = new THREE.TorusGeometry(SHAFT_RADIUS - 0.74, 0.07, 3, 12);
+  // 32 tubular segments: at 8 m a 12-gon is visibly faceted, and a faceted
+  // hoop sweeping past is the "chaotic" edge the eye grabs first.
+  const ringGeometry = new THREE.TorusGeometry(SHAFT_RADIUS - 0.74, 0.07, 3, 32);
   ringGeometry.rotateX(Math.PI / 2);
   const ringMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
@@ -220,10 +231,13 @@ export function createLightWell(): LightWellParts {
       // Fade with the wall, not to black: at the bright top a dark fixture
       // would read as a black band, and at the black bottom a bright one pops.
       const u = Math.min(1, Math.max(0, (ringY[i] + RING_BAND / 2) / RING_BAND));
-      const level = Math.min(1, 0.3 + 0.8 * u);
+      // Capped well below white: the wall is nearly black at the bottom, so a
+      // full-brightness fixture is a maximum-contrast flash every time it
+      // crosses the view.
+      const level = Math.min(0.55, 0.18 + 0.4 * u);
       tint.setRGB(1.0 * level, 0.94 * level, 0.85 * level);
       ribs.setColorAt(i, tint);
-      const glow = Math.min(1, 0.35 + 1.1 * u);
+      const glow = Math.min(0.6, 0.22 + 0.45 * u);
       tint.setRGB(1.0 * glow, 0.95 * glow, 0.86 * glow);
       rings.setColorAt(i, tint);
     }

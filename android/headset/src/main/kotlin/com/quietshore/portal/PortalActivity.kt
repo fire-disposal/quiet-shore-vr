@@ -226,7 +226,7 @@ class PortalActivity : Activity() {
         titleText = label("静岸", 27f, TEXT, Typeface.NORMAL, 0.04f).apply {
             typeface = Typeface.create("serif", Typeface.NORMAL)
         }
-        subtitleText = label("请舒适躺好，等待操作员提示", 12f, MUTED, Typeface.NORMAL, 0.01f).apply {
+        subtitleText = label("请舒适躺好，等待工作人员提示", 12f, MUTED, Typeface.NORMAL, 0.01f).apply {
             setPadding(0, dp(2), 0, 0)
         }
         titles.addView(titleText)
@@ -447,7 +447,7 @@ class PortalActivity : Activity() {
         // is the one gesture Firefox Reality requires to enter immersive mode.
         homeHint = label(
             if (PortalActions.isFirefoxAvailable(this)) {
-                "请调整到舒适姿势，等待操作员提示；页面会自动打开"
+                "请调整到舒适姿势，等待工作人员提示；页面会自动打开"
             } else {
                 "未检测到 Firefox Reality，无法进入训练"
             },
