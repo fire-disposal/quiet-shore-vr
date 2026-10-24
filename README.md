@@ -67,5 +67,6 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state v10 编解码
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
 - [docs/ux-plan.md](docs/ux-plan.md) — UX/UI 现状评估、运动编排与四带控制台计划
+- [docs/manual.md](docs/manual.md) — 信息系统说明书与标准操作规程（交付物）
 - [docs/voice-script.md](docs/voice-script.md) — 引导语音脚本（40 句）、控制端触发与 TTS 生成规范
 - [TODO.md](TODO.md) — 迭代演进与重构路线
