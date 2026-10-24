@@ -820,11 +820,12 @@ class PortalService : Service() {
         if (!VOICE_PATH.matches(name)) {
             return Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
         }
+        val contentType = if (name == VOICE_MANIFEST) CONTENT_TYPE_JSON else CONTENT_TYPE_MP3
         return try {
             assets.open("$VOICE_DIR$name").use { stream ->
                 Response(
                     200,
-                    CONTENT_TYPE_MP3,
+                    contentType,
                     stream.readBytes(),
                     cacheControl = "public, max-age=31536000, immutable"
                 )
@@ -835,8 +836,10 @@ class PortalService : Service() {
         }
     }
 
-    private val VOICE_PATH = Regex("^[a-z]+/[a-z0-9-]+\\.mp3$")
+    /** Clips plus the one index file the page needs before it can fetch them. */
+    private val VOICE_PATH = Regex("^(manifest\\.json|[a-z]+/[a-z0-9-]+\\.mp3)$")
     private val VOICE_DIR = "voice/"
+    private val VOICE_MANIFEST = "manifest.json"
 
     /** Allowlisted command router shared by BLE, loopback HTTP and future intents. */
     private fun dispatchControl(raw: String): Boolean {

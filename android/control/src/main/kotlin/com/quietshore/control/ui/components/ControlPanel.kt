@@ -120,7 +120,9 @@ fun ControlPanel(
                     }
                     OutlinedButton(
                         onClick = actions.onRecalibrate,
-                        enabled = connected && running,
+                        // Calibration is operator-started: the button also has
+                        // to work while the headset is waiting for the window.
+                        enabled = connected && (running || calibrating),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
@@ -129,7 +131,7 @@ fun ControlPanel(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.size(6.dp))
-                        Text("朝向")
+                        Text(if (calibrating) "开始校准" else "朝向")
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

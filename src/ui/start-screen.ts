@@ -127,7 +127,7 @@ export class StartScreen {
     if (this.controllerGuide) {
       this.controllerGuide.setAttribute('aria-hidden', seen ? 'false' : 'true');
     }
-    this.setEnterLabel(seen ? '按下头显右侧中间的按钮，或等操作员提示' : '准备好就开始');
+    this.setEnterLabel(seen ? '按下头显右侧的按钮' : '准备好就开始');
   }
 
   private setEnterLabel(text: string): void {

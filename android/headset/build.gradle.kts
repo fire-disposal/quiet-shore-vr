@@ -39,7 +39,8 @@ val syncWebAsset = tasks.register<Copy>("syncWebAsset") {
     outputs.upToDateWhen { false }
 }
 
-val syncVoiceAssets = tasks.register<Copy>("syncVoiceAssets") {
+// Sync (not Copy) so a cue deleted from voice/ disappears from the APK too.
+val syncVoiceAssets = tasks.register<Sync>("syncVoiceAssets") {
     val repoRoot = rootProject.projectDir.parentFile
     from(repoRoot.resolve("dist/voice"))
     into(layout.projectDirectory.dir("src/main/assets/voice"))

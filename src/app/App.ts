@@ -20,6 +20,7 @@ import { StartScreen } from '../ui/start-screen';
 import { SpatialHud } from '../ui/spatial-hud';
 import { createSusPanel, type SusPanelApi } from '../ui/sus-panel';
 import { createCalibrationCard, type CalibrationCardApi } from '../ui/calibration-card';
+import { createCalibrationSampler } from '../core/xr/calibration-sample';
 import { getStrings, type Strings } from '../ui/strings';
 import {
   disposeAudio,
@@ -75,10 +76,10 @@ const STOP_FADE_MS = 1000;
 const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
 /** How deep the water bed breathes with the buoyancy; 0.12 is audible, not pumping. */
 const SWELL_AUDIO_DEPTH = 0.12;
-/** Bad frames tolerated before a capture reports itself as a lost pose. */
-const MAX_CAPTURE_ATTEMPTS = 30;
-/** Fallback capture delay when the patient does not press confirm. */
-const CALIBRATION_AUTO_RECORD_MS = 4000;
+/** The stable window the operator (or the patient's button) starts. */
+const CALIBRATION_SAMPLE_MS = 900;
+/** Spread allowed inside that window before it is rejected. */
+const CALIBRATION_MAX_DEVIATION_DEG = 6;
 /** Buoyancy fade constant: the visible heave is gone inside a second. */
 const FLOAT_FADE_TAU_S = 0.25;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
@@ -159,6 +160,10 @@ export class QuietShoreApp {
   private shell: WorldShellApi | null = null;
   private capturePending = false;
   private captureAttempts = 0;
+  private readonly calibrationSampler = createCalibrationSampler({
+    durationMs: CALIBRATION_SAMPLE_MS,
+    maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
+  });
   /** Technician's buoyancy choice, 0..FLOAT_MAX_LEVEL. */
   private floatLevel = 1;
   /** Which buoyancy profile is active; chosen in the room, not on a desk. */
@@ -310,9 +315,11 @@ export class QuietShoreApp {
         );
         this.hud.update(this.headPose, dt, now);
         this.calibrationCard?.update(dt, now, this.headPose);
-        if (this.capturePending) {
-          this.capturePending = false;
-          this.captureHeading();
+        if (this.calibrationSampler.isActive()) {
+          const result = this.calibrationSampler.add(this.headPose.quaternion, now);
+          if (result) {
+            this.finishCalibration(result);
+          }
         }
       }
     });
@@ -900,23 +907,52 @@ export class QuietShoreApp {
     // they do nothing, with a progress bar so the wait is legible.
     this.calibrationCard ??= createCalibrationCard({
       scene: this.scene,
-      theme: DEFAULT_SPATIAL_THEME,
-      autoRecordMs: CALIBRATION_AUTO_RECORD_MS,
-      onRecord: () => this.captureHeading()
+      theme: DEFAULT_SPATIAL_THEME
     });
+    this.calibrationCard.setHint('');
     this.calibrationCard.show();
     this.link.sendStateNow();
   }
 
-  private captureHeading(): void {
+  /**
+   * Starts the stable window. Called by the headset button and by the tablet's
+   * calibrate command — the two are equivalent, and a second call while a
+   * window is running is ignored.
+   */
+  private triggerCalibration(): void {
+    if (!this.calibrationCard || this.calibrationSampler.isActive()) {
+      return;
+    }
+    this.capturePending = true;
+    this.captureAttempts = 0;
+    this.calibrationCard.setHint('正在记录，请保持不动…');
+    this.calibrationSampler.start(performance.now());
+    this.start.setStatus('正在记录起始朝向', 'ok');
+  }
+
+  private finishCalibration(result: {
+    ok: boolean;
+    quaternion?: { x: number; y: number; z: number; w: number };
+    deviationDeg: number;
+  }): void {
+    this.capturePending = false;
+    if (!result.ok || !result.quaternion) {
+      // Stay on the card and wait for another explicit trigger; a shaky window
+      // is a normal event, not a reason to end the session.
+      this.calibrationCard?.setHint('检测到晃动，保持不动后再按一次');
+      this.start.setStatus('校准未记录：请保持不动后重试', 'error');
+      return;
+    }
+    this.applyCalibration(result.quaternion);
+  }
+
+  private applyCalibration(orientation: { x: number; y: number; z: number; w: number }): void {
     const comfort = this.comfort;
     if (!comfort) {
       return;
     }
-    // The card has served its purpose once the heading is recorded.
     this.calibrationCard?.hide();
     const position = this.headPose.position;
-    const orientation = this.headPose.quaternion;
     const ok = comfort.calibrate({
       transform: {
         position: { x: position.x, y: position.y, z: position.z },
@@ -929,19 +965,10 @@ export class QuietShoreApp {
       }
     });
     if (!ok) {
-      // A rejected pose is a bad frame, not a patient action: try again on the
-      // next frame, and give up with a stop if it keeps failing so the session
-      // can never sit in `calibrating` with a dead confirm key.
-      this.captureAttempts += 1;
-      if (this.captureAttempts < MAX_CAPTURE_ATTEMPTS) {
-        this.capturePending = true;
-        return;
-      }
-      this.captureAttempts = 0;
-      this.dispatch({ type: 'stop', reason: 'pose-lost' });
+      this.calibrationCard?.setHint('这次没有取到有效朝向，请再试一次');
+      this.calibrationCard?.show();
       return;
     }
-    this.captureAttempts = 0;
     // Scene back on, now that the world frame is known.
     this.scene.background = this.savedBackground;
     if (this.handle) {
@@ -949,9 +976,9 @@ export class QuietShoreApp {
     }
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     this.dispatch({ type: 'calibrated' });
-    // The sit-up layer is armed for every session, not only for the posture
-    // branch: rising to a standing view is the核心 of the standing voiding
-    // scenario, and the operator must be able to call it at any time.
+    // The sit-up layer is armed for every session: rising to a standing view is
+    // the core of the standing-voiding scenario and the operator must be able
+    // to call it at any time.
     this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
     this.sitUpReference = {
       position: this.headPose.position.clone(),
@@ -1008,6 +1035,12 @@ export class QuietShoreApp {
   private recalibrate(): void {
     if (!this.session || !this.xr.isPresenting) {
       this.start.setStatus(this.strings.recalibrateNeedsSession, 'error');
+      return;
+    }
+    if (this.lifecycle.phase === 'calibrating') {
+      // The card is already up: the operator's button starts the window
+      // instead of throwing away the frame and re-arming it.
+      this.triggerCalibration();
       return;
     }
     this.beginCalibration();
@@ -1385,10 +1418,8 @@ export class QuietShoreApp {
    */
   private onSelectShort(): void {
     if (this.lifecycle.phase === 'calibrating') {
-      // The reducer accepts this as "record the heading"; driving it from the
-      // button keeps that contract true instead of relying on the frame path.
-      this.capturePending = false;
-      this.captureHeading();
+      // Same trigger as the tablet's calibrate command.
+      this.triggerCalibration();
       return;
     }
     // Outside a session the confirm key is the entry gesture; nothing else.
