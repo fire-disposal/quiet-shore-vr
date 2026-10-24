@@ -270,9 +270,13 @@ export class QuietShoreApp {
       // One collected snapshot feeds the state payload; no caller re-derives
       // posture or view numbers.
       () => stateFromSnapshot(this.captureSnapshot()),
-      // The state payload carries no motion flag; the sit-up performance is
-      // the only motion source that has to be reported from outside it.
-      () => this.sitUpMotion.moving,
+      // Anything that moves the world needs the fast cadence. Reporting only
+      // the sit-up left a floating session at 1 Hz, which the tablet then had
+      // to smooth into 60 fps by itself.
+      () =>
+        this.sitUpMotion.moving ||
+        isActive(this.lifecycle) ||
+        this.viewMotion.getStateName() !== 'idle',
       (status) => this.handleLinkStatus(status)
     );
     // View motion is a system capability: it owns the orientation, presets,
