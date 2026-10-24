@@ -80,6 +80,8 @@ const SWELL_AUDIO_DEPTH = 0.12;
 const CALIBRATION_SAMPLE_MS = 900;
 /** Spread allowed inside that window before it is rejected. */
 const CALIBRATION_MAX_DEVIATION_DEG = 6;
+/** The card must stay readable even when the sample lands immediately. */
+const CALIBRATION_MIN_VISIBLE_MS = 2500;
 /** Buoyancy fade constant: the visible heave is gone inside a second. */
 const FLOAT_FADE_TAU_S = 0.25;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
@@ -436,26 +438,28 @@ export class QuietShoreApp {
     // depending on the runtime: an XR `select` (bound in enterVR) or a DOM
     // event. Both mean "the patient pressed confirm"; both are debounced by
     // onSelectEnd, so wiring all of them cannot double-fire.
-    window.addEventListener('keydown', (event) => {
-      if (!this.xr.isPresenting) {
-        return;
-      }
-      if (event.key === 'Enter' || event.key === ' ' || event.code === 'Enter') {
+    // The headset button has reached the page as a DOM key or click in some
+    // builds and as an XR select in others; every channel lands in the same
+    // debounced handler, and the handler itself decides what the phase means.
+    const onConfirmKey = (event: KeyboardEvent): void => {
+      if (
+        event.key === 'Enter' ||
+        event.key === ' ' ||
+        event.code === 'Enter' ||
+        event.code === 'Space' ||
+        event.keyCode === 13
+      ) {
         this.onSelectShort('keydown');
       }
-    }, { passive: true, capture: true });
-    // Capture phase: Firefox delivers the headset button as a DOM click on
-    // whatever is focused, which may be the canvas rather than the window.
-    document.addEventListener('click', () => {
-      if (this.xr.isPresenting) {
-        this.onSelectShort('click');
-      }
-    }, { capture: true });
-    document.addEventListener('pointerdown', () => {
-      if (this.xr.isPresenting) {
-        this.onSelectShort('pointer');
-      }
-    }, { capture: true });
+    };
+    window.addEventListener('keydown', onConfirmKey, { capture: true });
+    document.addEventListener('keydown', onConfirmKey, { capture: true });
+    document.addEventListener('click', () => this.onSelectShort('click'), {
+      capture: true
+    });
+    document.addEventListener('pointerdown', () => this.onSelectShort('pointer'), {
+      capture: true
+    });
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
@@ -993,6 +997,13 @@ export class QuietShoreApp {
       // Never block the scene on a shaky head: take the current pose.
       this.calibrationOverlay?.setHint('使用当前朝向');
       this.applyCalibration(this.headPose.quaternion);
+      return;
+    }
+    // Give the card a minimum on-screen time: a 900 ms flash is unreadable and
+    // leaves no window for a manual press.
+    const remaining = Math.max(0, CALIBRATION_MIN_VISIBLE_MS - (performance.now() - this.samplingStartedAt));
+    if (remaining > 0) {
+      window.setTimeout(() => this.applyCalibration(result.quaternion!), remaining);
       return;
     }
     this.applyCalibration(result.quaternion);
