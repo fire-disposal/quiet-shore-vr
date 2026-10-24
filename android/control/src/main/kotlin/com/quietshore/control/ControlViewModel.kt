@@ -393,8 +393,18 @@ class ControlViewModel(application: Application) :
     }
 
     // ── Voice cues ─────────────────────────────────────────────────────────
-    // The tablet only interrupts and mixes: reading is scheduled by the flow
-    // itself. Microphone never opens: this is playback only.
+    // Guidance lines are played by hand; SUS statements are scheduled by the
+    // panel itself. Microphone never opens: this is playback only.
+
+    fun playVoice(id: String) {
+        val line = VoiceCatalog.line(id) ?: return
+        // The panel reads its own statements as they appear; a manual tap there
+        // would talk over the automatic schedule.
+        if (line.group == "SUS") {
+            return
+        }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
+    }
 
 
     // ── SUS ────────────────────────────────────────────────────────────────

@@ -21,12 +21,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.ControlActions
 import com.quietshore.control.ui.theme.QuietPalette
+import com.quietshore.control.voice.VoiceCatalog
 
 /**
  * Voice cue drawer.
@@ -48,6 +53,12 @@ fun VoicePanel(
     // a claim on the world, so it does not need the control grant. Before, the
     // buttons were simply dead without explaining why.
     val connected = state.phase == com.quietshore.control.ble.BlePhase.READY
+    // Every guidance group starts open: a sentence the operator has to expand
+    // first is a sentence they will not use mid-session. SUS is excluded — its
+    // statements are read by the panel as they appear, so tapping one here
+    // would talk over the schedule.
+    val guidance = VoiceCatalog.LINES.filter { it.group != "SUS" }
+    var expanded by remember { mutableStateOf(guidance.map { it.group }.toSet()) }
 
     Surface(
         modifier = modifier,
@@ -98,9 +109,44 @@ fun VoicePanel(
                 )
             }
 
-            // No per-line playback: reading is scheduled by the flow itself
-            // (SUS reads each statement as it appears; sequences play on the
-            // headset). The panel keeps only the interruption and mix controls.
+            // Guidance lines are played by hand; SUS is not in this list.
+            Seed("引导台词（${guidance.size} 句）") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for ((group, lines) in guidance.groupBy { it.group }) {
+                        val open = group in expanded
+                        TextButton(
+                            onClick = {
+                                expanded = if (open) expanded - group else expanded + group
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "$group · ${lines.size} 句",
+                                modifier = Modifier.weight(1f),
+                                color = QuietPalette.TextPrimary
+                            )
+                            Text(if (open) "▾" else "▸", color = QuietPalette.TextSecondary)
+                        }
+                        if (open) {
+                            for (line in lines) {
+                                OutlinedButton(
+                                    onClick = { actions.onVoicePlay(line.id) },
+                                    enabled = connected,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        // Full text: the operator reads the
+                                        // sentence before the patient hears it.
+                                        text = line.text,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Seed("混音") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
