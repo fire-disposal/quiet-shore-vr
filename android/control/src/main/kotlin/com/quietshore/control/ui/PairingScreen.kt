@@ -301,7 +301,7 @@ private fun PairingCard(
             }
 
             Text(
-                text = "用于引导式放松体验；不做诊断或治疗，画面与数据都不离开这两台设备。",
+                text = "一台平板只控制一台头显。患者说停就先按停止，再检查头显。",
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
             )

@@ -459,7 +459,7 @@ class PortalActivity : Activity() {
         page.addView(homeHint)
         page.addView(
             label(
-                "体验性放松训练；不做诊断或治疗",
+                "若感到不适，请立即告知工作人员",
                 11f,
                 MUTED,
                 Typeface.NORMAL,

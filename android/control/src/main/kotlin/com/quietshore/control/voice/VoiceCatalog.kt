@@ -11,13 +11,12 @@ object VoiceCatalog {
     val SEQUENCES: List<String> = listOf("start", "imagine", "relax", "close")
 
     val LINES: List<Line> = listOf(
-        Line("v-arrive-1", "到场", "这次训练大约十分钟"),
         Line("v-arrive-2", "到场", "现在戴上头显"),
         Line("v-wear-1", "佩戴", "头显已戴好"),
+        Line("v-gate-1", "进入", "画面中间有一个圆"),
         Line("v-cal-1", "校准", "现在记录起始方向"),
         Line("v-cal-2", "校准", "已记录"),
         Line("v-enter-1", "渐入", "画面正在淡入"),
-        Line("v-float-1", "漂浮", "当前是漂浮模式"),
         Line("v-float-low", "漂浮", "起伏幅度"),
         Line("v-float-mid", "漂浮", "起伏幅度"),
         Line("v-float-high", "漂浮", "起伏幅度"),
@@ -33,7 +32,6 @@ object VoiceCatalog {
         Line("v-close-1", "收束", "训练即将结束"),
         Line("v-close-2", "收束", "已结束"),
         Line("v-after-1", "结束", "可以摘下头显"),
-        Line("v-after-2", "结束", "有不舒服"),
         Line("v-safe-1", "安全", "如头晕、恶心或不适"),
         Line("v-safe-2", "安全", "已停止"),
         Line("v-rise-1", "起身", "现在切换到起身视角"),
@@ -50,8 +48,7 @@ object VoiceCatalog {
         Line("v-sus-8", "SUS 量表", "这个系统用起来很麻烦"),
         Line("v-sus-9", "SUS 量表", "使用这个系统时我很有信心"),
         Line("v-sus-10", "SUS 量表", "我需要先学习很多内容才…"),
-        Line("v-sus-done", "SUS 量表", "十个问题结束"),
-        Line("v-about-1", "说明", "这次体验大约十分钟"),
+        Line("v-about-1", "说明", "戴好头显后"),
         Line("v-thanks-1", "说明", "这次体验结束"),
     )
 

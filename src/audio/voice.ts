@@ -51,12 +51,13 @@ export interface SequenceStep {
  */
 export const SEQUENCES: Readonly<Record<SequenceName, readonly SequenceStep[]>> = {
   start: [
-    // The long introduction runs before the headset goes on, so the patient
-    // knows what this is (and is not) before anything is attached.
+    // The introduction runs before the headset goes on; the gate line waits
+    // until the page is visible, and safety lands before anything moves.
     { id: 'v-about-1', gapMs: 3000 },
-    { id: 'v-arrive-1', gapMs: 4000 },
     { id: 'v-arrive-2', gapMs: 5000 },
-    { id: 'v-wear-1', gapMs: 6000 },
+    { id: 'v-wear-1', gapMs: 4000 },
+    { id: 'v-gate-1', gapMs: 5000 },
+    { id: 'v-safe-1', gapMs: 3000 },
     { id: 'v-cal-1', gapMs: 2500 },
     { id: 'v-cal-2', gapMs: 3000 },
     { id: 'v-enter-1', gapMs: 0 }
@@ -323,7 +324,7 @@ export function createVoicePlayer(): VoicePlayerApi {
         }
         manifest = parsed;
         // Prime the lines a session reaches first; failures are cosmetic.
-        const prime = ['v-safe-1', 'v-arrive-1', 'v-cal-1', 'v-enter-1', 'v-relax-1', 'v-close-1'];
+        const prime = ['v-safe-1', 'v-gate-1', 'v-cal-1', 'v-enter-1', 'v-relax-1', 'v-close-1'];
         void Promise.all(prime.map((id) => bufferFor(id)));
         return true;
       } catch {
