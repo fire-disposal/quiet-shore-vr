@@ -143,9 +143,9 @@ sequenceDiagram
 
 ### 5.2 六项改进
 
-1. **把指数跟随换成临界阻尼二阶**（带速度状态）：`a = k(target − x) − c·v`，C1 连续，起点不再有速度突跳；稳态仍受 15/30 °/s 上限约束。
-2. **加速度限制**：|a| ≤ 60 °/s²，让 0→15 °/s 用约 0.25 s 渐入。人手拖动时这一项最明显。
-3. **dt 改用 XRFrame 时间**：`setAnimationLoop((time, frame) => …)` 的 `frame.time`，避免 rAF/`performance.now` 与合成器错拍；保留 0.25 s 夹紧。
+1. ✅ **把指数跟随换成临界阻尼二阶**（带速度状态）：`a = ω²(target − x) − 2ω·v`，C1 连续，起点不再有速度突跳；稳态仍受 15/30 °/s 上限约束。
+2. ✅ **加速度限制**：|a| ≤ 60 °/s²，让 0→15 °/s 用约 0.25 s 渐入。人手拖动时这一项最明显。
+3. ✅ **dt 改用 XRFrame 时间**：`setAnimationLoop` 的帧时间戳，避免 rAF/`performance.now` 与合成器错拍；保留 0.25 s 夹紧。
 4. **远端目标插值**：平板滑块的 `view:orient` 和 state 都带时间戳，页面按 100 ms 缓冲跟随，而不是"收到就追"。
 5. **快速转视角时的 FOV 收窄（可选，A/B）**：|ω| > 12 °/s 时水平 FOV 在 0.3 s 内收 8°，静止后 0.5 s 恢复。依据 `research-standing-sensation.md` §2.3；注意它同时会削弱漂浮感，所以只在视角动画期间启用。
 6. **不做过预测**：慢速治疗动作里，100 ms 滞后无害，过冲会破坏"稳定地平线"的前提。
@@ -172,6 +172,8 @@ sequenceDiagram
 | `voiceId` / `hold` / `envelope` | 字段已就位，页面暂未上报（语音面板与"保持"落地时接上） |
 | `pose.roll` | 未实现：telemetry 是 5×float，没有 roll，需另行决定 |
 | 配置通道（TLV） | 未实现；当前只有 state 一条快通道 |
+| 视角跟随控制器 | 已实现：临界阻尼二阶 + 60 °/s² 加速度限幅 + `XRFrame` 时间（`drivers/track.ts`、`view-motion.ts`） |
+| 预设曲线 | 不变：smootherstep、3 s、±10°，峰值 6.25 °/s |
 
 ## 6 迁移顺序
 

@@ -19,7 +19,8 @@
 - [ ] 姿态卡：侧视示意（头部/世界/视线）+ 中点式读数条，取代 `AngleGauge` 与 `StatusPanel` 坐标行。
 - [ ] 镜像保真：跟随实际场景、发已合成偏移（含漂浮）、补 roll 与 FOV、时间戳 + 100 ms 插值、全屏监看 + 常驻急停。
 - [ ] 展示出口：90 s 演示脚本 + 字幕/大字 + 舞台（无控件），配对页入口；录屏规则见 D11。
-- [ ] 语音：管线已落库（`scripts/voice/`），待填 `.env.local` 的 `DOUBAO_TTS_API_KEY` 后生成男/女两套 32 句 → `voice/` + manifest → `dist/voice` → APK `assets/voice` + 回环 `/voice/` 路由 → 控制端语音面板（`docs/voice-script.md` §4）。
+- [x] 语音管线、两套 32 句、回环 `/voice/` 路由、`voice:*` 命令与页面播放已落库。
+- [ ] 控制端语音面板（`docs/voice-script.md` §4）：播放条 / 自动倒计时 / 单句 / 混音。
 - [ ] `core.md` §6.1/§6.2 的“强度 0–3 档”改写为无级强度（待 D10 确认标定方式）。
 - [ ] 患者端点击收窄到目标圆，整屏不再触发进入。
 
