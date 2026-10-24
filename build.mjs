@@ -84,6 +84,32 @@ const mirrorPage = [
 fs.writeFileSync(path.join(dist, 'mirror.html'), mirrorPage);
 console.log(`mirror.html ${(Buffer.byteLength(mirrorPage) / 1024).toFixed(0)} KB`);
 
+// Voice cues: pre-generated clips ship inside the headset APK, not the bundle.
+// The page fetches them from the loopback (`/voice/<set>/<id>.mp3`), so they are
+// copied verbatim and never inlined as data URLs.
+const voiceDir = path.join(root, 'voice');
+if (fs.existsSync(voiceDir)) {
+  const voiceOut = path.join(dist, 'voice');
+  fs.cpSync(voiceDir, voiceOut, { recursive: true });
+  let bytes = 0;
+  let count = 0;
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.mp3')) {
+        bytes += fs.statSync(full).size;
+        count += 1;
+      }
+    }
+  };
+  walk(voiceOut);
+  console.log(`voice ${count} clips, ${(bytes / 1024 / 1024).toFixed(2)} MB`);
+  if (count === 0) {
+    console.log('  (no clips yet: fill .env.local and run scripts/voice/build.py)');
+  }
+}
+
 if (serve) {
   const types = {
     '.html': 'text/html; charset=utf-8',

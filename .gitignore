@@ -18,3 +18,12 @@ android/*/build/
 android/local.properties
 android/headset/src/main/assets/index.html
 android/control/src/main/assets/mirror.html
+
+# voice pipeline: key material stays local
+.env
+.env.local
+.venv*/
+
+# python bytecode from the voice pipeline
+__pycache__/
+*.pyc

@@ -17,6 +17,11 @@ const FADE_SECONDS = 1.2;
 
 let context: AudioContext | null = null;
 let master: GainNode | null = null;
+/** Scene ducking bus: voice cues pull the water bed down, never the reverse. */
+let duck: GainNode | null = null;
+/** Voice cues get their own bus so ducking cannot touch them. */
+let voiceBus: GainNode | null = null;
+let duckDepthDb = 12;
 /** Buoyancy swell: LFO -> depth -> this gain -> master. One node, no per-frame work. */
 let swell: GainNode | null = null;
 let swellDepth: GainNode | null = null;
@@ -39,10 +44,17 @@ function ensureContext(): AudioContext | null {
     master = context.createGain();
     master.gain.value = muted ? 0 : VOLUME;
     master.connect(context.destination);
-    // Tracks feed the swell bus, which breathes with the buoyancy.
+    // Tracks feed the swell bus, which breathes with the buoyancy, then the
+    // duck bus, which the voice player pulls down while a cue is speaking.
     swell = context.createGain();
     swell.gain.value = 1;
-    swell.connect(master);
+    duck = context.createGain();
+    duck.gain.value = 1;
+    swell.connect(duck);
+    duck.connect(master);
+    voiceBus = context.createGain();
+    voiceBus.gain.value = 0.7;
+    voiceBus.connect(master);
     swellDepth = context.createGain();
     swellDepth.gain.value = 0;
     swellLfo = context.createOscillator();
@@ -157,6 +169,27 @@ export function stopAudio(): void {
   current = null;
 }
 
+export function getVoiceBus(): GainNode | null {
+  return voiceBus;
+}
+
+/** Duck depth used while a cue is speaking, in dB below the scene bed. */
+export function setDuckDepth(db: number): void {
+  duckDepthDb = Math.max(0, Math.min(18, db));
+}
+
+/**
+ * Pull the scene bed down (or release it). Short attack so the first syllable
+ * is never buried; the release is slower because a snap back is audible.
+ */
+export function duckScene(on: boolean): void {
+  if (!duck || !context) {
+    return;
+  }
+  const target = on ? Math.pow(10, -duckDepthDb / 20) : 1;
+  duck.gain.setTargetAtTime(target, context.currentTime, on ? 0.08 : 0.2);
+}
+
 export function preloadSceneAudio(audio: SceneAudio): void {
   preloadTrack(audio.track);
 }
@@ -213,5 +246,7 @@ export function disposeAudio(): void {
     void context.close();
     context = null;
     master = null;
+    duck = null;
+    voiceBus = null;
   }
 }

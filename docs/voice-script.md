@@ -67,23 +67,83 @@
 - 任何 `stop` 立即切断语音（200 ms 淡出）；序列被打断不自动续播；同句 60 s 内不重复。
 - 序列在页面内展开，平板只发一条命令。
 
-## 4 集成
+## 4 控制端语音面板
 
-- 控制端三个常驻按钮：开始提示 / 放松指导 / 收束；一句“最近三句”重播；完整列表按组折叠。播报中显示 `v-relax-2 · 4 s`。
-- 命令：`voice:play:<id>`、`voice:seq:<name>`、`voice:stop`、`voice:volume:<0..100>`；离散带 ACK。状态回读（v11）：`voiceId` 1 B + `playing` 1 bit。
-- 头显：独立语音总线 `scene → duck(−12 dB, 300 ms) → voice → master`；结束后 600 ms 恢复。
-- 预载 11 句，其余按需 fetch（本地回环 ≤300 ms）。字幕可选、默认关。
-- 只在耳机内播放；平板不显示语音文本。
+### 4.1 形体与入口
 
-## 5 TTS 生成
+- 顶栏“语音”打开右侧抽屉（420 dp）；关闭后保留一条 40 dp 语音条：当前句、停止、自动开关。
+- 抽屉自上而下四块：播放条 / 自动 / 单句 / 混音。主控件 ≥48 dp，全部落在右手拇指弧内。
+- 不用滑动手势（床旁戴手套、手可能湿）；所有操作都是点按。
 
-- 单一来源 `voice/lines.json`（id/text/group）；改文案整套重生成并更新 manifest。
-- zh-CN 中性音色，语速 0.95，句中 250 ms、句末 500 ms 停顿；数字用汉字，无英文与括号。
-- 输出 mono 24 kHz、MP3 48–64 kbps、−18 LUFS、峰值 ≤ −3 dBFS、头尾 trim 到 −45 dB。
-- `voice/<id>.mp3` + `voice/manifest.json`（id, file, ms, sha256, textHash）。
-- 体积：128 s ≈ 0.8 MB。不内联进单文件页，走 `/voice/<id>.mp3` 静态路由；必须单文件时只内联 11 句预载。
+### 4.2 播放条
 
-## 6 验收
+- 三个大按钮：**播放**（最近一条序列）、**停止**（只停语音，200 ms 淡出）、**静音**。
+- 当前句：`v-relax-2 · 放松 · 剩余 3 s · 自动`。
+- 队列最多一条插播，显示“下一条 `v-safe-2` · 自动 00:12”。
+
+### 4.3 自动模式
+
+| 相对时刻 | 动作 |
+| --- | --- |
+| T+0 | `seq-start`（到场 → 佩戴 → 校准 → 渐入） |
+| T+90 s | `seq-imagine`（想象 6 句） |
+| 会话过半 | `seq-relax`（放松 4 句，一次会话最多一次） |
+| 结束前 60 s | `seq-close` |
+
+- 面板显示倒计时，并给“跳过本条 / 延后 30 s / 立即播放”。
+- 校准、保持、停止期间计时暂停，恢复后接着走，不追帧。
+- 关闭自动不打断当前句；手动插播时自动让位，10 s 后恢复。
+
+### 4.4 单句
+
+- 按组折叠（到场/佩戴/校准/渐入/漂浮/想象/放松/收束/结束/安全/起身）；最近三句置顶。
+- 点击 = 插播（打断当前句）；长按 = 入队（最多 1 条）。
+- 男/女切换只影响下一句，不重启场景、不打断当前句。
+
+### 4.5 混音
+
+- 语音音量 0–100（默认 70）；水声压低：开关 + 深度 −6…−18 dB（默认 −12）。
+- “试听”在平板本地播放当前句，不外放；耳机里的播放不受影响。
+- 总开关 `audio:on/off` 静音全部；急停同时停止序列并静音语音。
+
+### 4.6 命令
+
+| 命令 | 语义 |
+| --- | --- |
+| `voice:play:<id>` | 插播一句 |
+| `voice:seq:<name>` | 播放整条序列（start/imagine/relax/close） |
+| `voice:stop` | 停止当前语音与序列 |
+| `voice:auto:on\|off` | 自动模式 |
+| `voice:volume:<0..100>` | 语音音量 |
+| `voice:mix:duck:<0..18>` | 水声压低深度 |
+| `voice:set:male\|female` | 切换音色集（下一句生效） |
+
+状态回读（v11）：`voiceId` 1 字节 + flags 两位（playing、auto）。
+
+## 5 打包与播放
+
+- `npm run build` 把 `voice/` 复制到 `dist/voice/`；Gradle 再复制进头显 APK 的 `assets/voice/`。
+- 回环服务新增 `/voice/<set>/<id>.mp3`（`audio/mpeg`，长缓存）；页面按需 fetch 并解码。
+- 只有头显包带音频；平板包不带，镜像页可播放但默认静音。
+- 体积：两套共 64 个文件，约 1.6 MB（48 kbps）。页面启动后在空闲时预解码 11 句。
+
+## 6 TTS 生成（管线）
+
+- 单一来源 `voice/lines.json`（id / group / text / trigger），改一句用 `--only` 增量重算。
+- 音色：男声 `zh_male_taocheng_uranus_bigtts`（仿真大赛最终片同款），女声 `zh_female_vv_uranus_bigtts`（豆包默认）。
+- 规格：mono 24 kHz、MP3 48 kbps、`speech_rate -5`（≈0.95×）、`loudness_rate 0`。
+- 命令：
+
+```bash
+uv run --with websockets python scripts/voice/build.py            # 两套全量
+uv run --with websockets python scripts/voice/build.py --voice male
+uv run --with websockets python scripts/voice/build.py --only v-safe-1 --update
+```
+
+- 密钥只在 `.env.local`（模板 `.env.example`）；已生成文件默认跳过，避免重复计费。
+- 产物：`voice/<set>/<id>.mp3` + `voice/manifest.json`（id、file、ms、bytes、sha256、textHash）。
+
+## 7 验收
 
 - 3 名护士 + 2 名志愿者听完 `seq-start` 能复述“下一步做什么”和“怎么停”，≥4/5 正确。
 - ≥2/3 护士认为“不像哄人、也不像命令”。

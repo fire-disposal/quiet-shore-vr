@@ -129,6 +129,8 @@ class PortalService : Service() {
         const val CONTENT_TYPE_HTML = "text/html; charset=utf-8"
         const val CONTENT_TYPE_JSON = "application/json; charset=utf-8"
         const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
+        const val CONTENT_TYPE_MP3 = "audio/mpeg"
+        const val NO_STORE = "no-store, no-cache, must-revalidate"
 
         /** Page command replayed once whenever the console loses its lease. */
         const val POSTURE_STOP = "posture:stop"
@@ -138,6 +140,8 @@ class PortalService : Service() {
         const val ROUTE_CAPABILITIES = "/capabilities"
         const val ROUTE_STATUS = "/status"
         const val ROUTE_BOOTSTRAP = "/bootstrap"
+        /** Pre-generated voice cues, served from `assets/voice/`. */
+        const val ROUTE_VOICE = "/voice/"
         const val ROUTE_INDEX = "/"
         const val ROUTE_INDEX_FILE = "/index.html"
     }
@@ -798,8 +802,41 @@ class PortalService : Service() {
                 methodNotAllowed("GET, HEAD")
             }
 
-        else -> Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
+        else ->
+            if ((method == "GET" || method == "HEAD") && target.startsWith(ROUTE_VOICE)) {
+                voiceResponse(target)
+            } else {
+                Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
+            }
     }
+
+    /**
+     * One pre-generated voice clip. Paths are restricted to `<set>/<id>.mp3`
+     * with a lowercase set name so a request can never walk out of the asset
+     * directory; anything else is a 404, not a traversal.
+     */
+    private fun voiceResponse(target: String): Response {
+        val name = target.removePrefix(ROUTE_VOICE)
+        if (!VOICE_PATH.matches(name)) {
+            return Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
+        }
+        return try {
+            assets.open("$VOICE_DIR$name").use { stream ->
+                Response(
+                    200,
+                    CONTENT_TYPE_MP3,
+                    stream.readBytes(),
+                    cacheControl = "public, max-age=31536000, immutable"
+                )
+            }
+        } catch (error: IOException) {
+            Log.w(TAG, "voice asset $name unavailable: ${error.message}")
+            Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
+        }
+    }
+
+    private val VOICE_PATH = Regex("^[a-z]+/[a-z0-9-]+\\.mp3$")
+    private val VOICE_DIR = "voice/"
 
     /** Allowlisted command router shared by BLE, loopback HTTP and future intents. */
     private fun dispatchControl(raw: String): Boolean {
@@ -1113,7 +1150,7 @@ class PortalService : Service() {
         builder.append("HTTP/1.1 ").append(response.status).append(' ')
             .append(statusText(response.status)).append("\r\n")
             .append("Content-Type: ").append(response.contentType).append("\r\n")
-            .append("Cache-Control: no-store, no-cache, must-revalidate\r\n")
+            .append("Cache-Control: ").append(response.cacheControl).append("\r\n")
             .append("Pragma: no-cache\r\n")
             .append("Expires: 0\r\n")
             .append("Connection: close\r\n")
@@ -1275,7 +1312,9 @@ class PortalService : Service() {
         val status: Int,
         val contentType: String,
         val body: ByteArray,
-        val allow: String? = null
+        val allow: String? = null,
+        /** Overrides the default no-store policy; voice clips are immutable. */
+        val cacheControl: String = NO_STORE
     )
 
     /**

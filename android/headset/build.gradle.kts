@@ -39,6 +39,15 @@ val syncWebAsset = tasks.register<Copy>("syncWebAsset") {
     outputs.upToDateWhen { false }
 }
 
+val syncVoiceAssets = tasks.register<Copy>("syncVoiceAssets") {
+    val repoRoot = rootProject.projectDir.parentFile
+    from(repoRoot.resolve("dist/voice"))
+    into(layout.projectDirectory.dir("src/main/assets/voice"))
+    // Voice clips are immutable per id; refreshing keeps a regenerated clip
+    // from being shadowed by an older copy inside the APK.
+    outputs.upToDateWhen { false }
+}
+
 tasks.named("preBuild") {
-    dependsOn(syncWebAsset)
+    dependsOn(syncWebAsset, syncVoiceAssets)
 }

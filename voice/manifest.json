@@ -1,0 +1,597 @@
+{
+  "version": 1,
+  "source": "voice/lines.json",
+  "voices": {
+    "male": {
+      "speaker": "zh_male_taocheng_uranus_bigtts",
+      "label": "男声（最终片同款）",
+      "totalMs": 101544,
+      "files": [
+        {
+          "id": "v-arrive-1",
+          "group": "到场",
+          "file": "male/v-arrive-1.mp3",
+          "ms": 3216,
+          "bytes": 25773,
+          "sha256": "0958fceb026755e9db1f114977dd9b3d3725069729229b9506fe437239d2a097",
+          "textHash": "a1963f08528a00bd"
+        },
+        {
+          "id": "v-arrive-2",
+          "group": "到场",
+          "file": "male/v-arrive-2.mp3",
+          "ms": 3408,
+          "bytes": 27309,
+          "sha256": "c50a9f9cfc1399717331c2b0de3237d25bf6ed890978acd70136ec9dbe0050bb",
+          "textHash": "cbd682eccd3bc5d6"
+        },
+        {
+          "id": "v-wear-1",
+          "group": "佩戴",
+          "file": "male/v-wear-1.mp3",
+          "ms": 3624,
+          "bytes": 29037,
+          "sha256": "1bf1618ebb5a1ac0bc8b85def7c2618a5b8e76d3f54e9c7fbea582c7c05d2320",
+          "textHash": "cd07eea766a7f533"
+        },
+        {
+          "id": "v-wear-2",
+          "group": "佩戴",
+          "file": "male/v-wear-2.mp3",
+          "ms": 2568,
+          "bytes": 20589,
+          "sha256": "dd2948b2644b8e1f5ed706484da3a64e13a11e91ccff02583defe7004ca9c2eb",
+          "textHash": "b19164839b8306f3"
+        },
+        {
+          "id": "v-cal-1",
+          "group": "校准",
+          "file": "male/v-cal-1.mp3",
+          "ms": 4056,
+          "bytes": 32493,
+          "sha256": "6a688a90c97b93d177049b308ecca0a4f78701f69af1e4009f88ecfde52f680a",
+          "textHash": "5d322beb37a1627b"
+        },
+        {
+          "id": "v-cal-2",
+          "group": "校准",
+          "file": "male/v-cal-2.mp3",
+          "ms": 2544,
+          "bytes": 20397,
+          "sha256": "122fe5c5113fb168d223375a7d8f033231a55d48deef3e50ab98f2df9251912e",
+          "textHash": "4c5390ba670bd4f9"
+        },
+        {
+          "id": "v-enter-1",
+          "group": "渐入",
+          "file": "male/v-enter-1.mp3",
+          "ms": 4488,
+          "bytes": 35949,
+          "sha256": "5f5434b936e1b665efb0d8621f73140c716d9908976ebcafadb5cb17559f9948",
+          "textHash": "453c4b7a806afbf7"
+        },
+        {
+          "id": "v-enter-2",
+          "group": "渐入",
+          "file": "male/v-enter-2.mp3",
+          "ms": 2376,
+          "bytes": 19053,
+          "sha256": "3c8d5f454542082e70c665fa081235565f6709b2499c96baf0c57a2b98a511a5",
+          "textHash": "828b10350fb22952"
+        },
+        {
+          "id": "v-float-1",
+          "group": "漂浮",
+          "file": "male/v-float-1.mp3",
+          "ms": 2808,
+          "bytes": 22509,
+          "sha256": "5d8e69ecd73b71acfbc95031dd72c28accb51460e491c71b09984231e4c7aa26",
+          "textHash": "b0afe0ad885e66ed"
+        },
+        {
+          "id": "v-float-low",
+          "group": "漂浮",
+          "file": "male/v-float-low.mp3",
+          "ms": 1728,
+          "bytes": 13869,
+          "sha256": "fda53d36369642000bf5bbc887f97a954b65819ec4e80e266e39e870fa817e08",
+          "textHash": "84384dc1033c9012"
+        },
+        {
+          "id": "v-float-mid",
+          "group": "漂浮",
+          "file": "male/v-float-mid.mp3",
+          "ms": 1536,
+          "bytes": 12333,
+          "sha256": "ba3f1acd0efe05d4e9889518361f49144bbb00197ed53818545c63801ec7bcf3",
+          "textHash": "ac725414b50c1c76"
+        },
+        {
+          "id": "v-float-high",
+          "group": "漂浮",
+          "file": "male/v-float-high.mp3",
+          "ms": 3432,
+          "bytes": 27501,
+          "sha256": "cb74e03d973e900009343906240f03d58698e89ff66903b0546c20744d5bd40e",
+          "textHash": "8aa5e09db8e384b6"
+        },
+        {
+          "id": "v-imagine-1",
+          "group": "想象",
+          "file": "male/v-imagine-1.mp3",
+          "ms": 4056,
+          "bytes": 32493,
+          "sha256": "e99038bc6aa37ade45e7509fb9bd073edba00db0cd1fec068d08918f06d10a96",
+          "textHash": "a87df51e809087f3"
+        },
+        {
+          "id": "v-imagine-2",
+          "group": "想象",
+          "file": "male/v-imagine-2.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "c0112d84b3806465d9b57279d6af05c03e0ce820d8a0519e2939582a1e584121",
+          "textHash": "ec4de6d3c1e13468"
+        },
+        {
+          "id": "v-imagine-3",
+          "group": "想象",
+          "file": "male/v-imagine-3.mp3",
+          "ms": 4224,
+          "bytes": 33837,
+          "sha256": "845a96f8b0e08484067049a0778e2497a23a760d1cf56f1986f78dd6d9aadd70",
+          "textHash": "61f6b7c0b587cd15"
+        },
+        {
+          "id": "v-imagine-4",
+          "group": "想象",
+          "file": "male/v-imagine-4.mp3",
+          "ms": 3408,
+          "bytes": 27309,
+          "sha256": "6ddb135494c7380023ea1615485200ba1e18b02df824af5a38c083fe6f2a6f77",
+          "textHash": "9f351bb1d9971a4f"
+        },
+        {
+          "id": "v-imagine-5",
+          "group": "想象",
+          "file": "male/v-imagine-5.mp3",
+          "ms": 3216,
+          "bytes": 25773,
+          "sha256": "b01b95696d204272b2dcc23a2f788b9ede89cd913e0424c4ef25da631a5076c5",
+          "textHash": "6032f7201d7bf9fb"
+        },
+        {
+          "id": "v-imagine-6",
+          "group": "想象",
+          "file": "male/v-imagine-6.mp3",
+          "ms": 3216,
+          "bytes": 25773,
+          "sha256": "8ef60d91988dfc8d9964d135e3e3c5dc981d24bb5f87166425f41729be7f3600",
+          "textHash": "dc11c01b0a8fe8a0"
+        },
+        {
+          "id": "v-relax-1",
+          "group": "放松",
+          "file": "male/v-relax-1.mp3",
+          "ms": 3408,
+          "bytes": 27309,
+          "sha256": "bf84099f31f97db470c9f894f47eddcf5a68b3261848a3ec9db9d125c11de1ba",
+          "textHash": "4bb1aa4c63ffb3f9"
+        },
+        {
+          "id": "v-relax-2",
+          "group": "放松",
+          "file": "male/v-relax-2.mp3",
+          "ms": 2376,
+          "bytes": 19053,
+          "sha256": "fc7f2ed4a594d27269e2514e1e64e620a06540c6d7fcf4d5025e98a498ef9e4d",
+          "textHash": "27dfead7be981f62"
+        },
+        {
+          "id": "v-relax-3",
+          "group": "放松",
+          "file": "male/v-relax-3.mp3",
+          "ms": 3816,
+          "bytes": 30573,
+          "sha256": "86384b3297a30f78d891eb6860a7e2aadd54ef2cc8705a6ecb130c45837e5dbe",
+          "textHash": "be4d09d27dbee024"
+        },
+        {
+          "id": "v-relax-4",
+          "group": "放松",
+          "file": "male/v-relax-4.mp3",
+          "ms": 2568,
+          "bytes": 20589,
+          "sha256": "799d8858dfc985042b856434e321bf53dfac7d99b50e304b597bbe6aad794941",
+          "textHash": "2ee6d54e54b950f0"
+        },
+        {
+          "id": "v-close-1",
+          "group": "收束",
+          "file": "male/v-close-1.mp3",
+          "ms": 3216,
+          "bytes": 25773,
+          "sha256": "810673d09c1970fba78f29ecceff2401e9d7643637788722112f06af3de3cff0",
+          "textHash": "be230152632f6fd2"
+        },
+        {
+          "id": "v-close-2",
+          "group": "收束",
+          "file": "male/v-close-2.mp3",
+          "ms": 3408,
+          "bytes": 27309,
+          "sha256": "9fa7d54b1b7230f4293562f94687c59e2f3ed2f683e23711986471f95e7e2116",
+          "textHash": "e1650b6881aa7e2b"
+        },
+        {
+          "id": "v-after-1",
+          "group": "结束",
+          "file": "male/v-after-1.mp3",
+          "ms": 2976,
+          "bytes": 23853,
+          "sha256": "f26f7532b92e224985b894ab25ba17fcd4c68c682aa94850007633b0a517e3d6",
+          "textHash": "e3cb357193bff42a"
+        },
+        {
+          "id": "v-after-2",
+          "group": "结束",
+          "file": "male/v-after-2.mp3",
+          "ms": 2568,
+          "bytes": 20589,
+          "sha256": "c7c600958938f958253801f566b6a1b68006335d57f941a6b233f4b258378e1f",
+          "textHash": "8a2895d588810325"
+        },
+        {
+          "id": "v-safe-1",
+          "group": "安全",
+          "file": "male/v-safe-1.mp3",
+          "ms": 4896,
+          "bytes": 39213,
+          "sha256": "3c718a9df0509f4594e329a97b5d560aa1a97f882798973ec9ec174724d7eed4",
+          "textHash": "76f08d70763ce7ab"
+        },
+        {
+          "id": "v-safe-2",
+          "group": "安全",
+          "file": "male/v-safe-2.mp3",
+          "ms": 3000,
+          "bytes": 24045,
+          "sha256": "3151af05b03c26ee4d46edfcfe3699aac13301cc6568656a44c1bd3311dd0983",
+          "textHash": "987681830e14c367"
+        },
+        {
+          "id": "v-safe-3",
+          "group": "安全",
+          "file": "male/v-safe-3.mp3",
+          "ms": 2376,
+          "bytes": 19053,
+          "sha256": "f783ead615e11d3d4814e0b6626dffaf05a26224e6442877cd45b11aa931d71d",
+          "textHash": "460d26787f6aa65c"
+        },
+        {
+          "id": "v-rise-1",
+          "group": "起身",
+          "file": "male/v-rise-1.mp3",
+          "ms": 4464,
+          "bytes": 35757,
+          "sha256": "eeb8b8303f1370ecce7e4d8fcdadbc20f7d02d077c65cb731495381c369490aa",
+          "textHash": "8e5f48284b394580"
+        },
+        {
+          "id": "v-rise-2",
+          "group": "起身",
+          "file": "male/v-rise-2.mp3",
+          "ms": 1296,
+          "bytes": 10413,
+          "sha256": "6e005d0012ad5291e0587f8f04b01bf54bffd922e1742be191d9761c31005962",
+          "textHash": "91c112227e8e082d"
+        },
+        {
+          "id": "v-direct-1",
+          "group": "明确",
+          "file": "male/v-direct-1.mp3",
+          "ms": 3624,
+          "bytes": 29037,
+          "sha256": "26065a039cd5146fe1a429cce73caa4682f3877ea24b12c75229ae98d97a95f6",
+          "textHash": "1a13c8758e625493"
+        }
+      ]
+    },
+    "female": {
+      "speaker": "zh_female_vv_uranus_bigtts",
+      "label": "女声（豆包默认）",
+      "totalMs": 114576,
+      "files": [
+        {
+          "id": "v-arrive-1",
+          "group": "到场",
+          "file": "female/v-arrive-1.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "99f8e3e990c272c439a71ec7e9716f335d5f12bfb0da04d8506345f06b260665",
+          "textHash": "a1963f08528a00bd"
+        },
+        {
+          "id": "v-arrive-2",
+          "group": "到场",
+          "file": "female/v-arrive-2.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "50d6eda7c54bda8ab19263eb89da17b8aa94412ac5d217b0e9729c4945886b58",
+          "textHash": "cbd682eccd3bc5d6"
+        },
+        {
+          "id": "v-wear-1",
+          "group": "佩戴",
+          "file": "female/v-wear-1.mp3",
+          "ms": 4056,
+          "bytes": 32493,
+          "sha256": "cb87208f3b5ff3348be6a912d28b22f688cf15add2e032c1464c684572f29339",
+          "textHash": "cd07eea766a7f533"
+        },
+        {
+          "id": "v-wear-2",
+          "group": "佩戴",
+          "file": "female/v-wear-2.mp3",
+          "ms": 3000,
+          "bytes": 24045,
+          "sha256": "20cb3ab9a2e78141a73257c89e11b4fed72fc402c2032e7f5b73f962aebb4333",
+          "textHash": "b19164839b8306f3"
+        },
+        {
+          "id": "v-cal-1",
+          "group": "校准",
+          "file": "female/v-cal-1.mp3",
+          "ms": 4656,
+          "bytes": 37293,
+          "sha256": "29255a19744d6b8d687d0d039aff2ab0422afc806ab14144ae6d37e2e94e724e",
+          "textHash": "5d322beb37a1627b"
+        },
+        {
+          "id": "v-cal-2",
+          "group": "校准",
+          "file": "female/v-cal-2.mp3",
+          "ms": 2568,
+          "bytes": 20589,
+          "sha256": "c094ae1988fb85a5008e8d7648911d423031b55eec0dec4d275e9156938281ce",
+          "textHash": "4c5390ba670bd4f9"
+        },
+        {
+          "id": "v-enter-1",
+          "group": "渐入",
+          "file": "female/v-enter-1.mp3",
+          "ms": 4920,
+          "bytes": 39405,
+          "sha256": "e915f56da625efc27916943ff54bbeb4901ecab8844e97ecca04b66a5c518a0c",
+          "textHash": "453c4b7a806afbf7"
+        },
+        {
+          "id": "v-enter-2",
+          "group": "渐入",
+          "file": "female/v-enter-2.mp3",
+          "ms": 2568,
+          "bytes": 20589,
+          "sha256": "e60d4a13eb783f0a7c7cd544cfa7d0c2f8d31deeb178678e1c01998ec3697958",
+          "textHash": "828b10350fb22952"
+        },
+        {
+          "id": "v-float-1",
+          "group": "漂浮",
+          "file": "female/v-float-1.mp3",
+          "ms": 3816,
+          "bytes": 30573,
+          "sha256": "51b90923925e968ec5d8df65877c97ed84d60a12cb940207e56f4d6138b0ba1f",
+          "textHash": "b0afe0ad885e66ed"
+        },
+        {
+          "id": "v-float-low",
+          "group": "漂浮",
+          "file": "female/v-float-low.mp3",
+          "ms": 1968,
+          "bytes": 15789,
+          "sha256": "3e97314e714cb8d9946ba3151f4bdaae4d1ee6e20ec76048f291a4fff308a3c5",
+          "textHash": "84384dc1033c9012"
+        },
+        {
+          "id": "v-float-mid",
+          "group": "漂浮",
+          "file": "female/v-float-mid.mp3",
+          "ms": 1704,
+          "bytes": 13677,
+          "sha256": "8f6ebc99a30396ec169df05f9f433d6a2754ebab74e6dcd96fca5fc5b8ca92c6",
+          "textHash": "ac725414b50c1c76"
+        },
+        {
+          "id": "v-float-high",
+          "group": "漂浮",
+          "file": "female/v-float-high.mp3",
+          "ms": 3816,
+          "bytes": 30573,
+          "sha256": "c78e2c30e7d0f18708ecc03b99d508c4495a8020bdb56459d65eee81b123eac7",
+          "textHash": "8aa5e09db8e384b6"
+        },
+        {
+          "id": "v-imagine-1",
+          "group": "想象",
+          "file": "female/v-imagine-1.mp3",
+          "ms": 4056,
+          "bytes": 32493,
+          "sha256": "3a647f469d01a4da934733487fe0f56f1dd1bba87a646ca091f3aeef5bb1768b",
+          "textHash": "a87df51e809087f3"
+        },
+        {
+          "id": "v-imagine-2",
+          "group": "想象",
+          "file": "female/v-imagine-2.mp3",
+          "ms": 4248,
+          "bytes": 34029,
+          "sha256": "7a1bc52802d04ac0618a218b3f22e82f46c2c857ad9ce84dc4deaa1ce8f7ed46",
+          "textHash": "ec4de6d3c1e13468"
+        },
+        {
+          "id": "v-imagine-3",
+          "group": "想象",
+          "file": "female/v-imagine-3.mp3",
+          "ms": 4248,
+          "bytes": 34029,
+          "sha256": "8e5a9a75eab5ef055d58dc308d9f9949e573dfdec46bd6a71e2c2effe313536a",
+          "textHash": "61f6b7c0b587cd15"
+        },
+        {
+          "id": "v-imagine-4",
+          "group": "想象",
+          "file": "female/v-imagine-4.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "023a4f5acc013556dc076973d70025e6cbf078330c1538d80c3f3bceb3f67845",
+          "textHash": "9f351bb1d9971a4f"
+        },
+        {
+          "id": "v-imagine-5",
+          "group": "想象",
+          "file": "female/v-imagine-5.mp3",
+          "ms": 4512,
+          "bytes": 36141,
+          "sha256": "3cf648b4027001ba37914770ed55a848c93666c6a24b19af40d557afcd1efac8",
+          "textHash": "6032f7201d7bf9fb"
+        },
+        {
+          "id": "v-imagine-6",
+          "group": "想象",
+          "file": "female/v-imagine-6.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "456e2c0703e4e6ad82d634264beca8ca9af270fa37cf0fa92331492277a33062",
+          "textHash": "dc11c01b0a8fe8a0"
+        },
+        {
+          "id": "v-relax-1",
+          "group": "放松",
+          "file": "female/v-relax-1.mp3",
+          "ms": 3816,
+          "bytes": 30573,
+          "sha256": "534e92afbe2925e7cd24464c1ad13fa7ff7e07bc4a9eed2ab8bec11c17c2619f",
+          "textHash": "4bb1aa4c63ffb3f9"
+        },
+        {
+          "id": "v-relax-2",
+          "group": "放松",
+          "file": "female/v-relax-2.mp3",
+          "ms": 2808,
+          "bytes": 22509,
+          "sha256": "5d1a5513dcfe9ef78afa0b77f3d4a7ef269d8d970eeda2ae97e8d8258b5d6a09",
+          "textHash": "27dfead7be981f62"
+        },
+        {
+          "id": "v-relax-3",
+          "group": "放松",
+          "file": "female/v-relax-3.mp3",
+          "ms": 4488,
+          "bytes": 35949,
+          "sha256": "40209a5b1fe14c4fdf1155e50710ed465f3829c4d284d92227bc384388eae2f6",
+          "textHash": "be4d09d27dbee024"
+        },
+        {
+          "id": "v-relax-4",
+          "group": "放松",
+          "file": "female/v-relax-4.mp3",
+          "ms": 3408,
+          "bytes": 27309,
+          "sha256": "e4efba9c13621c65c2c68fdaff0e9b9bccd7f3e35b44c074960eaeccc9efd3c5",
+          "textHash": "2ee6d54e54b950f0"
+        },
+        {
+          "id": "v-close-1",
+          "group": "收束",
+          "file": "female/v-close-1.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "271753bf57fb18480f0baeef44769222510e652668c0ef8d185873dfceb3276a",
+          "textHash": "be230152632f6fd2"
+        },
+        {
+          "id": "v-close-2",
+          "group": "收束",
+          "file": "female/v-close-2.mp3",
+          "ms": 3816,
+          "bytes": 30573,
+          "sha256": "52ab952da9d97ce066f53c934198640183ba026d63ba3c2845b0a82de7996c63",
+          "textHash": "e1650b6881aa7e2b"
+        },
+        {
+          "id": "v-after-1",
+          "group": "结束",
+          "file": "female/v-after-1.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "e88cb3cf29deee1cf1f0df100691f2377e25268694344a9e097a0fe4728932eb",
+          "textHash": "e3cb357193bff42a"
+        },
+        {
+          "id": "v-after-2",
+          "group": "结束",
+          "file": "female/v-after-2.mp3",
+          "ms": 2808,
+          "bytes": 22509,
+          "sha256": "665f50f54e10ce25f90dfab149d0cf0beb57f7a246a32a2e55893fdbaea47f0d",
+          "textHash": "8a2895d588810325"
+        },
+        {
+          "id": "v-safe-1",
+          "group": "安全",
+          "file": "female/v-safe-1.mp3",
+          "ms": 5328,
+          "bytes": 42669,
+          "sha256": "97b27c81f9f69a24bd066c3515f04faa1703f564345ab2a16335262a5ce40708",
+          "textHash": "76f08d70763ce7ab"
+        },
+        {
+          "id": "v-safe-2",
+          "group": "安全",
+          "file": "female/v-safe-2.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "5d7494a4260001f0a2b3cb559b74a8ea9a35e8ead5abb7811cfc108673a5c82c",
+          "textHash": "987681830e14c367"
+        },
+        {
+          "id": "v-safe-3",
+          "group": "安全",
+          "file": "female/v-safe-3.mp3",
+          "ms": 2568,
+          "bytes": 20589,
+          "sha256": "986857fca4b9bca8ceaed818bab17c634354944a764f69cb0ee92ad445df26e7",
+          "textHash": "460d26787f6aa65c"
+        },
+        {
+          "id": "v-rise-1",
+          "group": "起身",
+          "file": "female/v-rise-1.mp3",
+          "ms": 4680,
+          "bytes": 37485,
+          "sha256": "4cf1e884ed695f8470d11cd96444b9720ae3856208b0668da88953b09325c9fa",
+          "textHash": "8e5f48284b394580"
+        },
+        {
+          "id": "v-rise-2",
+          "group": "起身",
+          "file": "female/v-rise-2.mp3",
+          "ms": 1536,
+          "bytes": 12333,
+          "sha256": "31f9d3f7d84f7f0b61d537b4ac3cdfd95023de72ed4e79aeb9d1e4086899b69b",
+          "textHash": "91c112227e8e082d"
+        },
+        {
+          "id": "v-direct-1",
+          "group": "明确",
+          "file": "female/v-direct-1.mp3",
+          "ms": 3648,
+          "bytes": 29229,
+          "sha256": "ae1424462c0287168f7a02f6fa5adf4185cba1431ad3c48387b8547bf1cc41ba",
+          "textHash": "1a13c8758e625493"
+        }
+      ]
+    }
+  },
+  "generatedAt": "2026-10-24T08:42:53+08:00"
+}
