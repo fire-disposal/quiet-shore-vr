@@ -127,6 +127,7 @@ export class SpatialSurface {
       this.title = new TextTexture({
         theme: this.options.theme,
         sizePx: this.options.theme.titlePx,
+        heightPx: Math.round(this.options.theme.titlePx * 1.35),
         weight: 650,
         align: 'left'
       });

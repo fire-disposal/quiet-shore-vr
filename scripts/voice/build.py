@@ -118,7 +118,7 @@ def short_label(text: str) -> str:
 
 def write_catalog(lines: list[dict]) -> None:
     rows = "\n".join(
-        f'        Line("{line["id"]}", "{line["group"]}", "{short_label(line["text"])}"),'
+        f'        Line("{line["id"]}", "{line["group"]}", "{line["text"]}"),'
         for line in lines
     )
     KOTLIN_CATALOG.write_text(
@@ -130,7 +130,7 @@ def write_catalog(lines: list[dict]) -> None:
  * the ids to send commands and a short label to show.
  */
 object VoiceCatalog {{
-    data class Line(val id: String, val group: String, val label: String)
+    data class Line(val id: String, val group: String, val text: String)
 
     val SEQUENCES: List<String> = listOf("start", "imagine", "relax", "close")
 

@@ -25,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.ControlActions
@@ -120,15 +119,10 @@ fun VoicePanel(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = line.label,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
+                                        // Full text: an operator should read the
+                                        // sentence before it reaches the patient.
+                                        text = line.text,
                                         modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = line.id,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = QuietPalette.TextSecondary
                                     )
                                 }
                             }
@@ -164,7 +158,7 @@ private fun NowPlaying(state: ControlUiState) {
         Text("语音", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(2.dp))
         Text(
-            text = line?.let { "正在播放：${it.group} · ${it.label}" } ?: "未在播放",
+            text = line?.let { "正在播放：${it.group} · ${it.text}" } ?: "未在播放",
             style = MaterialTheme.typography.bodyMedium,
             color = QuietPalette.TextSecondary
         )

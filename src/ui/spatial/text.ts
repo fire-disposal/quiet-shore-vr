@@ -80,10 +80,13 @@ export class TextTexture {
 
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.texture.minFilter = THREE.LinearMipmapLinearFilter;
+    // Text is read at ~1 m and never minified, so mipmaps cost nothing but
+    // would force power-of-two canvases. Exact sizes keep the mesh tight
+    // against its glyphs, which is what makes a card look composed.
+    this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
-    this.texture.generateMipmaps = true;
-    this.texture.anisotropy = 4;
+    this.texture.generateMipmaps = false;
+    this.texture.anisotropy = 1;
     this.aspect = this.options.heightPx / this.options.widthPx;
   }
 
@@ -111,11 +114,7 @@ export class TextTexture {
     // Grow the canvas to the text instead of letting long copy fall outside
     // it: the surfaces scale the mesh by this texture's aspect, so a clipped
     // texture means text drawn under the card.
-    const needed = Math.ceil(totalHeight + paddingPx * 2);
-    const nextHeight = Math.max(
-      this.options.heightPx,
-      Math.pow(2, Math.ceil(Math.log2(Math.max(64, needed))))
-    );
+    const nextHeight = Math.max(48, Math.ceil(totalHeight + paddingPx * 2));
     if (canvas.height !== nextHeight) {
       canvas.height = nextHeight;
       ctx.font = `${weight} ${sizePx}px ${theme.fontFamily}`;

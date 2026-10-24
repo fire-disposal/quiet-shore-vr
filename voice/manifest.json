@@ -18,7 +18,7 @@
         },
         {
           "id": "v-wear-1",
-          "group": "进入",
+          "group": "引导",
           "file": "male/v-wear-1.mp3",
           "ms": 6931,
           "bytes": 42140,
@@ -27,7 +27,7 @@
         },
         {
           "id": "v-safe-1",
-          "group": "安全",
+          "group": "引导",
           "file": "male/v-safe-1.mp3",
           "ms": 5695,
           "bytes": 34796,
@@ -36,7 +36,7 @@
         },
         {
           "id": "v-cal-1",
-          "group": "校准",
+          "group": "引导",
           "file": "male/v-cal-1.mp3",
           "ms": 6287,
           "bytes": 38252,
@@ -45,7 +45,7 @@
         },
         {
           "id": "v-cal-2",
-          "group": "校准",
+          "group": "引导",
           "file": "male/v-cal-2.mp3",
           "ms": 2309,
           "bytes": 14492,
@@ -54,7 +54,7 @@
         },
         {
           "id": "v-float-1",
-          "group": "漂浮",
+          "group": "引导",
           "file": "male/v-float-1.mp3",
           "ms": 3154,
           "bytes": 19532,
@@ -63,7 +63,7 @@
         },
         {
           "id": "v-imagine-1",
-          "group": "想象",
+          "group": "引导",
           "file": "male/v-imagine-1.mp3",
           "ms": 5275,
           "bytes": 32204,
@@ -72,7 +72,7 @@
         },
         {
           "id": "v-imagine-2",
-          "group": "想象",
+          "group": "引导",
           "file": "male/v-imagine-2.mp3",
           "ms": 4418,
           "bytes": 27164,
@@ -81,7 +81,7 @@
         },
         {
           "id": "v-relax-1",
-          "group": "放松",
+          "group": "引导",
           "file": "male/v-relax-1.mp3",
           "ms": 3993,
           "bytes": 24572,
@@ -90,7 +90,7 @@
         },
         {
           "id": "v-relax-2",
-          "group": "放松",
+          "group": "引导",
           "file": "male/v-relax-2.mp3",
           "ms": 6718,
           "bytes": 40844,
@@ -99,7 +99,7 @@
         },
         {
           "id": "v-close-1",
-          "group": "收束",
+          "group": "引导",
           "file": "male/v-close-1.mp3",
           "ms": 2912,
           "bytes": 18092,
@@ -108,7 +108,7 @@
         },
         {
           "id": "v-close-2",
-          "group": "收束",
+          "group": "引导",
           "file": "male/v-close-2.mp3",
           "ms": 3171,
           "bytes": 19676,
@@ -117,7 +117,7 @@
         },
         {
           "id": "v-after-1",
-          "group": "结束",
+          "group": "引导",
           "file": "male/v-after-1.mp3",
           "ms": 2921,
           "bytes": 18092,
@@ -126,7 +126,7 @@
         },
         {
           "id": "v-rise-1",
-          "group": "起身",
+          "group": "引导",
           "file": "male/v-rise-1.mp3",
           "ms": 4844,
           "bytes": 29612,
@@ -135,7 +135,7 @@
         },
         {
           "id": "v-safe-2",
-          "group": "安全",
+          "group": "引导",
           "file": "male/v-safe-2.mp3",
           "ms": 3590,
           "bytes": 22124,
@@ -153,7 +153,7 @@
         },
         {
           "id": "v-sus-intro",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-intro.mp3",
           "ms": 3160,
           "bytes": 19532,
@@ -162,7 +162,7 @@
         },
         {
           "id": "v-sus-1",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-1.mp3",
           "ms": 1892,
           "bytes": 11900,
@@ -171,7 +171,7 @@
         },
         {
           "id": "v-sus-10",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-10.mp3",
           "ms": 3161,
           "bytes": 19532,
@@ -180,7 +180,7 @@
         },
         {
           "id": "v-sus-2",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-2.mp3",
           "ms": 2309,
           "bytes": 14492,
@@ -189,7 +189,7 @@
         },
         {
           "id": "v-sus-3",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-3.mp3",
           "ms": 1658,
           "bytes": 10604,
@@ -198,7 +198,7 @@
         },
         {
           "id": "v-sus-4",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-4.mp3",
           "ms": 2498,
           "bytes": 15644,
@@ -207,7 +207,7 @@
         },
         {
           "id": "v-sus-5",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-5.mp3",
           "ms": 2080,
           "bytes": 13052,
@@ -216,7 +216,7 @@
         },
         {
           "id": "v-sus-6",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-6.mp3",
           "ms": 2071,
           "bytes": 13052,
@@ -225,7 +225,7 @@
         },
         {
           "id": "v-sus-7",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-7.mp3",
           "ms": 3160,
           "bytes": 19532,
@@ -234,7 +234,7 @@
         },
         {
           "id": "v-sus-8",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-8.mp3",
           "ms": 1903,
           "bytes": 12044,
@@ -243,7 +243,7 @@
         },
         {
           "id": "v-sus-9",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "male/v-sus-9.mp3",
           "ms": 2320,
           "bytes": 14492,
@@ -268,7 +268,7 @@
         },
         {
           "id": "v-wear-1",
-          "group": "进入",
+          "group": "引导",
           "file": "female/v-wear-1.mp3",
           "ms": 8238,
           "bytes": 50060,
@@ -277,7 +277,7 @@
         },
         {
           "id": "v-safe-1",
-          "group": "安全",
+          "group": "引导",
           "file": "female/v-safe-1.mp3",
           "ms": 5670,
           "bytes": 34652,
@@ -286,7 +286,7 @@
         },
         {
           "id": "v-cal-1",
-          "group": "校准",
+          "group": "引导",
           "file": "female/v-cal-1.mp3",
           "ms": 7142,
           "bytes": 43436,
@@ -295,7 +295,7 @@
         },
         {
           "id": "v-cal-2",
-          "group": "校准",
+          "group": "引导",
           "file": "female/v-cal-2.mp3",
           "ms": 2504,
           "bytes": 15644,
@@ -304,7 +304,7 @@
         },
         {
           "id": "v-float-1",
-          "group": "漂浮",
+          "group": "引导",
           "file": "female/v-float-1.mp3",
           "ms": 3328,
           "bytes": 20540,
@@ -313,7 +313,7 @@
         },
         {
           "id": "v-imagine-1",
-          "group": "想象",
+          "group": "引导",
           "file": "female/v-imagine-1.mp3",
           "ms": 5854,
           "bytes": 35660,
@@ -322,7 +322,7 @@
         },
         {
           "id": "v-imagine-2",
-          "group": "想象",
+          "group": "引导",
           "file": "female/v-imagine-2.mp3",
           "ms": 5258,
           "bytes": 32204,
@@ -331,7 +331,7 @@
         },
         {
           "id": "v-relax-1",
-          "group": "放松",
+          "group": "引导",
           "file": "female/v-relax-1.mp3",
           "ms": 4192,
           "bytes": 25724,
@@ -340,7 +340,7 @@
         },
         {
           "id": "v-relax-2",
-          "group": "放松",
+          "group": "引导",
           "file": "female/v-relax-2.mp3",
           "ms": 7556,
           "bytes": 45884,
@@ -349,7 +349,7 @@
         },
         {
           "id": "v-close-1",
-          "group": "收束",
+          "group": "引导",
           "file": "female/v-close-1.mp3",
           "ms": 2920,
           "bytes": 18092,
@@ -358,7 +358,7 @@
         },
         {
           "id": "v-close-2",
-          "group": "收束",
+          "group": "引导",
           "file": "female/v-close-2.mp3",
           "ms": 3767,
           "bytes": 23132,
@@ -367,7 +367,7 @@
         },
         {
           "id": "v-after-1",
-          "group": "结束",
+          "group": "引导",
           "file": "female/v-after-1.mp3",
           "ms": 3583,
           "bytes": 22124,
@@ -376,7 +376,7 @@
         },
         {
           "id": "v-rise-1",
-          "group": "起身",
+          "group": "引导",
           "file": "female/v-rise-1.mp3",
           "ms": 5267,
           "bytes": 32204,
@@ -385,7 +385,7 @@
         },
         {
           "id": "v-safe-2",
-          "group": "安全",
+          "group": "引导",
           "file": "female/v-safe-2.mp3",
           "ms": 3768,
           "bytes": 23132,
@@ -403,7 +403,7 @@
         },
         {
           "id": "v-sus-intro",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-intro.mp3",
           "ms": 3584,
           "bytes": 22124,
@@ -412,7 +412,7 @@
         },
         {
           "id": "v-sus-1",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-1.mp3",
           "ms": 2087,
           "bytes": 13052,
@@ -421,7 +421,7 @@
         },
         {
           "id": "v-sus-10",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-10.mp3",
           "ms": 3772,
           "bytes": 23276,
@@ -430,7 +430,7 @@
         },
         {
           "id": "v-sus-2",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-2.mp3",
           "ms": 1885,
           "bytes": 11900,
@@ -439,7 +439,7 @@
         },
         {
           "id": "v-sus-3",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-3.mp3",
           "ms": 1884,
           "bytes": 11900,
@@ -448,7 +448,7 @@
         },
         {
           "id": "v-sus-4",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-4.mp3",
           "ms": 3155,
           "bytes": 19532,
@@ -457,7 +457,7 @@
         },
         {
           "id": "v-sus-5",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-5.mp3",
           "ms": 2741,
           "bytes": 17084,
@@ -466,7 +466,7 @@
         },
         {
           "id": "v-sus-6",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-6.mp3",
           "ms": 2498,
           "bytes": 15644,
@@ -475,7 +475,7 @@
         },
         {
           "id": "v-sus-7",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-7.mp3",
           "ms": 3332,
           "bytes": 20540,
@@ -484,7 +484,7 @@
         },
         {
           "id": "v-sus-8",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-8.mp3",
           "ms": 1905,
           "bytes": 12044,
@@ -493,7 +493,7 @@
         },
         {
           "id": "v-sus-9",
-          "group": "SUS 量表",
+          "group": "SUS",
           "file": "female/v-sus-9.mp3",
           "ms": 2504,
           "bytes": 15644,
@@ -503,5 +503,5 @@
       ]
     }
   },
-  "generatedAt": "2026-10-24T09:48:00+08:00"
+  "generatedAt": "2026-10-24T10:01:00+08:00"
 }

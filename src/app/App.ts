@@ -19,7 +19,7 @@ import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
 import { StartScreen } from '../ui/start-screen';
 import { SpatialHud } from '../ui/spatial-hud';
 import { createSusPanel, type SusPanelApi } from '../ui/sus-panel';
-import { createCalibrationCard, type CalibrationCardApi } from '../ui/calibration-card';
+import { createCalibrationOverlay, type CalibrationOverlayApi } from '../ui/calibration-overlay';
 import { createCalibrationSampler } from '../core/xr/calibration-sample';
 import { getStrings, type Strings } from '../ui/strings';
 import {
@@ -160,8 +160,6 @@ export class QuietShoreApp {
   private captureAttempts = 0;
   /** Wall clock when the stable window started; drives the card's bar. */
   private samplingStartedAt = 0;
-  /** True while the calibration cloak (black + hidden scene) is up. */
-  private calibrationCloaked = false;
   private readonly calibrationSampler = createCalibrationSampler({
     durationMs: CALIBRATION_SAMPLE_MS,
     maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
@@ -184,7 +182,7 @@ export class QuietShoreApp {
   private floatSwayApplied = 0;
   private postureCueState: PostureCueApi | null = null;
   private susPanel: SusPanelApi | null = null;
-  private calibrationCard: CalibrationCardApi | null = null;
+  private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
   private sitUpPath: SitUpPath | null = null;
@@ -198,12 +196,12 @@ export class QuietShoreApp {
   private readonly sitUpMotion = createSitUpMotion({ durationMs: SITUP_DURATION_MS });
   private session: XRSession | null = null;
   private previewing = false;
-  private savedBackground: THREE.Scene['background'] = null;
   private headPose: HeadPose = {
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion()
   };
-  private selectEndHandled = false;
+  /** Debounce for the single physical confirm: `select*` plus DOM fallbacks. */
+  private selectHandledAt = 0;
   private showPerf: boolean;
   private audioMuted = false;
   private lastFrame = 0;
@@ -316,13 +314,13 @@ export class QuietShoreApp {
           this.showPerf && !this.controlMode && (this.xr.isPresenting || this.previewing)
         );
         this.hud.update(this.headPose, dt, now);
-        this.calibrationCard?.update(dt, now, this.headPose);
+        this.calibrationOverlay?.update(dt, now, this.headPose);
         if (this.calibrationSampler.isActive()) {
           // The sampler's clock is the one `triggerCalibration` started with
           // (`performance.now()`); the XR frame timestamp can live in a
           // different epoch and would never close the window.
           const sampleNow = performance.now();
-          this.calibrationCard?.setProgress(
+          this.calibrationOverlay?.setProgress(
             (sampleNow - this.samplingStartedAt) / CALIBRATION_SAMPLE_MS
           );
           const result = this.calibrationSampler.add(this.headPose.quaternion, sampleNow);
@@ -387,6 +385,26 @@ export class QuietShoreApp {
     // Cues are shipped with the page; a missing manifest leaves voice off, and
     // the entry screen says so instead of failing silently.
     if (typeof location !== 'undefined' && location.search.includes('debug')) {
+      const debug = {
+        calibration: (visible: boolean) => {
+          this.calibrationOverlay ??= createCalibrationOverlay({
+            scene: this.scene,
+            theme: DEFAULT_SPATIAL_THEME
+          });
+          if (visible) {
+            // Desktop check: show the 2D stage so the overlay is on screen.
+            if (!this.previewing && !this.xr.isPresenting) {
+              this.startPreview();
+            }
+            this.calibrationOverlay.setHint('');
+            this.calibrationOverlay.show();
+            this.calibrationOverlay.setProgress(0.45);
+          } else {
+            this.calibrationOverlay.hide();
+          }
+        }
+      };
+      (window as unknown as Record<string, unknown>).QuietShoreDebug = debug;
       // Field diagnostics: `?debug=1` exposes the player so a desktop browser
       // can exercise the same code path the headset runs.
       (window as unknown as Record<string, unknown>).QuietShoreVoice = this.voice;
@@ -398,6 +416,23 @@ export class QuietShoreApp {
   }
 
   private bind(): void {
+    // The headset's physical button reaches a page in two different shapes
+    // depending on the runtime: an XR `select` (bound in enterVR) or a DOM
+    // event. Both mean "the patient pressed confirm"; both are debounced by
+    // onSelectEnd, so wiring all of them cannot double-fire.
+    window.addEventListener('keydown', (event) => {
+      if (!this.xr.isPresenting) {
+        return;
+      }
+      if (event.key === 'Enter' || event.key === ' ' || event.code === 'Enter') {
+        this.onSelectShort();
+      }
+    }, { passive: true });
+    window.addEventListener('click', () => {
+      if (this.xr.isPresenting) {
+        this.onSelectShort();
+      }
+    }, { passive: true });
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
@@ -467,7 +502,6 @@ export class QuietShoreApp {
     this.sitUpReady = false;
     this.sitUpMotion.reset();
     this.host.setFloorOffset(this.session ? -this.eyeHeight : 0);
-    this.savedBackground = this.scene.background;
     preloadSceneAudio(definition.audio);
     this.start.setScene(definition.name[this.config.lang]);
   }
@@ -601,6 +635,8 @@ export class QuietShoreApp {
     this.comfort?.stopPosture();
     this.stopSitUp();
     this.voice.stop();
+    // Any stop — including one during calibration — takes the overlay with it.
+    this.calibrationOverlay?.hide();
     this.sessionStartedAt = 0;
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
@@ -622,9 +658,8 @@ export class QuietShoreApp {
     this.sitUpMotion.reset();
     this.sitUpBase0.identity();
     this.stopSceneAudio();
-    // A session that ends *during* calibration must not leave the black cloak
-    // behind: that state is exactly "sound but no picture" on the next entry.
-    this.restoreSceneVisibility();
+    // A session that ends during calibration must take the overlay with it.
+    this.calibrationOverlay?.hide();
     this.host.setFloorOffset(0);
     this.comfort?.reset();
     // Drop the sit-up base pose so the reset comfort frame is what remains.
@@ -881,23 +916,18 @@ export class QuietShoreApp {
     // Calibrate first, then show the scene: the patient should not see a world
     // that is about to be re-oriented under them. The scene is swapped for
     // black until the heading lands.
-    if (!this.calibrationCloaked) {
-      this.savedBackground = this.scene.background;
-      this.calibrationCloaked = true;
-    }
-    this.scene.background = new THREE.Color(0x000000);
-    this.handle.root.visible = false;
+    // The card carries its own opaque overlay; the scene is not touched.
     this.input.setLayers(false, false);
 
     // Explicit calibration step: the card tells the patient what is happening,
     // the confirm key records immediately, and the card records by itself if
     // they do nothing, with a progress bar so the wait is legible.
-    this.calibrationCard ??= createCalibrationCard({
+    this.calibrationOverlay ??= createCalibrationOverlay({
       scene: this.scene,
       theme: DEFAULT_SPATIAL_THEME
     });
-    this.calibrationCard.setHint('');
-    this.calibrationCard.show();
+    this.calibrationOverlay.setHint('');
+    this.calibrationOverlay.show();
     this.link.sendStateNow();
   }
 
@@ -907,13 +937,13 @@ export class QuietShoreApp {
    * window is running is ignored.
    */
   private triggerCalibration(): void {
-    if (!this.calibrationCard || this.calibrationSampler.isActive()) {
+    if (!this.calibrationOverlay || this.calibrationSampler.isActive()) {
       return;
     }
     this.capturePending = true;
     this.captureAttempts = 0;
-    this.calibrationCard.setHint('');
-    this.calibrationCard.setProgress(0);
+    this.calibrationOverlay.setHint('');
+    this.calibrationOverlay.setProgress(0);
     this.samplingStartedAt = performance.now();
     this.calibrationSampler.start(this.samplingStartedAt);
     this.start.setStatus('正在记录起始朝向', 'ok');
@@ -925,30 +955,15 @@ export class QuietShoreApp {
     deviationDeg: number;
   }): void {
     this.capturePending = false;
-    this.calibrationCard?.setProgress(null);
+    this.calibrationOverlay?.setProgress(null);
     if (!result.ok || !result.quaternion) {
       // Stay on the card and wait for another explicit trigger; a shaky window
       // is a normal event, not a reason to end the session.
-      this.calibrationCard?.setHint('检测到晃动，保持不动后再按一次');
+      this.calibrationOverlay?.setHint('检测到晃动，保持不动后再按一次');
       this.start.setStatus('校准未记录：请保持不动后重试', 'error');
       return;
     }
     this.applyCalibration(result.quaternion);
-  }
-
-  /**
-   * Takes the calibration cloak down. Idempotent, so every exit path (success,
-   * stop during calibration, session end) can call it without bookkeeping.
-   */
-  private restoreSceneVisibility(): void {
-    if (this.handle) {
-      this.handle.root.visible = true;
-    }
-    if (!this.calibrationCloaked) {
-      return;
-    }
-    this.calibrationCloaked = false;
-    this.scene.background = this.savedBackground ?? this.handle?.settings.background ?? null;
   }
 
   private applyCalibration(orientation: { x: number; y: number; z: number; w: number }): void {
@@ -956,7 +971,7 @@ export class QuietShoreApp {
     if (!comfort) {
       return;
     }
-    this.calibrationCard?.hide();
+    this.calibrationOverlay?.hide();
     const position = this.headPose.position;
     const ok = comfort.calibrate({
       transform: {
@@ -970,12 +985,12 @@ export class QuietShoreApp {
       }
     });
     if (!ok) {
-      this.calibrationCard?.setHint('这次没有取到有效朝向，请再试一次');
-      this.calibrationCard?.show();
+      this.calibrationOverlay?.setHint('这次没有取到有效朝向，请再试一次');
+      this.calibrationOverlay?.show();
       return;
     }
-    // Scene back on, now that the world frame is known.
-    this.restoreSceneVisibility();
+    // Overlay down, now that the world frame is known.
+    this.calibrationOverlay?.hide();
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     this.dispatch({ type: 'calibrated' });
     // The sit-up layer is armed for every session: rising to a standing view is
@@ -1297,6 +1312,9 @@ export class QuietShoreApp {
   private handleLinkStatus(status: 'open' | 'closed'): void {
     const wasOnline = this.linkOnline;
     this.linkOnline = status === 'open';
+    // The entry screen carries the link state: without it a dead socket looks
+    // exactly like a silent headset.
+    this.start.setHint(status === 'open' ? '已连接控制端' : '控制端未连接（等待重连）');
     if (status === 'open' || !wasOnline) {
       return;
     }
@@ -1398,14 +1416,17 @@ export class QuietShoreApp {
   }
 
   private onSelectStart(): void {
-    this.selectEndHandled = false;
+    // The press itself is not an action; `selectend`/`select` decide.
   }
 
   private onSelectEnd(): void {
-    if (this.selectEndHandled) {
+    // One action per press regardless of how many event shapes the runtime
+    // delivers (selectstart/selectend/select, plus the DOM fallbacks).
+    const now = performance.now();
+    if (now - this.selectHandledAt < 250) {
       return;
     }
-    this.selectEndHandled = true;
+    this.selectHandledAt = now;
     this.onSelectShort();
   }
 
