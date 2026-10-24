@@ -1066,8 +1066,7 @@ class PortalService : Service() {
             floatMm = finite("floatMm", 0f).coerceIn(-127f, 127f),
             swayDeg = finite("swayDeg", 0f).coerceIn(-12.7f, 12.7f),
             elapsedSec = json.optInt("elapsedSec", 0).coerceIn(0, 65535),
-            voiceId = json.optInt("voiceId", -1).coerceIn(-1, 63),
-            voiceAuto = json.optBoolean("voiceAuto", false)
+            voiceId = json.optInt("voiceId", -1).coerceIn(-1, 63)
         )
         lastState = state
         bluetooth?.publishState(state)

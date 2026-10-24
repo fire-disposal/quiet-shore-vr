@@ -87,29 +87,6 @@ export function expandSequence(
   return out;
 }
 
-/**
- * Auto mode plan for a session of [sessionMs].
- *
- * One start sequence, imagery once the scene has settled, the relax guidance at
- * the midpoint (only when the session is long enough for it to make sense), and
- * a close sequence one minute before the planned end.
- */
-export function autoPlan(
-  sessionMs: number
-): { atMs: number; seq: SequenceName }[] {
-  if (!(sessionMs > 0)) {
-    return [{ atMs: 0, seq: 'start' }];
-  }
-  const plan: { atMs: number; seq: SequenceName }[] = [{ atMs: 0, seq: 'start' }];
-  const imagine = Math.min(90_000, Math.round(sessionMs * 0.15));
-  plan.push({ atMs: imagine, seq: 'imagine' });
-  if (sessionMs >= 240_000) {
-    plan.push({ atMs: Math.round(sessionMs / 2), seq: 'relax' });
-  }
-  plan.push({ atMs: Math.max(0, sessionMs - 60_000), seq: 'close' });
-  return plan;
-}
-
 export interface VoicePlayerApi {
   load(): Promise<boolean>;
   /** Manifest index of a cue id, or -1; the wire carries this byte. */

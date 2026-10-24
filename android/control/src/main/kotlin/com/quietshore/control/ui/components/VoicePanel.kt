@@ -16,7 +16,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -64,7 +63,7 @@ fun VoicePanel(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            NowPlaying(state = state, actions = actions)
+            NowPlaying(state = state)
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
@@ -92,44 +91,6 @@ fun VoicePanel(
                             enabled = connected,
                             modifier = Modifier.weight(1f)
                         ) { Text(sequenceLabel(name)) }
-                    }
-                }
-            }
-
-            Seed("音色") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ToneChoice(
-                        label = "男声",
-                        selected = state.voiceSet == "male",
-                        enabled = connected,
-                        modifier = Modifier.weight(1f)
-                    ) { actions.onVoiceSet("male") }
-                    ToneChoice(
-                        label = "女声",
-                        selected = state.voiceSet == "female",
-                        enabled = connected,
-                        modifier = Modifier.weight(1f)
-                    ) { actions.onVoiceSet("female") }
-                }
-            }
-
-            if (state.voiceRecent.isNotEmpty()) {
-                Seed("最近") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (id in state.voiceRecent) {
-                            val line = VoiceCatalog.line(id)
-                            OutlinedButton(
-                                onClick = { actions.onVoicePlay(id) },
-                                enabled = connected,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = line?.label ?: id,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -197,50 +158,15 @@ fun VoicePanel(
 }
 
 @Composable
-private fun NowPlaying(state: ControlUiState, actions: ControlActions) {
+private fun NowPlaying(state: ControlUiState) {
     val line = state.voiceLine
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("语音", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = when {
-                    line != null -> "${line.group} · ${line.label}"
-                    state.voiceAuto -> "自动模式待命"
-                    else -> "待机"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = QuietPalette.TextSecondary
-            )
-        }
-        if (state.voiceAuto) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = QuietPalette.Success.copy(alpha = 0.16f),
-                contentColor = QuietPalette.Success
-            ) {
-                Text(
-                    text = "自动",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-            }
-        }
-    }
-    Spacer(Modifier.height(10.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("自动播放", style = MaterialTheme.typography.bodyMedium)
-        Switch(
-            checked = state.voiceAuto,
-            onCheckedChange = actions.onVoiceAuto,
-            enabled = state.sessionActive || state.controlGranted
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text("语音", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = line?.let { "正在播放：${it.group} · ${it.label}" } ?: "未在播放",
+            style = MaterialTheme.typography.bodyMedium,
+            color = QuietPalette.TextSecondary
         )
     }
 }

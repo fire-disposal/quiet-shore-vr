@@ -147,7 +147,6 @@ describe('scene snapshot', () => {
     input.swayDeg = 1.2;
     input.sessionSec = 96;
     input.voiceId = 7;
-    input.voiceAuto = true;
     snapshot.capture(input);
 
     const payload = stateFromSnapshot(snapshot);
@@ -168,7 +167,6 @@ describe('scene snapshot', () => {
     expect(payload.swayDeg).toBe(1.2);
     expect(payload.elapsedSec).toBe(96);
     expect(payload.voiceId).toBe(7);
-    expect(payload.voiceAuto).toBe(true);
     expect(payload.sitUpActive).toBe(false);
     expect('viewX' in payload).toBe(false);
     expect('viewZ' in payload).toBe(false);
@@ -192,7 +190,6 @@ describe('scene snapshot', () => {
         'scene',
         'session',
         'swayDeg',
-        'voiceAuto',
         'voiceId',
         'sitUpActive',
         'viewAnim',

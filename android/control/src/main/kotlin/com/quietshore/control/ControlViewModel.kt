@@ -323,9 +323,6 @@ class ControlViewModel(application: Application) :
         if (VoiceCatalog.line(id) == null) {
             return
         }
-        _uiState.update { state ->
-            state.copy(voiceRecent = (listOf(id) + state.voiceRecent).distinct().take(3))
-        }
         sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
     }
 
@@ -338,11 +335,6 @@ class ControlViewModel(application: Application) :
 
     fun stopVoice() {
         sendCommand(ControlProtocol.VOICE_PREFIX + "stop")
-    }
-
-    fun setVoiceAuto(enabled: Boolean) {
-        _uiState.update { it.copy(voiceAuto = enabled) }
-        sendCommand(ControlProtocol.VOICE_PREFIX + "auto:" + if (enabled) "on" else "off")
     }
 
     fun setVoiceVolume(percent: Int) {
@@ -492,7 +484,6 @@ class ControlViewModel(application: Application) :
                 floatProfile = state.floatProfile,
                 // Voice is authoritative on the headset: the tablet only echoes.
                 voiceId = state.voiceId,
-                voiceAuto = state.voiceAuto,
                 startPending = if (state.session) false else current.startPending,
                 // The headset owns the session clock (v11); the local stopwatch
                 // only covers a link that has not reported a second yet.

@@ -68,8 +68,6 @@ export interface SceneSnapshotInput {
   sessionSec: number;
   /** Manifest index of the cue currently speaking, -1 when silent. */
   voiceId: number;
-  /** Auto mode is driving the cue schedule. */
-  voiceAuto: boolean;
 }
 
 export class SceneSnapshot {
@@ -110,7 +108,6 @@ export class SceneSnapshot {
   swayDeg = 0;
   sessionSec = 0;
   voiceId = -1;
-  voiceAuto = false;
   calibrationConfidence = 0;
 
   private readonly euler: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
@@ -143,7 +140,6 @@ export class SceneSnapshot {
     this.swayDeg = input.swayDeg;
     this.sessionSec = input.sessionSec;
     this.voiceId = input.voiceId;
-    this.voiceAuto = input.voiceAuto;
     this.calibrationConfidence = input.confidence;
 
     const measured = measureRelativeEuler(

@@ -53,12 +53,8 @@ data class ControlUiState(
     val voiceVolume: Int = 90,
     /** Scene ducking depth while a cue speaks, 0–18 dB. */
     val duckDb: Int = 12,
-    /** Auto mode is driving the cue schedule. */
-    val voiceAuto: Boolean = false,
     /** Index of the cue the headset reports as speaking, or -1. */
     val voiceId: Int = -1,
-    /** Last few cues the operator played, newest first. */
-    val voiceRecent: List<String> = emptyList(),
     val notice: String? = null,
     val error: String? = null,
     val scanAttempted: Boolean = false,

@@ -43,7 +43,6 @@ data class ControlActions(
     /** Plays a whole sequence: start / imagine / relax / close. */
     val onVoiceSequence: (String) -> Unit,
     val onVoiceStop: () -> Unit,
-    val onVoiceAuto: (Boolean) -> Unit,
     val onVoiceVolume: (Int) -> Unit,
     /** How far the scene bed is pulled down while a cue speaks, in dB. */
     val onVoiceDuck: (Int) -> Unit,

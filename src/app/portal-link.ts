@@ -48,7 +48,6 @@ export interface StateSnapshot {
   swayDeg: number;
   elapsedSec: number;
   voiceId: number;
-  voiceAuto: boolean;
   calibrationConfidence: number;
 }
 
@@ -128,7 +127,6 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     swayDeg: snapshot.swayDeg,
     elapsedSec: snapshot.sessionSec,
     voiceId: snapshot.voiceId,
-    voiceAuto: snapshot.voiceAuto,
     calibrationConfidence: snapshot.calibrationConfidence
   };
 }

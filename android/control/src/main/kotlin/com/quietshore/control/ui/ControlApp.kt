@@ -125,7 +125,6 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onVoicePlay = viewModel::playVoice,
                 onVoiceSequence = viewModel::playVoiceSequence,
                 onVoiceStop = viewModel::stopVoice,
-                onVoiceAuto = viewModel::setVoiceAuto,
                 onVoiceVolume = viewModel::setVoiceVolume,
                 onVoiceDuck = viewModel::setVoiceDuck,
                 onVoiceSet = viewModel::setVoiceSet,

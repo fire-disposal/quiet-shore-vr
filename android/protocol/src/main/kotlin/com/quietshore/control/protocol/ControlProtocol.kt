@@ -147,7 +147,7 @@ object ControlProtocol {
         "view:stop",
         "view:anim:up|down|recenter|breathe",
         "voice:play:<id>", "voice:seq:start|imagine|relax|close", "voice:stop",
-        "voice:auto:on|off", "voice:volume:0-100", "voice:mix:duck:0-18",
+        "voice:volume:0-100", "voice:mix:duck:0-18",
         "voice:set:male|female"
     )
 
@@ -466,7 +466,6 @@ object ControlProtocol {
                 body.removePrefix("play:").takeIf { VOICE_ID.matches(it) }
             body.startsWith("seq:") ->
                 body.removePrefix("seq:").takeIf { it in VOICE_SEQUENCES }
-            body == "auto:on" || body == "auto:off" -> body
             body.startsWith("volume:") ->
                 body.removePrefix("volume:").toIntOrNull()?.takeIf { it in 0..100 }?.let { body }
             body.startsWith("mix:duck:") ->

@@ -33,7 +33,7 @@ import {
   toggleMuted,
   unlockAudio
 } from '../audio/audio';
-import { createVoicePlayer, autoPlan, SEQUENCES, type SequenceName } from '../audio/voice';
+import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
 import {
@@ -101,7 +101,6 @@ export class QuietShoreApp {
   private linkOnline = false;
   private readonly renderMonitor = new RenderMonitor();
   private readonly voice = createVoicePlayer();
-  private voiceAuto = false;
   /** Wall clock at motion onset; 0 while idle. Drives the reported session clock. */
   private sessionStartedAt = 0;
   private readonly voiceTimers: number[] = [];
@@ -145,8 +144,7 @@ export class QuietShoreApp {
     floatMm: 0,
     swayDeg: 0,
     sessionSec: 0,
-    voiceId: -1,
-    voiceAuto: false
+    voiceId: -1
   };
   private controlMode = false;
 
@@ -595,9 +593,6 @@ export class QuietShoreApp {
     this.lifecycle = reduceSession(this.lifecycle, event);
     if (previous === 'calibrating' && isActive(this.lifecycle)) {
       this.sessionStartedAt = performance.now();
-      if (this.voiceAuto) {
-        this.startVoicePlan();
-      }
     }
     if (this.lifecycle.phase !== 'stopping' || previous === 'stopping') {
       return;
@@ -606,7 +601,6 @@ export class QuietShoreApp {
     this.comfort?.stopPosture();
     this.stopSitUp();
     this.voice.stop();
-    this.clearVoicePlan();
     this.sessionStartedAt = 0;
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
@@ -703,19 +697,6 @@ export class QuietShoreApp {
       this.voice.playSequence(name);
       return;
     }
-    if (command === 'voice:auto:on' || command === 'voice:auto:off') {
-      this.voiceAuto = command.endsWith(':on');
-      if (!this.voiceAuto) {
-        this.clearVoicePlan();
-      } else if (isActive(this.lifecycle)) {
-        this.startVoicePlan();
-      }
-      this.start.setStatus(
-        this.voiceAuto ? '语音自动模式已开启' : '语音自动模式已关闭',
-        'ok'
-      );
-      return;
-    }
     if (command.startsWith('voice:volume:')) {
       const percent = Number(command.slice('voice:volume:'.length));
       if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
@@ -737,31 +718,6 @@ export class QuietShoreApp {
     }
   }
 
-  /**
-   * Auto mode: start cues on motion onset, imagery once the scene has settled,
-   * guidance at the midpoint, close a minute before the planned end.
-   */
-  private startVoicePlan(): void {
-    this.clearVoicePlan();
-    for (const entry of autoPlan(VOICE_PLAN_SESSION_MS)) {
-      this.voiceTimers.push(
-        window.setTimeout(() => this.voice.playSequence(entry.seq), entry.atMs)
-      );
-    }
-  }
-
-  private clearVoicePlan(): void {
-    for (const timer of this.voiceTimers) {
-      window.clearTimeout(timer);
-    }
-    this.voiceTimers.length = 0;
-  }
-
-  /**
-   * Scene switch, operator-driven and pre-session only: swapping the art under
-   * a running patient would drop their bearings. The tablet disables the
-   * choice during a session; the page refuses it for the same reason.
-   */
   private applySceneCommand(id: string): void {
     const definition = getSceneDefinition(id);
     if (!definition) {
@@ -1600,7 +1556,6 @@ export class QuietShoreApp {
       : 0;
     const playing = this.voice.nowPlaying().id;
     input.voiceId = playing ? this.voice.indexOf(playing) : -1;
-    input.voiceAuto = this.voiceAuto;
     input.sitUp = this.sitUpMode ? this.sitUpPath : null;
     input.sitUpT = this.sitUpMotion.t;
     input.sitUpTarget = this.sitUpMotion.target;
