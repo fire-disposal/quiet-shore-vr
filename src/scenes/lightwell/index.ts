@@ -25,19 +25,26 @@ const SHAFT_HEIGHT = 120;
 const EYE_Y = 1.7;
 
 /** Ring band: they live within ±RING_BAND and fade out before wrapping. */
-const RING_COUNT = 26;
-const RING_GAP = 3.5;
+const RING_COUNT = 13;
+const RING_GAP = 7;
 const RING_BAND = RING_COUNT * RING_GAP;
 /**
- * Terminal-velocity motion, not an exponential approach: gravity wins until
- * drag balances it, so the fixture stack accelerates at a constant rate for
- * under a second and then holds one speed. Exponential easing (what this used
- * to do) never settles and reads as a soft start, which is the wrong physics
- * for a body dropping at terminal velocity.
+ * Terminal-velocity motion with a real drag term.
+ *
+ * The stack starts from rest and accelerates under a visual gravity, while a
+ * quadratic drag term grows with speed² until the two balance at
+ * TERMINAL_SPEED. That is why the last stretch *approaches* the speed instead
+ * of hitting it: acceleration decays to zero, which is exactly what a body
+ * falling through air does. A constant-rate ramp (the previous version) snaps
+ * from accelerating to coasting, and exponential easing never settles at all.
  */
 const TERMINAL_SPEED = 0.85;
-const ACCELERATION = 1.15;
-const DECELERATION = 2.6;
+/** Visual gravity, m/s². Sets how briskly the stack gets going. */
+const GRAVITY = 1.8;
+/** Drag coefficient chosen so gravity and drag balance at TERMINAL_SPEED. */
+const DRAG = GRAVITY / (TERMINAL_SPEED * TERMINAL_SPEED);
+/** Stop is a brake, not drag: this cue must die quickly. */
+const BRAKE = 2.6;
 
 /** End colours, shared by the wall gradient and the caps so they match. */
 const TOP_COLOR = '#E9DCC4';
@@ -240,11 +247,14 @@ export function createLightWell(): LightWellParts {
     },
     update(dt: number): void {
       const targetSpeed = TERMINAL_SPEED * targetFlow;
-      const rate = targetSpeed > speed ? ACCELERATION : DECELERATION;
-      const step = rate * dt;
-      speed = targetSpeed > speed
-        ? Math.min(targetSpeed, speed + step)
-        : Math.max(targetSpeed, speed - step);
+      if (targetSpeed > 0 && speed < targetSpeed) {
+        // Gravity minus quadratic drag: acceleration fades to zero exactly at
+        // the balance point, so the approach is asymptotic, never a step.
+        const accel = Math.max(0, GRAVITY - DRAG * speed * speed);
+        speed = Math.min(targetSpeed, speed + accel * dt);
+      } else {
+        speed = Math.max(targetSpeed, speed - BRAKE * dt);
+      }
       if (speed <= 0.0001) {
         speed = 0;
         return;
@@ -301,8 +311,8 @@ export const lightwellScene = defineScene(
       en: 'Rings of light pass upward and carry the body with them.'
     },
     description: {
-      zh: '约 18 米直径、120 米高的竖井：井壁顶部亮成天光，底部沉进黑里，两头都在六十米外，看不到“盖”。二十道暖白圆环自下而上掠过，靠近视野中心时最亮，出视野前先暗下去。所有运动都在环境里，视点不动。',
-      en: 'A shaft about 18 m across and 120 m tall: daylight at the top, black below, both ends sixty metres away with no visible lid. Twenty warm rings pass upward, brightest near the centre of the view and dimming before they leave it. All motion is in the environment; the viewpoint never moves.'
+      zh: '约 18 米直径、120 米高的竖井：井壁顶部亮成天光，底部沉进黑里，两头都在六十米外，看不到“盖”。十三道暖白圆环自下而上掠过，靠近视野中心时最亮，出视野前先暗下去。所有运动都在环境里，视点不动。',
+      en: 'A shaft about 18 m across and 120 m tall: daylight at the top, black below, both ends sixty metres away with no visible lid. Thirteen warm rings pass upward, brightest near the centre of the view and dimming before they leave it. All motion is in the environment; the viewpoint never moves.'
     },
     audio: { track: 'stream', volume: 0.7, fadeMs: 1200, loop: true }
   },
