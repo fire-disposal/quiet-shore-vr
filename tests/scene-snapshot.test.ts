@@ -42,7 +42,15 @@ function neutralInput(): SceneSnapshotInput {
     floorOffset: -1.7,
     cueFlow: 0,
     cueEnabled: true,
-    cueIntensity: 1
+    cueIntensity: 1,
+    caps: {
+      rise: true,
+      lie: false,
+      stop: false,
+      float: true,
+      view: true,
+      blocked: ''
+    }
   };
 }
 
@@ -155,6 +163,8 @@ describe('scene snapshot', () => {
     expect(payload.worldYaw).toBe(-12);
     expect(payload.worldPitch).toBe(8);
     expect(payload.worldRoll).toBe(-3);
+    expect(payload.caps.rise).toBe(true);
+    expect(payload.caps.lie).toBe(false);
     expect(payload.worldXM).toBe(0.1);
     expect(payload.worldYM).toBe(-0.2);
     expect(payload.worldZM).toBe(0.3);
@@ -201,7 +211,8 @@ describe('scene snapshot', () => {
         'worldRoll',
         'worldXM',
         'worldYM',
-        'worldZM'
+        'worldZM',
+        'caps'
       ].sort()
     );
   });

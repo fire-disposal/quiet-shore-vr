@@ -1139,7 +1139,7 @@ class PortalService : Service() {
         )
         lastState = state
         bluetooth?.publishState(state)
-        publishFlags(state)
+        publishFlags(state, json.optJSONObject("caps"))
     }
 
     /** Last flags document published on the JSON channel, and when. */
@@ -1151,8 +1151,11 @@ class PortalService : Service() {
      * heartbeat so a tablet that reconnects mid-session catches up. These are
      * the fields that used to cost a state-frame version every time.
      */
-    private fun publishFlags(state: ControlState) {
+    private fun publishFlags(state: ControlState, caps: JSONObject?) {
         val doc = org.json.JSONObject().apply {
+            // Capabilities come straight from the page's motion plan: the
+            // tablet enables controls from this document alone.
+            caps?.let { put("caps", it) }
             put("t", "flags")
             put("scene", state.scene)
             put("session", state.session)

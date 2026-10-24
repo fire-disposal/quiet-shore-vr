@@ -54,6 +54,15 @@ export interface StateSnapshot {
   elapsedSec: number;
   voiceId: number;
   calibrationConfidence: number;
+  /** Motion-plan capabilities: the tablet enables controls from these. */
+  caps: {
+    rise: boolean;
+    lie: boolean;
+    stop: boolean;
+    float: boolean;
+    view: boolean;
+    blocked: string;
+  };
 }
 
 /** One page command as delivered on the control socket. */
@@ -137,7 +146,15 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     swayDeg: snapshot.swayDeg,
     elapsedSec: snapshot.sessionSec,
     voiceId: snapshot.voiceId,
-    calibrationConfidence: snapshot.calibrationConfidence
+    calibrationConfidence: snapshot.calibrationConfidence,
+    caps: {
+      rise: snapshot.caps.rise,
+      lie: snapshot.caps.lie,
+      stop: snapshot.caps.stop,
+      float: snapshot.caps.float,
+      view: snapshot.caps.view,
+      blocked: snapshot.caps.blocked
+    }
   };
 }
 

@@ -56,6 +56,9 @@ fun ControlPanel(
     val connected = state.phase == BlePhase.READY
     val running = state.control.session
     val calibrating = state.control.calibrating
+    // Single source: the headset's motion plan. Local proxies (session flags,
+    // sit-up-only fields) each described a different reality and disagreed.
+    val caps = state.caps
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
@@ -106,7 +109,7 @@ fun ControlPanel(
                     Switch(
                         checked = state.floatLevel > 0,
                         onCheckedChange = { on -> actions.onFloatLevel(if (on) 3 else 0) },
-                        enabled = connected && !calibrating
+                        enabled = connected && caps.float
                     )
                 }
                 Text(
@@ -116,14 +119,22 @@ fun ControlPanel(
                 )
             }
 
+            if (caps.blocked.isNotEmpty()) {
+                Text(
+                    text = "头显当前：${caps.blocked}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+
             Section("世界修正") {
                 // The dial the operator asked for: the patient's calibration
                 // angle, and what the system is currently correcting.
-                val calib = abs(state.control.worldPitch)
-                val rise = state.control.postureRise.coerceIn(0f, 1f)
+                val corrected = abs(state.control.posturePitch)
+                val rise = (corrected / 90f).coerceIn(0f, 1f)
                 LabeledValue(
                     "修正角度",
-                    "${state.control.posturePitch.roundToInt()}° · ${(rise * 100).roundToInt()}%（校准仰角 ${calib.roundToInt()}°）"
+                    "${corrected.roundToInt()}° · ${(rise * 100).roundToInt()}% 满修正"
                 )
                 LinearProgressIndicator(
                     progress = { rise },
@@ -134,17 +145,17 @@ fun ControlPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FilledTonalButton(
                         onClick = actions.onPostureRise,
-                        enabled = connected && running && rise < 0.999f,
+                        enabled = connected && caps.rise,
                         modifier = Modifier.weight(1f)
                     ) { Text("起身") }
                     OutlinedButton(
                         onClick = actions.onPostureLower,
-                        enabled = connected && running && rise > 0.001f,
+                        enabled = connected && caps.lie,
                         modifier = Modifier.weight(1f)
                     ) { Text("躺下") }
                     OutlinedButton(
                         onClick = actions.onPostureStop,
-                        enabled = connected && running,
+                        enabled = connected && caps.stop,
                         modifier = Modifier.weight(1f)
                     ) { Text("停止") }
                 }
@@ -179,14 +190,14 @@ fun ControlPanel(
                     for (preset in listOf("向上" to "up", "向下" to "down", "回正" to "recenter", "呼吸" to "breathe")) {
                         OutlinedButton(
                             onClick = { actions.onViewAnim(preset.second) },
-                            enabled = connected && running,
+                            enabled = connected && caps.view,
                             modifier = Modifier.weight(1f)
                         ) { Text(preset.first) }
                     }
                 }
                 OutlinedButton(
                     onClick = actions.onViewStop,
-                    enabled = connected && running,
+                    enabled = connected && caps.view,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("保持当前视角") }
             }

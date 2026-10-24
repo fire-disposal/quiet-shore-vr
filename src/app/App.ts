@@ -35,6 +35,7 @@ import { FLOAT_MAX_LEVEL, isFloatProfileId } from '../core/xr/float';
 import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
+import { planMotion, type MotionPlan } from './motion-plan';
 import { parseRemoteCommand } from './commands';
 import { buildSusPayload } from './sus';
 import { RenderMonitor } from '../core/performance/render-monitor';
@@ -102,6 +103,8 @@ export class QuietShoreApp {
   private readonly worldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   private readonly viewMotion: ViewMotionControllerApi;
   private readonly snapshot = new SceneSnapshot();
+  /** The one description of applied motion and what may still be asked. */
+  private plan: MotionPlan | null = null;
   private controlMode = false;
 
   private eyeHeight: number;
@@ -358,6 +361,7 @@ export class QuietShoreApp {
         this.susPanel?.update(dt, now, this.headPose);
         // The reticle doubles as the gaze cue while the SUS panel is open.
         this.input.setReticleAlways(this.susPanel?.isOpen() ?? false);
+        this.updateMotionPlan();
         this.syncSubtitle();
         this.subtitleCard?.update(this.headPose, dt, now);
         this.input.update(dt, now, this.headPose);
@@ -1353,10 +1357,32 @@ export class QuietShoreApp {
   }
 
   /** Rejected during calibration and whenever the patient is not in XR. */
+  /**
+   * Composed once per frame; every consumer reads this instead of re-deriving
+   * "can I move" from whichever field happens to be nearby.
+   */
+  private updateMotionPlan(): void {
+    const world = this.world.state();
+    this.plan = planMotion(
+      {
+        session: this.session !== null,
+        presenting: this.xr.isPresenting,
+        capturing: this.capturePending,
+        // The applied correction, measured from the transforms rather than
+        // inferred from progress: the same number the tablet shows.
+        correctionDeg: this.snapshot.worldPitchDeg,
+        correctionMoving: world.moving
+      },
+      this.plan ?? undefined
+    );
+  }
+
+  get motionPlan(): MotionPlan | null {
+    return this.plan;
+  }
+
   private viewCommandsAllowed(): boolean {
-    return this.session !== null
-      && this.xr.isPresenting
-      && !this.capturePending;
+    return this.plan?.capabilities.view ?? false;
   }
 
   /**
@@ -1728,7 +1754,15 @@ export class QuietShoreApp {
         this.sessionStartedAt > 0
           ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
           : 0,
-      voiceId: playing ? this.voice.indexOf(playing) : -1
+      voiceId: playing ? this.voice.indexOf(playing) : -1,
+      caps: this.plan?.capabilities ?? {
+        rise: false,
+        lie: false,
+        stop: false,
+        float: false,
+        view: false,
+        blocked: '未开始会话'
+      }
     });
   }
 

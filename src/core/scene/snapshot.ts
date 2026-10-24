@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { measureRelativeEuler, type EulerDeg } from '../xr/measure';
 import type { ViewAnimState, ViewPresetCode } from '../xr/view-motion';
+import type { MotionCapabilities } from '../../app/motion-plan';
 
 /**
  * One collected view of the patient world, filled in place every time the
@@ -70,6 +71,8 @@ export interface SceneSnapshotInput {
   sessionSec: number;
   /** Manifest index of the cue currently speaking, -1 when silent. */
   voiceId: number;
+  /** What the operator may ask for, from the motion plan. */
+  caps: MotionCapabilities;
 }
 
 /** Correction phase: what the world is doing right now. */
@@ -118,6 +121,15 @@ export class SceneSnapshot {
   sessionSec = 0;
   voiceId = -1;
   calibrationConfidence = 0;
+  /** Capability snapshot; the tablet enables controls from this alone. */
+  caps: MotionCapabilities = {
+    rise: false,
+    lie: false,
+    stop: false,
+    float: false,
+    view: false,
+    blocked: '未开始会话'
+  };
 
   private readonly euler: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
 
@@ -153,6 +165,7 @@ export class SceneSnapshot {
     this.sessionSec = input.sessionSec;
     this.voiceId = input.voiceId;
     this.calibrationConfidence = input.confidence;
+    this.caps = input.caps;
 
     const measured = measureRelativeEuler(
       input.baseQuaternion,

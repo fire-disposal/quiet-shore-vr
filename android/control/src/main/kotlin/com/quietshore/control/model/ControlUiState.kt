@@ -9,6 +9,20 @@ import com.quietshore.control.protocol.TelemetryPose
  * flight; the patient's confirm key only starts and stops.
  */
 /** Which camera the mirror uses: the patient's own, or a pulled-back view. */
+/**
+ * What the headset's motion plan says the operator may ask for. The tablet
+ * enables controls from this and nothing else: deriving enablement locally is
+ * how 躺下 stayed dead after a rise in float mode.
+ */
+data class MotionCaps(
+    val rise: Boolean = false,
+    val lie: Boolean = false,
+    val stop: Boolean = false,
+    val float: Boolean = false,
+    val view: Boolean = false,
+    val blocked: String = ""
+)
+
 enum class MirrorMode(val label: String) {
     PATIENT("VR视角"),
     OVERVIEW("全局视角")
@@ -79,7 +93,9 @@ data class ControlUiState(
     /** Launch requested, waiting for the patient's confirm key. */
     val startPending: Boolean = false,
     /** No state frame from the headset for a while: the link is not live. */
-    val stateStale: Boolean = false
+    val stateStale: Boolean = false,
+    /** Capabilities reported by the headset's motion plan. */
+    val caps: MotionCaps = MotionCaps()
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 

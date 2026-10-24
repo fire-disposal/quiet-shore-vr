@@ -651,8 +651,19 @@ class ControlViewModel(application: Application) :
             Log.w(TAG, "flags payload rejected: ${error.message}")
             return
         }
+        val caps = json.optJSONObject("caps")?.let { obj ->
+            com.quietshore.control.model.MotionCaps(
+                rise = obj.optBoolean("rise", false),
+                lie = obj.optBoolean("lie", false),
+                stop = obj.optBoolean("stop", false),
+                float = obj.optBoolean("float", false),
+                view = obj.optBoolean("view", false),
+                blocked = obj.optString("blocked", "")
+            )
+        }
         _uiState.update { current ->
             current.copy(
+                caps = caps ?: current.caps,
                 control = current.control.copy(
                     scene = json.optString("scene", current.control.scene),
                     session = json.optBoolean("session", current.control.session),
