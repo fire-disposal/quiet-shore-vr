@@ -747,7 +747,7 @@ object ControlProtocol {
      * Shipped scenes. Index order is the wire contract for state byte 11:
      * append only, never reorder, or an old tablet reads the wrong scene.
      */
-    val SCENE_IDS: List<String> = listOf("washroom", "shore", "lightwell")
+    val SCENE_IDS: List<String> = listOf("washroom", "shore", "lightwell", "ward")
 
     /** Default when the operator has not chosen: the standing washroom. */
     const val DEFAULT_SCENE: String = "washroom"
@@ -756,7 +756,8 @@ object ControlProtocol {
     val SCENE_LABELS: Map<String, String> = linkedMapOf(
         "washroom" to "洁净立便间",
         "shore" to "仰望湖面",
-        "lightwell" to "光井"
+        "lightwell" to "光井",
+        "ward" to "病房"
     )
 
     /**
@@ -768,7 +769,8 @@ object ControlProtocol {
     val SCENE_BLURBS: Map<String, String> = linkedMapOf(
         "washroom" to "站立视角：0.85 米外的立便器与木隔屏，房间完全静止。",
         "shore" to "躺卧视角：水面在身下缓缓起伏，云在头顶漂移，地平线稳定。",
-        "lightwell" to "躺卧视角：竖井里十三道光环持续上行，强度跟着漂浮幅度走。"
+        "lightwell" to "躺卧视角：竖井里十三道光环持续上行，强度跟着漂浮幅度走。",
+        "ward" to "仰卧视角：床、窗上百叶与监护仪滚动的波形，其余静止。"
     )
 
     private fun sceneIndex(name: String): Int {

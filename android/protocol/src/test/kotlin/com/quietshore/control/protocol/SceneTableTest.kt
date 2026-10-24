@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * The scene tables are the operator's only view of the three rooms. Ids drive
+ * The scene tables are the operator's only view of the shipped rooms. Ids drive
  * state byte 11 (append only), and the copy must cover exactly the same ids:
  * a blurb for a scene that does not exist is the drift that produced the
  * washroom's imaginary handrail.
@@ -14,7 +14,7 @@ class SceneTableTest {
 
     @Test
     fun `backlog order is the wire contract`() {
-        assertEquals(listOf("washroom", "shore", "lightwell"), ControlProtocol.SCENE_IDS)
+        assertEquals(listOf("washroom", "shore", "lightwell", "ward"), ControlProtocol.SCENE_IDS)
         assertEquals("washroom", ControlProtocol.DEFAULT_SCENE)
     }
 

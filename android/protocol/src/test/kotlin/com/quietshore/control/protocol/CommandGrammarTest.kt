@@ -93,7 +93,7 @@ class CommandGrammarTest {
         for (raw in listOf(
             "enter", "home", "allapps", "exit", "stop", "calibrate", "recalibrate", "preview", "status",
             "mode:float", "mode:posture",
-            "scene:washroom", "scene:shore", "scene:lightwell",
+            "scene:washroom", "scene:shore", "scene:lightwell", "scene:ward",
             "float:level:0", "float:level:3", "float:profile:a", "float:profile:c",
             "float:breath:on", "float:breath:off",
             "anim:duration:4000", "anim:duration:20000",

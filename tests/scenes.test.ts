@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SCENE, SCENES, getSceneDefinition } from '../src/scenes/registry';
 import { advanceCloudOffset } from '../src/scenes/shore/clouds';
+import { advanceEcgOffset } from '../src/scenes/ward/room';
 import { ResourceRegistry } from '../src/core/geometry/registry';
 import { measureObject } from '../src/core/geometry/budget';
 
@@ -33,7 +34,7 @@ function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
 describe('scene registry', () => {
   it('declares the eye its art was authored for', () => {
     const placement = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.eyeY]));
-    expect(placement).toEqual({ washroom: 1.7, shore: 0.45, lightwell: 1.7 });
+    expect(placement).toEqual({ washroom: 1.7, shore: 0.45, lightwell: 1.7, ward: 0.85 });
     for (const scene of SCENES) {
       expect(Number.isFinite(scene.eyeY)).toBe(true);
       expect(scene.eyeY).toBeGreaterThan(0);
@@ -42,7 +43,13 @@ describe('scene registry', () => {
 
   it('ships the operator-selectable scenes in wire order', () => {
     // Index order is the BLE state byte 11 contract: append only.
-    expect(SCENES.map((scene) => scene.id)).toEqual(['washroom', 'shore', 'lightwell']);
+    expect(SCENES.map((scene) => scene.id)).toEqual([
+      'washroom',
+      'shore',
+      'lightwell',
+      'ward'
+    ]);
+
     expect(SCENE.id).toBe('washroom');
   });
 
@@ -63,7 +70,11 @@ describe('scene registry', () => {
   });
 
   it('keeps the water bed to the two scenes that have water', () => {
-    const water = SCENES.filter((scene) => scene.audio !== undefined);
+    // The ward declares rain, not water; it is a room with a window, not a
+    // body in a lake. The ambience rule below is about the open-water scenes.
+    const water = SCENES.filter(
+      (scene) => scene.audio !== undefined && scene.audio.track !== 'rain'
+    );
     expect(water.map((scene) => scene.id).sort()).toEqual(['shore', 'washroom']);
     for (const scene of water) {
       expect(['lake', 'stream']).toContain(scene.audio!.track);
@@ -78,10 +89,11 @@ describe('scene registry', () => {
 
 describe('scene capabilities', () => {
   it('declares one eye height per scene, sane for the headset', () => {
-    for (const id of ['washroom', 'shore', 'lightwell']) {
+    for (const id of ['washroom', 'shore', 'lightwell', 'ward']) {
       const scene = getSceneDefinition(id)!;
-      // 0.45 m = lying on water, 1.70 m = standing height. Outside this band the
-      // art would either sink through the floor or float above the room.
+      // 0.45 m = lying on water, 0.85 m = the eye in the bed, 1.70 m = standing.
+      // Outside this band the art would either sink through the floor or float
+      // above the room.
       expect(scene.eyeY).toBeGreaterThanOrEqual(0.3);
       expect(scene.eyeY).toBeLessThanOrEqual(2.0);
     }
@@ -91,7 +103,8 @@ describe('scene capabilities', () => {
     // The ceiling is the app's guard against the one combination we know is
     // uncomfortable: vertical optic flow at full amplitude.
     const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfortLevel ?? 3]));
-    expect(ceilings).toEqual({ washroom: 3, shore: 3, lightwell: 2 });
+    expect(ceilings).toEqual({ washroom: 3, shore: 3, lightwell: 2, ward: 3 });
+
   });
 
   it('hands each motion channel to the scene that needs it', () => {
@@ -182,7 +195,7 @@ describe('scene capabilities', () => {
   });
 
   it('exposes no gaze targets and no camera of its own', () => {
-    for (const id of ['washroom', 'shore', 'lightwell']) {
+    for (const id of ['washroom', 'shore', 'lightwell', 'ward']) {
       const { handle } = build(id);
       try {
         // Selection in a scene would be a second interaction model; the only
@@ -193,6 +206,120 @@ describe('scene capabilities', () => {
         handle.dispose();
       }
     }
+  });
+});
+
+describe('the ward', () => {
+  it('draws the room from the pillow', () => {
+    const scene = getSceneDefinition('ward')!;
+    // The author's number, not a constant the frame has to guess: 0.55 m of
+    // mattress plus the head raised on the pillow.
+    expect(scene.eyeY).toBe(0.85);
+    expect(scene.audio).toEqual({ track: 'rain', volume: 0.4, fadeMs: 1200, loop: true });
+
+    const { handle } = build('ward');
+    try {
+      const duvet = handle.root.getObjectByName('ward-duvet') as THREE.Mesh;
+      const shell = handle.root.getObjectByName('ward-shell') as THREE.Mesh;
+      expect(duvet).toBeDefined();
+      expect(shell).toBeDefined();
+
+      // The bedding is below the eye and the ceiling above it: if either were
+      // on the wrong side, the patient would be looking at the wrong room.
+      const bedding = new THREE.Box3().setFromObject(duvet);
+      expect(bedding.max.y).toBeLessThan(scene.eyeY);
+      const room = new THREE.Box3().setFromObject(shell);
+      expect(room.max.y).toBeGreaterThan(scene.eyeY + 1.5);
+
+      // The monitor stands ahead of the pillow — the content origin is the eye's
+      // own X/Z — and to the right, with its face turned back. A screen behind
+      // the eye would be one nobody can read.
+      const screen = handle.root.getObjectByName('ward-monitor-screen') as THREE.Mesh;
+      const face = new THREE.Box3().setFromObject(screen);
+      expect(face.min.x).toBeGreaterThan(0);
+      expect(face.max.z).toBeLessThan(-0.8);
+      expect(face.min.y).toBeGreaterThan(scene.eyeY);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('scrolls the trace one way, inside one tile', () => {
+    // Headless hosts have no canvas, so the offset is exercised directly.
+    let offset = 0.5;
+    const step = advanceEcgOffset(offset, 0.1);
+    expect(step).toBeLessThan(offset);
+    expect(offset - step).toBeCloseTo(0.009, 6);
+    // A step off zero wraps to the far end of the tile rather than going negative.
+    expect(advanceEcgOffset(0, 0.1)).toBeGreaterThan(0.98);
+    // The scene clamps its own frame length: a stall must not teleport the trace.
+    expect(advanceEcgOffset(offset, 5)).toBeCloseTo(step, 12);
+    expect(advanceEcgOffset(offset, 0)).toBe(offset);
+    expect(advanceEcgOffset(offset, Number.NaN)).toBe(offset);
+
+    for (let i = 0; i < 2000; i += 1) {
+      const next = advanceEcgOffset(offset, 1 / 60);
+      expect(next).toBeGreaterThanOrEqual(0);
+      expect(next).toBeLessThan(1);
+      const drop = offset - next;
+      if (drop < 0) {
+        // The only discontinuity is the wrap, and it lands one step before 1.
+        expect(drop).toBeLessThan(-0.9);
+      } else {
+        // One direction only, at a constant rate.
+        expect(drop).toBeCloseTo(0.0015, 6);
+      }
+      offset = next;
+    }
+  });
+
+  it('advances the waveform without rebuilding anything', () => {
+    const { handle } = build('ward');
+    try {
+      const ecg = handle.root.getObjectByName('ward-ecg') as THREE.Mesh;
+      expect(ecg).toBeDefined();
+      const geometry = ecg.geometry;
+
+      let previous = ecg.userData.scroll as number;
+      expect(previous).toBe(0);
+      for (let i = 0; i < 240; i += 1) {
+        handle.update(1 / 60, i / 60);
+        const next = ecg.userData.scroll as number;
+        expect(next).toBeGreaterThanOrEqual(0);
+        expect(next).toBeLessThan(1);
+        expect(next).not.toBe(previous);
+        previous = next;
+      }
+      // Animation is a texture offset: the strip's own buffers never change.
+      expect(ecg.geometry).toBe(geometry);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('stays inside the room budget with one transparent surface', () => {
+    const { handle } = build('ward');
+    try {
+      const stats = measureObject(handle.root);
+      expect(stats.drawCalls).toBeLessThanOrEqual(10);
+      expect(stats.triangles).toBeLessThanOrEqual(3000);
+      // Only the ECG strip blends; everything else in the ward is opaque.
+      expect(transparentMeshes(handle.root)).toHaveLength(1);
+      expect(handle.budget!.check(stats)).toEqual([]);
+      // An interior needs no distance fog.
+      expect(handle.settings.fog).toBeNull();
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('disposes idempotently', () => {
+    const { handle } = build('ward');
+    expect(() => {
+      handle.dispose();
+      handle.dispose();
+    }).not.toThrow();
+    expect(handle.root.children).toHaveLength(0);
   });
 });
 
