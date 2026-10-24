@@ -182,6 +182,7 @@ state 帧 20 字节已满（`ControlProtocol.kt:668-698` 的字段全部在用�
 
 ### F0 · 产品叙事分叉（已收敛为双场景）
 
+> 已过时：注册表现在是三个场景（新增 `lightwell`）。原文保留如下。
 `src/scenes/registry.ts` 有 `washroom`（默认）与 `shore` 两个场景；`SCENE_IDS`/`DEFAULT_SCENE`/`CAP_SCENE`/`scene:` 命令/平板场景页/头显启动参数全部在位，切换由控制端主导、仅限会话前。`quality` 与 `?scale` 仍不提供（单设备单档）。
 
 残留（低风险）：场景名在头显控制台卡片里是一份手写副本；`SCENE_LABELS` 也是协议层的手抄，id 与顺序以 `SCENE_IDS` 为契约。
@@ -231,7 +232,7 @@ state 帧 20 字节已满（`ControlProtocol.kt:668-698` 的字段全部在用�
 
 ### F10 · 文档与代码的数字不一致
 
-README 与 `core.md` §10 写“标准 35 mm / 11 s、温和 22 mm / 14 s、沉浸 45 mm / 9 s”，代码是 65 / 40 / 100 mm 与 12 / 15 / 9 s（`float.ts:47-51`）。这类偏差会让志愿者测试的结论无法复现。
+~~README 与 `core.md` §10 写“标准 35 mm / 11 s…”~~（已修复：0.9.31 起 README、`core.md`、`control-plane.md` 与实际参数 40 / 65 / 100 mm、15 / 12 / 9 s 一致）。这类偏差会让志愿者测试的结论无法复现。
 
 ### F11 · 模式可会话中切换
 

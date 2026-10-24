@@ -206,7 +206,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `float:level:0-3` | 漂浮强度；0 为停用，停止时按 tau 0.25 s 渐出 |
 | `float:profile:a\|b\|c` | 漂浮档位：a 温和（40 mm / 15 s）、b 标准（65 mm / 12 s）、c 沉浸（100 mm / 9 s + 1° 地平线微摆，最高 1 级）。实机选型用 |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
-| `calibrate` / `recalibrate` | 记录当前朝向为新中立帧（无倒计时、无稳定检测）；训练中可用 |
+| `calibrate` / `recalibrate` | 打开校准：保持不动 1.8 s + 3 s 取样取平均，9 s 强制落地；卡片期间世界冻结；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 环境声（水声）开关，**默认关**；只影响场景环境声，不静音语音。开启时两路交叉淡化播放，关闭时 0.4 s 渐出 |
 | `exit` / `stop` | 结束训练、退出会话 |
 | `posture:rise` / `posture:lower` / `posture:stop` | 只在 `mode:posture` 会话内生效（否则页面拒绝并提示先切模式）；患者确认键只做开始/停止，不触发起身 |
