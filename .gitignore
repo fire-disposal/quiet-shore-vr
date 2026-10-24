@@ -27,3 +27,6 @@ android/control/src/main/assets/mirror.html
 # python bytecode from the voice pipeline
 __pycache__/
 *.pyc
+
+# gradle copies the built page and cues here; never commit them
+android/headset/src/main/assets/voice/

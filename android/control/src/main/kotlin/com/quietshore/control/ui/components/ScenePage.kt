@@ -58,7 +58,9 @@ fun ScenePage(
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
             )
-            for ((id, label) in ControlProtocol.SCENE_LABELS) {
+            for (scene in com.quietshore.control.model.SceneCatalog.ALL) {
+                val id = scene.id
+                val label = scene.name
                 val selected = id == selectedScene
                 val selectable = enabled && !sessionRunning
                 Surface(
@@ -84,7 +86,14 @@ fun ScenePage(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(label, style = MaterialTheme.typography.titleMedium)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(label, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = scene.blurb,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = QuietPalette.TextSecondary
+                            )
+                        }
                         Text(
                             text = if (selected) "已选" else "",
                             style = MaterialTheme.typography.bodySmall,

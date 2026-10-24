@@ -22,6 +22,19 @@ export interface SceneBuildContext {
   registry: ResourceRegistry;
 }
 
+/**
+ * App-computed buoyancy for one frame. The app owns the envelope (attack,
+ * release, stop); a scene that implements `applyBuoyancy` only decides *where*
+ * the motion goes, which is what keeps a horizon still while the foreground
+ * breathes.
+ */
+export interface BuoyancyState {
+  /** Vertical offset in metres, signed. */
+  amountM: number;
+  /** Horizon pitch in degrees, signed. */
+  swayDeg: number;
+}
+
 export interface SceneHandle {
   /** Everything the scene owns. Added under the host scene; never the host scene itself. */
   root: THREE.Object3D;
@@ -34,6 +47,15 @@ export interface SceneHandle {
    * value that drives the posture cue, so one stop silences both.
    */
   setFlow?(flow: number): void;
+  /**
+   * Optional: spread the frame's buoyancy across this scene's layers.
+   *
+   * A global content translation moves the sky as well as the water, so the one
+   * surface a supine patient looks at barely changes angle. A scene that knows
+   * its own depth order can hold the dome still and move the near field, which
+   * is both more visible and keeps the subjective horizon stable.
+   */
+  applyBuoyancy?(state: BuoyancyState): void;
   dispose(): void;
   budget?: SceneBudget;
 }

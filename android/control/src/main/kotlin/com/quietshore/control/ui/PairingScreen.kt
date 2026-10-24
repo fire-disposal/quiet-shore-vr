@@ -300,6 +300,12 @@ private fun PairingCard(
                 )
             }
 
+            Text(
+                text = "用于引导式放松体验；不做诊断或治疗，画面与数据都不离开这两台设备。",
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.TextSecondary
+            )
+
         }
     }
 }

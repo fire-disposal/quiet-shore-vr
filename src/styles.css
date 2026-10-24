@@ -284,5 +284,16 @@ html, body {
 }
 
 /* immersive stage */
+.entry-note {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(14px, 3vh, 26px);
+  transform: translateX(-50%);
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
 .stage { position: fixed; inset: 0; background: #000; }
 .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }

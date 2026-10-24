@@ -51,21 +51,21 @@ export interface SequenceStep {
  */
 export const SEQUENCES: Readonly<Record<SequenceName, readonly SequenceStep[]>> = {
   start: [
+    // The long introduction runs before the headset goes on, so the patient
+    // knows what this is (and is not) before anything is attached.
+    { id: 'v-about-1', gapMs: 3000 },
     { id: 'v-arrive-1', gapMs: 4000 },
     { id: 'v-arrive-2', gapMs: 5000 },
-    { id: 'v-wear-1', gapMs: 4000 },
-    { id: 'v-wear-2', gapMs: 6000 },
+    { id: 'v-wear-1', gapMs: 6000 },
     { id: 'v-cal-1', gapMs: 2500 },
     { id: 'v-cal-2', gapMs: 3000 },
-    { id: 'v-enter-1', gapMs: 4500 },
-    { id: 'v-enter-2', gapMs: 0 }
+    { id: 'v-enter-1', gapMs: 0 }
   ],
   imagine: [
     { id: 'v-imagine-1', gapMs: 15000 },
     { id: 'v-imagine-2', gapMs: 15000 },
     { id: 'v-imagine-3', gapMs: 15000 },
     { id: 'v-imagine-4', gapMs: 15000 },
-    { id: 'v-imagine-5', gapMs: 15000 },
     { id: 'v-imagine-6', gapMs: 0 }
   ],
   relax: [

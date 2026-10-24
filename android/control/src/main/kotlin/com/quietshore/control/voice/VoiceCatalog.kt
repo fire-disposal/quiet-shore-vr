@@ -14,11 +14,9 @@ object VoiceCatalog {
         Line("v-arrive-1", "到场", "这次训练大约十分钟"),
         Line("v-arrive-2", "到场", "现在戴上头显"),
         Line("v-wear-1", "佩戴", "头显已戴好"),
-        Line("v-wear-2", "佩戴", "接下来记录起始方向"),
         Line("v-cal-1", "校准", "现在记录起始方向"),
         Line("v-cal-2", "校准", "已记录"),
         Line("v-enter-1", "渐入", "画面正在淡入"),
-        Line("v-enter-2", "渐入", "不需要动作"),
         Line("v-float-1", "漂浮", "当前是漂浮模式"),
         Line("v-float-low", "漂浮", "起伏幅度"),
         Line("v-float-mid", "漂浮", "起伏幅度"),
@@ -27,7 +25,6 @@ object VoiceCatalog {
         Line("v-imagine-2", "想象", "想象水是温的"),
         Line("v-imagine-3", "想象", "想象身体比水重一点"),
         Line("v-imagine-4", "想象", "想象呼气比吸气长一点"),
-        Line("v-imagine-5", "想象", "想象远处有水声"),
         Line("v-imagine-6", "想象", "想象身体和水之间没有清…"),
         Line("v-relax-1", "放松", "进入放松阶段"),
         Line("v-relax-2", "放松", "有便意时直接排出"),
@@ -39,7 +36,6 @@ object VoiceCatalog {
         Line("v-after-2", "结束", "有不舒服"),
         Line("v-safe-1", "安全", "如头晕、恶心或不适"),
         Line("v-safe-2", "安全", "已停止"),
-        Line("v-safe-3", "安全", "可以随时停止"),
         Line("v-rise-1", "起身", "现在切换到起身视角"),
         Line("v-rise-2", "起身", "觉得快就说停"),
         Line("v-direct-1", "明确", "现在可以解手"),
@@ -54,8 +50,9 @@ object VoiceCatalog {
         Line("v-sus-8", "SUS 量表", "这个系统用起来很麻烦"),
         Line("v-sus-9", "SUS 量表", "使用这个系统时我很有信心"),
         Line("v-sus-10", "SUS 量表", "我需要先学习很多内容才…"),
-        Line("v-sus-scale", "SUS 量表", "选项从非常不同意到非常…"),
         Line("v-sus-done", "SUS 量表", "十个问题结束"),
+        Line("v-about-1", "说明", "这次体验大约十分钟"),
+        Line("v-thanks-1", "说明", "这次体验结束"),
     )
 
     private val byId: Map<String, Line> = LINES.associateBy { it.id }

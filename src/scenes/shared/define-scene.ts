@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type {
+  BuoyancyState,
   SceneDefinition,
   SceneHandle,
   SceneSettings,
@@ -18,6 +19,8 @@ export interface SceneBuild {
   update?: (dt: number, elapsed: number) => void;
   /** Only scenes that manufacture self-motion (the light well) implement this. */
   setFlow?: (flow: number) => void;
+  /** Scenes that place the buoyancy themselves instead of moving the content. */
+  applyBuoyancy?: (state: BuoyancyState) => void;
   selectables?: THREE.Object3D[];
   dispose: () => void;
 }
@@ -61,6 +64,9 @@ export function defineScene(
       };
       if (parts.setFlow) {
         handle.setFlow = parts.setFlow;
+      }
+      if (parts.applyBuoyancy) {
+        handle.applyBuoyancy = parts.applyBuoyancy;
       }
       return handle;
     }

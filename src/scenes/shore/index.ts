@@ -23,6 +23,8 @@ import { createShoreline } from './shoreline';
  */
 
 const FOG_COLOR = 0xe7d7bd;
+/** Cube-deck parallax: a little motion up there, none in the dome itself. */
+const CLOUD_GAIN = 0.4;
 const FOG_NEAR = 48;
 const FOG_FAR = 135;
 
@@ -49,6 +51,10 @@ export const shoreScene = defineScene(
     const shoreline = createShoreline();
     const clouds = createClouds();
 
+    dome.mesh.name = 'shore-dome';
+    water.root.name = 'shore-water';
+    shoreline.root.name = 'shore-shoreline';
+    clouds.root.name = 'shore-clouds';
     root.add(dome.mesh);
     root.add(water.root);
     root.add(shoreline.root);
@@ -67,6 +73,22 @@ export const shoreScene = defineScene(
       update: function (dt: number): void {
         elapsed += dt;
         clouds.update(dt, elapsed);
+      },
+      /**
+       * Depth-weighted buoyancy: the sky is the horizon and never moves, the
+       * deck drifts a little (parallax), the water and the near shore take the
+       * full amplitude. Sway goes to the same near layers, so the horizon line
+       * itself stays level.
+       */
+      applyBuoyancy: function (state: { amountM: number; swayDeg: number }): void {
+        const amount = Number.isFinite(state.amountM) ? state.amountM : 0;
+        const sway = Number.isFinite(state.swayDeg) ? state.swayDeg : 0;
+        clouds.root.position.y = amount * CLOUD_GAIN;
+        water.root.position.y = amount;
+        shoreline.root.position.y = amount;
+        const swayRad = (sway * Math.PI) / 180;
+        water.root.rotation.x = swayRad;
+        shoreline.root.rotation.x = swayRad;
       },
       dispose: function (): void {
         clouds.dispose();

@@ -457,6 +457,18 @@ class PortalActivity : Activity() {
             setPadding(0, dp(18), 0, dp(14))
         }
         page.addView(homeHint)
+        page.addView(
+            label(
+                "体验性放松训练；不做诊断或治疗",
+                11f,
+                MUTED,
+                Typeface.NORMAL,
+                0.02f
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(4), 0, 0)
+            }
+        )
 
         return page
     }

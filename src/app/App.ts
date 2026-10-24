@@ -815,13 +815,15 @@ export class QuietShoreApp {
     if (this.floatAmplitude <= 0 && target === 0) {
       this.floatAmplitude = 0;
       // Settle exactly once, so an idle scene pays nothing per frame.
-      if (this.floatOffsetApplied !== 0) {
+      if (this.floatOffsetApplied !== 0 || this.floatSwayApplied !== 0) {
         this.floatOffsetApplied = 0;
-        this.host.setFloorOffset(this.xr.isPresenting ? -this.eyeHeight : 0);
-      }
-      if (this.floatSwayApplied !== 0) {
         this.floatSwayApplied = 0;
-        this.host.content.rotation.x = 0;
+        this.host.setFloorOffset(this.xr.isPresenting ? -this.eyeHeight : 0);
+        if (this.handle?.applyBuoyancy) {
+          this.handle.applyBuoyancy({ amountM: 0, swayDeg: 0 });
+        } else {
+          this.host.content.rotation.x = 0;
+        }
       }
       return;
     }
@@ -844,15 +846,20 @@ export class QuietShoreApp {
       this.floatAmplitude,
       this.floatBreath
     );
-    this.host.setFloorOffset(base + this.floatOffsetApplied);
     // Horizon sway: a couple of degrees of world pitch, in phase with the
     // drift, is what makes the horizon feel unmoored rather than the floor.
     const swayDeg = floatPitchAt(this.floatProfile, this.floatSeconds, this.floatAmplitude);
-    if (swayDeg === 0 && this.floatSwayApplied === 0) {
-      return;
-    }
     this.floatSwayApplied = swayDeg;
-    this.host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
+    if (this.handle?.applyBuoyancy) {
+      // The scene owns the depth order, so it decides what moves. Moving the
+      // whole content instead leaves the sky (the only thing a supine patient
+      // looks at) effectively still.
+      this.host.setFloorOffset(base);
+      this.handle.applyBuoyancy({ amountM: this.floatOffsetApplied, swayDeg });
+    } else {
+      this.host.setFloorOffset(base + this.floatOffsetApplied);
+      this.host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
+    }
   }
 
   /**
