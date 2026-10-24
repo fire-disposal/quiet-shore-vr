@@ -51,29 +51,21 @@ export interface SequenceStep {
  */
 export const SEQUENCES: Readonly<Record<SequenceName, readonly SequenceStep[]>> = {
   start: [
-    // The introduction runs before the headset goes on; the gate line waits
-    // until the page is visible, and safety lands before anything moves.
-    { id: 'v-about-1', gapMs: 3000 },
-    { id: 'v-arrive-2', gapMs: 5000 },
-    { id: 'v-wear-1', gapMs: 4000 },
-    { id: 'v-gate-1', gapMs: 5000 },
-    { id: 'v-safe-1', gapMs: 3000 },
-    { id: 'v-cal-1', gapMs: 2500 },
-    { id: 'v-cal-2', gapMs: 3000 },
-    { id: 'v-enter-1', gapMs: 0 }
+    // One intro before the headset goes on, then the three things a patient
+    // must hear before anything moves.
+    { id: 'v-about-1', gapMs: 4000 },
+    { id: 'v-wear-1', gapMs: 6000 },
+    { id: 'v-safe-1', gapMs: 4000 },
+    { id: 'v-cal-1', gapMs: 3000 },
+    { id: 'v-cal-2', gapMs: 0 }
   ],
   imagine: [
-    { id: 'v-imagine-1', gapMs: 15000 },
-    { id: 'v-imagine-2', gapMs: 15000 },
-    { id: 'v-imagine-3', gapMs: 15000 },
-    { id: 'v-imagine-4', gapMs: 15000 },
-    { id: 'v-imagine-6', gapMs: 0 }
+    { id: 'v-imagine-1', gapMs: 20000 },
+    { id: 'v-imagine-2', gapMs: 0 }
   ],
   relax: [
     { id: 'v-relax-1', gapMs: 12000 },
-    { id: 'v-relax-2', gapMs: 12000 },
-    { id: 'v-relax-3', gapMs: 12000 },
-    { id: 'v-relax-4', gapMs: 0 }
+    { id: 'v-relax-2', gapMs: 0 }
   ],
   close: [
     { id: 'v-close-1', gapMs: 6000 },

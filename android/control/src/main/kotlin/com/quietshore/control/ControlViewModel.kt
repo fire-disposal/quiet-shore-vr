@@ -245,6 +245,10 @@ class ControlViewModel(application: Application) :
         if (scene !in ControlProtocol.SCENE_LABELS) {
             return
         }
+        // The page is often closed when the choice is made (it is a launch
+        // parameter), so echo the choice locally; the next state frame from a
+        // running page supersedes it.
+        _uiState.update { it.copy(control = it.control.copy(scene = scene)) }
         sendCommand(ControlProtocol.SCENE_PREFIX + scene)
     }
 

@@ -160,6 +160,8 @@ export class QuietShoreApp {
   private shell: WorldShellApi | null = null;
   private capturePending = false;
   private captureAttempts = 0;
+  /** Wall clock when the stable window started; drives the card's bar. */
+  private samplingStartedAt = 0;
   /** True while the calibration cloak (black + hidden scene) is up. */
   private calibrationCloaked = false;
   private readonly calibrationSampler = createCalibrationSampler({
@@ -318,7 +320,14 @@ export class QuietShoreApp {
         this.hud.update(this.headPose, dt, now);
         this.calibrationCard?.update(dt, now, this.headPose);
         if (this.calibrationSampler.isActive()) {
-          const result = this.calibrationSampler.add(this.headPose.quaternion, now);
+          // The sampler's clock is the one `triggerCalibration` started with
+          // (`performance.now()`); the XR frame timestamp can live in a
+          // different epoch and would never close the window.
+          const sampleNow = performance.now();
+          this.calibrationCard?.setProgress(
+            (sampleNow - this.samplingStartedAt) / CALIBRATION_SAMPLE_MS
+          );
+          const result = this.calibrationSampler.add(this.headPose.quaternion, sampleNow);
           if (result) {
             this.finishCalibration(result);
           }
@@ -934,8 +943,10 @@ export class QuietShoreApp {
     }
     this.capturePending = true;
     this.captureAttempts = 0;
-    this.calibrationCard.setHint('正在记录，请保持不动…');
-    this.calibrationSampler.start(performance.now());
+    this.calibrationCard.setHint('');
+    this.calibrationCard.setProgress(0);
+    this.samplingStartedAt = performance.now();
+    this.calibrationSampler.start(this.samplingStartedAt);
     this.start.setStatus('正在记录起始朝向', 'ok');
   }
 
@@ -945,6 +956,7 @@ export class QuietShoreApp {
     deviationDeg: number;
   }): void {
     this.capturePending = false;
+    this.calibrationCard?.setProgress(null);
     if (!result.ok || !result.quaternion) {
       // Stay on the card and wait for another explicit trigger; a shaky window
       // is a normal event, not a reason to end the session.

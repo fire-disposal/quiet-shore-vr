@@ -192,8 +192,18 @@ export class SpatialSurface {
     }
 
     if (this.body && this.bodyMesh) {
-      const bodyWidth = width - padding * 2;
-      const bodyHeight = bodyWidth * this.body.aspect;
+      // Fit the body inside what is left of the panel: keep the texture's
+      // aspect and shrink whichever dimension runs out first. A fixed
+      // width-only fit made long copy spill below the card.
+      const availWidth = width - padding * 2;
+      const availHeight = Math.max(0.04, cursor + height / 2 - padding - 0.022);
+      const aspect = this.body.aspect;
+      let bodyWidth = availWidth;
+      let bodyHeight = bodyWidth * aspect;
+      if (bodyHeight > availHeight) {
+        bodyHeight = availHeight;
+        bodyWidth = bodyHeight / aspect;
+      }
       this.bodyMesh.scale.set(bodyWidth, bodyHeight, 1);
       this.bodyMesh.position.set(-width / 2 + padding + bodyWidth / 2, cursor - bodyHeight / 2, 0.006);
       cursor -= bodyHeight + 0.022;

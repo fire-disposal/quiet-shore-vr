@@ -48,7 +48,8 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
  */
 export class TextTexture {
   readonly texture: THREE.CanvasTexture;
-  readonly aspect: number;
+  /** height / width; grows when long copy needs a taller texture. */
+  aspect: number;
 
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -107,6 +108,21 @@ export class TextTexture {
     const lines = wrapText(ctx, text, canvas.width - paddingPx * 2);
     const lineHeightPx = sizePx * lineHeight;
     const totalHeight = lines.length * lineHeightPx;
+    // Grow the canvas to the text instead of letting long copy fall outside
+    // it: the surfaces scale the mesh by this texture's aspect, so a clipped
+    // texture means text drawn under the card.
+    const needed = Math.ceil(totalHeight + paddingPx * 2);
+    const nextHeight = Math.max(
+      this.options.heightPx,
+      Math.pow(2, Math.ceil(Math.log2(Math.max(64, needed))))
+    );
+    if (canvas.height !== nextHeight) {
+      canvas.height = nextHeight;
+      ctx.font = `${weight} ${sizePx}px ${theme.fontFamily}`;
+      ctx.fillStyle = color;
+      ctx.textBaseline = 'middle';
+      this.aspect = canvas.height / canvas.width;
+    }
     const startY = (canvas.height - totalHeight) / 2 + lineHeightPx / 2;
     ctx.textAlign = align === 'center' ? 'center' : 'left';
     const x = align === 'center' ? canvas.width / 2 : paddingPx;

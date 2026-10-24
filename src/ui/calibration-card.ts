@@ -5,14 +5,12 @@ import type { SpatialTheme } from '../core/spatial/theme';
 import { SpatialSurface } from './spatial/surface';
 
 /**
- * The one card before a session: the heading the patient is holding becomes
+ * The one moment before a session: the heading the patient is holding becomes
  * the world's "up".
  *
- * Recording is operator-triggered — the tablet's calibrate button or the
- * headset button, whichever comes first — and the window itself is a short
- * stable sample (see `core/xr/calibration-sample.ts`). There is no countdown
- * and no silent auto-capture: a patient who is still being positioned must not
- * have a heading baked in behind the operator's back.
+ * Recording is started by the operator (tablet) or the patient (headset
+ * button); the bar fills only for the short stable window that follows, so a
+ * patient being positioned never has a heading baked in unannounced.
  */
 export interface CalibrationCardOptions {
   scene: THREE.Scene;
@@ -23,12 +21,12 @@ export interface CalibrationCardApi {
   show(): void;
   hide(): void;
   update(dt: number, now: number, head: HeadPose | null): void;
-  /** One line under the body: waiting / recording / retry. */
+  /** 0..1 while the stable window runs; null hides the bar. */
+  setProgress(progress: number | null): void;
+  /** One line under the body: waiting / retry. */
   setHint(text: string): void;
   dispose(): void;
 }
-
-const BODY = '请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录，或由操作员在平板上开始。';
 
 export function createCalibrationCard(options: CalibrationCardOptions): CalibrationCardApi {
   const anchor = new SpatialAnchor({
@@ -38,21 +36,68 @@ export function createCalibrationCard(options: CalibrationCardOptions): Calibrat
   });
   const surface = new SpatialSurface({
     width: 0.72,
-    height: 0.3,
+    height: 0.34,
     theme: options.theme,
     title: '记录起始朝向',
-    body: BODY,
+    body: '请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录。',
     renderOrder: 1400
   });
   anchor.object.add(surface.object);
+
+  // Progress bar: the old calibration told the patient how long was left, and
+  // without it "a few seconds" reads as "nothing is happening".
+  const barWidth = 0.6;
+  const barHeight = 0.016;
+  const barGeometry = new THREE.PlaneGeometry(barWidth, barHeight);
+  const barTrackMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(options.theme.border),
+    transparent: true,
+    opacity: 0.55,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const barFillMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(options.theme.success),
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const barTrack = new THREE.Mesh(barGeometry, barTrackMaterial);
+  barTrack.position.set(0, -0.135, 0.004);
+  barTrack.renderOrder = 1405;
+  anchor.object.add(barTrack);
+  const barFill = new THREE.Mesh(barGeometry, barFillMaterial);
+  barFill.position.set(-barWidth / 2, -0.135, 0.005);
+  barFill.scale.x = 0.001;
+  barFill.renderOrder = 1406;
+  anchor.object.add(barFill);
+
   anchor.setVisible(false);
   options.scene.add(anchor.object);
 
   let visible = false;
+  barTrack.visible = false;
+  barFill.visible = false;
+
+  function setBar(progress: number | null): void {
+    if (progress === null) {
+      barTrack.visible = false;
+      barFill.visible = false;
+      return;
+    }
+    barTrack.visible = true;
+    barFill.visible = true;
+    const p = Math.max(0, Math.min(1, progress));
+    barFill.scale.x = Math.max(0.001, p);
+    barFill.position.x = -barWidth / 2 + (barWidth * p) / 2;
+  }
 
   return {
     show(): void {
       visible = true;
+      setBar(null);
       anchor.setVisible(true);
     },
     hide(): void {
@@ -65,13 +110,25 @@ export function createCalibrationCard(options: CalibrationCardOptions): Calibrat
       }
       anchor.update(head, dt, now);
     },
+    setProgress(progress: number | null): void {
+      setBar(progress);
+    },
     setHint(text: string): void {
-      surface.setBody(text ? `${BODY}\n${text}` : BODY);
+      surface.setBody(
+        text
+          ? `请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录。\n${text}`
+          : '请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录。'
+      );
     },
     dispose(): void {
       options.scene.remove(anchor.object);
       anchor.object.remove(surface.object);
       surface.dispose();
+      anchor.object.remove(barTrack);
+      anchor.object.remove(barFill);
+      barGeometry.dispose();
+      barTrackMaterial.dispose();
+      barFillMaterial.dispose();
       anchor.dispose();
     }
   };
