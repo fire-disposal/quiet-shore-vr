@@ -49,8 +49,6 @@ const EYE_Y = 1.7;
  */
 const FIXTURE_COUNT = 6;
 const FIXTURE_BAND = 60;
-/** One tie of the detail texture spans this many metres of wall. */
-const DETAIL_COURSE_M = 20;
 /**
  * Terminal speed approached with an exponential ease.
  *
@@ -80,9 +78,11 @@ export interface LightWellParts {
 }
 
 /**
- * Wall skin: eight concrete panels wide, one course per 4 m, and the whole
- * vertical light ramp baked in. The texture is *not* repeated vertically —
- * that is what lets the caps copy its end colours exactly.
+ * Wall skin: one clean vertical light ramp and nothing else.
+ *
+ * The previous version drew eight panel bands plus mottling; on a 3 m wall the
+ * bands read as ugly stripes and the blobs as glare. Minimal is also the most
+ * believable here — a shaft lit from above is a gradient, not a pattern.
  */
 function shaftTexture(): THREE.CanvasTexture | null {
   return makeTexture((ctx, width, height) => {
@@ -96,69 +96,7 @@ function shaftTexture(): THREE.CanvasTexture | null {
     ramp.addColorStop(1.0, BOTTOM_COLOR);
     ctx.fillStyle = ramp;
     ctx.fillRect(0, 0, width, height);
-
-    // Panels read through tone, not through drawn lines: hard seams converge
-    // into a star at the top of a shaft and are the first thing the eye hates.
-    for (let i = 0; i < 8; i += 1) {
-      const shade = i % 2 === 0 ? 0.012 : -0.012;
-      ctx.fillStyle = shade > 0
-        ? `rgba(255, 255, 255, ${shade})`
-        : `rgba(0, 0, 0, ${-shade})`;
-      ctx.fillRect((i / 8) * width, 0, width / 8, height);
-    }
-
-    // Faint mottling so the panels are not flat colour after magnification.
-    // Dark only: bright blobs on the wall read as glare spots (field finding)
-    // and grab the eye during the fall.
-    const random = createRandom(0x4f21);
-    for (let i = 0; i < 300; i += 1) {
-      const alpha = 0.012 + random() * 0.02;
-      ctx.fillStyle = `rgba(0, 0, 0, ${(alpha * 1.5).toFixed(3)})`;
-      const radius = 4 + random() * 22;
-      ctx.beginPath();
-      ctx.arc(random() * width, random() * height, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }, { width: 512, height: 2048, repeat: [1, 1] });
-}
-
-/**
- * Wall courses that tile vertically: ledges, brackets and rivets, all dark
- * except the highlights. Drawn on black and added on top of the light ramp, so
- * the skin can only brighten what the ramp already lights.
- *
- * Nothing is drawn within eight pixels of the tile's ends, so consecutive
- * repeats read as a course rhythm instead of a seam.
- */
-function detailSkinTexture(): THREE.CanvasTexture | null {
-  return makeTexture((ctx, width, height) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
-    const random = createRandom(0x7a13);
-
-    const ledgeY = height * 0.34;
-    for (let x = 0; x < width; x += 32) {
-      const w = 18 + random() * 10;
-      const shade = 0.1 + random() * 0.16;
-      ctx.fillStyle = `rgba(255, 246, 230, ${shade.toFixed(3)})`;
-      ctx.fillRect(x, ledgeY, w, 1.5);
-    }
-
-    for (let i = 0; i < 7; i += 1) {
-      const x = 12 + random() * (width - 24);
-      const h = 10 + random() * 16;
-      ctx.fillStyle = `rgba(255, 244, 226, ${(0.06 + random() * 0.1).toFixed(3)})`;
-      ctx.fillRect(x, ledgeY + 2, 2, h);
-      ctx.fillRect(x, ledgeY + 2 + h, 7, 1.5);
-    }
-
-    for (let i = 0; i < 26; i += 1) {
-      const x = 8 + random() * (width - 16);
-      const y = 20 + random() * (height - 40);
-      ctx.fillStyle = `rgba(255, 250, 240, ${(0.04 + random() * 0.05).toFixed(3)})`;
-      ctx.fillRect(x, y, 1.5, 1.5);
-    }
-  }, { size: 256, repeat: [1, 12] });
+  }, { width: 8, height: 1024, repeat: [1, 1] });
 }
 
 export function createLightWell(): LightWellParts {
@@ -166,19 +104,32 @@ export function createLightWell(): LightWellParts {
   root.name = 'lightwell';
 
   const texture = shaftTexture();
-  const shaftGeometry = new THREE.BoxGeometry(SHAFT_SIDE, SHAFT_HEIGHT, SHAFT_SIDE);
-  const shaftMaterial = new THREE.MeshBasicMaterial({
+  // Four planes, not a box: the box carried its own top and bottom faces at
+  // exactly the height of the caps, and the two surfaces fought at 120 m —
+  // that is the flicker. Planes also drop two hidden faces for free.
+  const wallGeometry = new THREE.PlaneGeometry(SHAFT_SIDE, SHAFT_HEIGHT);
+  const wallMaterial = new THREE.MeshBasicMaterial({
     ...(texture ? { map: texture } : {}),
     color: texture ? 0xffffff : 0x34383c,
-    side: THREE.BackSide,
     fog: false,
     toneMapped: false
   });
-  const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
-  shaft.name = 'lightwell-shaft';
-  shaft.position.y = EYE_Y;
-  shaft.frustumCulled = false;
-  root.add(shaft);
+  const walls = new THREE.InstancedMesh(wallGeometry, wallMaterial, 4);
+  walls.name = 'lightwell-walls';
+  walls.frustumCulled = false;
+  root.add(walls);
+  const wallDummy = new THREE.Object3D();
+  for (let i = 0; i < 4; i += 1) {
+    // i: north, east, south, west — each plane turned to face the axis.
+    const yaw = [0, -Math.PI / 2, Math.PI, Math.PI / 2][i];
+    const px = i === 1 ? SHAFT_HALF : i === 3 ? -SHAFT_HALF : 0;
+    const pz = i === 0 ? -SHAFT_HALF : i === 2 ? SHAFT_HALF : 0;
+    wallDummy.position.set(px, EYE_Y, pz);
+    wallDummy.rotation.set(0, yaw, 0);
+    wallDummy.updateMatrix();
+    walls.setMatrixAt(i, wallDummy.matrix);
+  }
+  walls.instanceMatrix.needsUpdate = true;
 
   // Caps copy the wall's end colours: 60 m away they read as "light above,
   // nothing below", not as a ceiling and a floor.
@@ -279,29 +230,6 @@ export function createLightWell(): LightWellParts {
   gussets.name = 'lightwell-gussets';
   gussets.frustumCulled = false;
   root.add(gussets);
-
-  // 32 tubular segments: at 8 m a 12-gon is visibly faceted, and a faceted
-  // hoop sweeping past is the "chaotic" edge the eye grabs first.
-  // Detail skin: the same shaft, one millimetre inside, carrying a tiling
-  // course pattern. Additive so it only ever brightens the ramp above.
-  const detailTexture = detailSkinTexture();
-  const detailGeometry = new THREE.BoxGeometry(SHAFT_SIDE - 0.04, SHAFT_HEIGHT, SHAFT_SIDE - 0.04);
-  const detailMaterial = new THREE.MeshBasicMaterial({
-    ...(detailTexture ? { map: detailTexture } : {}),
-    color: detailTexture ? 0xffffff : 0x000000,
-    side: THREE.BackSide,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-    toneMapped: false
-  });
-  const detail = new THREE.Mesh(detailGeometry, detailMaterial);
-  detail.name = 'lightwell-detail';
-  detail.position.y = EYE_Y;
-  detail.frustumCulled = false;
-  root.add(detail);
 
   // Centred band: fixtures live in [-FIXTURE_BAND/2, +FIXTURE_BAND/2]. Each one
   // hangs on one of the four walls and alternating walls keep the eye from
@@ -416,16 +344,8 @@ export function createLightWell(): LightWellParts {
       }
       writeFixtures();
 
-      // The wall's own courses scroll with the fixtures: the texture wraps by
-      // construction, so this is the seamless half of the fall.
-      if (detailTexture) {
-        detailTexture.offset.y =
-          (detailTexture.offset.y + travel / DETAIL_COURSE_M) % 1;
-      }
     },
     dispose(): void {
-      shaftGeometry.dispose();
-      shaftMaterial.dispose();
       if (texture) texture.dispose();
       topGeometry.dispose();
       topMaterial.dispose();
@@ -437,9 +357,8 @@ export function createLightWell(): LightWellParts {
       shelfGeometry.dispose();
       gussetGeometry.dispose();
       hardwareMaterial.dispose();
-      detailGeometry.dispose();
-      detailMaterial.dispose();
-      if (detailTexture) detailTexture.dispose();
+      wallGeometry.dispose();
+      wallMaterial.dispose();
       root.clear();
       root.removeFromParent();
     }

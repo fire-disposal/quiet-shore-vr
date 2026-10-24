@@ -265,9 +265,9 @@ describe('scene budgets', () => {
   it('moves the wall fixtures upward only through the flow hook', () => {
     const { handle } = build('lightwell');
     const fixtures = handle.root.getObjectByName('lightwell-shelves') as THREE.InstancedMesh;
-    const detail = handle.root.getObjectByName('lightwell-detail') as THREE.Mesh;
     expect(fixtures).toBeDefined();
-    expect(detail).toBeDefined();
+    // Four wall planes, not a box: the box's own lid fought the sky cap.
+    expect((handle.root.getObjectByName('lightwell-walls') as THREE.InstancedMesh).count).toBe(4);
     // No hoop can cross the camera plane: the tori are gone, and the fixtures
     // are directional wall brackets, not rings.
     expect(handle.root.getObjectByName('lightwell-rings')).toBeUndefined();
@@ -295,14 +295,10 @@ describe('scene budgets', () => {
       // Upward, never down (a wrap drops it by the band length once).
       expect(y).toBeGreaterThanOrEqual(previousY - 40.1);
       previousY = y;
-      offsets.push((detail.material as THREE.MeshBasicMaterial).map?.offset.y ?? -1);
+      offsets.push(y);
     }
-    // Headless hosts have no canvas, so the skin texture only exists in a
-    // browser; when it does, it must scroll every frame.
-    if (!offsets.includes(-1)) {
-      const moved = offsets.filter((value, i) => i > 0 && value !== offsets[i - 1]);
-      expect(moved.length).toBeGreaterThan(30);
-    }
+    // The brackets are the only moving part now; the shaft itself is static.
+    expect(offsets[offsets.length - 1]).toBeGreaterThan(offsets[0]);
     handle.dispose();
   });
   it('disposes idempotently', () => {

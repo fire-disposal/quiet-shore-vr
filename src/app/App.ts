@@ -601,8 +601,12 @@ export class QuietShoreApp {
     );
     this.disposePostureCue();
     // The cue lives in world space and follows the head, so it is independent
-    // of the scene art and of every world rotation: install it everywhere.
-    this.postureCueState = createPostureCue({ scene: this.scene });
+    // of the scene art and of every world rotation. The well is the exception:
+    // its motion is wall-based, and floating motes there read as fluff over the
+    // picture rather than as a cue.
+    if (definition.id !== 'lightwell') {
+      this.postureCueState = createPostureCue({ scene: this.scene });
+    }
     this.world.clearBase();
     this.floating.setBaseOffset(this.session ? -this.eyeHeight : 0);
     this.floating.reset();
