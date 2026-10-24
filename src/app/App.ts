@@ -612,7 +612,10 @@ export class QuietShoreApp {
       this.postureCueState = createPostureCue({ scene: this.scene });
     }
     this.world.clearBase();
-    this.floating.setBaseOffset(this.session ? -this.eyeHeight : 0);
+    // The floor comes from the scene's authored eye, never from the operator's
+    // height setting: a 0.85 m bed and a 1.7 m room are both correct, and the
+    // second number would sink the ward by a metre.
+    this.world.apply();
     this.floating.reset();
     preloadSceneAudio(definition.audio);
     this.start.setScene(definition.name[this.config.lang]);
@@ -696,7 +699,7 @@ export class QuietShoreApp {
       if (!this.voice.isReady()) {
         void this.voice.load();
       }
-      this.floating.setBaseOffset(-this.eyeHeight);
+      this.world.apply();
       if (this.controlMode) {
         this.input.setLayers(false, false);
       }
