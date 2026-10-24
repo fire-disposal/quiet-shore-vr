@@ -306,25 +306,6 @@ fun ControlPanel(
                 )
             }
 
-            Section("声音") {
-                FilledTonalButton(
-                    onClick = actions.onToggleAudio,
-                    enabled = connected,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = if (state.control.audioMuted) {
-                            Icons.Rounded.VolumeOff
-                        } else {
-                            Icons.Rounded.VolumeUp
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.size(6.dp))
-                    Text(if (state.control.audioMuted) "开始水声" else "暂停水声")
-                }
-            }
 
             // Always last, always visible: never nested behind a tab or a menu.
             Button(

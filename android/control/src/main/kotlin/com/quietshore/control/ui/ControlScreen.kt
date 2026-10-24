@@ -43,6 +43,7 @@ import com.quietshore.control.ui.components.SceneMirror
 import com.quietshore.control.ui.components.ScenePage
 import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.StatusPanel
+import com.quietshore.control.ui.components.SusPanel
 import com.quietshore.control.ui.components.VoicePanel
 import com.quietshore.control.ui.theme.QuietPalette
 
@@ -61,6 +62,11 @@ fun ControlScreen(
             state.phase == BlePhase.SCANNING ||
             state.phase == BlePhase.CONNECTING)
 
+    // Panel selection lives above the layout so a constraint change (rotation,
+    // window resize) cannot reset or drop the visible panel.
+    var tab by rememberSaveable { mutableStateOf(PanelTab.MOTION) }
+    var infoOpen by rememberSaveable { mutableStateOf(false) }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -68,10 +74,6 @@ fun ControlScreen(
             .safeDrawingPadding()
     ) {
         val compact = maxWidth < 1000.dp
-        // Exactly one right-hand panel is visible; the mirror is not a tab, it
-        // is always on the left so the operator never loses the patient view.
-        var tab by rememberSaveable { mutableStateOf(PanelTab.MOTION) }
-        var infoOpen by rememberSaveable { mutableStateOf(false) }
         val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
         val voiceWidth = if (compact) minOf(360.dp, maxWidth * 0.92f) else 420.dp
         val panelWidth = if (tab == PanelTab.VOICE) voiceWidth else railWidth
@@ -170,6 +172,14 @@ fun ControlScreen(
                         .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
                         .width(voiceWidth)
                 )
+                PanelTab.SUS -> SusPanel(
+                    state = state,
+                    actions = actions,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
+                        .width(voiceWidth)
+                )
             }
 
             // Read-only heading readout: a corner badge, never a touch target.
@@ -185,7 +195,7 @@ fun ControlScreen(
 }
 
 /** The right half of the console: one panel at a time. */
-private enum class PanelTab { MOTION, SCENE, VOICE }
+private enum class PanelTab { MOTION, SCENE, VOICE, SUS }
 
 @Composable
 private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -265,6 +275,7 @@ private fun ControlTopBar(
             TabButton("控制", tab == PanelTab.MOTION) { onSelectTab(PanelTab.MOTION) }
             TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
             TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }
+            TabButton("SUS", tab == PanelTab.SUS) { onSelectTab(PanelTab.SUS) }
             TextButton(
                 onClick = onDisconnect,
                 enabled = state.phase.isConnected,

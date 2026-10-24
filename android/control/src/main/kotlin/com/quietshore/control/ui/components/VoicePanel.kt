@@ -122,6 +122,19 @@ fun VoicePanel(
             }
 
             Seed("混音") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("水声", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(
+                        onClick = actions.onToggleAudio,
+                        enabled = connected
+                    ) {
+                        Text(if (state.control.audioMuted) "开始水声" else "暂停水声")
+                    }
+                }
                 ValueSlider(
                     label = "语音音量",
                     value = state.voiceVolume,
