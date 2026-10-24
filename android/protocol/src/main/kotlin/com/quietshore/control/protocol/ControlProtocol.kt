@@ -136,8 +136,8 @@ object ControlProtocol {
         "calibrate", "recalibrate", "status",
         "audio:on", "audio:off", "audio:toggle",
         "mode:float|posture", "float:level:0-3", "float:profile:a|b|c", "float:breath:on|off",
-        "anim:duration:4000-20000", "posture:rise", "posture:lower", "posture:stop",
         "scene:<id>",
+        "anim:duration:4000-20000", "posture:rise", "posture:lower", "posture:stop",
         "cue:on", "cue:off", "cue:intensity:0-1",
         "home", "allapps", "sus:open", "sus:close", "sus:next", "sus:prev",
         "sus:answer:1-5",
@@ -527,7 +527,16 @@ object ControlProtocol {
      * guarantees the bit width: the envelope is enforced once, in the page
      * (see `docs/rotation-contract.md`), never re-applied here.
      */
-    fun encodeState(state: ControlState): ByteArray {
+    /**
+     * v11: 28 bytes, fixed layout. `nowMs`/`seq` are assigned here so every
+     * frame is self-describing; `target` lets the service reuse one array.
+     */
+    fun encodeState(
+        state: ControlState,
+        nowMs: Int = 0,
+        seq: Int = 0,
+        target: ByteArray = ByteArray(stateMaxBytes)
+    ): ByteArray {
         var flags = 0
         if (state.session) flags = flags or 1
         if (state.calibrating) flags = flags or 2
@@ -689,7 +698,7 @@ object ControlProtocol {
         val viewYaw = buffer.short.toInt().toFloat()
         val worldYaw = buffer.short.toInt().toFloat()
         val worldPitch = buffer.short.toInt().toFloat()
-        val worldRoll = buffer.get().toInt().toFloat()
+        val worldRoll = buffer.get().toFloat()
         if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
         return ControlState(
             session = flags and 1 != 0,
@@ -717,21 +726,21 @@ object ControlProtocol {
         )
     }
 
-    /** Stable scene ids; index order is the wire contract for byte 11. */
-    val SCENE_IDS: List<String> = listOf("landscape", "ward", "bathroom", "lab")
-
-    /** Flagship scene: the ward bathroom. Default everywhere a scene is implied. */
-    const val DEFAULT_SCENE: String = "bathroom"
 
     /**
-     * Scenes that actually ship, with operator-facing labels. The tablet renders
-     * this list, so adding a scene is one entry here plus its content module.
+     * Shipped scenes. Index order is the wire contract for state byte 11:
+     * append only, never reorder, or an old tablet reads the wrong scene.
      */
+    val SCENE_IDS: List<String> = listOf("washroom", "shore", "lightwell")
+
+    /** Default when the operator has not chosen: the standing washroom. */
+    const val DEFAULT_SCENE: String = "washroom"
+
+    /** Operator-facing labels. The tablet renders this list; keep ids in sync. */
     val SCENE_LABELS: Map<String, String> = linkedMapOf(
-        "bathroom" to "病房卫生间",
-        "landscape" to "湖畔晨岸",
-        "ward" to "病房",
-        "lab" to "直立光室"
+        "washroom" to "洁净立便间",
+        "shore" to "仰望湖面",
+        "lightwell" to "光井"
     )
 
     private fun sceneIndex(name: String): Int {
