@@ -64,15 +64,18 @@ fun ControlPanel(
         color = QuietPalette.Surface,
         contentColor = QuietPalette.TextPrimary
     ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Everything except the stop button scrolls; the stop button is
+            // pinned to the bottom so it is reachable without hunting.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
             ConnectionRow(state = state, connected = connected)
             Text(
-                text = "会话的启动/结束与退出在「场景」页；这里只管运动。",
+                text = "会话在「场景」页。",
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
             )
@@ -184,8 +187,10 @@ fun ControlPanel(
             }
 
 
+            }
 
-            // Always last, always visible: never nested behind a tab or a menu.
+            Spacer(Modifier.height(10.dp))
+            // Pinned: never nested behind a scroll, a tab or a menu.
             Button(
                 onClick = actions.onEmergencyStop,
                 enabled = connected && running,

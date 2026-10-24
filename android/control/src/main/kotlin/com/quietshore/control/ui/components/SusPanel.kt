@@ -57,7 +57,7 @@ fun SusPanel(
         ) {
             Text("SUS 量表", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "逐题播放，患者作答后再进入下一题；不需要连播。",
+                text = "逐题播放，作答后自动进入下一题。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = QuietPalette.TextSecondary
             )

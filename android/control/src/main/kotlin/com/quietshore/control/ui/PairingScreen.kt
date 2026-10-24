@@ -149,7 +149,7 @@ private fun PairingIntro(
         )
         Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
         Text(
-            text = "同一时间只有一台平板可以控制头显",
+            text = "先连头显，再开始会话",
             style = MaterialTheme.typography.titleMedium,
             color = QuietPalette.TextSecondary
         )
@@ -159,14 +159,6 @@ private fun PairingIntro(
         StepRow("2", "搜索并连接头显", compact)
         Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
         StepRow("3", "平板接管控制", compact)
-        if (!compact) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                text = "连接后由平板控制会话模式、漂浮强度、声音与急停",
-                style = MaterialTheme.typography.bodyMedium,
-                color = QuietPalette.TextSecondary
-            )
-        }
     }
 }
 
@@ -318,7 +310,7 @@ private fun PairingCard(
             }
 
             Text(
-                text = "一台平板只控制一台头显。患者说停就先按停止，再检查头显。",
+                text = "患者说停时：先按停止，再检查头显。",
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
             )

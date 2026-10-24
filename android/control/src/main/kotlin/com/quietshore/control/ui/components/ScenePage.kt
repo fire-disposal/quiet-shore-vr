@@ -17,6 +17,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -111,19 +117,40 @@ fun ScenePage(
                     enabled = enabled,
                     modifier = Modifier.weight(1f)
                 ) { Text("退出场景") }
+                // Leaving the system is the one irreversible action here: a
+                // second tap within three seconds confirms it.
+                var confirming by remember { mutableStateOf(false) }
+                LaunchedEffect(confirming) {
+                    if (confirming) {
+                        delay(3000)
+                        confirming = false
+                    }
+                }
                 OutlinedButton(
-                    onClick = actions.onExitSystem,
+                    onClick = {
+                        if (confirming) {
+                            confirming = false
+                            actions.onExitSystem()
+                        } else {
+                            confirming = true
+                        }
+                    },
                     enabled = enabled,
                     modifier = Modifier.weight(1f)
-                ) { Text("退出系统") }
+                ) {
+                    Text(
+                        if (confirming) "确认退出？" else "退出系统",
+                        color = if (confirming) QuietPalette.Danger else QuietPalette.TextPrimary
+                    )
+                }
             }
 
             Text("场景", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = if (sessionRunning) {
-                    "训练中不可切换场景；结束后再换"
+                    "训练中不可切换场景"
                 } else {
-                    "选好场景后按“启动训练”，患者只需戴好后按一次确认键"
+                    "选好场景后再启动训练"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
