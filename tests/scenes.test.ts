@@ -104,6 +104,8 @@ describe('scene budgets', () => {
     const moved = new THREE.Matrix4();
     rings.getMatrixAt(0, moved);
     expect(moved.equals(before)).toBe(false);
+    // Falling body: the fixtures sweep upward past the eye.
+    expect(moved.elements[13]).toBeGreaterThan(before.elements[13]);
     handle.dispose();
   });
 

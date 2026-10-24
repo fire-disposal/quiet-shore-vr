@@ -273,11 +273,13 @@ export function createLightWell(): LightWellParts {
       root.position.x = sway * 0.006 * Math.sin(swayTime * 0.51 + 1.1);
       root.position.z = sway * 0.005 * Math.sin(swayTime * 0.73 + 2.7);
 
+      // The body falls; the well stands still. So the fixtures sweep *upward*
+      // past the eye and recycle at the top of the band.
       const travel = dt * speed;
       for (let i = 0; i < RING_COUNT; i += 1) {
-        ringY[i] -= travel;
-        if (ringY[i] < -RING_BAND / 2) {
-          ringY[i] += RING_BAND;
+        ringY[i] += travel;
+        if (ringY[i] > RING_BAND / 2) {
+          ringY[i] -= RING_BAND;
         }
       }
       writeRings();
