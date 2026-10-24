@@ -210,40 +210,27 @@ export function createLightWell(): LightWellParts {
   bottom.position.y = EYE_Y - SHAFT_HEIGHT / 2;
   root.add(bottom);
 
-  // Each ring is a fixture of the well, not a floating hoop: a shallow cone
-  // shelf that meets the wall at its outer edge and protrudes about 0.7 m at
-  // its inner edge, with a lit rim on top.
-  const ribGeometry = new THREE.CylinderGeometry(
-    SHAFT_RADIUS - 0.72,
-    SHAFT_RADIUS - 0.04,
-    0.7,
-    24,
-    1,
-    true
-  );
-  {
-    const position = ribGeometry.getAttribute('position') as THREE.BufferAttribute;
-    const colors = new Float32Array(position.count * 3);
-    for (let i = 0; i < position.count; i += 1) {
-      const t = (position.getY(i) + 0.35) / 0.7;
-      const shade = 0.14 + 0.34 * t;
-      colors[i * 3] = shade;
-      colors[i * 3 + 1] = shade;
-      colors[i * 3 + 2] = shade;
-    }
-    ribGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  }
-  const ribMaterial = new THREE.MeshBasicMaterial({
+  // Directional wall hardware, not hoops. A uniform ring tells the eye "tube";
+  // a bracket on one side tells it "shaft with a direction", and its lateral
+  // parallax as it sweeps past is what sells vertical travel. Two boxes per
+  // fixture: a radial shelf and the gusset under it.
+  const shelfGeometry = new THREE.BoxGeometry(0.95, 0.09, 0.8);
+  shelfGeometry.translate(-0.475, 0, 0);
+  const gussetGeometry = new THREE.BoxGeometry(0.14, 0.5, 0.5);
+  gussetGeometry.translate(-0.07, -0.27, 0);
+  const hardwareMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
-    vertexColors: true,
     toneMapped: false,
-    fog: false,
-    side: THREE.DoubleSide
+    fog: false
   });
-  const ribs = new THREE.InstancedMesh(ribGeometry, ribMaterial, FIXTURE_COUNT);
-  ribs.name = 'lightwell-ribs';
-  ribs.frustumCulled = false;
-  root.add(ribs);
+  const shelves = new THREE.InstancedMesh(shelfGeometry, hardwareMaterial, FIXTURE_COUNT);
+  shelves.name = 'lightwell-shelves';
+  shelves.frustumCulled = false;
+  root.add(shelves);
+  const gussets = new THREE.InstancedMesh(gussetGeometry, hardwareMaterial, FIXTURE_COUNT);
+  gussets.name = 'lightwell-gussets';
+  gussets.frustumCulled = false;
+  root.add(gussets);
 
   // 32 tubular segments: at 8 m a 12-gon is visibly faceted, and a faceted
   // hoop sweeping past is the "chaotic" edge the eye grabs first.
@@ -275,21 +262,39 @@ export function createLightWell(): LightWellParts {
   detail.frustumCulled = false;
   root.add(detail);
 
-  // Centred band: fixtures live in [-FIXTURE_BAND/2, +FIXTURE_BAND/2].
+  // Centred band: fixtures live in [-FIXTURE_BAND/2, +FIXTURE_BAND/2], one
+  // azimuth each, spread by the golden angle so no two ever line up and the
+  // eye never finds a ladder pattern to lock onto.
   const fixtureY = new Float32Array(FIXTURE_COUNT);
+  const fixtureAzimuth = new Float32Array(FIXTURE_COUNT);
+  const GOLDEN_ANGLE = 2.399963229728653;
   for (let i = 0; i < FIXTURE_COUNT; i += 1) {
     fixtureY[i] = -FIXTURE_BAND / 2 + i * (FIXTURE_BAND / FIXTURE_COUNT);
+    fixtureAzimuth[i] = (i * GOLDEN_ANGLE) % (Math.PI * 2);
   }
   const dummy = new THREE.Object3D();
   const tint = new THREE.Color();
 
+  /** Wall radius a fixture hangs from; its shelf reaches 0.95 m inward. */
+  const WALL_R = SHAFT_RADIUS - 0.04;
+
   function writeFixtures(): void {
     for (let i = 0; i < FIXTURE_COUNT; i += 1) {
       const y = fixtureY[i] + EYE_Y;
-      dummy.position.set(0, y, 0);
-      dummy.rotation.set(0, 0, 0);
+      const azimuth = fixtureAzimuth[i];
+      // Local +X points at the axis: rotate by (pi - a) so the box grows inward.
+      const rotationY = Math.PI - azimuth;
+
+      // The box is translated to span [-0.95, 0] on local X, so anchoring the
+      // instance on the wall makes the shelf touch it and grow inward.
+      dummy.position.set(Math.cos(azimuth) * WALL_R, y, Math.sin(azimuth) * WALL_R);
+      dummy.rotation.set(0, rotationY, 0);
       dummy.updateMatrix();
-      ribs.setMatrixAt(i, dummy.matrix);
+      shelves.setMatrixAt(i, dummy.matrix);
+
+      dummy.position.set(Math.cos(azimuth) * WALL_R, y - 0.045, Math.sin(azimuth) * WALL_R);
+      dummy.updateMatrix();
+      gussets.setMatrixAt(i, dummy.matrix);
 
       // Fade into the wall at both ends of the band so the wrap is invisible:
       // a shelf that pops out of existence is exactly the jitter this design
@@ -298,10 +303,13 @@ export function createLightWell(): LightWellParts {
       const edge = Math.min(1, Math.min(u, 1 - u) * 6);
       const level = Math.min(0.48, 0.16 + 0.3 * u) * edge;
       tint.setRGB(level, level * 0.96, level * 0.9);
-      ribs.setColorAt(i, tint);
+      shelves.setColorAt(i, tint);
+      gussets.setColorAt(i, tint);
     }
-    ribs.instanceMatrix.needsUpdate = true;
-    if (ribs.instanceColor) ribs.instanceColor.needsUpdate = true;
+    shelves.instanceMatrix.needsUpdate = true;
+    if (shelves.instanceColor) shelves.instanceColor.needsUpdate = true;
+    gussets.instanceMatrix.needsUpdate = true;
+    if (gussets.instanceColor) gussets.instanceColor.needsUpdate = true;
   }
   writeFixtures();
 
@@ -373,8 +381,9 @@ export function createLightWell(): LightWellParts {
       topMaterial.dispose();
       bottomGeometry.dispose();
       bottomMaterial.dispose();
-      ribGeometry.dispose();
-      ribMaterial.dispose();
+      shelfGeometry.dispose();
+      gussetGeometry.dispose();
+      hardwareMaterial.dispose();
       detailGeometry.dispose();
       detailMaterial.dispose();
       if (detailTexture) detailTexture.dispose();

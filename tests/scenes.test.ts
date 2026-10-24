@@ -264,15 +264,22 @@ describe('scene budgets', () => {
 
   it('moves the wall fixtures upward only through the flow hook', () => {
     const { handle } = build('lightwell');
-    const fixtures = handle.root.getObjectByName('lightwell-ribs') as THREE.InstancedMesh;
+    const fixtures = handle.root.getObjectByName('lightwell-shelves') as THREE.InstancedMesh;
     const detail = handle.root.getObjectByName('lightwell-detail') as THREE.Mesh;
     expect(fixtures).toBeDefined();
     expect(detail).toBeDefined();
-    // No hoop can cross the camera plane: the tori are gone.
+    // No hoop can cross the camera plane: the tori are gone, and the fixtures
+    // are directional wall brackets, not rings.
     expect(handle.root.getObjectByName('lightwell-rings')).toBeUndefined();
+    expect(handle.root.getObjectByName('lightwell-gussets')).toBeDefined();
 
     const before = new THREE.Matrix4();
     fixtures.getMatrixAt(0, before);
+    // Fixtures hang on the wall: their anchor sits at the skin's radius, so the
+    // shelf touches it and reaches ~0.95 m inward (a floating shelf reads as a
+    // hoop fragment instead of architecture).
+    const anchor = new THREE.Vector3().setFromMatrixPosition(before);
+    expect(Math.hypot(anchor.x, anchor.z)).toBeCloseTo(8.96, 1);
     handle.update(0.5, 0.5);
     const still = new THREE.Matrix4();
     fixtures.getMatrixAt(0, still);
