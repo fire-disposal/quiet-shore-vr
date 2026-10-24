@@ -39,7 +39,7 @@ export function createCalibrationCard(options: CalibrationCardOptions): Calibrat
     height: 0.34,
     theme: options.theme,
     title: '记录起始朝向',
-    body: '请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录。',
+    body: '保持现在的姿势，看向前方。\n将以您面向的方向生成场景。\n按头显右侧按钮开始记录。',
     renderOrder: 1400
   });
   anchor.object.add(surface.object);
@@ -117,7 +117,7 @@ export function createCalibrationCard(options: CalibrationCardOptions): Calibrat
       surface.setBody(
         text
           ? `请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录。\n${text}`
-          : '请保持仰卧，平视前方。\n按下头显右侧的按钮开始记录。'
+          : '保持现在的姿势，看向前方。\n将以您面向的方向生成场景。\n按头显右侧按钮开始记录。'
       );
     },
     dispose(): void {

@@ -149,7 +149,7 @@ fun ControlPanel(
                 Text(
                     text = when {
                         running -> "会话由患者按头显确认键开始；这里只做结束与急停"
-                        calibrating -> "正在记录起始朝向：请患者保持仰卧、平视前方"
+                        calibrating -> "正在记录起始朝向：请患者看向前方，随后按此方向生成场景"
                         state.startPending -> "已打开页面，等待患者按一次确认键进入"
                         else -> "启动训练会在头显里打开页面，患者按一次确认键进入；退出场景回到头显控制台"
                     },
