@@ -38,8 +38,12 @@ fun PitchSideGauge(
 ) {
     val pitchDeg = if (pose == null) 0.0 else pose.pitch * 180.0 / Math.PI
     val fresh = pose != null && !stale
-    val accent = if (fresh) QuietPalette.Accent else QuietPalette.Warning
-    val label = String.format(Locale.US, "俯仰 %+d°", pitchDeg.roundToInt())
+    val accent = if (fresh) QuietPalette.Accent else QuietPalette.TextSecondary
+    val label = if (pose == null) {
+        "俯仰 —"
+    } else {
+        String.format(Locale.US, "俯仰 %+d°", pitchDeg.roundToInt())
+    }
 
     Surface(
         modifier = modifier.semantics(mergeDescendants = true) {

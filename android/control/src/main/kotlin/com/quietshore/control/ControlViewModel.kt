@@ -233,11 +233,21 @@ class ControlViewModel(application: Application) :
      * Extra view pitch. Yaw is echoed from the last reported state so a pitch
      * correction never also turns the patient's view.
      */
+    private var pitchJob: Job? = null
+
+    /**
+     * Extra view pitch. The slider fires per pixel; only the last value in a
+     * 120 ms window reaches the link, so a drag cannot flood the BLE queue.
+     */
     fun setViewPitch(degrees: Int) {
         val pitch = degrees.coerceIn(-30, 30)
-        val yaw = Math.round(_uiState.value.control.viewYaw).coerceIn(-180, 180)
         _uiState.update { it.copy(viewPitchTarget = pitch) }
-        sendCommand("view:orient:$yaw,$pitch")
+        pitchJob?.cancel()
+        pitchJob = viewModelScope.launch {
+            delay(120)
+            val yaw = Math.round(_uiState.value.control.viewYaw).coerceIn(-180, 180)
+            sendCommand("view:orient:$yaw,$pitch")
+        }
     }
 
     fun setFloatProfile(id: String) {

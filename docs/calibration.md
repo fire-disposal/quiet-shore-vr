@@ -10,10 +10,11 @@
 | 2 | 服务拉起页面 | `PortalService` → Firefox Reality | 入口页：场景名 + 一个圆 | 同上 |
 | 3 | 患者看向圆、按头显右侧中间按钮 | `start-screen.ts` / WebXR 手势 | 需要一次用户手势，浏览器强制 | 同上 |
 | 4 | 进入 XR，`enterVR()` | `App.ts` | 黑场 | `session=false`，仍"待机" |
-| 5 | 校准卡出现，**不自动记录** | `beginCalibration()`、`calibration-card.ts` | "记录起始朝向"+ 操作提示 | `calibrating=true` → "校准中" |
-| 6 | 技术员按平板"开始校准"，或患者按头显按钮（等效） | `triggerCalibration()` | 提示"正在记录，请保持不动…" | 同上 |
-| 6.1 | 稳定采样 900 ms，偏差 >6° 则整窗作废 | `calibration-sample.ts` | 卡片提示"检测到晃动，保持不动后再按一次" | 同上 |
-| 6.2 | 通过：`comfort.calibrate(均值四元数)` | `applyCalibration()` | 卡片消失，场景亮起 | "训练中" |
+| 5 | 校准卡出现，自动进入稳定判定 | `beginCalibration()`、`calibration-overlay.ts` | "保持不动…" + 进度条 | `calibrating=true` → "校准中" |
+| 6 | 连续 1.8 s 偏差 ≤6°（晃动即清零重来） | `stepCalibration()` | 进度条按稳定时长填充 | 同上 |
+| 6.1 | 倒计时 3.0 s，同时作为均值采样窗 | `calibration-sample.ts` | "即将记录…" | 同上 |
+| 6.2 | 自动记录：`comfort.calibrate(均值四元数)` | `applyCalibration()` | 卡片消失，场景亮起 | "训练中" |
+| 6.3 | 超时/作废 → 用当前朝向入场 | `finishCalibration()` | "使用当前朝向" | 同上 |
 | 7 | 漂浮开始 | `updateFloat()` | 世界缓慢升降 | 时钟开始走 |
 
 校准**没有消失**。它的三步都在：卡、记录、场景恢复。之所以"看起来没了"，是三个原因叠加：

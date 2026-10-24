@@ -71,6 +71,11 @@ fun ControlPanel(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             ConnectionRow(state = state, connected = connected)
+            Text(
+                text = "会话的启动/结束与退出在「场景」页；这里只管运动。",
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.TextSecondary
+            )
 
 
             Section("模式") {
