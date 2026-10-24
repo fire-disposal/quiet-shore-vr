@@ -2,7 +2,7 @@
 
 面向站立排尿困难者的场景化 WebXR 系统：患者佩戴 PICO G2 4K，站在按真实尺度搭建的卫生间里，技术员使用 Android 平板通过蓝牙远程控制会话模式、强度与声音。
 
-**状态**：v0.9.0（双场景 `washroom` / `shore`，控制端切换；状态机 v10；双端 debug 签名，待实机验收）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v0.9.0（三场景 `washroom` / `shore` / `lightwell`，控制端切换；状态机 v10；双端 debug 签名，待实机验收）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
 **烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.0.apk`、`artifacts/flash/quiet-shore-control-0.9.0.apk`，校验见同目录 `SHA256SUMS.txt`。
 
@@ -34,7 +34,7 @@
 - 会话：患者按确认键开始/停止；会话模式与场景都由技术员在平板选定，场景只在会话前切换。
 - 漂浮：世界竖向缓慢漂移（周期 11 s，满强度 ±35 mm）+ 近场微粒上飘，强度 0–3；停止时按 tau 0.25 s 渐出，1 s 内收住。
 - 朝向记录：会话开始后的第一帧取当前头部朝向作为站立中立帧，没有稳定检测与倒计时。
-- 场景：两个，由技术员在平板选择（会话前可换）。`washroom` 洁净立便间（默认）：2.4 × 2.4 × 2.55 m 单间、立便器、木隔屏、天光；`shore` 仰望湖面：天穹、一层漂移云、水面与日光、4 m 内木桩与芦苇。均无人物、无标牌。
+- 场景：两个，由技术员在平板选择（会话前可换）。`washroom` 洁净立便间（默认）：2.4 × 2.4 × 2.55 m 单间、立便器、木隔屏、天光；`shore` 仰望湖面：天穹、一层漂移云、水面与日光、4 m 内木桩与芦苇；`lightwell` 光井：18 m 直径、120 m 高竖井，二十道自发光环状构件向上掠过。均无人物、无标牌。
 - 双 APK 通信：头显前台服务广播 BLE 外设，平板自动扫描连接、`HELLO 2` / `WELCOME 2` 握手与 5 s PING 存活检测；state 为 20 字节 v10。
 - 平板界面：单屏——连接、会话时长、模式、开始/结束、漂浮强度、水声、常驻急停。
 - 未完成：新场景的仰视构图实机定稿；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。

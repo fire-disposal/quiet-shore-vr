@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createRandom, makeTexture } from '../shared/canvas';
 
 /**
  * Anchors for the near shore: three weathered mooring posts and two clumps of
@@ -17,27 +18,8 @@ const POST_COUNT = 3;
 const REED_CLUMPS = 2;
 const REEDS_PER_CLUMP = 7;
 
-function createRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return function random(): number {
-    state = (state * 1664525 + 1013904223) % 4294967296;
-    return state / 4294967296;
-  };
-}
-
 function woodTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const width = 64;
-  const height = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
+  return makeTexture((ctx, width, height) => {
   const ramp = ctx.createLinearGradient(0, 0, 0, height);
   ramp.addColorStop(0, '#6E5B45');
   ramp.addColorStop(0.55, '#5A4936');
@@ -56,25 +38,11 @@ function woodTexture(): THREE.CanvasTexture | null {
   wet.addColorStop(1, 'rgba(24, 30, 28, 0.55)');
   ctx.fillStyle = wet;
   ctx.fillRect(0, height * 0.72, width, height * 0.28);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
+  }, { width: 64, height: 256 });
 }
 
 function reedTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const width = 128;
-  const height = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
+  return makeTexture((ctx, width, height) => {
   ctx.clearRect(0, 0, width, height);
   const random = createRandom(0x7e3d);
   for (let i = 0; i < 9; i += 1) {
@@ -93,10 +61,7 @@ function reedTexture(): THREE.CanvasTexture | null {
     ctx.quadraticCurveTo(x + lean * 0.4, height * 0.55, x + lean, top);
     ctx.stroke();
   }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
+  }, { width: 128, height: 256 });
 }
 
 /** Two crossed quads: one draw, and it never disappears edge-on. */

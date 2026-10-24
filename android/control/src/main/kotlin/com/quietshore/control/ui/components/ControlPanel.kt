@@ -238,7 +238,7 @@ fun ControlPanel(
                     onSelect = { wire -> actions.onAnimDuration(wire.toIntOrNull() ?: 6000) }
                 )
                 Text(
-                    text = "起身到站立视角（面向马桶）；轨迹越长越温和",
+                    text = "起身到站立视角（面向立便器）；轨迹越长越温和",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
                 )

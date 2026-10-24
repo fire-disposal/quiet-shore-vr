@@ -119,6 +119,8 @@ export function autoPlan(
 
 export interface VoicePlayerApi {
   load(): Promise<boolean>;
+  /** Manifest index of a cue id, or -1; the wire carries this byte. */
+  indexOf(id: string): number;
   isReady(): boolean;
   setSet(set: VoiceSet): void;
   getSet(): VoiceSet;
@@ -334,6 +336,7 @@ export function createVoicePlayer(): VoicePlayerApi {
 
   return {
     load,
+    indexOf: (id: string) => manifest?.voices[set]?.files.findIndex((f) => f.id === id) ?? -1,
     isReady: () => manifest !== null,
     setSet(next: VoiceSet): void {
       if (next !== set) {

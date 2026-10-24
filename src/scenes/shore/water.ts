@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeTexture } from '../shared/canvas';
 
 /**
  * The lake, as one opaque quad plus one additive strip.
@@ -22,18 +23,7 @@ export interface WaterLayer {
 
 /** Canvas top row is v = 1: the far shore. Bottom is the water at the feet. */
 function waterTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const width = 256;
-  const height = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
+  return makeTexture((ctx, width, height) => {
   const ramp = ctx.createLinearGradient(0, 0, 0, height);
   ramp.addColorStop(0.0, '#C6BFAA');
   ramp.addColorStop(0.12, '#9FA99A');
@@ -72,25 +62,11 @@ function waterTexture(): THREE.CanvasTexture | null {
   }
   ctx.globalCompositeOperation = 'source-over';
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
+  }, { width: 256, height: 512 });
 }
 
 function glitterTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const width = 64;
-  const height = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
+  return makeTexture((ctx, width, height) => {
   const image = ctx.createImageData(width, height);
   for (let y = 0; y < height; y += 1) {
     const along = 1 - y / (height - 1);
@@ -106,10 +82,7 @@ function glitterTexture(): THREE.CanvasTexture | null {
     }
   }
   ctx.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
+  }, { width: 64, height: 256 });
 }
 
 export function createWater(): WaterLayer {

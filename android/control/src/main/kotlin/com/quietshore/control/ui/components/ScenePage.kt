@@ -22,9 +22,11 @@ import com.quietshore.control.ui.theme.QuietPalette
 /**
  * Scene page.
  *
- * The operator picks the scene here, before a session; the headset turns that
- * choice into the launch parameter, so the patient never chooses anything. The
- * list comes from the protocol's shipped scenes, not from a copy kept in the UI.
+ * The operator picks the scene here, before a session; the headset stores it as
+ * the launch parameter and forwards it to the page, so the patient never
+ * chooses anything. The list comes from the protocol's shipped scenes, not from
+ * a copy kept in the UI — `SCENE_LABELS` and `SCENE_IDS` are the single source
+ * for both ends.
  */
 @Composable
 fun ScenePage(
@@ -91,11 +93,6 @@ fun ScenePage(
                     }
                 }
             }
-            Text(
-                text = "更多场景上线后会自动出现在这里",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
         }
     }
 }

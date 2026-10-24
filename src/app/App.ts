@@ -328,6 +328,7 @@ export class QuietShoreApp {
           this.comfort?.updatePosture(dt);
         }
         this.cueFlow = this.computeCueFlow();
+        this.handle?.setFlow?.(this.cueFlow);
         this.postureCueState?.update(dt, this.headPose.position, this.cueFlow);
         this.updateFloat(dt);
         this.susPanel?.update(dt, now, this.headPose);

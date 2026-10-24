@@ -220,7 +220,7 @@ class ControlViewModel(application: Application) :
      * parameter, so picking a scene and pressing 启动 is the whole loop.
      */
     fun selectScene(id: String) {
-        val scene = id.lowercase(Locale.US)
+        val scene = id.lowercase(java.util.Locale.US)
         if (scene !in ControlProtocol.SCENE_LABELS) {
             return
         }

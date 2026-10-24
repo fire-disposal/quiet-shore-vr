@@ -57,7 +57,8 @@ stateDiagram-v2
 | id | 名称 | 用途 | 预算 |
 | --- | --- | --- | --- |
 | `washroom`（默认） | 洁净立便间 | 站立、面向立便器的真实尺度单间 | 10 draw / 568 三角形 / 0 透明 |
-| `shore` | 仰望湖面 | 仰卧视角的清晨湖面（穹顶、云、水面、木桩与芦苇） | 6 draw / ~630 三角形 / 3 透明 |
+| `shore` | 仰望湖面 | 仰卧视角的清晨湖面（穹顶、云、水面、木桩与芦苇） | 6 draw / 626 三角形 / 3 透明 |
+| `lightwell` | 光井 | 18 m 直径 / 120 m 高竖井，二十道自发光环状构件自下而上掠过；两端各在 60 m 外，看不到盖 | 5 draw / 2.6 k 三角形 / 0 透明 |
 
 切换链路：平板 `scene:<id>` → 头显校验并存入启动参数 → 转发给页面 → 页面在会话外重建场景；平板与镜像都从 state 回读已加载的场景，不各自记一份选择。
 
@@ -150,7 +151,7 @@ interface SceneHandle {
 ## 10. 现状事实（以代码为准，本轮改造后）
 
 - 场景：两个，`washroom`（站立卫生间）与 `shore`（仰望湖面），见 `src/scenes/`。`landscape`/`ward`/`bathroom`/`lab` 与 `legacy-handle` 已删除。
-- 场景预算：`washroom` 10 draw / 568 三角形 / 0 透明；`shore` 6 draw / ~630 三角形 / 3 透明。上限由 `tests/scenes.test.ts` 断言。
+- 场景预算：`washroom` 10 draw / 568 三角形 / 0 透明；`shore` 6 draw / 626 三角形 / 3 透明；`lightwell` 5 draw / 2.6 k 三角形 / 0 透明。上限由 `tests/scenes.test.ts` 断言。
 - 渲染档位：`quality` 参数、`quality-memory` 自适应降档、`?aa=`/`?scale=` 全部删除。`src/core/xr/renderer.ts` 固定 `antialias: true`、`XR_SCALE = 1.25`（超采样是 Gecko 78 上唯一可用的抗锯齿手段）。
 - 场景选择：由控制端主导。平板场景页发 `scene:<id>`，头显校验后存入 `HeadsetSettings` 并转发页面，页面在会话外重建；协议申报 `CAP_SCENE`，state byte 11 回报已加载场景索引，镜像跟随 state 重建。
 - 会话：`src/app/session.ts` 纯 reducer 驱动；确认键只做开始/停止；所有停止路径经 `App.dispatch` 收口，进入 `stopping` 后 1 s 转 `idle`。

@@ -26,12 +26,13 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
+import com.quietshore.control.protocol.ControlProtocol
 
 /**
- * Headset console. Four fixed pages: Home, Scenes, Settings, Help.
+ * Headset console. One fixed page: Home.
  *
- * No page scrolls. Scene choice is a first-class page for standalone use;
- * when a tablet owns control, the page explains that the tablet decides.
+ * No page scrolls. The card states which scene will be entered; the tablet
+ * owns that choice, and the console shows the stored selection.
  */
 class PortalActivity : Activity() {
     private enum class Page(val label: String, val description: String) {
@@ -40,13 +41,6 @@ class PortalActivity : Activity() {
         HELP("帮助", "使用方式与控制权"),
         SUS("SUS 量表", "系统可用性评分")
     }
-
-    private data class SceneChoice(
-        val id: String,
-        val name: String,
-        val tagline: String,
-        val tint: Int
-    )
 
     private companion object {
         /** One auto-launch per process: a recreate must not fight the browser. */
@@ -88,9 +82,12 @@ class PortalActivity : Activity() {
             "我需要先学习很多内容才能开始使用这个系统。"
         )
 
-        val SCENES = listOf(
-            SceneChoice("landscape", "湖畔晨岸", "水面、芦苇与清晨的光", 0xFF6F8B7A.toInt())
+        /** Tagline per scene; names come from `ControlProtocol.SCENE_LABELS`. */
+        val SCENE_TAGLINES = mapOf(
+            "washroom" to "墙面干净，光线柔和",
+            "shore" to "云、水面与一条日光"
         )
+        val SCENE_TINT = 0xFF6F8B7A.toInt()
     }
 
     private lateinit var content: FrameLayout
@@ -399,7 +396,6 @@ class PortalActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(28), dp(18), dp(28), dp(24))
         }
-        val choice = SCENES.first()
         val sceneCard = sectionCard()
         val sceneHead = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -408,16 +404,19 @@ class PortalActivity : Activity() {
         sceneHead.addView(label("即将进入", 11f, ACCENT, Typeface.BOLD, 0.12f))
         sceneCard.addView(sceneHead)
         sceneCard.addView(
-            View(this).apply { setBackgroundColor(choice.tint) },
+            View(this).apply { setBackgroundColor(SCENE_TINT) },
             LinearLayout.LayoutParams(dp(36), dp(3)).apply {
                 topMargin = dp(10)
                 bottomMargin = dp(10)
             }
         )
-        sceneCard.addView(label(choice.name, 26f, TEXT, Typeface.BOLD, 0.02f).apply {
+        val sceneId = HeadsetSettings.read(this).sceneId
+        val sceneName = ControlProtocol.SCENE_LABELS[sceneId] ?: ControlProtocol.DEFAULT_SCENE
+        val sceneTagline = SCENE_TAGLINES[sceneId] ?: ""
+        sceneCard.addView(label(sceneName, 26f, TEXT, Typeface.BOLD, 0.02f).apply {
             typeface = Typeface.create("serif", Typeface.BOLD)
         })
-        sceneCard.addView(label(choice.tagline, 13f, MUTED, Typeface.NORMAL, 0f).apply {
+        sceneCard.addView(label(sceneTagline, 13f, MUTED, Typeface.NORMAL, 0f).apply {
             setPadding(0, dp(5), 0, 0)
         })
         page.addView(sceneCard)

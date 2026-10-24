@@ -28,6 +28,12 @@ export interface SceneHandle {
   selectables: THREE.Object3D[];
   settings: SceneSettings;
   update(dt: number, elapsed: number): void;
+  /**
+   * Optional motion cue, 0..1. Scenes that manufacture self-motion (the light
+   * well) ease their environment flow towards this; the app feeds it the same
+   * value that drives the posture cue, so one stop silences both.
+   */
+  setFlow?(flow: number): void;
   dispose(): void;
   budget?: SceneBudget;
 }

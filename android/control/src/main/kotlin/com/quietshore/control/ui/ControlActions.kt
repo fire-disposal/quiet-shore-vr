@@ -10,6 +10,7 @@ data class ControlActions(
     val onExitScene: () -> Unit,
     /** Ends the session and returns the headset to the system launcher. */
     val onExitSystem: () -> Unit,
+    /** Scene choice, sent before a session; the headset stores it for the launch. */
     val onSceneSelect: (String) -> Unit,
     /** Breathing layer on the buoyancy; default on. */
     val onBreathToggle: (Boolean) -> Unit,

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createRandom, makeTexture as paintTexture } from '../shared/canvas';
 
 /**
  * Canvas surfaces for the washroom. Everything is procedural and small: a
@@ -10,33 +11,11 @@ import * as THREE from 'three';
  * lines and the soft mottling that stop the surfaces reading as flat colour.
  */
 
-/** Deterministic PRNG so the room looks identical on every launch. */
-export function createRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return function random(): number {
-    state = (state * 1664525 + 1013904223) % 4294967296;
-    return state / 4294967296;
-  };
-}
-
-function makeTexture(size: number, paint: (ctx: CanvasRenderingContext2D, size: number) => void): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
-  paint(ctx, size);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  return texture;
+function makeTexture(
+  size: number,
+  paint: (ctx: CanvasRenderingContext2D, size: number) => void
+): THREE.CanvasTexture | null {
+  return paintTexture((ctx) => paint(ctx, size), { size, repeat: [1, 1] });
 }
 
 /** Pale sage micro-cement: mottled, with a faint horizontal seam at waist height. */

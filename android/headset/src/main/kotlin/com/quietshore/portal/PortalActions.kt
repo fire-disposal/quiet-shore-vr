@@ -15,10 +15,9 @@ import java.net.Socket
 
 /** Immutable launch inputs; keeps Activity/Receiver from passing positional flags. */
 internal data class LaunchOptions(
-    /** Scene id chosen on the tablet; injected into the page bootstrap. */
+    /** Scene the operator picked on the tablet; injected into the page bootstrap. */
     val scene: String = ControlProtocol.DEFAULT_SCENE,
     val skipCalibration: Boolean = false,
-    val quality: String? = null,
     val showHud: Boolean = false,
     /** Comfort eye height in meters (1.2–1.9); the page applies it, never the headset. */
     val eyeHeight: Float = HeadsetSettings.DEFAULT_EYE_HEIGHT
@@ -43,7 +42,6 @@ internal object PortalActions {
 
     /** Launch parameters accepted by the activity, receiver and deep link. */
     const val EXTRA_SKIP_CALIBRATION = "skipCalibration"
-    const val EXTRA_QUALITY = "quality"
     const val EXTRA_PAGE = "page"
 
     /** 唯一已验证的 WebXR 入口：预装 Firefox Reality 10（Gecko 78）。 */
@@ -81,8 +79,7 @@ internal object PortalActions {
 
     /**
      * 进入训练：确保服务在跑，然后用显式 Intent 拉起 Firefox Reality。
-     * `scene` 选择初始场景，`skipCalibration`
-     * 映射为 `nocal=1`，`quality` 为 `low`/`high`。空值不下发。
+     * `scene` 选择初始场景，`skipCalibration` 映射为 `nocal=1`。
      */
     /** True only when the one WebXR-capable browser on this device exists. */
     fun isFirefoxAvailable(context: Context): Boolean = try {

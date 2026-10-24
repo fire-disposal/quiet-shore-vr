@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeTexture } from '../shared/canvas';
 
 /**
  * The whole sky in one draw: a gradient dome with the warm horizon, the sun
@@ -57,23 +58,10 @@ function paintSky(ctx: CanvasRenderingContext2D, width: number, height: number):
 }
 
 function skyTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const width = 1024;
-  const height = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
-  paintSky(ctx, width, height);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
+  return makeTexture(
+    (ctx, width, height) => paintSky(ctx, width, height),
+    { width: 1024, height: 512 }
+  );
 }
 
 export function createDome(): DomeLayer {

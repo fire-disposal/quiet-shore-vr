@@ -897,9 +897,9 @@ class PortalService : Service() {
                     Log.w(TAG, "rejected scene: $command")
                     return false
                 }
-                // The scene is stored here, not only forwarded: it is the launch
-                // parameter for the next `enter`, so the operator can pick a
-                // different scene and go back in without touching the headset.
+                // Stored, not only forwarded: it is the launch parameter for the
+                // next `enter`, so the operator can change scene and go back in
+                // without touching the headset.
                 synchronized(settingsLock) {
                     HeadsetSettings.save(this, HeadsetSettings.read(this).copy(sceneId = id))
                 }

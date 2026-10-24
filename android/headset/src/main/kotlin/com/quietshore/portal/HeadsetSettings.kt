@@ -41,11 +41,11 @@ internal data class HeadsetSettings(
 
         fun read(context: Context): HeadsetSettings {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val eyeHeight = prefs.getFloat(KEY_EYE_HEIGHT, DEFAULT_EYE_HEIGHT)
+                .takeIf { isValidEyeHeight(it) } ?: DEFAULT_EYE_HEIGHT
             val scene = prefs.getString(KEY_SCENE, null)
                 ?.takeIf { it in ControlProtocol.SCENE_IDS }
                 ?: ControlProtocol.DEFAULT_SCENE
-            val eyeHeight = prefs.getFloat(KEY_EYE_HEIGHT, DEFAULT_EYE_HEIGHT)
-                .takeIf { isValidEyeHeight(it) } ?: DEFAULT_EYE_HEIGHT
             return HeadsetSettings(
                 sceneId = scene,
                 skipCalibration = prefs.getBoolean(KEY_SKIP, false),

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeTexture } from '../shared/canvas';
 
 /**
  * Cloud deck for a patient on their back: one horizontal sheet overhead,
@@ -28,17 +29,7 @@ export interface CloudLayer {
 }
 
 function cloudTexture(): THREE.CanvasTexture | null {
-  if (typeof document === 'undefined' || !document.createElement) {
-    return null;
-  }
-  const size = 1024;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return null;
-  }
+  return makeTexture((ctx, size) => {
   ctx.clearRect(0, 0, size, size);
   // Deterministic: the same sky on every launch.
   let seed = 20261024;
@@ -110,13 +101,7 @@ function cloudTexture(): THREE.CanvasTexture | null {
     }
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(2, 2);
-  return texture;
+  }, { size: 1024, repeat: [2, 2] });
 }
 
 export function createClouds(): CloudLayer {

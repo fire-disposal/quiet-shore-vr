@@ -32,7 +32,7 @@ function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
 describe('scene registry', () => {
   it('ships the two operator-selectable scenes in wire order', () => {
     // Index order is the BLE state byte 11 contract: append only.
-    expect(SCENES.map((scene) => scene.id)).toEqual(['washroom', 'shore']);
+    expect(SCENES.map((scene) => scene.id)).toEqual(['washroom', 'shore', 'lightwell']);
     expect(SCENE.id).toBe('washroom');
   });
 
@@ -87,6 +87,23 @@ describe('scene budgets', () => {
     expect(handle.root.getObjectByName('shore-reeds')).toBeDefined();
     // Only the cloud sheet, the sun path and the reeds may blend.
     expect(transparentMeshes(handle.root).length).toBeLessThanOrEqual(3);
+    handle.dispose();
+  });
+
+  it('drives the light well only through its flow hook', () => {
+    const { handle } = build('lightwell');
+    const rings = handle.root.getObjectByName('lightwell-rings') as THREE.InstancedMesh;
+    const before = new THREE.Matrix4();
+    rings.getMatrixAt(0, before);
+    handle.update(0.5, 0.5);
+    const still = new THREE.Matrix4();
+    rings.getMatrixAt(0, still);
+    expect(still.equals(before)).toBe(true);
+    handle.setFlow?.(1);
+    handle.update(0.5, 1);
+    const moved = new THREE.Matrix4();
+    rings.getMatrixAt(0, moved);
+    expect(moved.equals(before)).toBe(false);
     handle.dispose();
   });
 

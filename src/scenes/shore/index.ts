@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { SceneDefinition, SceneHandle, SceneSettings } from '../../core/scene/contract';
-import { SceneBudget, measureObject } from '../../core/geometry/budget';
+import type { SceneSettings } from '../../core/scene/contract';
+import { defineScene } from '../shared/define-scene';
 import { createDome } from './dome';
 import { createClouds } from './clouds';
 import { createWater } from './water';
@@ -26,19 +26,21 @@ const FOG_COLOR = 0xe7d7bd;
 const FOG_NEAR = 48;
 const FOG_FAR = 135;
 
-export const shoreScene: SceneDefinition = {
-  id: 'shore',
-  name: { zh: '仰望湖面', en: 'Looking Up at the Lake' },
-  tagline: {
-    zh: '云慢慢走，水面一点点亮起来，呼吸跟着慢下来。',
-    en: 'The clouds drift, the water brightens, and the breathing slows with it.'
+export const shoreScene = defineScene(
+  {
+    id: 'shore',
+    name: { zh: '仰望湖面', en: 'Looking Up at the Lake' },
+    tagline: {
+      zh: '云慢慢走，水面一点点亮起来，呼吸跟着慢下来。',
+      en: 'The clouds drift, the water brightens, and the breathing slows with it.'
+    },
+    description: {
+      zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条柔和的日光，近处有三根木桩与两丛芦苇作为参照。',
+      en: 'A lakeside morning built for a supine view: a brightening sky overhead, a slowly drifting cloud deck, a low sun, and water running into haze with a soft sun path on it. Three mooring posts and two reed clumps anchor the near field.'
+    },
+    audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true }
   },
-  description: {
-    zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条柔和的日光，近处有三根木桩与两丛芦苇作为参照。',
-    en: 'A lakeside morning built for a supine view: a brightening sky overhead, a slowly drifting cloud deck, a low sun, and water running into haze with a soft sun path on it. Three mooring posts and two reed clumps anchor the near field.'
-  },
-  audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true },
-  build: function (): SceneHandle {
+  function () {
     const root = new THREE.Group();
     root.name = 'shore';
 
@@ -58,19 +60,10 @@ export const shoreScene: SceneDefinition = {
     };
 
     let elapsed = 0;
-    const stats = measureObject(root);
 
     return {
       root,
-      selectables: [],
       settings,
-      budget: new SceneBudget({
-        geometries: stats.geometries,
-        materials: stats.materials,
-        textures: stats.textures,
-        drawCalls: stats.drawCalls,
-        triangles: stats.triangles
-      }),
       update: function (dt: number): void {
         elapsed += dt;
         clouds.update(dt, elapsed);
@@ -81,10 +74,7 @@ export const shoreScene: SceneDefinition = {
         water.dispose();
         dome.dispose();
         root.clear();
-        root.removeFromParent();
-        settings.background = null;
-        settings.fog = null;
       }
     };
   }
-};
+);

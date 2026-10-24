@@ -34,7 +34,6 @@ internal object PortalSession {
                 ?: ControlProtocol.DEFAULT_SCENE
         )
         put("skipCalibration", current.skipCalibration)
-        if (current.quality.isNullOrEmpty()) put("quality", JSONObject.NULL) else put("quality", current.quality)
         put("showHud", current.showHud)
         // Sanitize here too: the page must never receive an unusable eye height
         // from a stale prefs file or a launch intent built elsewhere.

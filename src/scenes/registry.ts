@@ -1,4 +1,5 @@
 import type { SceneDefinition } from '../core/scene/contract';
+import { lightwellScene } from './lightwell/index';
 import { shoreScene } from './shore/index';
 import { washroomScene } from './washroom/index';
 
@@ -11,7 +12,7 @@ import { washroomScene } from './washroom/index';
  * Scene ids must stay in sync with `ControlProtocol.SCENE_IDS`, whose index
  * order is the wire contract for state byte 11 (append only).
  */
-export const SCENES: readonly SceneDefinition[] = [washroomScene, shoreScene];
+export const SCENES: readonly SceneDefinition[] = [washroomScene, shoreScene, lightwellScene];
 
 /** Default when nothing was chosen: the standing washroom. */
 export const SCENE: SceneDefinition = washroomScene;
