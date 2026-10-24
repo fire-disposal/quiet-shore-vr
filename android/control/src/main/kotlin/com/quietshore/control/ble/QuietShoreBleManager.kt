@@ -137,13 +137,27 @@ class QuietShoreBleManager(
                     .fail { _, code -> events.onFailure("启用头显通知失败，错误码 $code") }
                     .enqueue()
             }
+            // Both outcomes must continue into the notification queue: on the
+            // success path the old code never did, so the link sat in
+            // AUTHENTICATING until the watchdog gave up.
+            var notificationsStarted = false
+            fun continueAfterMtu() {
+                if (notificationsStarted) {
+                    return
+                }
+                notificationsStarted = true
+                startNotifications()
+            }
             requestMtu(REQUEST_MTU)
-                .with { _, mtu -> events.onMtu(mtu, 0) }
+                .with { _, negotiated ->
+                    events.onMtu(negotiated, 0)
+                    continueAfterMtu()
+                }
                 .fail { _, code ->
                     // A narrow MTU does not stop the link, but the state frame
                     // will not fit: say so instead of failing silently.
-                    events.onMtu(mtu, code)
-                    startNotifications()
+                    events.onMtu(0, code)
+                    continueAfterMtu()
                 }
                 .enqueue()
         }
