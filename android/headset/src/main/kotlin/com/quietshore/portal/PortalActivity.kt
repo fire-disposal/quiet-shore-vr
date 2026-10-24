@@ -679,11 +679,10 @@ class PortalActivity : Activity() {
     private fun buildAboutPage(): View {
         val page = pageColumn()
         val card = sectionCard()
-        card.addView(label("接下来会发生什么", 18f, TEXT, Typeface.BOLD, 0f))
-        card.addView(label("您会看到一片缓慢移动的景物，身体会跟着轻轻起伏，还有水声。", 16f, TEXT, Typeface.NORMAL, 0.02f))
-        card.addView(label("需要进入时，看向画面中间的圆，按下头显右侧的按钮。", 16f, TEXT, Typeface.NORMAL, 0.02f))
-        card.addView(label("任何时刻觉得不舒服，直接说话；工作人员会立刻停下。", 16f, TEXT, Typeface.NORMAL, 0.02f))
-        card.addView(label("这是一个实验性项目，您的反馈会帮助我们改进。谢谢您帮忙。", 16f, MUTED, Typeface.NORMAL, 0.02f))
+        card.addView(label("尊敬的患者，您好", 18f, TEXT, Typeface.BOLD, 0f))
+        card.addView(label("我们正在进行一项 VR 场景体验的技术测试，想了解它在卧床时的使用情况。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        card.addView(label("开始与结束都由工作人员操作，您随时可以提出停止。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        card.addView(label("结束后想请您说几句真实感受，帮助我们改进。谢谢您。", 16f, MUTED, Typeface.NORMAL, 0.02f))
         page.addView(card)
         return page
     }
