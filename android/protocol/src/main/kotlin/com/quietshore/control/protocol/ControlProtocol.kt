@@ -22,8 +22,12 @@ object ControlProtocol {
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
-    const val stateMaxBytes: Int = 20
-    const val stateVersion: Int = 10
+    /** v11 frame size; needs an MTU of at least 31 to reach the tablet. */
+    const val stateMaxBytes: Int = 28
+    const val stateVersion: Int = 11
+    /** Fallback frame when the link was never widened past the default MTU. */
+    const val legacyStateBytes: Int = 20
+    const val legacyStateVersion: Int = 10
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -531,9 +535,55 @@ object ControlProtocol {
         if (state.cueEnabled) flags = flags or 8
         if (state.sitUpActive) flags = flags or 16
         if (state.postureMode) flags = flags or 32
-        flags = flags or ((profileIndex(state.floatProfile) and 0x3) shl 6)
-        val buffer = ByteBuffer.allocate(stateMaxBytes).order(ByteOrder.LITTLE_ENDIAN)
+        if (state.hold) flags = flags or 64
+        if (state.voiceAuto) flags = flags or 128
+
+        val packed = (state.viewAnim.code and 0x3) or
+            ((state.viewPreset.code and 0x7) shl 2) or
+            ((state.envelope.code and 0x3) shl 5)
+
+        val buffer = ByteBuffer.wrap(target).order(ByteOrder.LITTLE_ENDIAN)
         buffer.put(stateVersion.toByte())
+        buffer.put(flags.toByte())
+        // level 2b | profile 2b | scene index 4b — the scene stays on the fast
+        // channel until a config channel exists, because the mirror follows it.
+        buffer.put(((state.floatLevel.coerceIn(0, 3)) or
+            ((profileIndex(state.floatProfile) and 0x3) shl 2) or
+            ((sceneIndex(state.scene) and 0xF) shl 4)).toByte())
+        buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(120, 190).toByte())
+        buffer.put(state.floatMm.roundToInt().coerceIn(-127, 127).toByte())
+        buffer.put((state.swayDeg * 10f).roundToInt().coerceIn(-127, 127).toByte())
+        buffer.put(if (state.voiceId < 0) 0xFF.toByte() else (state.voiceId and 0x3F).toByte())
+        buffer.put(state.posturePitch.roundToInt().coerceIn(-128, 127).toByte())
+        buffer.put(state.postureRoll.roundToInt().coerceIn(-128, 127).toByte())
+        buffer.put((state.postureRise * 100f).roundToInt().coerceIn(0, 120).toByte())
+        buffer.put((state.postureProgress * 100f).roundToInt().coerceIn(0, 100).toByte())
+        buffer.put(state.viewPitch.roundToInt().coerceIn(-128, 127).toByte())
+        buffer.put(packed.toByte())
+        buffer.putShort(state.viewYaw.roundToInt().coerceIn(-32768, 32767).toShort())
+        buffer.putShort(state.worldYaw.roundToInt().coerceIn(-32768, 32767).toShort())
+        buffer.putShort(state.worldPitch.roundToInt().coerceIn(-32768, 32767).toShort())
+        buffer.put(state.worldRoll.roundToInt().coerceIn(-128, 127).toByte())
+        buffer.putShort((nowMs and 0xFFFF).toShort())
+        buffer.putShort((seq and 0xFFFF).toShort())
+        buffer.put((state.cueIntensity * 100f).roundToInt().coerceIn(0, 100).toByte())
+        buffer.put(state.calibrationConfidence.roundToInt().coerceIn(0, 100).toByte())
+        buffer.putShort(state.elapsedSec.coerceIn(0, 65535).toShort())
+        return target
+    }
+
+    /** v10 frame, used when the MTU stayed at the 23-byte default. */
+    fun encodeLegacyState(state: ControlState): ByteArray {
+        var flags = 0
+        if (state.session) flags = flags or 1
+        if (state.calibrating) flags = flags or 2
+        if (state.audioMuted) flags = flags or 4
+        if (state.cueEnabled) flags = flags or 8
+        if (state.sitUpActive) flags = flags or 16
+        if (state.postureMode) flags = flags or 32
+        flags = flags or ((profileIndex(state.floatProfile) and 0x3) shl 6)
+        val buffer = ByteBuffer.allocate(legacyStateBytes).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.put(legacyStateVersion.toByte())
         buffer.put(state.floatLevel.coerceIn(0, 3).toByte())
         buffer.put(flags.toByte())
         buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(120, 190).toByte())
@@ -553,19 +603,85 @@ object ControlProtocol {
         return buffer.array()
     }
 
-    fun decodeState(bytes: ByteArray): ControlState? {
-        if (bytes.size != stateMaxBytes) return null
+    /** Accepts both frame shapes: 28 bytes (v11) and 20 bytes (v10). */
+    fun decodeState(bytes: ByteArray): ControlState? = when {
+        bytes.size == stateMaxBytes -> decodeStateV11(bytes)
+        bytes.size == legacyStateBytes -> decodeLegacyState(bytes)
+        else -> null
+    }
+
+    private fun decodeStateV11(bytes: ByteArray): ControlState? {
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if ((buffer.get().toInt() and 0xFF) != stateVersion) return null
+        val flags = buffer.get().toInt() and 0xFF
+        val levels = buffer.get().toInt() and 0xFF
+        val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val floatMm = buffer.get().toFloat()
+        val swayDeg = buffer.get().toFloat() / 10f
+        val voiceRaw = buffer.get().toInt() and 0xFF
+        val posturePitch = buffer.get().toFloat()
+        val postureRoll = buffer.get().toFloat()
+        val postureRise = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val postureProgress = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val viewPitch = buffer.get().toFloat()
+        val packed = buffer.get().toInt() and 0xFF
+        val viewYaw = buffer.short.toInt().toFloat()
+        val worldYaw = buffer.short.toInt().toFloat()
+        val worldPitch = buffer.short.toInt().toFloat()
+        val worldRoll = buffer.get().toFloat()
+        val tMs = buffer.short.toInt() and 0xFFFF
+        val seq = buffer.short.toInt() and 0xFFFF
+        val cueIntensity = (buffer.get().toInt() and 0xFF).toFloat() / 100f
+        val confidence = (buffer.get().toInt() and 0xFF).toFloat()
+        val elapsedSec = buffer.short.toInt() and 0xFFFF
+        if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
+        return ControlState(
+            session = flags and 1 != 0,
+            calibrating = flags and 2 != 0,
+            audioMuted = flags and 4 != 0,
+            cueEnabled = flags and 8 != 0,
+            sitUpActive = flags and 16 != 0,
+            postureMode = flags and 32 != 0,
+            hold = flags and 64 != 0,
+            voiceAuto = flags and 128 != 0,
+            floatLevel = levels and 0x3,
+            floatProfile = profileName((levels shr 2) and 0x3),
+            scene = SCENE_IDS.getOrElse((levels shr 4) and 0xF) { DEFAULT_SCENE },
+            eyeHeight = eyeHeight,
+            floatMm = floatMm,
+            swayDeg = swayDeg,
+            voiceId = if (voiceRaw == 0xFF) -1 else voiceRaw and 0x3F,
+            posturePitch = posturePitch,
+            postureRoll = postureRoll,
+            postureRise = postureRise,
+            postureProgress = postureProgress,
+            viewPitch = viewPitch,
+            viewYaw = viewYaw,
+            worldYaw = worldYaw,
+            worldPitch = worldPitch,
+            worldRoll = worldRoll,
+            viewAnim = ViewAnim.fromCode(packed and 0x3),
+            viewPreset = ViewPreset.fromCode((packed shr 2) and 0x7),
+            envelope = Envelope.entries.getOrElse((packed shr 5) and 0x3) { Envelope.IDLE },
+            cueIntensity = cueIntensity,
+            calibrationConfidence = confidence,
+            elapsedSec = elapsedSec,
+            tMs = tMs,
+            seq = seq
+        )
+    }
+
+    private fun decodeLegacyState(bytes: ByteArray): ControlState? {
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        if ((buffer.get().toInt() and 0xFF) != legacyStateVersion) return null
         val floatLevel = (buffer.get().toInt() and 0xFF).coerceIn(0, 3)
         val flags = buffer.get().toInt() and 0xFF
         val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val posturePitch = buffer.get().toInt().toFloat()
-        val postureRoll = buffer.get().toInt().toFloat()
+        val posturePitch = buffer.get().toFloat()
+        val postureRoll = buffer.get().toFloat()
         val postureRise = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val postureProgress = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        // Signed byte: keep the JVM sign extension. The envelope is the page's.
-        val viewPitch = buffer.get().toInt().toFloat()
+        val viewPitch = buffer.get().toFloat()
         val viewAnim = ViewAnim.fromCode(buffer.get().toInt() and 0xFF)
         val cueIntensity = (buffer.get().toInt() and 0xFF).toFloat() / 100f
         val sceneIndex = buffer.get().toInt() and 0xFF
@@ -683,6 +799,9 @@ enum class ViewPreset(val code: Int, val wire: String) {
  * Coarse phase of the page's view-animation player. The tablet only displays
  * it; the page owns the actual playback and its fixed durations.
  */
+/** Coarse buoyancy envelope reported by the page. */
+enum class Envelope(val code: Int) { IDLE(0), ATTACK(1), HOLD(2), RELEASE(3) }
+
 enum class ViewAnim(val code: Int, val wire: String) {
     IDLE(0, "idle"),
     PLAYING(1, "playing"),
@@ -735,5 +854,24 @@ data class ControlState(
     val viewPreset: ViewPreset = ViewPreset.NONE,
     val cueIntensity: Float = 1f,
     /** Scene currently loaded on the page; the tablet shows this as its choice. */
-    val scene: String = ControlProtocol.DEFAULT_SCENE
+    val scene: String = ControlProtocol.DEFAULT_SCENE,
+    /** Buoyancy offset the page has **already applied**, in millimetres. */
+    val floatMm: Float = 0f,
+    /** Horizon pitch the page has **already applied**, in degrees. */
+    val swayDeg: Float = 0f,
+    /** Voice cue id currently speaking, or -1 for none. */
+    val voiceId: Int = -1,
+    /** Voice auto mode is driving the cue schedule. */
+    val voiceAuto: Boolean = false,
+    /** Motion frozen without ending the session. */
+    val hold: Boolean = false,
+    /** Calibration confidence reported by the page, 0–100. */
+    val calibrationConfidence: Float = 0f,
+    /** Seconds since the session started, 0 while idle. */
+    val elapsedSec: Int = 0,
+    /** Coarse envelope phase (attack/hold/release) driving the buoyancy. */
+    val envelope: Envelope = Envelope.IDLE,
+    /** Sender clock and counter; assigned at encode time. */
+    val tMs: Int = 0,
+    val seq: Int = 0
 )

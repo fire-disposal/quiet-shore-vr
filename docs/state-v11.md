@@ -64,7 +64,7 @@ ATT 默认 MTU 23 只是**初始值**：Android 5+ / PICO G2（Android 8.1）都
 | --- | --- | --- | --- |
 | 0 | version | `11` | 不匹配直接丢弃并提示，不猜测 |
 | 1 | flags | bit0 session · bit1 calibrating · bit2 muted · bit3 cue · bit4 sitUp · bit5 posture · **bit6 hold** · **bit7 autoVoice** | 保持与自动模式从此可见 |
-| 2 | level | 0–100 % | 无级强度（取代 0–3） |
+| 2 | 打包 | level 2b · profile 2b · scene 4b | 场景留在快通道，镜像要跟它；无级强度的百分比在高 4 位预留 |
 | 3 | eyeHeight | cm，120–190 | |
 | 4 | **floatMm** | int8，±127 mm | **已应用**的竖直偏移，镜像直接加 |
 | 5 | **swayDeg10** | int8，0.1°（±12.7°） | **已应用**的地平线摆 |
@@ -74,6 +74,7 @@ ATT 默认 MTU 23 只是**初始值**：Android 5+ / PICO G2（Android 8.1）都
 | 10 | postureProgress | % | |
 | 11 | viewPitch | int8 度 | 已应用的视图仰角 |
 | 12 | 打包 | viewAnim 2b · viewPreset 3b · envelope 2b（idle/attack/hold/release）· 保留 1b | 4 个枚举共 7 bit |
+| 25 | calibrationConfidence | % | 校准卡片与状态面板都用它 |
 | 13–14 | viewYaw | int16 度 | |
 | 15–16 | worldYaw | int16 度 | |
 | 17–18 | worldPitch | int16 度 | |
@@ -158,6 +159,19 @@ sequenceDiagram
 | 拖动跟随滞后 | 平板记录发送时刻，头显回读时间戳 | ≤150 ms，无过冲 |
 | 端到端延迟 | `PING/PONG` × 2 + 一帧 | ≤200 ms |
 | 主观 | 3 名员工盲测"起步是否有拽一下" | ≥2/3 认为平滑 |
+
+## 5.4 已实现 / 未实现
+
+| 项 | 状态 |
+| --- | --- |
+| 28 B 帧、双解码（v11/v10） | 已实现，`StateFrameTest` 8 条 |
+| `tMs`/`seq` 由头显赋值 | 已实现 |
+| `floatMm`/`swayDeg` 端到端 | 已实现：页面快照 → 服务解析 → 帧 → 平板 → 镜像 |
+| `calibrationConfidence` | 已实现（v10 里没有这一字节） |
+| MTU 降级 | 已实现：`onMtuChanged` <31 时发 v10 帧 |
+| `voiceId` / `hold` / `envelope` | 字段已就位，页面暂未上报（语音面板与"保持"落地时接上） |
+| `pose.roll` | 未实现：telemetry 是 5×float，没有 roll，需另行决定 |
+| 配置通道（TLV） | 未实现；当前只有 state 一条快通道 |
 
 ## 6 迁移顺序
 

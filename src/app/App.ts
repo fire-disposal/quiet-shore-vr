@@ -100,6 +100,8 @@ export class QuietShoreApp {
   private readonly renderMonitor = new RenderMonitor();
   private readonly voice = createVoicePlayer();
   private voiceAuto = false;
+  /** Wall clock at motion onset; 0 while idle. Drives the reported session clock. */
+  private sessionStartedAt = 0;
   private readonly voiceTimers: number[] = [];
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly worldQuat = new THREE.Quaternion();
@@ -137,7 +139,10 @@ export class QuietShoreApp {
     cueEnabled: false,
     cueIntensity: 0,
     floatLevel: 1,
-    floatProfile: 'b'
+    floatProfile: 'b',
+    floatMm: 0,
+    swayDeg: 0,
+    sessionSec: 0
   };
   private controlMode = false;
 
@@ -549,8 +554,11 @@ export class QuietShoreApp {
   private dispatch(event: SessionEvent): void {
     const previous = this.lifecycle.phase;
     this.lifecycle = reduceSession(this.lifecycle, event);
-    if (previous === 'calibrating' && isActive(this.lifecycle) && this.voiceAuto) {
-      this.startVoicePlan();
+    if (previous === 'calibrating' && isActive(this.lifecycle)) {
+      this.sessionStartedAt = performance.now();
+      if (this.voiceAuto) {
+        this.startVoicePlan();
+      }
     }
     if (this.lifecycle.phase !== 'stopping' || previous === 'stopping') {
       return;
@@ -560,6 +568,7 @@ export class QuietShoreApp {
     this.stopSitUp();
     this.voice.stop();
     this.clearVoicePlan();
+    this.sessionStartedAt = 0;
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
 
@@ -1478,6 +1487,12 @@ export class QuietShoreApp {
     input.worldRollDeg = THREE.MathUtils.radToDeg(this.worldEuler.z);
     const comfortState = this.comfort?.getState();
     input.confidence = comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0);
+    // Applied motion, not the requested level: the mirror adds these verbatim.
+    input.floatMm = this.floatOffsetApplied * 1000;
+    input.swayDeg = this.floatSwayApplied;
+    input.sessionSec = this.sessionStartedAt > 0
+      ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
+      : 0;
     input.sitUp = this.sitUpMode ? this.sitUpPath : null;
     input.sitUpT = this.sitUpMotion.t;
     input.sitUpTarget = this.sitUpMotion.target;

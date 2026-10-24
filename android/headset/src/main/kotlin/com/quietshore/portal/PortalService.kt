@@ -1056,7 +1056,13 @@ class PortalService : Service() {
             // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
             viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
             viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),
-            cueIntensity = finite("cueIntensity", 1f)
+            cueIntensity = finite("cueIntensity", 1f),
+            calibrationConfidence = finite("calibrationConfidence", 0f).coerceIn(0f, 100f),
+            // Applied motion, reported by the page: the tablet renders these
+            // verbatim instead of re-deriving a curve it cannot see.
+            floatMm = finite("floatMm", 0f).coerceIn(-127f, 127f),
+            swayDeg = finite("swayDeg", 0f).coerceIn(-12.7f, 12.7f),
+            elapsedSec = json.optInt("elapsedSec", 0).coerceIn(0, 65535)
         )
         lastState = state
         bluetooth?.publishState(state)

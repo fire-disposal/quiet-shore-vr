@@ -130,6 +130,9 @@ internal class BluetoothControl(
     private var statusCharacteristic: BluetoothGattCharacteristic? = null
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
+    /** Negotiated ATT MTU; 23 is the default and only fits the legacy frame. */
+    private var mtu = 23
+    private var stateSeq = 0
     private var advertiser: BluetoothLeAdvertiser? = null
 
     @Volatile
@@ -268,7 +271,7 @@ internal class BluetoothControl(
             )
             val state = notifyCharacteristic(
                 ControlProtocol.stateUuid,
-                ControlProtocol.encodeState(lastState)
+                encodeStateFrame(lastState)
             )
 
             commandCharacteristic = command
@@ -433,7 +436,7 @@ internal class BluetoothControl(
 
     fun publishState(state: ControlState) {
         lastState = state
-        notifyValue(stateCharacteristic, ControlProtocol.encodeState(state))
+        notifyValue(stateCharacteristic, encodeStateFrame(state))
     }
 
     private fun setState(value: String) {
@@ -442,6 +445,21 @@ internal class BluetoothControl(
     }
 
     /** Telemetry and state go only to the current controller. */
+    /**
+     * v11 is 28 bytes and needs an MTU of at least 31; a link that never widened
+     * past the default still gets the 20-byte v10 frame, which the tablet also
+     * decodes. The fallback is visible in the app log, never silent.
+     */
+    private fun encodeStateFrame(state: ControlState): ByteArray {
+        val seq = stateSeq++ and 0xFFFF
+        val now = (android.os.SystemClock.elapsedRealtime() and 0xFFFFL).toInt()
+        return if (mtu >= ControlProtocol.stateMaxBytes + 3) {
+            ControlProtocol.encodeState(state, now, seq)
+        } else {
+            ControlProtocol.encodeLegacyState(state)
+        }
+    }
+
     private fun notifyValue(
         characteristic: BluetoothGattCharacteristic?,
         value: ByteArray
@@ -552,7 +570,7 @@ internal class BluetoothControl(
         }
         // Always replay the snapshot: a reconnecting tablet may have missed
         // the 1 Hz state while notifications were being enabled.
-        notifyValue(stateCharacteristic, ControlProtocol.encodeState(lastState))
+        notifyValue(stateCharacteristic, encodeStateFrame(lastState))
         return ControlProtocol.STATUS_CONTROL_OK
     }
 
@@ -767,7 +785,12 @@ internal class BluetoothControl(
     }
 
     private val callback = object : BluetoothGattServerCallback() {
-        override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
+        /** Server-side callback takes two arguments (no status code). */
+    override fun onMtuChanged(device: BluetoothDevice, negotiatedMtu: Int) {
+        mtu = negotiatedMtu.coerceAtLeast(23)
+    }
+
+    override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val address = addressOf(device) ?: return
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 connected.add(address)

@@ -97,6 +97,9 @@ private fun mirrorPayload(state: ControlUiState): String {
         put("worldYaw", control.worldYaw.toDouble())
         put("worldPitch", control.worldPitch.toDouble())
         put("worldRoll", control.worldRoll.toDouble())
+        // Applied motion the page already computed; the mirror only adds it.
+        put("floatMm", control.floatMm.toDouble())
+        put("swayDeg", control.swayDeg.toDouble())
         put("postureRise", control.postureRise.toDouble())
         if (pose == null) {
             put("pose", JSONObject.NULL)
@@ -112,7 +115,7 @@ private fun mirrorPayload(state: ControlUiState): String {
                 }
             )
         }
-        // floatMm, swayDeg and pose.roll arrive with the state frame (v11);
-        // until then the mirror renders no buoyancy and no head roll.
+        // pose.roll is still absent: telemetry is five floats and carries no
+        // roll. Everything else the mirror renders now comes from v11.
     }.toString()
 }

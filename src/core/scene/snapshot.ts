@@ -60,6 +60,12 @@ export interface SceneSnapshotInput {
   /** Buoyancy actually applied, so the tablet never has to guess. */
   floatLevel: number;
   floatProfile: string;
+  /** Applied buoyancy offset in millimetres (mirror adds it to the floor). */
+  floatMm: number;
+  /** Applied horizon pitch in degrees. */
+  swayDeg: number;
+  /** Seconds since the session started; 0 while idle. */
+  sessionSec: number;
 }
 
 export class SceneSnapshot {
@@ -96,6 +102,9 @@ export class SceneSnapshot {
   cueIntensity = 0;
   floatLevel = 1;
   floatProfile = 'b';
+  floatMm = 0;
+  swayDeg = 0;
+  sessionSec = 0;
   calibrationConfidence = 0;
 
   private readonly euler: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
@@ -124,6 +133,9 @@ export class SceneSnapshot {
     this.cueIntensity = input.cueIntensity;
     this.floatLevel = input.floatLevel;
     this.floatProfile = input.floatProfile;
+    this.floatMm = input.floatMm;
+    this.swayDeg = input.swayDeg;
+    this.sessionSec = input.sessionSec;
     this.calibrationConfidence = input.confidence;
 
     const measured = measureRelativeEuler(

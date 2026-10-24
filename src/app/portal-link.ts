@@ -44,6 +44,9 @@ export interface StateSnapshot {
   cueIntensity: number;
   floatLevel: number;
   floatProfile: string;
+  floatMm: number;
+  swayDeg: number;
+  elapsedSec: number;
   calibrationConfidence: number;
 }
 
@@ -119,6 +122,9 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     cueIntensity: snapshot.cueIntensity,
     floatLevel: snapshot.floatLevel,
     floatProfile: snapshot.floatProfile,
+    floatMm: snapshot.floatMm,
+    swayDeg: snapshot.swayDeg,
+    elapsedSec: snapshot.sessionSec,
     calibrationConfidence: snapshot.calibrationConfidence
   };
 }
