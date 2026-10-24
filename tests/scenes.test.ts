@@ -43,14 +43,26 @@ describe('scene registry', () => {
     expect(getSceneDefinition('unknown')).toBeUndefined();
   });
 
-  it('declares localized copy and a bundled audio track for each', () => {
+  it('declares localized copy for each', () => {
     for (const scene of SCENES) {
       expect(scene.name.zh.length).toBeGreaterThan(0);
       expect(scene.name.en.length).toBeGreaterThan(0);
       expect(scene.tagline.zh.length).toBeGreaterThan(0);
       expect(scene.description.zh.length).toBeGreaterThan(scene.tagline.zh.length);
-      expect(['lake', 'stream', 'rain']).toContain(scene.audio.track);
     }
+  });
+
+  it('keeps the water bed to the two scenes that have water', () => {
+    const water = SCENES.filter((scene) => scene.audio !== undefined);
+    expect(water.map((scene) => scene.id).sort()).toEqual(['shore', 'washroom']);
+    for (const scene of water) {
+      expect(['lake', 'stream']).toContain(scene.audio!.track);
+      const width = scene.audio!.width ?? 0;
+      expect(width).toBeGreaterThan(0);
+      expect(width).toBeLessThanOrEqual(1);
+    }
+    // The light well is meant to be heard as one's own breathing.
+    expect(getSceneDefinition('lightwell')?.audio).toBeUndefined();
   });
 });
 

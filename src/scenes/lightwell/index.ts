@@ -316,7 +316,9 @@ export const lightwellScene = defineScene(
       zh: '约 18 米直径、120 米高的竖井：井壁顶部亮成天光，底部沉进黑里，两头都在六十米外，看不到“盖”。十三道暖白圆环自下而上掠过，靠近视野中心时最亮，出视野前先暗下去。所有运动都在环境里，视点不动。',
       en: 'A shaft about 18 m across and 120 m tall: daylight at the top, black below, both ends sixty metres away with no visible lid. Thirteen warm rings pass upward, brightest near the centre of the view and dimming before they leave it. All motion is in the environment; the viewpoint never moves.'
     },
-    audio: { track: 'stream', volume: 0.7, fadeMs: 1200, loop: true }
+    // No ambience: water belongs to the shore and the washroom. This shaft is
+    // meant to be heard as one's own breathing, not as a room.
+    audio: undefined
   },
   function () {
     const parts = createLightWell();

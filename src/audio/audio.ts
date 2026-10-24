@@ -26,7 +26,14 @@ let duckDepthDb = 12;
 let swell: GainNode | null = null;
 let swellDepth: GainNode | null = null;
 let swellLfo: OscillatorNode | null = null;
-let current: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+interface Bed {
+  /** Two decorrelated copies when stereo width > 0, otherwise one. */
+  sources: AudioBufferSourceNode[];
+  gain: GainNode;
+}
+let current: Bed | null = null;
+/** Identity of the running bed; a width or volume change rebuilds it. */
+let currentKey = '';
 const buffers: Partial<Record<AudioTrack, AudioBuffer>> = {};
 let muted = false;
 let playing = false;
@@ -105,10 +112,15 @@ export interface PlayOptions {
   volume?: number;
   fadeMs?: number;
   loop?: boolean;
+  /** Stereo width 0..1: two decorrelated copies panned apart. */
+  width?: number;
 }
 
 export function playTrack(track: AudioTrack, options: PlayOptions = {}): void {
-  if (playing && (requestedTrack === track || currentTrack === track)) {
+  const volume = Math.max(0, options.volume ?? 1);
+  const width = Math.max(0, Math.min(1, options.width ?? 0.3));
+  const key = `${track}|${volume.toFixed(2)}|${width.toFixed(2)}`;
+  if (playing && currentKey === key) {
     return;
   }
   playing = true;
@@ -122,33 +134,69 @@ export function playTrack(track: AudioTrack, options: PlayOptions = {}): void {
     requestedTrack = null;
     const now = context.currentTime;
     const fade = Math.max(0, (options.fadeMs ?? FADE_SECONDS * 1000) / 1000);
-    const volume = Math.max(0, options.volume ?? 1);
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.loop = options.loop ?? true;
+
+    // The bed's own envelope. Sources sit below it so a two-source bed and a
+    // one-source bed fade identically.
     const gain = context.createGain();
     gain.gain.value = 0;
-    source.connect(gain);
     gain.connect(swell ?? master);
-    source.start();
+
+    // A dry mono loop reads as a point source in the middle of the head. Two
+    // copies started at different points of the same loop, panned apart, give
+    // a wide bed with no extra assets and no cancellation at the centre.
+    const stereo = width > 0.02 && typeof context.createStereoPanner === 'function';
+    const pans = stereo ? [-width, width] : [0];
+    const sources: AudioBufferSourceNode[] = [];
+    const share = pans.length > 1 ? 0.5 : 1;
+    for (let i = 0; i < pans.length; i += 1) {
+      const source = ctxSource(context, buffer, options.loop ?? true);
+      const level = context.createGain();
+      level.gain.value = share;
+      source.connect(level);
+      if (stereo) {
+        const panner = context.createStereoPanner();
+        panner.pan.value = pans[i];
+        level.connect(panner);
+        panner.connect(gain);
+      } else {
+        level.connect(gain);
+      }
+      const offset = pans.length > 1 ? (buffer.duration * 0.37 * i) % buffer.duration : 0;
+      source.start(now, offset);
+      sources.push(source);
+    }
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(volume, now + fade);
 
     const old = current;
-    current = { source, gain };
+    current = { sources, gain };
+    currentKey = key;
     if (old) {
       old.gain.gain.cancelScheduledValues(now);
       old.gain.gain.setValueAtTime(old.gain.gain.value, now);
       old.gain.gain.linearRampToValueAtTime(0, now + fade);
-      try {
-        old.source.stop(now + fade + 0.05);
-      } catch {
-        // already stopped
+      for (const source of old.sources) {
+        try {
+          source.stop(now + fade + 0.05);
+        } catch {
+          // already stopped
+        }
       }
     }
   }).catch(() => {
     requestedTrack = null;
   });
+}
+
+function ctxSource(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  loop: boolean
+): AudioBufferSourceNode {
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = loop;
+  return source;
 }
 
 export function stopAudio(): void {
@@ -161,13 +209,16 @@ export function stopAudio(): void {
     current.gain.gain.cancelScheduledValues(now);
     current.gain.gain.setValueAtTime(current.gain.gain.value, now);
     current.gain.gain.linearRampToValueAtTime(0, now + 0.4);
-    try {
-      current.source.stop(now + 0.5);
-    } catch {
-      // already stopped
+    for (const source of current.sources) {
+      try {
+        source.stop(now + 0.5);
+      } catch {
+        // already stopped
+      }
     }
   }
   current = null;
+  currentKey = '';
 }
 
 export function getVoiceBus(): GainNode | null {
@@ -191,8 +242,10 @@ export function duckScene(on: boolean): void {
   duck.gain.setTargetAtTime(target, context.currentTime, on ? 0.08 : 0.2);
 }
 
-export function preloadSceneAudio(audio: SceneAudio): void {
-  preloadTrack(audio.track);
+export function preloadSceneAudio(audio: SceneAudio | undefined): void {
+  if (audio) {
+    preloadTrack(audio.track);
+  }
 }
 
 /**
@@ -214,11 +267,17 @@ export function setBuoyancySwell(depth: number, periodSeconds: number): void {
   }
 }
 
-export function playSceneAudio(audio: SceneAudio): void {
+/** Scene ambience. `undefined` fades the current bed out instead of looping. */
+export function playSceneAudio(audio: SceneAudio | undefined): void {
+  if (!audio) {
+    stopAudio();
+    return;
+  }
   playTrack(audio.track, {
     volume: audio.volume,
     fadeMs: audio.fadeMs,
-    loop: audio.loop
+    loop: audio.loop,
+    width: audio.width
   });
 }
 

@@ -10,4 +10,10 @@ export interface SceneAudio {
   volume?: number;
   fadeMs?: number;
   loop?: boolean;
+  /**
+   * Stereo width 0..1. The bed plays from two decorrelated copies of the same
+   * loop, panned apart; 0 is a centred mono source. Not object-based audio:
+   * with a 3DoF head there is no head-relative positioning to gain from.
+   */
+  width?: number;
 }

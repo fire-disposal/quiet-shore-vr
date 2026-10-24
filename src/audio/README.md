@@ -41,3 +41,22 @@ ffmpeg -i stream.mp3 -filter_complex \
 `audio.ts` keeps one looping source per scene, crossfades scene changes over
 1.2 s, and does not restart the same track if it is already playing. Do not add
 per-track fades to these files; the loop relies on matched head/tail levels.
+
+## Stereo bed (2026-10)
+
+`SceneAudio.width` (0–1) turns the mono loop into a bed: two copies of the
+same buffer, started 37 % apart and panned to ±width, each at half level, so
+the centre does not cancel and no extra assets are needed.
+
+| Scene | track | width | why |
+| --- | --- | --- | --- |
+| shore | lake | 0.8 | open water: the widest field we ship |
+| washroom | stream | 0.35 | a small tiled room, sound stays close |
+| lightwell | — | — | silent: the shaft should be one's own breathing |
+
+The engine keeps one bed at a time: a track, volume or width change crossfades
+the old bed out over the scene's `fadeMs` while the new one fades in, and a
+scene with no `audio` fades to silence instead of looping something else.
+
+Voice cues are unaffected by `width`: they stay centred (see `voice.ts`), and
+the scene bed is ducked — never muted — while a cue speaks.

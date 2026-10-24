@@ -40,7 +40,7 @@ export const shoreScene = defineScene(
       zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条柔和的日光，近处有三根木桩与两丛芦苇作为参照。',
       en: 'A lakeside morning built for a supine view: a brightening sky overhead, a slowly drifting cloud deck, a low sun, and water running into haze with a soft sun path on it. Three mooring posts and two reed clumps anchor the near field.'
     },
-    audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true }
+    audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true, width: 0.8 }
   },
   function () {
     const root = new THREE.Group();

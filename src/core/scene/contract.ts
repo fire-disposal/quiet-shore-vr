@@ -65,7 +65,8 @@ export interface SceneSummary {
   name: LocalizedText;
   tagline: LocalizedText;
   description: LocalizedText;
-  audio: SceneAudio;
+  /** Ambience owned by the scene; absent means the scene is silent. */
+  audio?: SceneAudio;
 }
 
 export interface SceneDefinition extends SceneSummary {
