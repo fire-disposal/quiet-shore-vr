@@ -25,6 +25,14 @@ import { createShoreline } from './shoreline';
 const FOG_COLOR = 0xe7d7bd;
 /** Cube-deck parallax: a little motion up there, none in the dome itself. */
 const CLOUD_GAIN = 0.4;
+/** Lake swell: centimetres of heave, hundredths of a degree of tilt. */
+const SWELL_M = 0.012;
+const SWELL_PERIOD_S = 19;
+const SWELL_TILT_RAD = 0.0004;
+const SWELL_PITCH_PERIOD_S = 13;
+const SWELL_ROLL_RAD = 0.0003;
+const SWELL_ROLL_PERIOD_S = 23;
+
 const FOG_NEAR = 48;
 const FOG_FAR = 135;
 
@@ -59,7 +67,12 @@ export const shoreScene = defineScene(
     shoreline.root.name = 'shore-shoreline';
     clouds.root.name = 'shore-clouds';
     root.add(dome.mesh);
-    root.add(water.root);
+    // The water sits in its own group so the lake's own swell and tilt can run
+    // without fighting buoyancy, which owns `water.root.position`.
+    const swell = new THREE.Group();
+    swell.name = 'shore-swell';
+    swell.add(water.root);
+    root.add(swell);
     root.add(shoreline.root);
     root.add(clouds.root);
 
@@ -76,6 +89,11 @@ export const shoreScene = defineScene(
       update: function (dt: number): void {
         elapsed += dt;
         clouds.update(dt, elapsed);
+        // A lake is never still: a few millimetres of rise and fall, plus a
+        // tilt small enough that the horizon line still reads as level.
+        swell.position.y = Math.sin((elapsed * Math.PI * 2) / SWELL_PERIOD_S) * SWELL_M;
+        swell.rotation.x = Math.sin((elapsed * Math.PI * 2) / SWELL_PITCH_PERIOD_S) * SWELL_TILT_RAD;
+        swell.rotation.z = Math.sin((elapsed * Math.PI * 2) / SWELL_ROLL_PERIOD_S + 1.3) * SWELL_ROLL_RAD;
       },
       /**
        * Depth-weighted buoyancy: the sky is the horizon and never moves, the

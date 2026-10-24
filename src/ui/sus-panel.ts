@@ -11,7 +11,7 @@ import type { SpatialInput } from './spatial/input';
  * System Usability Scale, answered by gaze.
  *
  * Ten statements, five options, and the headset has no pointer the patient can
- * use comfortably while lying down. Every target is a 5 second dwell, the same
+ * use comfortably while lying down. Every target uses the same dwell, the same
  * interaction the rest of the spatial UI uses; the operator can still answer
  * from the tablet (`sus:answer:<1-5>`) when the patient cannot.
  *
@@ -54,6 +54,22 @@ export interface SusPanelApi {
   dispose(): void;
 }
 
+/**
+ * Gaze dwell for every SUS target.
+ *
+ * The 5 s dwell this panel used to carry fired after roughly two seconds of
+ * looking in the headset. The panel is the one place where a mistaken answer is
+ * expensive, so the dwell is set to 8 s: four times the trigger a patient
+ * noticed, not a number that merely looks plausible on paper.
+ */
+export const SUS_DWELL_SECONDS = 8;
+
+/**
+ * Reading hold after the card changes. The gaze lands on a new option before
+ * the patient has read the statement, so no dwell may start for this long.
+ */
+export const SUS_READ_HOLD_SECONDS = 2;
+
 export interface SusPanelOptions {
   scene: THREE.Scene;
   theme: SpatialTheme;
@@ -61,6 +77,12 @@ export interface SusPanelOptions {
   stringsDwellHint: string;
   onAnswer?: (index: number, value: number) => void;
   onClose?: () => void;
+  /**
+   * Called whenever a new statement appears on the card (open, pager, or the
+   * automatic advance after an answer). The app speaks it; the panel never
+   * touches audio.
+   */
+  onShow?: (index: number, firstTime: boolean) => void;
 }
 
 export function createSusPanel(options: SusPanelOptions): SusPanelApi {
@@ -86,17 +108,21 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   // pager. The reserved bottom band is what keeps the statement off the
   // controls instead of floating buttons outside the panel.
   const surface = new SpatialSurface({
-    width: 1.36,
-    height: 0.86,
+    // Wider and taller than the old card: the statement is now ~12 cm per glyph
+    // at 1.2 m, which needs three lines for the longest item.
+    width: 1.5,
+    height: 1.02,
     theme,
     title: 'SUS 1/10',
     body: SUS_STATEMENTS[0],
     renderOrder: 1300,
-    reserveBottom: 0.32,
+    reserveBottom: 0.3,
     // A big statement, a small caption: the card is read at 1.2 m and the
-    // statement is the only thing the patient has to parse.
-    titlePx: 38,
-    bodyPx: 36
+    // statement is the only thing the patient has to parse. The "SUS 5/10"
+    // counter is furniture, so it shrank; the statement grew.
+    titlePx: 26,
+    bodyPx: 88,
+    bodyTexturePx: 1024
   });
   root.add(surface.object);
 
@@ -118,7 +144,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       label,
       theme,
       renderOrder: 1310,
-      dwellTime: 5
+      dwellTime: SUS_DWELL_SECONDS
     });
     button.object.position.set(-0.496 + index * 0.248, -0.22, 0.002);
     button.onSelect = () => record(index + 1);
@@ -132,7 +158,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     label: '上一题',
     theme,
     renderOrder: 1310,
-    dwellTime: 5
+    dwellTime: SUS_DWELL_SECONDS
   });
   prevButton.object.position.set(-0.22, -0.36, 0.002);
   prevButton.onSelect = () => move(-1);
@@ -144,7 +170,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     label: '下一题',
     theme,
     renderOrder: 1310,
-    dwellTime: 5
+    dwellTime: SUS_DWELL_SECONDS
   });
   nextButton.object.position.set(0.22, -0.36, 0.002);
   nextButton.onSelect = () => move(1);
@@ -155,7 +181,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   function interactableFor(button: SpatialButton): SpatialInteractable {
     return {
       ...button.interactable,
-      dwellTime: dwellEnabled ? 5 : 0,
+      dwellTime: dwellEnabled ? SUS_DWELL_SECONDS : 0,
       progressDisplay: 'self'
     };
   }
@@ -179,6 +205,9 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     offs.length = 0;
   }
 
+  /** Last statement read aloud, so a re-render does not repeat it. */
+  let spokenPage = -1;
+
   function render(): void {
     surface.setTitle(`SUS ${page + 1}/${SUS_STATEMENTS.length}`);
     const chosen = answers[page];
@@ -191,6 +220,13 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     const atEnd = page === SUS_STATEMENTS.length - 1;
     prevButton.setEnabled(!atStart);
     nextButton.setEnabled(!atEnd);
+    if (open && spokenPage !== page) {
+      const firstTime = spokenPage === -1;
+      spokenPage = page;
+      // Every option is frozen while the new statement is read.
+      input.lockDwell(SUS_READ_HOLD_SECONDS);
+      options.onShow?.(page, firstTime);
+    }
   }
 
   function move(delta: number): void {
@@ -226,6 +262,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       }
       open = true;
       needsPlacement = true;
+      spokenPage = -1;
       render();
       registerTargets();
     },

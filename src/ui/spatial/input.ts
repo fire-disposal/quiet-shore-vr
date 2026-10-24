@@ -77,6 +77,16 @@ export class SpatialInput {
   private hintTexture: THREE.CanvasTexture | null = null;
   private hintMaterial: THREE.SpriteMaterial | null = null;
 
+  /** Distance in front of the gaze for the reticle when nothing is hit. */
+  private static readonly FALLBACK_RETICLE_M = 1.1;
+  /**
+   * The reticle is normally a focus indicator. While a gaze-driven panel is open
+   * it also has to say "you can look at this", so it stays on screen even
+   * between targets.
+   */
+  private reticleAlways = false;
+  /** Seconds left of a reading hold: focus is allowed, dwell is not. */
+  private dwellHold = 0;
   private uiLayer = true;
   private sceneLayer = true;
   private focusTarget: RegisteredTarget | null = null;
@@ -217,6 +227,44 @@ export class SpatialInput {
   /** Interactable currently under the gaze, or null. */
   getFocused(): SpatialInteractable | null {
     return this.focusTarget ? this.focusTarget.interactable : null;
+  }
+
+  /**
+   * Freeze dwell for `seconds` without taking focus away.
+   *
+   * Used when a panel swaps its content: the gaze lands on a new option before
+   * the patient has read the question, and every option would otherwise start
+   * counting from the instant the card changes.
+   */
+  lockDwell(seconds: number): void {
+    if (!(seconds > 0)) {
+      return;
+    }
+    this.dwellHold = Math.max(this.dwellHold, seconds);
+    if (this.dwell !== 0 || this.progress !== 0) {
+      this.dwell = 0;
+      this.progress = 0;
+      this.focusTarget?.interactable.onProgress?.(0);
+    }
+  }
+
+  /** Seconds left of the current hold, 0 when gaze counts normally. */
+  getDwellHold(): number {
+    return this.dwellHold;
+  }
+
+  /**
+   * Keep the reticle visible while nothing is focused (gaze panels do this).
+   * Off by default: an idle reticle over scenery is noise.
+   */
+  setReticleAlways(on: boolean): void {
+    if (this.reticleAlways === on) {
+      return;
+    }
+    this.reticleAlways = on;
+    if (!on) {
+      this.syncDwellFeedback();
+    }
   }
 
   /** Dwell progress of the focused target, 0..1 (0 when not dwelling). */
@@ -410,6 +458,11 @@ export class SpatialInput {
       return;
     }
 
+    if (this.dwellHold > 0) {
+      this.dwellHold = Math.max(0, this.dwellHold - dt);
+      return;
+    }
+
     const dwellTime = entry.interactable.dwellTime ?? 0;
     if (!(dwellTime > 0)) {
       return;
@@ -451,12 +504,20 @@ export class SpatialInput {
   }
 
   private positionReticle(hit: THREE.Intersection | null): void {
-    if (!hit) {
+    if (!hit && !this.reticleAlways) {
       this.reticle.visible = false;
       return;
     }
     this.reticle.visible = true;
-    this.reticle.position.copy(hit.point).addScaledVector(this.direction, -RETICLE_OFFSET);
+    if (hit) {
+      this.reticle.position.copy(hit.point).addScaledVector(this.direction, -RETICLE_OFFSET);
+    } else {
+      // Nothing to sit on: pin it in front of the gaze so the operator and the
+      // patient can see where the gaze actually points.
+      this.reticle.position
+        .copy(this.origin)
+        .addScaledVector(this.direction, SpatialInput.FALLBACK_RETICLE_M);
+    }
     this.lookProbe.position.copy(this.reticle.position);
     this.lookProbe.lookAt(this.origin);
     this.reticle.quaternion.copy(this.lookProbe.quaternion);

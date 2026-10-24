@@ -21,6 +21,11 @@ export interface SpatialSurfaceOptions {
   /** Per-card type scale; the theme's sizes are the default. */
   titlePx?: number;
   bodyPx?: number;
+  /**
+   * Resolution of the body texture. Glyph size on the card is bodyPx/texture
+   * width, so raising both keeps the text crisp at a larger physical size.
+   */
+  bodyTexturePx?: number;
   renderOrder?: number;
 }
 
@@ -88,7 +93,10 @@ export class SpatialSurface {
   private readonly options: Required<
     Pick<SpatialSurfaceOptions, 'width' | 'height' | 'theme' | 'renderOrder' | 'reserveBottom'>
   > &
-    Pick<SpatialSurfaceOptions, 'title' | 'body' | 'titlePx' | 'bodyPx'>;
+    Pick<
+      SpatialSurfaceOptions,
+      'title' | 'body' | 'titlePx' | 'bodyPx' | 'bodyTexturePx'
+    >;
   private readonly panelTexture: THREE.CanvasTexture;
   private readonly panelGeometry: THREE.PlaneGeometry;
   private readonly panelMaterial: THREE.MeshBasicMaterial;
@@ -110,7 +118,8 @@ export class SpatialSurface {
       title: options.title,
       body: options.body,
       titlePx: options.titlePx,
-      bodyPx: options.bodyPx
+      bodyPx: options.bodyPx,
+      bodyTexturePx: options.bodyTexturePx
     };
     this.object.name = 'spatial-surface';
 
@@ -154,14 +163,16 @@ export class SpatialSurface {
 
   setBody(text: string): void {
     if (!this.body) {
+      const texturePx = this.options.bodyTexturePx ?? 512;
       this.body = new TextTexture({
         theme: this.options.theme,
-        widthPx: 512,
-        heightPx: 256,
+        widthPx: texturePx,
+        heightPx: texturePx / 2,
         sizePx: this.options.bodyPx ?? this.options.theme.bodyPx,
         weight: 400,
         color: this.options.theme.muted,
-        align: 'left'
+        align: 'left',
+        lineHeight: 1.18
       });
       this.bodyMesh = createTextMesh(this.body.texture, 0.1, 0.1, this.options.renderOrder + 2);
       this.object.add(this.bodyMesh);

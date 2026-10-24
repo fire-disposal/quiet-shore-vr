@@ -3,7 +3,13 @@ import { makeTexture } from '../shared/canvas';
 
 /**
  * Cloud deck for a patient on their back: one horizontal sheet overhead,
- * drifting slowly, with clear sky between the masses.
+ * drifting in one direction, very slowly, with clear sky between the masses.
+ *
+ * The sheet used to follow a two-sine Lissajous path with a rolling wobble. A
+ * 166 m plane 34 m overhead moving back and forth is not "drifting clouds":
+ * every turning point reads as acceleration, and the two axes at different
+ * frequencies read as shaking. A single linear scroll of the texture does the
+ * job with no reversal at all, and wraps without a jump.
  *
  * One sheet, not three: every sheet is a near-full-screen transparent pass per
  * eye, and the scene budget is spent on supersampling instead. The texture
@@ -14,13 +20,41 @@ import { makeTexture } from '../shared/canvas';
 const SPREAD = 175;
 const BASE_HEIGHT = 34;
 
-interface Sheet {
-  mesh: THREE.Mesh;
-  material: THREE.MeshBasicMaterial;
-  reach: number;
-  speed: number;
-  phase: number;
+/** Metres per second of cloud travel. Barely perceptible on purpose. */
+export const CLOUD_DRIFT_MPS = 0.12;
+/** The sheet spans SPREAD*0.95 with the texture tiled twice. */
+const TILE_METRES = (SPREAD * 0.95) / 2;
+
+/**
+ * One step of the scroll, in texture units (1 = one full tile). Linear and
+ * one-way; the modulo is the only discontinuity, and it is invisible because
+ * the texture repeats.
+ */
+export function advanceCloudOffset(offset: number, dt: number): number {
+  if (!(dt > 0)) {
+    return offset;
+  }
+  return (offset + (dt * CLOUD_DRIFT_MPS) / TILE_METRES) % 1;
 }
+
+/** One drifting sheet, described by height, size, opacity and drift rate. */
+interface SheetSpec {
+  name: string;
+  height: number;
+  scale: number;
+  opacity: number;
+  /** Multiplier on [CLOUD_DRIFT_MPS]. */
+  rate: number;
+}
+
+/**
+ * Two decks, not one: a high thin layer at a different speed gives the cloud
+ * base parallax against the fixed dome. A single sheet read as a flat ceiling.
+ */
+const SHEETS: readonly SheetSpec[] = [
+  { name: 'shore-cloud-sheet', height: 34, scale: 0.95, opacity: 0.7, rate: 1 },
+  { name: 'shore-cloud-sheet-high', height: 66, scale: 1.6, opacity: 0.26, rate: 0.45 }
+];
 
 export interface CloudLayer {
   root: THREE.Group;
@@ -110,39 +144,64 @@ export function createClouds(): CloudLayer {
 
   const texture = cloudTexture();
   const geometry = new THREE.PlaneGeometry(1, 1);
-  const material = new THREE.MeshBasicMaterial({
-    ...(texture ? { map: texture } : {}),
-    color: texture ? 0xffffff : 0xdfe6e6,
-    transparent: true,
-    opacity: 0.7,
-    depthWrite: false,
-    fog: false,
-    toneMapped: false,
-    side: THREE.DoubleSide
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = 'shore-clouds';
-  // Horizontal, seen from below.
-  mesh.rotation.x = Math.PI / 2;
-  mesh.position.y = BASE_HEIGHT;
-  mesh.scale.setScalar(SPREAD * 0.95);
-  mesh.renderOrder = 1;
-  mesh.frustumCulled = false;
-  root.add(mesh);
+  const materials: THREE.MeshBasicMaterial[] = [];
+  const textures: THREE.CanvasTexture[] = [];
+  const offsets: number[] = [];
 
-  const sheet: Sheet = { mesh, material, reach: 6, speed: 0.02, phase: 0 };
+  for (const spec of SHEETS) {
+    // A clone shares the canvas image; only the transform differs.
+    const map = texture ? texture.clone() : null;
+    if (map) {
+      map.needsUpdate = true;
+      textures.push(map);
+    }
+    const material = new THREE.MeshBasicMaterial({
+      ...(map ? { map } : {}),
+      color: map ? 0xffffff : 0xdfe6e6,
+      transparent: true,
+      opacity: spec.opacity,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false,
+      side: THREE.DoubleSide
+    });
+    materials.push(material);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = spec.name;
+    mesh.rotation.x = Math.PI / 2;
+    mesh.rotation.z = 0.8;
+    mesh.position.y = spec.height;
+    mesh.scale.setScalar(SPREAD * spec.scale);
+    mesh.renderOrder = 1;
+    mesh.frustumCulled = false;
+    root.add(mesh);
+    offsets.push(0);
+  }
 
   return {
     root,
-    update(dt: number, elapsed: number): void {
-      const drift = elapsed * sheet.speed + sheet.phase;
-      sheet.mesh.position.x = Math.sin(drift) * sheet.reach;
-      sheet.mesh.position.z = Math.cos(drift * 0.63) * sheet.reach * 0.7;
-      sheet.mesh.rotation.z = 0.8 + Math.sin(drift * 0.4) * 0.02 + dt * 0.0008;
+    update(dt: number): void {
+      if (!(dt > 0)) {
+        return;
+      }
+      root.children.forEach((child, index) => {
+        const current = advanceCloudOffset(offsets[index], dt * SHEETS[index].rate);
+        offsets[index] = current;
+        const map = materials[index].map;
+        if (map) {
+          map.offset.x = current;
+        }
+      });
     },
     dispose(): void {
       geometry.dispose();
-      material.dispose();
+      for (const material of materials) {
+        material.dispose();
+      }
+      for (const map of textures) {
+        map.dispose();
+      }
       if (texture) texture.dispose();
       root.clear();
       root.removeFromParent();

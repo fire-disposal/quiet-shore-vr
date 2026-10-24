@@ -38,6 +38,7 @@ export type RemoteCommand =
   | { kind: 'susShow'; index: number }
   | { kind: 'susMove'; delta: 1 | -1 }
   | { kind: 'susAnswer'; value: number }
+  | { kind: 'susVoice'; on: boolean }
   | { kind: 'preview' }
   | { kind: 'calibrate' }
   | { kind: 'exit' }
@@ -131,6 +132,9 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   }
   if (command === 'gaze:dwell:on' || command === 'gaze:dwell:off') {
     return { kind: 'gazeDwell', on: command.endsWith(':on') };
+  }
+  if (command === 'sus:voice:on' || command === 'sus:voice:off') {
+    return { kind: 'susVoice', on: command.endsWith(':on') };
   }
   if (command === 'sus:open') {
     return { kind: 'susOpen' };

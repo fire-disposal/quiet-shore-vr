@@ -103,6 +103,36 @@ describe('buoyancy envelope', () => {
   });
 });
 
+describe('perceptible heave', () => {
+  it('uses the whole envelope at level 3 and a third of it at level 1', () => {
+    const full = harness({ level: 3 });
+    full.run(20);
+    expect(full.floating.getState().amplitudeM).toBeCloseTo(FLOAT_PROFILES.b.amplitudeM, 4);
+    const peak = Math.max(...full.applied.map((entry) => Math.abs(entry.amountM)));
+    // Level 3 has to be a real vertical change: ~75 mm off the base.
+    expect(peak).toBeGreaterThan(0.06);
+    expect(peak).toBeLessThanOrEqual(FLOAT_PROFILES.b.amplitudeM + 1e-6);
+
+    const low = harness({ level: 1 });
+    low.run(20);
+    const lowPeak = Math.max(...low.applied.map((entry) => Math.abs(entry.amountM)));
+    expect(lowPeak).toBeLessThan(0.03);
+  });
+
+  it('carries the breathing layer inside the same envelope', () => {
+    const h = harness({ level: 3 });
+    h.run(20);
+    const magnitudes = h.applied.map((entry) => Math.abs(entry.amountM));
+    const peak = Math.max(...magnitudes);
+    // The slow heave dominates and the breath rides below it: the total stays
+    // inside the profile amplitude at every instant.
+    for (const value of magnitudes) {
+      expect(value).toBeLessThanOrEqual(FLOAT_PROFILES.b.amplitudeM + 1e-6);
+    }
+    expect(peak).toBeGreaterThan(0.06);
+  });
+});
+
 describe('technician choice', () => {
   it('clamps the level to the profile cap', () => {
     const h = harness({ profile: 'c' });

@@ -13,6 +13,40 @@ export interface TextTextureOptions {
   lineHeight?: number;
 }
 
+/**
+ * Latin wraps at spaces; Chinese does not have any, so every CJK glyph is its
+ * own break opportunity. Without this the whole statement is one unbreakable
+ * "word": it is accepted on an empty line, drawn past the canvas edge, and the
+ * card shows a sentence cut off at its right border.
+ */
+const CJK = /[\u2E80-\u9FFF\u3000-\u303F\uFF00-\uFFEF]/;
+
+function tokenize(paragraph: string): string[] {
+  const tokens: string[] = [];
+  let word = '';
+  for (const char of paragraph) {
+    if (CJK.test(char)) {
+      if (word.length > 0) {
+        tokens.push(word);
+        word = '';
+      }
+      tokens.push(char);
+    } else if (char === ' ') {
+      if (word.length > 0) {
+        tokens.push(word);
+        word = '';
+      }
+      tokens.push(char);
+    } else {
+      word += char;
+    }
+  }
+  if (word.length > 0) {
+    tokens.push(word);
+  }
+  return tokens;
+}
+
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
   const paragraphs = text.split('\n');
@@ -22,7 +56,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
       lines.push('');
       continue;
     }
-    const words = paragraph.split(/(\s+)/);
+    const words = tokenize(paragraph);
     let current = '';
     for (let i = 0; i < words.length; i += 1) {
       const word = words[i];

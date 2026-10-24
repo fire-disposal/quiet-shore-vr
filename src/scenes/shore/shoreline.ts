@@ -14,7 +14,39 @@ import { createRandom, makeTexture } from '../shared/canvas';
  * Two instanced draws, no per-frame allocation, ~60 triangles.
  */
 
-const POST_COUNT = 3;
+const POST_COUNT = 5;
+
+/**
+ * A ring of quads whose top edge wanders between two heights: one draw, one
+ * material, no texture, and no straight line across the horizon.
+ */
+function treelineRing(radius: number, columns: number, low: number, high: number): THREE.BufferGeometry {
+  const random = createRandom(0x2c1f);
+  const positions = new Float32Array(columns * 12);
+  const indices: number[] = [];
+  for (let i = 0; i < columns; i += 1) {
+    const a0 = (i / columns) * Math.PI * 2;
+    const a1 = ((i + 1) / columns) * Math.PI * 2;
+    const h0 = low + (high - low) * random();
+    const h1 = low + (high - low) * random();
+    positions.set(
+      [
+        Math.sin(a0) * radius, 0, Math.cos(a0) * radius,
+        Math.sin(a0) * radius, h0, Math.cos(a0) * radius,
+        Math.sin(a1) * radius, 0, Math.cos(a1) * radius,
+        Math.sin(a1) * radius, h1, Math.cos(a1) * radius
+      ],
+      i * 12
+    );
+    const base = i * 4;
+    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
 const REED_CLUMPS = 2;
 const REEDS_PER_CLUMP = 7;
 
@@ -109,7 +141,9 @@ export function createShoreline(): ShorelineLayer {
   const postSpecs = [
     { x: -1.15, z: -2.1, height: 1.55, tilt: 0.05 },
     { x: 0.85, z: -2.6, height: 1.15, tilt: -0.08 },
-    { x: 2.3, z: -5.4, height: 1.35, tilt: 0.03 }
+    { x: 2.3, z: -5.4, height: 1.35, tilt: 0.03 },
+    { x: -3.6, z: -6.4, height: 1.65, tilt: -0.04 },
+    { x: 3.2, z: -10.2, height: 1.25, tilt: 0.06 }
   ];
   const dummy = new THREE.Object3D();
   for (let i = 0; i < postSpecs.length; i += 1) {
@@ -163,6 +197,21 @@ export function createShoreline(): ShorelineLayer {
   reeds.frustumCulled = false;
   root.add(reeds);
 
+  // Distant tree line: an uneven fogged ring at ~112 m gives the water an upper
+  // edge, so the horizon stops being an abrupt fog/dome join. A straight band
+  // read as a concrete wall; the varying top edge reads as a far shore.
+  const treelineGeometry = treelineRing(88, 64, 2.6, 9);
+  const treelineMaterial = new THREE.MeshBasicMaterial({
+    color: 0x46564b,
+    fog: true,
+    side: THREE.BackSide,
+    toneMapped: false
+  });
+  const treeline = new THREE.Mesh(treelineGeometry, treelineMaterial);
+  treeline.name = 'shore-treeline';
+  treeline.frustumCulled = false;
+  root.add(treeline);
+
   return {
     root,
     dispose(): void {
@@ -172,6 +221,8 @@ export function createShoreline(): ShorelineLayer {
       reedGeometry.dispose();
       reedMaterial.dispose();
       if (reedTextureMap) reedTextureMap.dispose();
+      treelineGeometry.dispose();
+      treelineMaterial.dispose();
       root.clear();
       root.removeFromParent();
     }

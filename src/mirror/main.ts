@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getSceneDefinition, SCENE } from '../scenes/registry';
 import { SceneHost } from '../core/scene/host';
+import { mirrorCameraTransform } from './camera';
 
 /**
  * Tablet scene mirror, minimal on purpose.
@@ -81,11 +82,6 @@ const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 300);
 const sceneHost = new SceneHost(scene);
 sceneHost.load(SCENE);
 
-const headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-const headQuat = new THREE.Quaternion();
-const worldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
-const worldQuat = new THREE.Quaternion();
-
 let state: MirrorState = {};
 let lastStateAt = 0;
 /** False until the first start(): an initial `true` would make start() a no-op. */
@@ -122,9 +118,12 @@ function resize(): void {
 
 function setTarget(next: MirrorState): void {
   const pose = next.pose;
-  target.yaw = (pose?.yaw ?? 0) * DEG;
-  target.pitch = (pose?.pitch ?? 0) * DEG;
-  target.roll = (pose?.roll ?? 0) * DEG;
+  // The telemetry pose is already in radians; only the world angles (state
+  // frame) are degrees. Scaling the pose by DEG made a 40° head turn move the
+  // mirror by 0.7°.
+  target.yaw = pose?.yaw ?? 0;
+  target.pitch = pose?.pitch ?? 0;
+  target.roll = pose?.roll ?? 0;
   target.worldYaw = (next.worldYaw ?? 0) * DEG;
   target.worldPitch = (next.worldPitch ?? 0) * DEG;
   target.worldRoll = (next.worldRoll ?? 0) * DEG;
@@ -211,16 +210,12 @@ function applyCamera(): void {
   // The patient sees content rotated by the world shell; undo that rotation
   // here, so calibration, view and posture offsets are visible in the mirror.
   // Roll is the head's own, so it stays in the YXZ head rotation.
-  headEuler.set(applied.pitch, applied.yaw, applied.roll, 'YXZ');
-  headQuat.setFromEuler(headEuler);
-  worldEuler.set(
-    applied.worldPitch,
-    applied.worldYaw,
-    applied.worldRoll,
-    'XYZ'
+  mirrorCameraTransform(
+    camera,
+    { yaw: applied.worldYaw, pitch: applied.worldPitch, roll: applied.worldRoll },
+    { yaw: applied.yaw, pitch: applied.pitch, roll: applied.roll },
+    { x: pose?.x ?? 0, y: camera.position.y, z: pose?.z ?? 0 }
   );
-  worldQuat.setFromEuler(worldEuler).invert();
-  camera.quaternion.copy(headQuat).multiply(worldQuat);
 }
 
 function frame(now: number): void {

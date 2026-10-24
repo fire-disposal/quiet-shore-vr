@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SCENE, SCENES, getSceneDefinition } from '../src/scenes/registry';
+import { advanceCloudOffset } from '../src/scenes/shore/clouds';
 import { ResourceRegistry } from '../src/core/geometry/registry';
 import { measureObject } from '../src/core/geometry/budget';
 
@@ -114,6 +115,72 @@ describe('scene capabilities', () => {
     }
   });
 
+  it('keeps the lake swell inside a comfort envelope', () => {
+    const { handle } = build('shore');
+    try {
+      const swell = handle.root.getObjectByName('shore-swell') as THREE.Object3D;
+      expect(swell).toBeDefined();
+      let minY = Infinity;
+      let maxY = -Infinity;
+      let maxTilt = 0;
+      for (let i = 0; i < 400; i += 1) {
+        handle.update(0.25, i * 0.25);
+        minY = Math.min(minY, swell.position.y);
+        maxY = Math.max(maxY, swell.position.y);
+        maxTilt = Math.max(maxTilt, Math.abs(swell.rotation.x), Math.abs(swell.rotation.z));
+      }
+      // A couple of centimetres of heave, and a tilt the horizon cannot show.
+      expect(maxY - minY).toBeGreaterThan(0.005);
+      expect(maxY - minY).toBeLessThan(0.05);
+      expect(THREE.MathUtils.radToDeg(maxTilt)).toBeLessThan(0.05);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('drifts the clouds one way, without moving the sheet', () => {
+    const { handle } = build('shore');
+    try {
+      const clouds = handle.root.getObjectByName('shore-cloud-sheet') as THREE.Mesh | undefined;
+      const group = handle.root.getObjectByName('shore-clouds') as THREE.Object3D | undefined;
+      expect(clouds).toBeDefined();
+      expect(group).toBeDefined();
+
+      const start = clouds!.position.clone();
+      const startRotation = clouds!.rotation.z;
+      for (let i = 0; i < 120; i += 1) {
+        handle.update(0.5, i * 0.5);
+      }
+      // The sheet never moves: no swings, no wobble, no rolling accumulation.
+      expect(clouds!.position.distanceTo(start)).toBeLessThan(1e-9);
+      expect(clouds!.rotation.z).toBeCloseTo(startRotation, 9);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('scrolls the cloud texture at a constant, one-way, very slow rate', () => {
+    // Headless hosts have no canvas, so the offset is exercised directly.
+    let offset = 0;
+    const step = advanceCloudOffset(offset, 1);
+    expect(step).toBeGreaterThan(0);
+    // 0.12 m/s across an 83 m tile: ~0.00144 per second.
+    expect(step).toBeGreaterThan(0.0013);
+    expect(step).toBeLessThan(0.0016);
+
+    for (let i = 0; i < 10_000; i += 1) {
+      const next = advanceCloudOffset(offset, 1);
+      if (next >= offset) {
+        // One direction only, at a constant rate.
+        expect(next - offset).toBeCloseTo(step, 9);
+      } else {
+        // The only discontinuity is the modulo, and it lands one step past 0.
+        expect(next).toBeLessThan(step * 2);
+      }
+      offset = next;
+    }
+  });
+
   it('exposes no gaze targets and no camera of its own', () => {
     for (const id of ['washroom', 'shore', 'lightwell']) {
       const { handle } = build(id);
@@ -160,8 +227,9 @@ describe('scene budgets', () => {
     expect(handle.root.getObjectByName('shore-dome')).toBeDefined();
     expect(handle.root.getObjectByName('shore-posts')).toBeDefined();
     expect(handle.root.getObjectByName('shore-reeds')).toBeDefined();
-    // Only the cloud sheet, the sun path and the reeds may blend.
-    expect(transparentMeshes(handle.root).length).toBeLessThanOrEqual(3);
+    expect(handle.root.getObjectByName('shore-treeline')).toBeDefined();
+    // Only the two cloud decks, the sun path and the reeds may blend.
+    expect(transparentMeshes(handle.root).length).toBeLessThanOrEqual(4);
     handle.dispose();
   });
 

@@ -131,6 +131,8 @@ export class QuietShoreApp {
   /** Sit-up ramp length; the operator can slow it down for comfort. */
   private postureCueState: PostureCueApi | null = null;
   private susPanel: SusPanelApi | null = null;
+  /** SUS statements are read aloud unless the operator turns it off. */
+  private susVoice = true;
   private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
@@ -154,6 +156,21 @@ export class QuietShoreApp {
   private lastFrame = 0;
   private elapsed = 0;
   private frames = 0;
+  /**
+   * Frame-clock survey. The dwell fired at ~2 s while the SUS panel asked for
+   * 5 s, so the compositor timestamp and `performance.now()` may not tick at
+   * the same rate. Sampling both per frame gives the ratio directly instead of
+   * guessing it from a stopwatch.
+   */
+  private readonly clockSurvey = {
+    firstFrame: 0,
+    firstWall: 0,
+    lastFrame: 0,
+    lastWall: 0,
+    frames: 0,
+    ratio: 1
+  };
+  private clockWarned = false;
   private fps = 0;
   private fpsAt = 0;
   private hudAt = 0;
@@ -219,7 +236,7 @@ export class QuietShoreApp {
         this.parentQuaternion.copy(shell.group.quaternion).multiply(shell.base.quaternion);
         return visualUpInContent(this.headPose.quaternion, this.parentQuaternion, out);
       },
-      level: 1,
+      level: this.config.floatLevel,
       profile: isFloatProfileId(this.config.floatProfile) ? this.config.floatProfile : undefined,
       breath: true
     });
@@ -323,6 +340,8 @@ export class QuietShoreApp {
         this.postureCueState?.update(dt, this.headPose.position, this.cueFlow);
         this.updateFloat(dt);
         this.susPanel?.update(dt, now, this.headPose);
+        // The reticle doubles as the gaze cue while the SUS panel is open.
+        this.input.setReticleAlways(this.susPanel?.isOpen() ?? false);
         this.input.update(dt, now, this.headPose);
       }
     });
@@ -390,6 +409,12 @@ export class QuietShoreApp {
           this.previewFlow = value === null ? null : Math.min(1, Math.max(0, value));
           return this.previewFlow;
         },
+        /**
+         * Desktop check: frame clock against the wall clock. Anything but 1.00
+         * means the compositor timestamp is not real time, and every dt-based
+         * animation runs at that multiplier.
+         */
+        clock: () => ({ ...this.clockSurvey }),
         /** Desktop check: where the SUS panel actually is, if it is open. */
         sus: () => {
           const panel = this.susPanel;
@@ -734,6 +759,18 @@ export class QuietShoreApp {
             this.report('SUS 已完成');
             this.publishSus();
           }
+        },
+        onShow: (index) => {
+          // Read the statement as it appears: a supine patient should not have
+          // to parse a card to know what was asked.
+          if (!this.susVoice) {
+            return;
+          }
+          void this.voice.play(`v-sus-${index + 1}`).then((played) => {
+            if (!played && this.voice.isReady()) {
+              this.start.setHint(`SUS 语音播放失败：${this.voice.lastError()}`);
+            }
+          });
         },
         onClose: () => {
           // Give the layers back to whatever the session mode dictates.
@@ -1176,6 +1213,12 @@ export class QuietShoreApp {
       case 'cueIntensity':
         this.postureCueState?.setIntensity(command.value);
         return;
+      case 'susVoice':
+        // Default on: the statement is read as it appears. Turning it off is
+        // for a room where the operator reads the card instead.
+        this.susVoice = command.on;
+        this.report(`SUS 语音${command.on ? '开' : '关'}`);
+        return;
       case 'gazeDwell':
         this.gazeDwellEnabled = command.on;
         this.susPanel?.setDwellEnabled(command.on);
@@ -1399,6 +1442,7 @@ export class QuietShoreApp {
     // The XR frame timestamp is the one the compositor will present; reading
     // performance.now() here mixes two clocks and jitters the easing.
     const now = frameTime !== undefined ? frameTime : performance.now();
+    this.sampleClock(now);
     const dt = this.lastFrame > 0 ? Math.min((now - this.lastFrame) / 1000, MAX_DT) : 0;
     this.lastFrame = now;
     this.elapsed += dt;
@@ -1418,6 +1462,35 @@ export class QuietShoreApp {
       this.updateHud(now);
     }
   };
+
+  /**
+   * Tracks how fast the frame clock runs against the wall clock. A ratio away
+   * from 1 means every `dt`-based animation (and the dwell) runs at that speed.
+   */
+  private sampleClock(frameNow: number): void {
+    const wall = performance.now();
+    const survey = this.clockSurvey;
+    if (survey.frames === 0) {
+      survey.firstFrame = frameNow;
+      survey.firstWall = wall;
+    }
+    survey.lastFrame = frameNow;
+    survey.lastWall = wall;
+    survey.frames += 1;
+    const wallSpan = survey.lastWall - survey.firstWall;
+    const frameSpan = survey.lastFrame - survey.firstFrame;
+    if (wallSpan < 3000 || frameSpan <= 0) {
+      return;
+    }
+    survey.ratio = frameSpan / wallSpan;
+    if (!this.clockWarned && Math.abs(survey.ratio - 1) > 0.05) {
+      this.clockWarned = true;
+      console.warn(
+        `[clock] frame clock runs at ${survey.ratio.toFixed(3)}x wall; ` +
+          `dwell and easing scale with it`
+      );
+    }
+  }
 
   private updateHud(_now: number): void {
     const visible = this.showPerf
@@ -1451,6 +1524,7 @@ export class QuietShoreApp {
       triangles,
       draws,
       `p95 ${budget.p95Ms.toFixed(0)}ms`,
+      `t×${this.clockSurvey.ratio.toFixed(2)}`,
       this.sceneBedOn ? '水声开' : '水声关'
     ].join('  ');
     this.hud.setStats(this.fps, summary);

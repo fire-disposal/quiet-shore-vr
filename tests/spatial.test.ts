@@ -232,6 +232,60 @@ describe('SpatialInput', () => {
     input.dispose();
   });
 
+  it('pins the reticle in front of the gaze when the gaze UI asks for it', () => {
+    const { scene, input } = setup();
+    const head = makeHead(0, 1.6, 0);
+
+    input.update(0.016, 0, head);
+    expect(input.reticle.visible).toBe(false);
+
+    input.setReticleAlways(true);
+    input.update(0.016, 16, head);
+    expect(input.reticle.visible).toBe(true);
+    // Nothing to hit: it sits at a fixed distance along the gaze.
+    const expected = new THREE.Vector3(0, 1.6, 0).addScaledVector(forwardOf(head), 1.1);
+    expect(input.reticle.position.distanceTo(expected)).toBeLessThan(1e-6);
+    expect(input.getProgress()).toBe(0);
+
+    input.setReticleAlways(false);
+    input.update(0.016, 32, head);
+    expect(input.reticle.visible).toBe(false);
+
+    disposeScene(scene);
+    input.dispose();
+  });
+
+  it('holds dwell for the reading window after the card changes', () => {
+    const { scene, input } = setup();
+    const mesh = planeObject(0, 0, -2);
+    scene.add(mesh);
+    scene.updateMatrixWorld(true);
+
+    const onProgress = vi.fn();
+    const onSelect = vi.fn();
+    input.register({ object: mesh, layer: 'ui', dwellTime: 0.4, onProgress, onSelect });
+
+    input.lockDwell(2);
+    expect(input.getDwellHold()).toBeCloseTo(2, 5);
+
+    // Two seconds of looking at a fresh card must not start the countdown.
+    for (let i = 0; i < 20; i += 1) {
+      input.update(0.1, i * 100, makeHead());
+    }
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(input.getProgress()).toBe(0);
+    expect(input.getDwellHold()).toBeLessThan(0.01);
+
+    // Once the hold is over, the normal 0.4 s dwell runs.
+    for (let i = 0; i < 5; i += 1) {
+      input.update(0.1, 2000 + i * 100, makeHead());
+    }
+    expect(onSelect).toHaveBeenCalledTimes(1);
+
+    disposeScene(scene);
+    input.dispose();
+  });
+
   it('select() activates the focused target immediately and only once per latch', () => {
     const { scene, input } = setup();
     const mesh = planeObject(0, 0, -2);

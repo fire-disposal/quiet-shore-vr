@@ -42,6 +42,21 @@ export interface AppConfig {
   lang: 'zh' | 'en';
   /** Buoyancy profile from `?float=a|b|c`; the in-room choice overrides it. */
   floatProfile: string | null;
+  /**
+   * Buoyancy level 0..3 from `?level=N`.
+   *
+   * Defaults to the full envelope: the heave is the scene's main self-motion
+   * cue, and at level 1 (25 mm) it read as "the world is completely still".
+   */
+  floatLevel: number;
+}
+
+function readFloatLevel(raw: string | null): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(parsed)) {
+    return 3;
+  }
+  return Math.min(3, Math.max(0, parsed));
 }
 
 export function readConfig(search: string): AppConfig {
@@ -54,6 +69,7 @@ export function readConfig(search: string): AppConfig {
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     eyeHeight: readEyeHeight(bootstrap.eyeHeight),
     lang,
-    floatProfile: params.get('float')
+    floatProfile: params.get('float'),
+    floatLevel: readFloatLevel(params.get('level'))
   };
 }
