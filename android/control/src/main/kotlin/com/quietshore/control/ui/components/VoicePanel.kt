@@ -109,6 +109,35 @@ fun VoicePanel(
                 )
             }
 
+            Seed("混音") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("水声", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(
+                        onClick = actions.onToggleAudio,
+                        enabled = connected
+                    ) {
+                        Text(if (state.control.audioMuted) "开始水声" else "暂停水声")
+                    }
+                }
+                ValueSlider(
+                    label = "语音音量",
+                    value = state.voiceVolume,
+                    range = 0..100,
+                    text = "${state.voiceVolume}",
+                    enabled = connected
+                ) { actions.onVoiceVolume(it) }
+                ValueSlider(
+                    label = "水声压低",
+                    value = state.duckDb,
+                    range = 0..18,
+                    text = "${state.duckDb} dB",
+                    enabled = connected
+                ) { actions.onVoiceDuck(it) }
+            }
             // Guidance lines are played by hand; SUS is not in this list.
             Seed("引导台词（${guidance.size} 句）") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -145,36 +174,6 @@ fun VoicePanel(
                         }
                     }
                 }
-            }
-
-            Seed("混音") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("水声", style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(
-                        onClick = actions.onToggleAudio,
-                        enabled = connected
-                    ) {
-                        Text(if (state.control.audioMuted) "开始水声" else "暂停水声")
-                    }
-                }
-                ValueSlider(
-                    label = "语音音量",
-                    value = state.voiceVolume,
-                    range = 0..100,
-                    text = "${state.voiceVolume}",
-                    enabled = connected
-                ) { actions.onVoiceVolume(it) }
-                ValueSlider(
-                    label = "水声压低",
-                    value = state.duckDb,
-                    range = 0..18,
-                    text = "${state.duckDb} dB",
-                    enabled = connected
-                ) { actions.onVoiceDuck(it) }
             }
         }
     }
