@@ -68,6 +68,9 @@ object ControlProtocol {
      * Note that the `up`/`down` presets are relative (±10° from the current
      * pitch) inside the page, while [VIEW_ORIENT] is absolute.
      */
+    /** Voice cue channel: `voice:play:<id>`, `voice:seq:<name>`, `voice:stop`, … */
+    const val VOICE_PREFIX: String = "voice:"
+
     const val VIEW_ORIENT: String = "view:orient:"
     const val VIEW_STOP: String = "view:stop"
 
@@ -138,7 +141,10 @@ object ControlProtocol {
         "settings:eyeheight:1.2-1.9",
         "view:orient:<yaw>,<pitch> (absolute degrees, |yaw|<=180, |pitch|<=90)",
         "view:stop",
-        "view:anim:up|down|recenter|breathe"
+        "view:anim:up|down|recenter|breathe",
+        "voice:play:<id>", "voice:seq:start|imagine|relax|close", "voice:stop",
+        "voice:auto:on|off", "voice:volume:0-100", "voice:mix:duck:0-18",
+        "voice:set:male|female"
     )
 
     const val STATUS_CONNECTED: String = "CONNECTED"
@@ -439,8 +445,35 @@ object ControlProtocol {
             parseEyeHeight(normalized) != null ||
             parseViewOrient(normalized) != null ||
             normalized == VIEW_STOP ||
-            parseViewAnim(normalized) != null
+            parseViewAnim(normalized) != null ||
+            parseVoice(normalized) != null
     }
+
+    /**
+     * Voice cues are pre-generated clips shipped in the headset APK. The tablet
+     * only names a clip or a sequence; it never sends audio or timing.
+     */
+    private fun parseVoice(command: String): String? {
+        if (!command.startsWith(VOICE_PREFIX)) return null
+        val body = command.removePrefix(VOICE_PREFIX)
+        return when {
+            body == "stop" -> body
+            body.startsWith("play:") ->
+                body.removePrefix("play:").takeIf { VOICE_ID.matches(it) }
+            body.startsWith("seq:") ->
+                body.removePrefix("seq:").takeIf { it in VOICE_SEQUENCES }
+            body == "auto:on" || body == "auto:off" -> body
+            body.startsWith("volume:") ->
+                body.removePrefix("volume:").toIntOrNull()?.takeIf { it in 0..100 }?.let { body }
+            body.startsWith("mix:duck:") ->
+                body.removePrefix("mix:duck:").toIntOrNull()?.takeIf { it in 0..18 }?.let { body }
+            body == "set:male" || body == "set:female" -> body
+            else -> null
+        }
+    }
+
+    private val VOICE_ID = Regex("^v-[a-z-]+[0-9]*$")
+    private val VOICE_SEQUENCES = setOf("start", "imagine", "relax", "close")
 
     fun encodeTelemetry(pose: TelemetryPose): ByteArray =
         ByteBuffer.allocate(telemetryBytes).order(ByteOrder.LITTLE_ENDIAN).apply {

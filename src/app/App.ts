@@ -27,10 +27,12 @@ import {
   preloadSceneAudio,
   setAudioMuted,
   setBuoyancySwell,
+  setDuckDepth,
   stopAudio,
   toggleMuted,
   unlockAudio
 } from '../audio/audio';
+import { createVoicePlayer, autoPlan, SEQUENCES, type SequenceName } from '../audio/voice';
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
 import {
@@ -68,6 +70,8 @@ const CUE_FULL_DEG_PER_S = 40;
 const CUE_IDLE_FLOW = 0.25;
 /** Time from a stop to the fade-complete state; motion is frozen at once. */
 const STOP_FADE_MS = 1000;
+/** Planned session length used by the voice auto plan until the wire carries it. */
+const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
 /** How deep the water bed breathes with the buoyancy; 0.12 is audible, not pumping. */
 const SWELL_AUDIO_DEPTH = 0.12;
 /** Bad frames tolerated before a capture reports itself as a lost pose. */
@@ -94,6 +98,9 @@ export class QuietShoreApp {
   private readonly link: PortalLink;
   private linkOnline = false;
   private readonly renderMonitor = new RenderMonitor();
+  private readonly voice = createVoicePlayer();
+  private voiceAuto = false;
+  private readonly voiceTimers: number[] = [];
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly worldQuat = new THREE.Quaternion();
   private readonly worldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
@@ -339,6 +346,8 @@ export class QuietShoreApp {
     this.started = true;
     this.lastFrame = 0;
     this.link.start();
+    // Cues are shipped with the page; a missing manifest simply leaves voice off.
+    void this.voice.load();
     void this.detectXR();
   }
 
@@ -531,12 +540,17 @@ export class QuietShoreApp {
   private dispatch(event: SessionEvent): void {
     const previous = this.lifecycle.phase;
     this.lifecycle = reduceSession(this.lifecycle, event);
+    if (previous === 'calibrating' && isActive(this.lifecycle) && this.voiceAuto) {
+      this.startVoicePlan();
+    }
     if (this.lifecycle.phase !== 'stopping' || previous === 'stopping') {
       return;
     }
     this.viewMotion.stop();
     this.comfort?.stopPosture();
     this.stopSitUp();
+    this.voice.stop();
+    this.clearVoicePlan();
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
 
@@ -609,6 +623,79 @@ export class QuietShoreApp {
    * sees) and leaves the lowering to the operator; leaving posture releases the
    * sit-up base so the comfort frame and buoyancy take over again.
    */
+  /** Voice cues: the tablet names a clip or a sequence; audio never crosses the wire. */
+  private applyVoiceCommand(command: string): void {
+    if (command === 'voice:stop') {
+      this.voice.stop();
+      return;
+    }
+    if (command.startsWith('voice:play:')) {
+      void this.voice.play(command.slice('voice:play:'.length));
+      return;
+    }
+    if (command.startsWith('voice:seq:')) {
+      const name = command.slice('voice:seq:'.length) as SequenceName;
+      if (!(name in SEQUENCES)) {
+        this.start.setStatus('未知语音序列', 'error');
+        return;
+      }
+      this.voice.playSequence(name);
+      return;
+    }
+    if (command === 'voice:auto:on' || command === 'voice:auto:off') {
+      this.voiceAuto = command.endsWith(':on');
+      if (!this.voiceAuto) {
+        this.clearVoicePlan();
+      } else if (isActive(this.lifecycle)) {
+        this.startVoicePlan();
+      }
+      this.start.setStatus(
+        this.voiceAuto ? '语音自动模式已开启' : '语音自动模式已关闭',
+        'ok'
+      );
+      return;
+    }
+    if (command.startsWith('voice:volume:')) {
+      const percent = Number(command.slice('voice:volume:'.length));
+      if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+        this.start.setStatus('语音音量无效', 'error');
+        return;
+      }
+      this.voice.setVolume(percent);
+      return;
+    }
+    if (command.startsWith('voice:mix:duck:')) {
+      const depth = Number(command.slice('voice:mix:duck:'.length));
+      if (Number.isFinite(depth) && depth >= 0 && depth <= 18) {
+        setDuckDepth(depth);
+      }
+      return;
+    }
+    if (command === 'voice:set:male' || command === 'voice:set:female') {
+      this.voice.setSet(command.endsWith(':male') ? 'male' : 'female');
+    }
+  }
+
+  /**
+   * Auto mode: start cues on motion onset, imagery once the scene has settled,
+   * guidance at the midpoint, close a minute before the planned end.
+   */
+  private startVoicePlan(): void {
+    this.clearVoicePlan();
+    for (const entry of autoPlan(VOICE_PLAN_SESSION_MS)) {
+      this.voiceTimers.push(
+        window.setTimeout(() => this.voice.playSequence(entry.seq), entry.atMs)
+      );
+    }
+  }
+
+  private clearVoicePlan(): void {
+    for (const timer of this.voiceTimers) {
+      window.clearTimeout(timer);
+    }
+    this.voiceTimers.length = 0;
+  }
+
   private applyModeCommand(value: string): void {
     if (value !== 'float' && value !== 'posture') {
       this.start.setStatus('未知模式', 'error');
@@ -889,6 +976,10 @@ export class QuietShoreApp {
     }
     if (command.startsWith('mode:')) {
       this.applyModeCommand(command.slice('mode:'.length));
+      return;
+    }
+    if (command.startsWith('voice:')) {
+      this.applyVoiceCommand(command);
       return;
     }
     if (command.startsWith('float:level:')) {
