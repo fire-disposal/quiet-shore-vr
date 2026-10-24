@@ -4,28 +4,27 @@ import { SceneBudget, measureObject } from '../../core/geometry/budget';
 import { createDome } from './dome';
 import { createClouds } from './clouds';
 import { createWater } from './water';
-import { createMotes } from './motes';
+import { createShoreline } from './shoreline';
 
 /**
- * The only scene: looking up at a dawn lake.
+ * Looking up at a dawn lake. The supine scene.
  *
- * Built for exactly one viewer — a patient on their back, in one headset
- * (PICO G2 4K, Adreno 540, 3DoF). Everything that is only visible from a
- * standing eye line is gone: no shore geometry, no pier, no trees, no birds,
- * no mist bank. What remains is what a supine head actually sees — sky,
- * clouds overhead, water at the edge of the view, and motes rising past.
+ * Every object earns its draw call by a cue in
+ * `docs/research-standing-sensation.md`: the dome is the fixed horizon (§2.2,
+ * the reference for "which way is up"), the cloud deck is overhead parallax
+ * (§2.1, motion along the body axis), the water is the missing hard floor
+ * (§2.1, floating over water measured 4× the vection distance of standing),
+ * the sun path gives the water orientation, and the posts and reeds are the
+ * near-field anchors that a 3DoF head can actually see move.
  *
- * The budget is the whole argument for the rewrite. The previous scene drew
- * 21–24 calls over 39.5k triangles with eight transparent meshes and two
- * competing sky domes; this one draws six calls over ~1k triangles with three
- * transparent passes. Frame rate on this GPU is fill-bound, so the win is
- * measured in full-screen passes per eye, not in triangles.
+ * No shore geometry, no pier, no trees, no birds, no mist banks, and no
+ * in-scene particles: the app-level posture cue already owns the near-field
+ * motes and drives them from the applied buoyancy.
  */
 
-/** Fog turns the water into the horizon; it matches the dome's horizon band. */
 const FOG_COLOR = 0xe7d7bd;
-const FOG_NEAR = 26;
-const FOG_FAR = 105;
+const FOG_NEAR = 48;
+const FOG_FAR = 135;
 
 export const shoreScene: SceneDefinition = {
   id: 'shore',
@@ -35,8 +34,8 @@ export const shoreScene: SceneDefinition = {
     en: 'The clouds drift, the water brightens, and the breathing slows with it.'
   },
   description: {
-    zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的两层云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条细碎的日光。近场有几粒尘埃缓缓上浮，作为失重感的参照。场景没有岸线、建筑或任何需要站立观看的物体。',
-    en: 'A lakeside morning built for a supine view: a brightening sky overhead, two slowly drifting cloud decks, a low sun, and water running into haze with a thin sun path on it. A few motes rise through the near field as the buoyancy cue. No shoreline, no buildings, nothing that needs a standing eye line.'
+    zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条柔和的日光，近处有三根木桩与两丛芦苇作为参照。',
+    en: 'A lakeside morning built for a supine view: a brightening sky overhead, a slowly drifting cloud deck, a low sun, and water running into haze with a soft sun path on it. Three mooring posts and two reed clumps anchor the near field.'
   },
   audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true },
   build: function (): SceneHandle {
@@ -45,13 +44,13 @@ export const shoreScene: SceneDefinition = {
 
     const dome = createDome();
     const water = createWater();
+    const shoreline = createShoreline();
     const clouds = createClouds();
-    const motes = createMotes();
 
     root.add(dome.mesh);
     root.add(water.root);
+    root.add(shoreline.root);
     root.add(clouds.root);
-    root.add(motes.points);
 
     const settings: SceneSettings = {
       background: new THREE.Color(FOG_COLOR),
@@ -59,7 +58,6 @@ export const shoreScene: SceneDefinition = {
     };
 
     let elapsed = 0;
-
     const stats = measureObject(root);
 
     return {
@@ -76,11 +74,10 @@ export const shoreScene: SceneDefinition = {
       update: function (dt: number): void {
         elapsed += dt;
         clouds.update(dt, elapsed);
-        motes.update(dt);
       },
       dispose: function (): void {
-        motes.dispose();
         clouds.dispose();
+        shoreline.dispose();
         water.dispose();
         dome.dispose();
         root.clear();

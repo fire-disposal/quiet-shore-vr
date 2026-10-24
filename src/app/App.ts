@@ -12,7 +12,7 @@ import {
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
-import { SCENE } from '../scenes/registry';
+import { getSceneDefinition, SCENE } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
@@ -201,12 +201,20 @@ export class QuietShoreApp {
   private enterPending = false;
   private patientStopped = false;
   private lifecycle: SessionState = INITIAL_SESSION;
+  /** Loaded scene id; the operator changes it from the tablet, never mid-session. */
+  private sceneId: string = SCENE.id;
 
   constructor() {
     this.config = readConfig(window.location.search);
     this.eyeHeight = this.config.eyeHeight;
     this.strings = getStrings(this.config.lang);
     this.showPerf = this.config.showPerf;
+    if (this.config.initialScene) {
+      const requested = getSceneDefinition(this.config.initialScene);
+      if (requested) {
+        this.sceneId = requested.id;
+      }
+    }
     if (isFloatProfileId(this.config.floatProfile)) {
       this.floatProfile = FLOAT_PROFILES[this.config.floatProfile];
     }
@@ -221,7 +229,9 @@ export class QuietShoreApp {
       0.05,
       500
     );
-    this.camera.position.set(0, this.eyeHeight, 3.2);
+    // The room is built around the standing eye at the origin; the preview
+    // camera starts inside it, not outside the front wall.
+    this.camera.position.set(0, this.eyeHeight, 0);
     this.camera.rotation.order = 'YXZ';
 
     this.renderer = createRenderer(this.start.stageElement);
@@ -333,7 +343,6 @@ export class QuietShoreApp {
     });
 
     this.loadScene();
-    this.start.setScene(SCENE.name[this.config.lang]);
     this.bind();
     this.start.setStatus(this.strings.checking);
     this.updateHud(performance.now());
@@ -397,7 +406,7 @@ export class QuietShoreApp {
 
   private loadScene(): void {
     this.disposeScene();
-    const definition = SCENE;
+    const definition = getSceneDefinition(this.sceneId) ?? SCENE;
     const handle = this.host.load(definition, {
       eyeHeight: this.eyeHeight
     });
@@ -696,6 +705,35 @@ export class QuietShoreApp {
     this.voiceTimers.length = 0;
   }
 
+  /**
+   * Scene switch, operator-driven and pre-session only: swapping the art under
+   * a running patient would drop their bearings. The tablet disables the
+   * choice during a session; the page refuses it for the same reason.
+   */
+  private applySceneCommand(id: string): void {
+    const definition = getSceneDefinition(id);
+    if (!definition) {
+      this.start.setStatus('未知场景', 'error');
+      return;
+    }
+    if (this.session) {
+      this.start.setStatus('训练中不可切换场景', 'error');
+      return;
+    }
+    if (definition.id === this.sceneId && this.handle) {
+      return;
+    }
+    this.sceneId = definition.id;
+    this.loadScene();
+    if (this.previewing) {
+      this.startSceneAudio();
+      this.start.showStage();
+    }
+    this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
+    this.link.sendStateNow();
+    this.updateHud(performance.now());
+  }
+
   private applyModeCommand(value: string): void {
     if (value !== 'float' && value !== 'posture') {
       this.start.setStatus('未知模式', 'error');
@@ -972,6 +1010,10 @@ export class QuietShoreApp {
       // Hold, never recenter: only `view:anim:recenter` returns to 0°.
       this.viewMotion.stop();
       this.start.setStatus('已保持当前视角', 'ok');
+      return;
+    }
+    if (command.startsWith('scene:')) {
+      this.applySceneCommand(command.slice('scene:'.length));
       return;
     }
     if (command.startsWith('mode:')) {
@@ -1368,7 +1410,7 @@ export class QuietShoreApp {
     const draws = `${render.calls}dc`;
     const summary = [
       mode,
-      SCENE.name[this.config.lang],
+      this.host.definition?.name[this.config.lang] ?? SCENE.name[this.config.lang],
       calibrationState,
       '1.25x',
       triangles,
@@ -1415,7 +1457,7 @@ export class QuietShoreApp {
   /** Collect the facts telemetry, the HUD and command handlers all read. */
   private captureSnapshot(): SceneSnapshot {
     const input = this.snapshotInput;
-    input.sceneId = SCENE.id;
+    input.sceneId = this.sceneId;
     input.loaded = this.handle !== null;
     input.session = this.session !== null;
     input.calibrating = this.lifecycle.phase === 'calibrating';

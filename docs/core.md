@@ -4,7 +4,7 @@
 
 ## 1. 目标
 
-让仰卧患者在床上获得缓慢的失重感，降低男性患者床上排尿的心理负担。
+让需要站立排尿的男性患者在真实尺度的卫生间场景中放松下来，降低排尿的心理负担。
 
 这是产品假设，尚无医学依据。系统只提供体验，不做疗效宣称。
 
@@ -52,12 +52,18 @@ stateDiagram-v2
 
 ## 5. 场景
 
-单一场景，暂定名“仰望湖面”。
+两个场景，**由技术员在平板选择**，会话开始前切换；页面拒绝会话中的切换。
 
-- 视线默认朝上：云缓慢流动，近场水面光影晃动，少量微粒上飘。
-- 禁止出现病床、马桶、监护仪、人体轮廓。
-- 水声为场景自带音轨，音量低于护理人员说话声。
-- 备选方向（仅在志愿者测试后考虑）：水下焦散光影，失重线索更强，但部分人会不适。
+| id | 名称 | 用途 | 预算 |
+| --- | --- | --- | --- |
+| `washroom`（默认） | 洁净立便间 | 站立、面向立便器的真实尺度单间 | 10 draw / 568 三角形 / 0 透明 |
+| `shore` | 仰望湖面 | 仰卧视角的清晨湖面（穹顶、云、水面、木桩与芦苇） | 6 draw / ~630 三角形 / 3 透明 |
+
+切换链路：平板 `scene:<id>` → 头显校验并存入启动参数 → 转发给页面 → 页面在会话外重建场景；平板与镜像都从 state 回读已加载的场景，不各自记一份选择。
+
+- 场景内不出现人物；不出现病床、监护仪与任何文字标牌。
+- 环境音随场景声明（`stream` / `lake`），音量低于护理人员说话声。
+- 没有画质挡位：两个场景共用同一套渲染参数（`XR_SCALE = 1.25`、AA 开）。
 
 ### 5.1 场景接口约定
 
@@ -69,38 +75,29 @@ interface SceneDefinition extends SceneSummary {
   build(ctx: SceneBuildContext): SceneHandle;
 }
 
-interface SceneSummary {
-  id: string;
-  name: LocalizedText;
-  tagline: LocalizedText;
-  description: LocalizedText;
-  audio: SceneAudio;
-}
-
-interface SceneAudio {
-  track: 'lake' | 'stream' | 'rain';
-  volume?: number;
-  fadeMs?: number;
-  loop?: boolean;
+interface SceneBuildContext {
+  eyeHeight: number;
+  registry: ResourceRegistry;
 }
 
 interface SceneHandle {
   root: THREE.Object3D;
-  selectables: THREE.Object3D[];   // 当前 MVP 不使用注视选择，可为空
-  settings: SceneSettings;         // 仅 background / fog
+  selectables: THREE.Object3D[];   // 当前 MVP 不使用注视选择，为空
+  settings: SceneSettings;         // background / fog
   update(dt: number, elapsed: number): void;
   dispose(): void;
   budget?: SceneBudget;
 }
 ```
 
+- 没有画质挡位：`SceneBuildContext` 只有眼高；渲染参数写死在 `src/core/xr/renderer.ts`。
 - 音频在场景定义中声明；场景构建器不直接调用音频 API；App 不按场景 ID 选择音频。
 - `root` 只含场景内容，不含相机、HUD、准星或控制对象。
 - `update` 不读写会话状态，不做网络或 BLE。
 - `dispose` 只释放场景拥有的资源。
-- `SceneHost` 负责切换与释放；`SceneRegistry` 负责组合；App 只通过 `getSceneDefinition` 与 `SceneHost` 读场景，不写 `switch (sceneId)`。
-- 新场景接入：`src/scenes/<id>/` 建构建器 → `index.ts` 导出 → 声明元数据、音频、build → 注册到 `src/scenes/registry.ts` → 必要时加预算与测试。
-- 候选扩展（`capabilities`、`interaction`、`telemetry`、`preload`）当前不实现，避免空抽象。
+- `SceneHost` 负责切换与释放；注册表是 `src/scenes/registry.ts` 的 `SCENES` 数组，`SCENE` 是默认项，`getSceneDefinition(id)` 是唯一查找入口。
+- 场景 id 顺序即 BLE state byte 11 的线上契约（`ControlProtocol.SCENE_IDS`），只能追加。
+- 每个场景的 `budget` 由 `tests/scenes.test.ts` 断言：≤ 10 draw calls、≤ 3 k 三角形。
 
 ## 6. 功能
 
@@ -152,13 +149,14 @@ interface SceneHandle {
 
 ## 10. 现状事实（以代码为准，本轮改造后）
 
-- 场景：注册表保留数组形态（`SCENES`），只装一个 `landscape`；`ward`/`bathroom`/`lab` 已删除。
-- 场景选择：TS 的 `scene-select.ts`、平板 `SceneCards`、头显控制台场景页、协议 `scene:` 命令与 `CAP_SCENE` 均已删除。state 帧 byte 1 保留为场景索引（当前恒 0）。
+- 场景：两个，`washroom`（站立卫生间）与 `shore`（仰望湖面），见 `src/scenes/`。`landscape`/`ward`/`bathroom`/`lab` 与 `legacy-handle` 已删除。
+- 场景预算：`washroom` 10 draw / 568 三角形 / 0 透明；`shore` 6 draw / ~630 三角形 / 3 透明。上限由 `tests/scenes.test.ts` 断言。
+- 渲染档位：`quality` 参数、`quality-memory` 自适应降档、`?aa=`/`?scale=` 全部删除。`src/core/xr/renderer.ts` 固定 `antialias: true`、`XR_SCALE = 1.25`（超采样是 Gecko 78 上唯一可用的抗锯齿手段）。
+- 场景选择：由控制端主导。平板场景页发 `scene:<id>`，头显校验后存入 `HeadsetSettings` 并转发页面，页面在会话外重建；协议申报 `CAP_SCENE`，state byte 11 回报已加载场景索引，镜像跟随 state 重建。
 - 会话：`src/app/session.ts` 纯 reducer 驱动；确认键只做开始/停止；所有停止路径经 `App.dispatch` 收口，进入 `stopping` 后 1 s 转 `idle`。
-- 校准：无稳定检测、无倒计时、无卡片；会话开始后的第一帧直接记录当前朝向（`captureHeading`）。`src/ui/calibration.ts` 已删除。
-- 漂浮：`src/core/xr/float.ts`，三档参数 `float:profile:a|b|c`（温和 22 mm/14 s、标准 35 mm/11 s、沉浸 45 mm/9 s + 1.5° 地平线微摆），`float:level:0-3` 在档位内线性缩放；停止时 tau 0.25 s 渐出，偏移与地平线摆角都归零。粒子流由实际振幅驱动。
+- 校准：无稳定检测、无倒计时；会话开始后的第一帧直接记录当前朝向（`captureHeading`）。
+- 漂浮：`src/core/xr/float.ts`，三档参数 `float:profile:a|b|c`，`float:level:0-3` 在档位内线性缩放；停止时 tau 0.25 s 渐出。近场微粒由 `src/core/xr/posture-cue.ts` 提供，流动强度跟随实际振幅。
 - 起身：备选模式，仅在 `mode:posture` 且 `CAP_POSTURE` 时启用；`mode:` 只能在会话前设置。
-- 平板：3D 镜像、录像、场景卡、全屏、帧率开关相关代码已删除（`ControllerWebViewHost`、`ViewportRecorder`、`ControllerViewport`、`RecordingControls`、`ViewModeToggle`、`src/controller/`）。平板当前只剩控制栏与状态面板，单屏重做见 TODO。
-- 患者页：性能开关、SUS、6 s 注视选择、`spin` 调试项已删除；`SpatialInput` 的注视子系统因此无注册目标，清理列入后续结构阶段。
-- 协议：state 20 字节 v10；命令新增 `mode:`、`float:level:`、`float:profile:`；`HELLO/WELCOME` 版本号为 2。
-- 验证：`tsc` 通过；vitest 18 文件 / 179 用例；`:protocol:test`、`:headset:assembleDebug`、`:control:assembleDebug` 通过。未在 PICO 实机验证。
+- 平板：镜像、急停、模式、强度、水声，加一个只读姿态仪表；没有场景页。
+- 协议：state 20 字节 v10；`HELLO/WELCOME` 版本号为 2；能力位去掉 `CAP_SCENE`。
+- 验证：`tsc`、vitest 18 文件 / 185 用例、web 构建、`:protocol:test`、两个 APK 构建通过。未在 PICO 实机验证。

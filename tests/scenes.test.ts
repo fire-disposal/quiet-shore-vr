@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { SCENE } from '../src/scenes/registry';
+import { SCENE, SCENES, getSceneDefinition } from '../src/scenes/registry';
 import { ResourceRegistry } from '../src/core/geometry/registry';
 import { measureObject } from '../src/core/geometry/budget';
 
-function build() {
+function build(id: string) {
+  const definition = getSceneDefinition(id);
+  if (!definition) {
+    throw new Error(`scene ${id} must be registered`);
+  }
   const registry = new ResourceRegistry();
-  const handle = SCENE.build({ eyeHeight: 1.7, registry });
-  return { handle, registry };
+  const handle = definition.build({ eyeHeight: 1.7, registry });
+  return { definition, handle, registry };
 }
 
 function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
@@ -25,56 +29,73 @@ function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
   return found;
 }
 
-describe('shore scene', () => {
-  it('is the only shipped scene', () => {
-    expect(SCENE.id).toBe('shore');
-    expect(SCENE.name.zh).toBe('仰望湖面');
+describe('scene registry', () => {
+  it('ships the two operator-selectable scenes in wire order', () => {
+    // Index order is the BLE state byte 11 contract: append only.
+    expect(SCENES.map((scene) => scene.id)).toEqual(['washroom', 'shore']);
+    expect(SCENE.id).toBe('washroom');
   });
 
-  it('declares localized copy and a bundled audio track', () => {
-    expect(SCENE.name.en.length).toBeGreaterThan(0);
-    expect(SCENE.tagline.zh.length).toBeGreaterThan(0);
-    expect(SCENE.description.zh.length).toBeGreaterThan(SCENE.tagline.zh.length);
-    expect(SCENE.audio.track).toBe('lake');
+  it('resolves every registered scene and nothing else', () => {
+    for (const scene of SCENES) {
+      expect(getSceneDefinition(scene.id)).toBe(scene);
+    }
+    expect(getSceneDefinition('unknown')).toBeUndefined();
   });
 
-  it('stays inside the one-device frame budget', () => {
-    const { handle, registry } = build();
-    try {
-      const stats = measureObject(handle.root);
-      // The ceiling is what makes 1.25x supersampling affordable on Adreno
-      // 540: six calls, one full-screen dome, three transparent passes.
-      expect(stats.drawCalls).toBeLessThanOrEqual(6);
-      expect(stats.triangles).toBeLessThanOrEqual(1500);
-      expect(stats.textures).toBeLessThanOrEqual(5);
-      expect(transparentMeshes(handle.root).length).toBeLessThanOrEqual(4);
-      expect(handle.budget).toBeDefined();
-      expect(handle.budget!.check(stats)).toEqual([]);
-    } finally {
-      handle.dispose();
-      registry.disposeAll();
+  it('declares localized copy and a bundled audio track for each', () => {
+    for (const scene of SCENES) {
+      expect(scene.name.zh.length).toBeGreaterThan(0);
+      expect(scene.name.en.length).toBeGreaterThan(0);
+      expect(scene.tagline.zh.length).toBeGreaterThan(0);
+      expect(scene.description.zh.length).toBeGreaterThan(scene.tagline.zh.length);
+      expect(['lake', 'stream', 'rain']).toContain(scene.audio.track);
+    }
+  });
+});
+
+describe('scene budgets', () => {
+  it('keeps every scene inside the one-device frame budget', () => {
+    for (const scene of SCENES) {
+      const { handle, registry } = build(scene.id);
+      try {
+        const stats = measureObject(handle.root);
+        expect(stats.drawCalls).toBeLessThanOrEqual(10);
+        expect(stats.triangles).toBeLessThanOrEqual(3000);
+        expect(stats.textures).toBeLessThanOrEqual(6);
+        expect(handle.budget).toBeDefined();
+        expect(handle.budget!.check(stats)).toEqual([]);
+      } finally {
+        handle.dispose();
+        registry.disposeAll();
+      }
     }
   });
 
-  it('keeps its own settings and releases them on dispose', () => {
-    const { handle } = build();
-    expect(handle.settings.background).toBeInstanceOf(THREE.Color);
-    expect(handle.settings.fog).toBeInstanceOf(THREE.Fog);
-    expect(handle.root.parent).toBeNull();
+  it('builds a static room with no transparency', () => {
+    const { handle } = build('washroom');
+    expect(transparentMeshes(handle.root)).toHaveLength(0);
+    expect(handle.settings.fog).toBeNull();
     handle.dispose();
-    expect(handle.root.children).toHaveLength(0);
-    expect(() => handle.dispose()).not.toThrow();
   });
 
-  it('advances clouds and motes without allocating new objects', () => {
-    const { handle } = build();
-    const motes = handle.root.getObjectByName('shore-motes') as THREE.Points;
-    const attribute = motes.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const before = (attribute.array as Float32Array).slice(0, 3);
-    handle.update(0.5, 0.5);
-    const after = attribute.array as Float32Array;
-    expect(after[1]).not.toBe(before[1]);
-    expect(handle.root.getObjectByName('shore-clouds-0')).toBeDefined();
+  it('builds a shoreline with a fog horizon and soft anchors', () => {
+    const { handle } = build('shore');
+    expect(handle.settings.fog).toBeInstanceOf(THREE.Fog);
+    expect(handle.root.getObjectByName('shore-dome')).toBeDefined();
+    expect(handle.root.getObjectByName('shore-posts')).toBeDefined();
+    expect(handle.root.getObjectByName('shore-reeds')).toBeDefined();
+    // Only the cloud sheet, the sun path and the reeds may blend.
+    expect(transparentMeshes(handle.root).length).toBeLessThanOrEqual(3);
     handle.dispose();
+  });
+
+  it('disposes idempotently', () => {
+    const { handle } = build('shore');
+    expect(() => {
+      handle.dispose();
+      handle.dispose();
+    }).not.toThrow();
+    expect(handle.root.children).toHaveLength(0);
   });
 });

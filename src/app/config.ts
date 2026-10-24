@@ -1,4 +1,5 @@
 interface Bootstrap {
+  scene?: string | null;
   skipCalibration?: boolean;
   showHud?: boolean;
   eyeHeight?: number | string | null;
@@ -33,6 +34,8 @@ function readEyeHeight(value: unknown): number {
  * switches. Quality and scene selection are not parameters anymore.
  */
 export interface AppConfig {
+  /** Scene id from the launch bootstrap; the operator picks it on the tablet. */
+  initialScene: string | null;
   skipCalibration: boolean;
   showPerf: boolean;
   eyeHeight: number;
@@ -46,6 +49,7 @@ export function readConfig(search: string): AppConfig {
   const bootstrap: Bootstrap = window.__QS_BOOTSTRAP__ ?? {};
   const lang = params.get('lang') === 'en' ? 'en' : 'zh';
   return {
+    initialScene: bootstrap.scene ?? params.get('scene'),
     skipCalibration: bootstrap.skipCalibration ?? params.get('nocal') === '1',
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     eyeHeight: readEyeHeight(bootstrap.eyeHeight),

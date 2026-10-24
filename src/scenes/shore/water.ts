@@ -1,18 +1,19 @@
 import * as THREE from 'three';
 
 /**
- * The lake, as one opaque quad: a baked gradient from deep water at the
- * patient's feet to haze at the far shore, with the sun's path drawn into a
- * separate additive strip.
+ * The lake, as one opaque quad plus one additive strip.
  *
- * Nothing here animates. Ripples drawn as per-pixel sine in a shader shimmer
- * badly at 20 px/deg without MSAA, and the patient's motion is the head's, not
- * the water's; clouds already carry the only motion the scene needs.
+ * §2.1 of `docs/research-standing-sensation.md`: floating over water produces
+ * roughly four times the vection distance of standing on ground, because the
+ * vestibular "below" reference goes vague. That is the whole job of this
+ * object. Nothing animates: ripples drawn per pixel shimmer badly at
+ * 20 px/deg with no MSAA, and the head's own motion supplies the parallax.
  */
 
-const WATER_SIZE = 420;
-const GLITTER_LENGTH = 150;
-const GLITTER_WIDTH = 5.5;
+const WATER_DEPTH = 300;
+const WATER_CENTER_Z = -140;
+const GLITTER_LENGTH = 104;
+const GLITTER_WIDTH = 9;
 
 export interface WaterLayer {
   root: THREE.Group;
@@ -34,28 +35,40 @@ function waterTexture(): THREE.CanvasTexture | null {
     return null;
   }
   const ramp = ctx.createLinearGradient(0, 0, 0, height);
-  ramp.addColorStop(0.0, '#E3D3B6');
-  ramp.addColorStop(0.16, '#B9B39E');
-  ramp.addColorStop(0.4, '#7C8C82');
-  ramp.addColorStop(0.68, '#4C655F');
-  ramp.addColorStop(1.0, '#2C423F');
+  ramp.addColorStop(0.0, '#C6BFAA');
+  ramp.addColorStop(0.12, '#9FA99A');
+  ramp.addColorStop(0.3, '#7B9189');
+  ramp.addColorStop(0.52, '#5C7A74');
+  ramp.addColorStop(0.76, '#44625F');
+  ramp.addColorStop(1.0, '#2F4A49');
   ctx.fillStyle = ramp;
   ctx.fillRect(0, 0, width, height);
 
-  // Banded ripple hints: low contrast, mipmapped, so they never sparkle.
   let seed = 7;
   const random = (): number => {
     seed = (seed * 1103515245 + 12345) % 2147483648;
     return seed / 2147483648;
   };
+
   ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 140; i += 1) {
-    const y = height * (0.2 + random() * 0.78);
-    const depthFade = (y / height) * 0.09;
-    const x = random() * width;
-    const len = 6 + random() * 26;
-    ctx.fillStyle = `rgba(226, 231, 218, ${(depthFade * (0.5 + random() * 0.5)).toFixed(3)})`;
-    ctx.fillRect(x, y, len, 1);
+  for (let i = 0; i < 26; i += 1) {
+    const y = height * (0.08 + random() * 0.88);
+    const band = height * (0.004 + random() * 0.012);
+    const alpha = 0.05 + random() * 0.05;
+    const grad = ctx.createLinearGradient(0, y - band, 0, y + band);
+    grad.addColorStop(0, 'rgba(232, 235, 220, 0)');
+    grad.addColorStop(0.5, `rgba(232, 235, 220, ${alpha.toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(232, 235, 220, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, y - band, width, band * 2);
+  }
+  for (let i = 0; i < 120; i += 1) {
+    const t = random() ** 0.6;
+    const y = height * (0.42 + t * 0.58);
+    const len = 8 + random() * 30 * (0.4 + t);
+    const alpha = 0.04 + t * 0.08;
+    ctx.fillStyle = `rgba(226, 231, 214, ${alpha.toFixed(3)})`;
+    ctx.fillRect(random() * width, y, len, 1);
   }
   ctx.globalCompositeOperation = 'source-over';
 
@@ -69,7 +82,7 @@ function glitterTexture(): THREE.CanvasTexture | null {
   if (typeof document === 'undefined' || !document.createElement) {
     return null;
   }
-  const width = 32;
+  const width = 64;
   const height = 256;
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -80,16 +93,15 @@ function glitterTexture(): THREE.CanvasTexture | null {
   }
   const image = ctx.createImageData(width, height);
   for (let y = 0; y < height; y += 1) {
-    // Brightest just off the far shore, fading toward the eye.
-    const along = 1 - y / height;
-    const falloff = Math.sin(Math.PI * Math.min(1, along * 1.15)) ** 1.6;
+    const along = 1 - y / (height - 1);
+    const falloff = Math.sin(Math.PI * Math.min(1, along * 1.05)) ** 1.4;
     for (let x = 0; x < width; x += 1) {
       const across = 1 - Math.abs((x / (width - 1)) * 2 - 1);
-      const value = Math.round(255 * falloff * across ** 2.2);
+      const value = Math.round(255 * falloff * across ** 2.4);
       const index = (y * width + x) * 4;
       image.data[index] = 255;
-      image.data[index + 1] = 240;
-      image.data[index + 2] = 208;
+      image.data[index + 1] = 243;
+      image.data[index + 2] = 214;
       image.data[index + 3] = value;
     }
   }
@@ -105,7 +117,7 @@ export function createWater(): WaterLayer {
   root.name = 'shore-water';
 
   const texture = waterTexture();
-  const geometry = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE);
+  const geometry = new THREE.PlaneGeometry(WATER_DEPTH, WATER_DEPTH);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.MeshBasicMaterial({
     ...(texture ? { map: texture } : {}),
@@ -114,6 +126,7 @@ export function createWater(): WaterLayer {
   });
   const plane = new THREE.Mesh(geometry, material);
   plane.name = 'shore-water-plane';
+  plane.position.z = WATER_CENTER_Z;
   plane.renderOrder = 0;
   root.add(plane);
 
@@ -124,7 +137,7 @@ export function createWater(): WaterLayer {
     ...(glitterMap ? { map: glitterMap } : {}),
     color: glitterMap ? 0xffffff : 0xf5e4c6,
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.42,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     fog: false,
@@ -132,9 +145,8 @@ export function createWater(): WaterLayer {
   });
   const glitter = new THREE.Mesh(glitterGeometry, glitterMaterial);
   glitter.name = 'shore-water-glitter';
-  // Runs from just past the patient toward the sun on the -Z horizon.
-  glitter.position.set(0, 0.02, -32 - GLITTER_LENGTH * 0.5);
-  glitter.renderOrder = 2;
+  glitter.position.set(0, 0.02, -6 - GLITTER_LENGTH * 0.5);
+  glitter.renderOrder = 3;
   root.add(glitter);
 
   return {

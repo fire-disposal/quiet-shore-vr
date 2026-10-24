@@ -14,7 +14,7 @@ function rotationQuaternion(r: WorldRotation): THREE.Quaternion {
 
 function neutralInput(): SceneSnapshotInput {
   return {
-    sceneId: 'shore',
+    sceneId: 'washroom',
     loaded: true,
     session: true,
     calibrating: false,
@@ -75,7 +75,7 @@ describe('scene snapshot', () => {
     input.baseReferenceQuaternion = qCal;
     snapshot.capture(input);
 
-    expect(snapshot.sceneId).toBe('shore');
+    expect(snapshot.sceneId).toBe('washroom');
     expect(snapshot.loaded).toBe(true);
     expect(snapshot.sitUpActive).toBe(false);
     expect(snapshot.posturePhase).toBe('rising');

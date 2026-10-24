@@ -152,7 +152,8 @@ function createRandom(seed: number): () => number {
  * drift a sense of depth without moving the viewpoint. Lateral sway around
  * each mote's seeded column replaces wrap-around drift, so a mote never
  * teleports sideways and the horizontal radius stays fixed. It is
- * intentionally scene-scoped: only the landscape installs it for now.
+ * scene-scoped: the app installs it above every scene, including the rebuilt
+ * shore scene, which deliberately owns no particle system of its own.
  */
 export function createPostureCue(options: PostureCueOptions): PostureCueApi {
   const count = Math.max(20, Math.min(40, options.count ?? COUNT_DEFAULT));

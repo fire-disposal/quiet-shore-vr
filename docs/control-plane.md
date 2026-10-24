@@ -88,13 +88,13 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 
 ### 2.4 state
 
-固定 20 字节二进制，小端；第一字节是版本号 `8`：
+固定 20 字节二进制，小端；第一字节是版本号 `10`：
 
 | 偏移 | 字段 | 编码 |
 | --- | --- | --- |
-| 0 | version | `8` |
-| 1 | reserved | 场景索引占位；只发布一个场景，当前恒为 `0` |
-| 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled |
+| 0 | version | `10` |
+| 1 | floatLevel | 0–3 |
+| 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled, bit4 sitUpActive, bit5 postureMode, bit6–7 float profile (0=a, 1=b, 2=c) |
 | 3 | eyeHeight | 厘米，120–190 |
 | 4 | posturePitch | **有符号**整数度：测得的世界倾角（0 → +90 为起身） |
 | 5 | postureRoll | **有符号**整数度：测得的世界横滚 |
@@ -103,7 +103,7 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 | 8 | viewPitch | **有符号**整数度，−90–+90（页面是唯一夹紧点）；正值 = 上仰（患者看到更多天空） |
 | 9 | viewAnim | 0 idle / 1 playing / 2 held；其他值按 idle 处理 |
 | 10 | cueIntensity | 0–100 |
-| 11 | calibrationConfidence | 0–100 |
+| 11 | sceneIndex | `SCENE_IDS` 索引：0 = `washroom`，1 = `shore`，255 = unknown |
 | 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe；其他值按 none 处理 |
 | 13–14 | viewYaw | **有符号** int16 小端，度；+ = 患者视线左转 |
 | 15–16 | worldYaw | **有符号** int16 小端：实际写入场景内容的世界偏航（外壳 × 基座） |
@@ -114,8 +114,9 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 - `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested` / `viewYawRequested`，收到回读后清空。
 - `viewAnim` 只表示页面动画播放器的粗粒度相位（`idle` / `playing` / `held`），页面通过 WS `state` 的 `viewAnim` 字符串上报；未知值按 `idle` 处理。
 - `viewPreset` 是页面最近播放/正在播放的预设 id（`none|up|down|recenter|breathe`），未知值按 `none` 处理；平板只回显，不自行推断。
-- 20 字节仍落在默认 ATT 负载（20 字节）内；版本不等于 8 或长度不为 20 的帧直接丢弃。
+- 20 字节仍落在默认 ATT 负载（20 字节）内；版本不等于 10 或长度不为 20 的帧直接丢弃。
 - 所有角度字段（byte 4 / 5 / 8 / 13–18 / 19）只做位宽检查：越界值不会被静默夹紧，口径见 `docs/rotation-contract.md`。
+- 场景可切换，但只在会话开始前：平板发 `scene:<id>`，头显校验后存入启动参数并转发页面；`CAP_SCENE`（bit 1）声明该能力。byte 11 是 `SCENE_IDS` 的索引（`washroom`=0、`shore`=1，255 = unknown），顺序只增不改。
 - 旧文本格式与 v6 及更早的二进制帧均已删除，没有兼容层。
 
 ## 3. 第一台接管

@@ -1,23 +1,21 @@
 import * as THREE from 'three';
 
 /**
- * Cloud deck for a patient on their back: two horizontal sheets overhead,
- * drifting at different speeds so the sky has depth without geometry.
+ * Cloud deck for a patient on their back: one horizontal sheet overhead,
+ * drifting slowly, with clear sky between the masses.
  *
- * Two textured quads is the whole budget. The old scene stacked three sheets
- * here plus a second, drifting instanced cloud system below the horizon; for a
- * supine viewer that was five near-full-screen transparent passes per eye for
- * one visual idea.
+ * One sheet, not three: every sheet is a near-full-screen transparent pass per
+ * eye, and the scene budget is spent on supersampling instead. The texture
+ * tiles 2× so the puffs keep an edge after magnification rather than turning
+ * into bokeh.
  */
 
-const SHEETS = 2;
-const SPREAD = 150;
-const BASE_HEIGHT = 24;
+const SPREAD = 175;
+const BASE_HEIGHT = 34;
 
 interface Sheet {
   mesh: THREE.Mesh;
   material: THREE.MeshBasicMaterial;
-  /** Drift radius and rate, kept per sheet for parallax. */
   reach: number;
   speed: number;
   phase: number;
@@ -33,7 +31,7 @@ function cloudTexture(): THREE.CanvasTexture | null {
   if (typeof document === 'undefined' || !document.createElement) {
     return null;
   }
-  const size = 512;
+  const size = 1024;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -48,32 +46,76 @@ function cloudTexture(): THREE.CanvasTexture | null {
     seed = (seed * 1664525 + 1013904223) % 4294967296;
     return seed / 4294967296;
   };
-  for (let i = 0; i < 14; i += 1) {
-    const x = size * (0.14 + random() * 0.72);
-    const y = size * (0.2 + random() * 0.6);
-    const radius = size * (0.1 + random() * 0.2);
-    const alpha = 0.22 + random() * 0.3;
-    const blob = ctx.createRadialGradient(x, y, 0, x, y, radius);
-    blob.addColorStop(0, `rgba(255, 252, 246, ${alpha.toFixed(3)})`);
-    blob.addColorStop(0.55, `rgba(252, 244, 232, ${(alpha * 0.55).toFixed(3)})`);
-    blob.addColorStop(1, 'rgba(250, 244, 234, 0)');
-    ctx.fillStyle = blob;
-    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+
+  const drawPuff = (
+    x: number,
+    y: number,
+    radius: number,
+    alpha: number,
+    bright: boolean
+  ): void => {
+    for (let ox = -1; ox <= 1; ox += 1) {
+      for (let oy = -1; oy <= 1; oy += 1) {
+        const px = x + ox * size;
+        const py = y + oy * size;
+        const gradient = ctx.createRadialGradient(
+          px,
+          bright ? py - radius * 0.25 : py + radius * 0.3,
+          0,
+          px,
+          py,
+          radius
+        );
+        if (bright) {
+          gradient.addColorStop(0, `rgba(255, 253, 248, ${alpha.toFixed(3)})`);
+          gradient.addColorStop(0.42, `rgba(250, 248, 242, ${(alpha * 0.7).toFixed(3)})`);
+          gradient.addColorStop(0.78, `rgba(216, 226, 234, ${(alpha * 0.35).toFixed(3)})`);
+          gradient.addColorStop(1, 'rgba(206, 219, 230, 0)');
+        } else {
+          gradient.addColorStop(0, `rgba(146, 166, 186, ${alpha.toFixed(3)})`);
+          gradient.addColorStop(0.6, `rgba(150, 170, 190, ${(alpha * 0.5).toFixed(3)})`);
+          gradient.addColorStop(1, 'rgba(150, 170, 190, 0)');
+        }
+        ctx.fillStyle = gradient;
+        ctx.fillRect(px - radius, py - radius, radius * 2, radius * 2);
+      }
+    }
+  };
+
+  for (let mass = 0; mass < 12; mass += 1) {
+    const cx = size * random();
+    const cy = size * random();
+    const spread = size * (0.045 + random() * 0.05);
+    // Cool shaded base, then a few large bright lobes bind the small puffs
+    // into one mass, so the deck reads as cloud rather than beads.
+    drawPuff(cx, cy, spread * 1.5, 0.22, false);
+    for (let lobe = 0; lobe < 4; lobe += 1) {
+      drawPuff(
+        cx + (random() - 0.5) * spread * 0.7,
+        cy + (random() - 0.5) * spread * 0.4,
+        spread * (0.35 + random() * 0.35),
+        0.12 + random() * 0.1,
+        true
+      );
+    }
+    const puffs = 12 + Math.floor(random() * 6);
+    for (let puff = 0; puff < puffs; puff += 1) {
+      drawPuff(
+        cx + (random() + random() - 1) * spread,
+        cy + (random() + random() - 1) * spread * 0.6,
+        size * (0.008 + random() * 0.016),
+        0.45 + random() * 0.25,
+        true
+      );
+    }
   }
-  // Feather the border so the quad never shows an edge against the dome.
-  const edge = ctx.createLinearGradient(0, 0, size, 0);
-  edge.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  edge.addColorStop(0.14, 'rgba(0, 0, 0, 1)');
-  edge.addColorStop(0.86, 'rgba(0, 0, 0, 1)');
-  edge.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.globalCompositeOperation = 'destination-in';
-  ctx.fillStyle = edge;
-  ctx.fillRect(0, 0, size, size);
-  ctx.globalCompositeOperation = 'source-over';
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2, 2);
   return texture;
 }
 
@@ -83,57 +125,40 @@ export function createClouds(): CloudLayer {
 
   const texture = cloudTexture();
   const geometry = new THREE.PlaneGeometry(1, 1);
-  const sheets: Sheet[] = [];
+  const material = new THREE.MeshBasicMaterial({
+    ...(texture ? { map: texture } : {}),
+    color: texture ? 0xffffff : 0xdfe6e6,
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+    side: THREE.DoubleSide
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'shore-clouds';
+  // Horizontal, seen from below.
+  mesh.rotation.x = Math.PI / 2;
+  mesh.position.y = BASE_HEIGHT;
+  mesh.scale.setScalar(SPREAD * 0.95);
+  mesh.renderOrder = 1;
+  mesh.frustumCulled = false;
+  root.add(mesh);
 
-  for (let i = 0; i < SHEETS; i += 1) {
-    const material = new THREE.MeshBasicMaterial({
-      ...(texture ? { map: texture } : {}),
-      color: texture ? 0xffffff : 0xdfe6e6,
-      transparent: true,
-      opacity: i === 0 ? 0.52 : 0.3,
-      depthWrite: false,
-      fog: false,
-      toneMapped: false,
-      side: THREE.DoubleSide
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = `shore-clouds-${i}`;
-    // Horizontal, seen from below. The far sheet is higher and wider, so the
-    // two move against each other and read as a deck rather than a card.
-    mesh.rotation.x = Math.PI / 2;
-    mesh.rotation.z = i * 0.8;
-    mesh.position.y = BASE_HEIGHT + i * 11;
-    mesh.scale.setScalar(SPREAD * (0.85 + i * 0.5));
-    mesh.renderOrder = 1 + i;
-    mesh.frustumCulled = false;
-    root.add(mesh);
-    sheets.push({
-      mesh,
-      material,
-      reach: 5 + i * 3,
-      speed: 0.018 + i * 0.008,
-      phase: i * 2.1
-    });
-  }
+  const sheet: Sheet = { mesh, material, reach: 6, speed: 0.02, phase: 0 };
 
   return {
     root,
     update(dt: number, elapsed: number): void {
-      for (let i = 0; i < sheets.length; i += 1) {
-        const sheet = sheets[i];
-        const drift = elapsed * sheet.speed + sheet.phase;
-        sheet.mesh.position.x = Math.sin(drift) * sheet.reach;
-        sheet.mesh.position.z = Math.cos(drift * 0.63) * sheet.reach * 0.7;
-        // Barely perceptible roll: enough that a still head still sees motion.
-        sheet.mesh.rotation.z = i * 0.8 + Math.sin(drift * 0.4) * 0.05 + dt * 0.0015;
-      }
+      const drift = elapsed * sheet.speed + sheet.phase;
+      sheet.mesh.position.x = Math.sin(drift) * sheet.reach;
+      sheet.mesh.position.z = Math.cos(drift * 0.63) * sheet.reach * 0.7;
+      sheet.mesh.rotation.z = 0.8 + Math.sin(drift * 0.4) * 0.02 + dt * 0.0008;
     },
     dispose(): void {
       geometry.dispose();
+      material.dispose();
       if (texture) texture.dispose();
-      for (let i = 0; i < sheets.length; i += 1) {
-        sheets[i].material.dispose();
-      }
       root.clear();
       root.removeFromParent();
     }

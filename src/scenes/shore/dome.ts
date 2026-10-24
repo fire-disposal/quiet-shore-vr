@@ -6,8 +6,7 @@ import * as THREE from 'three';
  *
  * No vertex shader, no per-pixel noise, no dither: a supine patient stares at
  * this surface for ten minutes, and every bit of per-pixel work here is paid
- * twice (one pass per eye) at full screen. The dither the old shader added to
- * hide banding was itself the most visible noise source on a 4K panel.
+ * twice (one pass per eye) at full screen.
  */
 
 const DOME_RADIUS = 90;
@@ -25,12 +24,13 @@ export interface DomeLayer {
 /** Equirectangular dawn ramp: zenith, pale mid sky, warm horizon, dark nadir. */
 function paintSky(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   const ramp = ctx.createLinearGradient(0, 0, 0, height);
-  ramp.addColorStop(0.0, '#4F7BA4');
-  ramp.addColorStop(0.26, '#7FA3C2');
-  ramp.addColorStop(0.42, '#B9CDD4');
-  ramp.addColorStop(0.475, '#E7D9C0');
-  ramp.addColorStop(0.52, '#F7E7C6');
-  ramp.addColorStop(0.6, '#D6C4A7');
+  ramp.addColorStop(0.0, '#48739E');
+  ramp.addColorStop(0.24, '#78A0C0');
+  ramp.addColorStop(0.41, '#B4C9D2');
+  ramp.addColorStop(0.472, '#DCCFB8');
+  ramp.addColorStop(0.505, '#EFDFBF');
+  ramp.addColorStop(0.545, '#E7D7BD');
+  ramp.addColorStop(0.62, '#CDBBA0');
   ramp.addColorStop(1.0, '#6E6A60');
   ctx.fillStyle = ramp;
   ctx.fillRect(0, 0, width, height);
@@ -46,7 +46,7 @@ function paintSky(ctx: CanvasRenderingContext2D, width: number, height: number):
   ctx.fillStyle = wash;
   ctx.fillRect(0, 0, width, height);
 
-  // The disk itself, roughly 2° across: a readable point of light, not a lamp.
+  // The disk itself: a readable point of light, not a lamp.
   const disk = ctx.createRadialGradient(cx, cy, 0, cx, cy, 26);
   disk.addColorStop(0, 'rgba(255, 251, 240, 1)');
   disk.addColorStop(0.35, 'rgba(255, 248, 230, 0.95)');
@@ -78,10 +78,10 @@ function skyTexture(): THREE.CanvasTexture | null {
 
 export function createDome(): DomeLayer {
   const texture = skyTexture();
-  const geometry = new THREE.SphereGeometry(DOME_RADIUS, 32, 16);
+  const geometry = new THREE.SphereGeometry(DOME_RADIUS, 24, 12);
   const material = new THREE.MeshBasicMaterial({
-    // Headless test hosts have no canvas: a flat sky still builds and measures.
     ...(texture ? { map: texture } : {}),
+    // Headless test hosts have no canvas: a flat sky still builds and measures.
     color: texture ? 0xffffff : 0x9cbbd2,
     side: THREE.BackSide,
     fog: false,

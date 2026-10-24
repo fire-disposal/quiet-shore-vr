@@ -4,7 +4,7 @@
 
 本文件只记录现状与计划。实现前先在 `core.md` 更新目标与非目标（仓库规则 1）；完成后本文删除，结论并入 `core.md`。
 
-> **状态：草案，可与场景重设计并行。** 场景正在重做（单一 `shore`：`dome.ts` / `clouds.ts` / `water.ts` / `shoreline.ts`；`motes.ts` 已删、改动尚未提交）。§3 的数值是 2026-10-24 工作树的快照，场景落定后按 §3 末的重算清单重跑一次再引用；§4–§8.2 的交互与协议结论不依赖这些常量。
+> **状态：草案。** 场景已定为单一 `washroom`（`src/scenes/washroom/`：墙/地/顶、隔屏、立便器、天光；10 draw / 568 三角形 / 0 透明），§3 里所有 `shore` 常量均已作废，引用前重算；§4–§8.2 的交互与协议结论不依赖这些常量。
 
 ## 0 结论
 
@@ -180,13 +180,15 @@ state 帧 20 字节已满（`ControlProtocol.kt:668-698` 的字段全部在用�
 
 ## 5 问题清单
 
-### F0 · 产品叙事分叉（阻断）
+### F0 · 产品叙事分叉（已收敛为双场景）
 
-页面侧已经收敛：`registry.ts` 只剩 `shore`，`build()` 也不再收 quality。协议与两端仍停在多场景：`SCENE_IDS` 有 4 个 id、`DEFAULT_SCENE = bathroom`、`CAP_SCENE` 仍申报、平板 `ScenePage` 仍列 4 项、state byte 1 仍是场景索引。于是选了 `shore` 之外的场景会在页面报“未知场景”，而平板看不出原因。D4 在 web 侧已定（看湖），剩下的是协议与两端的切除。
+`src/scenes/registry.ts` 有 `washroom`（默认）与 `shore` 两个场景；`SCENE_IDS`/`DEFAULT_SCENE`/`CAP_SCENE`/`scene:` 命令/平板场景页/头显启动参数全部在位，切换由控制端主导、仅限会话前。`quality` 与 `?scale` 仍不提供（单设备单档）。
+
+残留（低风险）：场景名在头显控制台卡片里是一份手写副本；`SCENE_LABELS` 也是协议层的手抄，id 与顺序以 `SCENE_IDS` 为契约。
 
 ### F1 · 平板死面：能力位强制暴露已废弃的控制
 
-`CAPABILITIES_MASK` 打开 `CAP_SCENE | CAP_SUS | CAP_EYE_HEIGHT | CAP_GAZE_DWELL`（`ControlProtocol.kt:172-174`），握手要求全位匹配，所以平板不可能隐藏它们；于是 8 个分区（`ControlPanel.kt:72,142,160,174,198,216,247,290`）、4 个页签（`ControlScreen.kt:255-272`）、场景页、镜像、SUS、目视选择全部在线。
+`CAPABILITIES_MASK` 仍打开 `CAP_SUS | CAP_EYE_HEIGHT | CAP_GAZE_DWELL`（`ControlProtocol.kt`），握手要求全位匹配，所以平板不可能隐藏它们；场景页已删除，SUS、眼高、目视选择仍在线上，这些分区是否还需要保留是下一轮的决定。
 
 ### F2 · 常驻急停不常驻
 

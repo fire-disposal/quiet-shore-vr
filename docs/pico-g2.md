@@ -135,10 +135,36 @@ adb shell am start -a android.intent.action.VIEW \
 
 ## 6. 性能与画质
 
-- 默认高画质：`?quality=high`；低画质：`?quality=low`，同时关闭 AA、降低帧缓冲缩放。
-- 无阴影贴图、无后处理；`landscape` 的预算由场景自身声明（含天穹与云层），增长会以预算违规的形式暴露。
-- 若真机掉帧：默认保留高清和 AA；掉帧时先 `?quality=low` 或 `?scale=0.85`，再评估 `?aa=0`；不要引入后处理来“补偿”。
-- Firefox Reality 的 `MAX_TEXTURE_SIZE` 16384；程序化纹理均为 POT。
+一台设备，一套参数：`src/core/xr/renderer.ts` 写死 `antialias: true`、`XR_SCALE = 1.25`、2D 预览 `pixelRatio = 1`。没有 `?quality`、`?aa`、`?scale`，也没有跨会话自适应降档——降档只会在一次慢会话后永久把画面变糊，而这个 GPU 的余量应该花在超采样上。
+
+### 6.1 预算（由 `tests/scenes.test.ts` 断言）
+
+| 项 | 上限 | 实测（`washroom`） |
+| --- | --- | --- |
+| draw calls | 10 | 10（墙/地/顶、隔屏、立便器、碗沿、喉部、背板、冲水面板、天光） |
+| 三角形 | 3 k | 568 |
+| 纹理 | 6 | 5 |
+| 透明网格 | 3 | 0 |
+| 满屏 pass / 眼 | 1 | 房间本身 1 |
+
+### 6.2 为什么这条预算是对的
+
+Adreno 540 在这个分辨率上**不是几何瓶颈**：旧场景 21–24 次绘制、39.5 k 三角形，帧率同样接近刷新率上限，说明成本在填充率。旧场景每眼要付：两套满屏天穹（其中一个逐像素 noise + dither）、三张云幕、两层实例化云、雾片、增光片、水面与透明植被，合计约 6–8 次满屏等价的混合。
+
+卫生间场景只有**一次**满屏填充：四面墙/顶合批成一次绘制，其余都是小面积不透明几何；没有透明网格，因此没有排序、没有混合、没有 overdraw 叠加。省下的填充预算直接给了 1.25× 超采样（1.56× 像素），画质与帧时间同时改善。
+
+### 6.3 抗锯齿的边界
+
+- three r152 走 `XRWebGLLayer` 时把上下文属性里的 `antialias` 交给浏览器（`WebXRManager.js` 中 `layers` 分支才会用 `samples: 4`）。Gecko 78 没有 WebXR Layers，所以实时 MSAA 很可能实际不生效；`gl.getParameter(gl.SAMPLES)` 在会话里可确认。
+- 因此抗锯齿靠**超采样**（`XR_SCALE`），而不是后处理。`postprocessing` / FXAA / SMAA / TAA 都要求先把场景渲到离屏 RT 再全屏合成，WebXR base layer 下拿不到，且 4K×2 上多一次全屏 pass 比它省下的锯齿更贵。
+- 几何上避免硬边透明：芦苇用 `transparent` 混合而不是 `alphaTest`，云与水用带 mipmap 的贴图，天穹渐变不带 dither。剩下真正的边缘（木桩、地平线交界）交给 1.25 倍超采样。
+
+### 6.4 掉帧时的顺序
+
+1. 先看 HUD 的 `p95`，不是 fps 均值：XR 的 rAF 被 vsync 锁在刷新率，80–90 往往就是 90 Hz 的上限。
+2. 确认 `XR_SCALE` 是否被改过（HUD 显示 `1.25x`）。
+3. 再考虑降 `XR_SCALE` 到 1.1；不要关闭 AA（无效果但会让 MSAA 路径彻底消失）。
+4. 不要加后处理"补偿"，也不要重新引入第二层云或第二套天穹。
 
 ## 7. 头显控制台、通知与磁贴
 

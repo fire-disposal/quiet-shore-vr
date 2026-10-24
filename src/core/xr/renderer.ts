@@ -49,6 +49,12 @@ export function createRenderer(container: HTMLElement): THREE.WebGLRenderer {
     ? new THREE.WebGLRenderer({ canvas, context: gl, antialias: true })
     : new THREE.WebGLRenderer({ antialias: true });
 
+  // Declared, not inherited: the whole look is authored in sRGB textures with
+  // lights that stay below clipping, so a tone map would only compress the
+  // mid-tones of a deliberately low-contrast room.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;
+
   // 2D preview only; the XR compositor owns the presented resolution.
   renderer.setPixelRatio(1);
   renderer.setSize(window.innerWidth, window.innerHeight);
