@@ -36,18 +36,9 @@ import {
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
-import {
-  DEFAULT_FLOAT_PROFILE,
-  FLOAT_PROFILES,
-  FLOAT_LEVEL_CAP,
-  FLOAT_MAX_LEVEL,
-  easeAmplitude,
-  floatAmplitudeForLevel,
-  floatOffsetAt,
-  floatPitchAt,
-  isFloatProfileId,
-  type FloatProfile
-} from '../core/xr/float';
+import { FLOAT_MAX_LEVEL, isFloatProfileId } from '../core/xr/float';
+import { calibratedFloorOffset } from '../core/xr/buoyancy-frame';
+import { createFloating, type FloatingApi } from './floating';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { PortalLink, stateFromSnapshot } from './portal-link';
 import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
@@ -74,8 +65,6 @@ const CUE_IDLE_FLOW = 0.25;
 const STOP_FADE_MS = 1000;
 /** Planned session length used by the voice auto plan until the wire carries it. */
 const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
-/** How deep the water bed breathes with the buoyancy; 0.12 is audible, not pumping. */
-const SWELL_AUDIO_DEPTH = 0.12;
 /** The stable window the operator (or the patient's button) starts. */
 /** Hold-still window before the countdown starts (1.2 s × 1.5). */
 const CALIBRATION_HOLD_MS = 1800;
@@ -87,8 +76,6 @@ const CALIBRATION_DEADLINE_MS = 9000;
 const CALIBRATION_MAX_DEVIATION_DEG = 6;
 /** The card must stay readable even when the sample lands immediately. */
 const CALIBRATION_MIN_VISIBLE_MS = 2500;
-/** Buoyancy fade constant: the visible heave is gone inside a second. */
-const FLOAT_FADE_TAU_S = 0.25;
 // Strict wire forms: no sign, exponent, padding or spaces; reject, never coerce.
 const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
 
@@ -177,22 +164,10 @@ export class QuietShoreApp {
     durationMs: CALIBRATION_COUNTDOWN_MS,
     maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
   });
-  /** Technician's buoyancy choice, 0..FLOAT_MAX_LEVEL. */
-  private floatLevel = 1;
-  /** Which buoyancy profile is active; chosen in the room, not on a desk. */
-  private floatProfile: FloatProfile = FLOAT_PROFILES[DEFAULT_FLOAT_PROFILE];
-  /** Eased amplitude actually applied; drops to 0 on stop. */
-  private floatAmplitude = 0;
-  /** Seconds of continuous drift; kept while fading so the phase never jumps. */
-  private floatSeconds = 0;
-  /** Breathing layer on the heave; the strongest cheap buoyancy cue. */
-  private floatBreath = true;
+  /** Buoyancy: level, profile, envelope and the content offset it rides on. */
+  private readonly floating: FloatingApi;
   /** Sit-up ramp length; the operator can slow it down for comfort. */
   private sitUpDurationMs = SITUP_DURATION_MS;
-  /** Last non-zero buoyancy offset written, or 0 once settled. */
-  private floatOffsetApplied = 0;
-  /** Last horizon sway written, in degrees, or 0 once settled. */
-  private floatSwayApplied = 0;
   private postureCueState: PostureCueApi | null = null;
   private susPanel: SusPanelApi | null = null;
   private calibrationOverlay: CalibrationOverlayApi | null = null;
@@ -241,10 +216,6 @@ export class QuietShoreApp {
         this.sceneId = requested.id;
       }
     }
-    if (isFloatProfileId(this.config.floatProfile)) {
-      this.floatProfile = FLOAT_PROFILES[this.config.floatProfile];
-    }
-
     this.start = new StartScreen(this.strings, {
       onEnter: () => void this.enterVR()
     });
@@ -266,6 +237,22 @@ export class QuietShoreApp {
     this.xr = this.renderer.xr as unknown as XRManagerLike;
 
     this.host = new SceneHost(this.scene);
+    // Buoyancy reads the session through `gate()`: the mode and the frame that
+    // currently poses the world decide whether the heave may run at all.
+    this.floating = createFloating({
+      host: this.host,
+      handle: () => this.handle,
+      gate: () => ({
+        mode: this.lifecycle.mode,
+        active: isActive(this.lifecycle),
+        capturePending: this.capturePending,
+        frame: this.sitUpMode ? 'posture' : 'calibrated'
+      }),
+      swell: (depth, periodS) => setBuoyancySwell(depth, periodS),
+      level: 1,
+      profile: isFloatProfileId(this.config.floatProfile) ? this.config.floatProfile : undefined,
+      breath: true
+    });
     this.input = new SpatialInput(
       this.camera,
       this.scene,
@@ -404,6 +391,22 @@ export class QuietShoreApp {
           this.applySceneCommand(id);
           return this.sceneId;
         },
+        /**
+         * Desktop check: the world frame the render loop is writing. Mirrors the
+         * three animation owners: the frame offset, the buoyancy delta and the
+         * operator's up-gaze.
+         */
+        frame: () => ({
+          mode: this.lifecycle.mode,
+          phase: this.lifecycle.phase,
+          frame: this.sitUpMode ? 'posture' : 'calibrated',
+          sitUpT: this.sitUpMotion.t,
+          baseFloorOffset: this.floating.getState().baseOffset,
+          bobM: this.floating.getState().offsetM,
+          swayDeg: this.floating.getState().swayDeg,
+          contentY: this.host.content.position.y,
+          upGazeDeg: this.viewMotion.getUpGazeDeg()
+        }),
         calibration: (visible: boolean) => {
           this.calibrationOverlay ??= createCalibrationOverlay({
             scene: this.scene,
@@ -533,7 +536,8 @@ export class QuietShoreApp {
     this.sitUpMode = false;
     this.sitUpReady = false;
     this.sitUpMotion.reset();
-    this.host.setFloorOffset(this.session ? -this.eyeHeight : 0);
+    this.floating.setBaseOffset(this.session ? -this.eyeHeight : 0);
+    this.floating.reset();
     preloadSceneAudio(definition.audio);
     this.start.setScene(definition.name[this.config.lang]);
   }
@@ -553,7 +557,7 @@ export class QuietShoreApp {
       this.scene.remove(this.comfort.group);
       this.comfort.group.remove(this.host.content);
       this.scene.add(this.host.content);
-      this.host.setFloorOffset(0);
+      this.floating.setBaseOffset(0);
       this.comfort = null;
     }
     this.host.unload();
@@ -616,7 +620,7 @@ export class QuietShoreApp {
       if (!this.voice.isReady()) {
         void this.voice.load();
       }
-      this.host.setFloorOffset(-this.eyeHeight);
+      this.floating.setBaseOffset(-this.eyeHeight);
       if (this.controlMode) {
         this.input.setLayers(false, false);
       }
@@ -692,7 +696,7 @@ export class QuietShoreApp {
     this.stopSceneAudio();
     // A session that ends during calibration must take the overlay with it.
     this.calibrationOverlay?.hide();
-    this.host.setFloorOffset(0);
+    this.floating.setBaseOffset(0);
     this.comfort?.reset();
     // Drop the sit-up base pose so the reset comfort frame is what remains.
     this.shell?.setBasePose(null);
@@ -832,7 +836,7 @@ export class QuietShoreApp {
       this.sitUpPath = null;
       this.sitUpReference = null;
       this.shell?.setBasePose(null);
-      this.host.setFloorOffset(this.xr.isPresenting ? -this.eyeHeight : 0);
+      this.setBaseFloorOffset(calibratedFloorOffset(this.eyeHeight, this.xr.isPresenting));
     }
     this.dispatch({ type: 'mode', mode: value });
     this.start.setStatus(value === 'posture' ? '已切到起身' : '已切回漂浮', 'ok');
@@ -852,72 +856,23 @@ export class QuietShoreApp {
     this.sitUpMode = true;
     this.sitUpReady = true;
     this.applySitUpTransform();
-    this.host.setFloorOffset(0);
+    this.setBaseFloorOffset(0);
   }
 
   /**
-   * Applies the buoyancy layer. Only the floating phase drives it; posture mode
-   * and every stop path ease the amplitude to zero, so the world settles in
-   * under a second instead of snapping.
+   * The buoyancy frame: the module owns the envelope, the gate and the writes;
+   * App only says whether a headset or the preview is showing the world.
    */
   private updateFloat(dt: number): void {
     if (!this.xr.isPresenting && !this.previewing) {
       return;
     }
-    // Buoyancy belongs to lying down. Once the sit-up layer leaves the supine
-    // pose, the posture path owns the base and the heave stops.
-    const lying = this.sitUpMotion.t <= 0.02 && !this.sitUpMotion.moving;
-    const active = this.lifecycle.phase !== 'stopping' && this.lifecycle.phase !== 'idle' && lying;
-    const target = active ? floatAmplitudeForLevel(this.floatProfile, this.floatLevel) : 0;
-    this.floatAmplitude = easeAmplitude(this.floatAmplitude, target, dt, FLOAT_FADE_TAU_S);
-    if (this.floatAmplitude <= 0 && target === 0) {
-      this.floatAmplitude = 0;
-      // Settle exactly once, so an idle scene pays nothing per frame.
-      if (this.floatOffsetApplied !== 0 || this.floatSwayApplied !== 0) {
-        this.floatOffsetApplied = 0;
-        this.floatSwayApplied = 0;
-        this.host.setFloorOffset(this.xr.isPresenting ? -this.eyeHeight : 0);
-        if (this.handle?.applyBuoyancy) {
-          this.handle.applyBuoyancy({ amountM: 0, swayDeg: 0 });
-        } else {
-          this.host.content.rotation.x = 0;
-        }
-      }
-      return;
-    }
-    this.floatSeconds += dt;
-    if (!lying) {
-      // Sitting up hands the world base to the posture path; the heave stops.
-      setBuoyancySwell(0, this.floatProfile.periodS);
-      return;
-    }
-    // The swell follows the visible heave: same period, depth scaled by how
-    // much of the envelope is currently in use.
-    setBuoyancySwell(
-      (this.floatAmplitude / this.floatProfile.amplitudeM) * SWELL_AUDIO_DEPTH,
-      this.floatProfile.periodS
-    );
-    const base = this.xr.isPresenting ? -this.eyeHeight : 0;
-    this.floatOffsetApplied = floatOffsetAt(
-      this.floatProfile,
-      this.floatSeconds,
-      this.floatAmplitude,
-      this.floatBreath
-    );
-    // Horizon sway: a couple of degrees of world pitch, in phase with the
-    // drift, is what makes the horizon feel unmoored rather than the floor.
-    const swayDeg = floatPitchAt(this.floatProfile, this.floatSeconds, this.floatAmplitude);
-    this.floatSwayApplied = swayDeg;
-    if (this.handle?.applyBuoyancy) {
-      // The scene owns the depth order, so it decides what moves. Moving the
-      // whole content instead leaves the sky (the only thing a supine patient
-      // looks at) effectively still.
-      this.host.setFloorOffset(base);
-      this.handle.applyBuoyancy({ amountM: this.floatOffsetApplied, swayDeg });
-    } else {
-      this.host.setFloorOffset(base + this.floatOffsetApplied);
-      this.host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
-    }
+    this.floating.update(dt);
+  }
+
+  /** The active frame moves the world; buoyancy keeps its delta on top. */
+  private setBaseFloorOffset(next: number): void {
+    this.floating.setBaseOffset(next);
   }
 
   /**
@@ -1096,22 +1051,28 @@ export class QuietShoreApp {
     this.calibrationOverlay?.hide();
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     this.dispatch({ type: 'calibrated' });
-    // The sit-up layer is armed for every session: rising to a standing view is
-    // the core of the standing-voiding scenario and the operator must be able
-    // to call it at any time.
+    // The sit-up path is prepared for every session: the posture mode and the
+    // rise command need it. Only the posture mode *poses* the world with it.
+    // In floating, the calibrated frame is what gives the lying patient a
+    // standing view, and it is the frame the heave was authored against.
     this.sitUpPath = new SitUpPath({ standEyeHeight: this.eyeHeight });
     this.sitUpReference = {
       position: this.headPose.position.clone(),
       quaternion: this.headPose.quaternion.clone()
     };
     this.sitUpMotion.reset();
-    this.sitUpMode = true;
     this.sitUpReady = true;
     this.sitUpBase0.copy(
       this.sitUpPath.worldFor(this.sitUpReference, this.sitUpPath.at(0)).quaternion
     );
-    this.host.setFloorOffset(0);
-    this.applySitUpTransform();
+    this.sitUpMode = this.lifecycle.mode === 'posture';
+    if (this.sitUpMode) {
+      this.applySitUpTransform();
+      this.setBaseFloorOffset(0);
+    } else {
+      this.shell?.setBasePose(null);
+      this.setBaseFloorOffset(calibratedFloorOffset(this.eyeHeight, this.xr.isPresenting));
+    }
     if (this.session && this.handle) {
       this.startSceneAudio();
     }
@@ -1130,7 +1091,8 @@ export class QuietShoreApp {
     if (this.handle) {
       this.handle.root.visible = true;
     }
-    this.host.setFloorOffset(0);
+    this.floating.setBaseOffset(0);
+    this.floating.reset();
     this.input.setLayers(true, true);
     this.lastFrame = 0;
     this.renderer.setAnimationLoop(this.onFrame);
@@ -1145,7 +1107,7 @@ export class QuietShoreApp {
     }
     this.previewing = false;
     this.stopSceneAudio();
-    this.host.setFloorOffset(0);
+    this.floating.setBaseOffset(0);
     this.renderer.setAnimationLoop(null);
     this.start.showStart();
     this.start.setStatus(this.strings.modeIdle);
@@ -1205,8 +1167,7 @@ export class QuietShoreApp {
         this.start.setStatus('漂浮强度无效', 'error');
         return;
       }
-      const capped = Math.min(level, FLOAT_LEVEL_CAP[this.floatProfile.id]);
-      this.floatLevel = capped;
+      const capped = this.floating.setLevel(level);
       this.start.setStatus(
         capped === level
           ? `漂浮强度 ${level}/${FLOAT_MAX_LEVEL}`
@@ -1222,19 +1183,15 @@ export class QuietShoreApp {
         this.start.setStatus('未知漂浮档位', 'error');
         return;
       }
-      this.floatProfile = FLOAT_PROFILES[id];
-      // Switching to a stricter profile must also pull the level back down.
-      const capped = Math.min(this.floatLevel, FLOAT_LEVEL_CAP[id]);
-      if (capped !== this.floatLevel) {
-        this.floatLevel = capped;
-      }
-      this.start.setStatus(`漂浮档位：${this.floatProfile.label}`, 'ok');
+      this.floating.setProfile(id);
+      this.start.setStatus(`漂浮档位：${this.floating.getProfile().label}`, 'ok');
       this.link.sendStateNow();
       return;
     }
     if (command === 'float:breath:on' || command === 'float:breath:off') {
-      this.floatBreath = command.endsWith(':on');
-      this.start.setStatus(this.floatBreath ? '呼吸层已开启' : '呼吸层已关闭', 'ok');
+      const on = command.endsWith(':on');
+      this.floating.setBreath(on);
+      this.start.setStatus(on ? '呼吸层已开启' : '呼吸层已关闭', 'ok');
       this.link.sendStateNow();
       return;
     }
@@ -1365,7 +1322,7 @@ export class QuietShoreApp {
       this.camera.position.y = next;
     }
     if (this.session) {
-      this.host.setFloorOffset(this.sitUpMode ? 0 : -next);
+      this.setBaseFloorOffset(this.sitUpMode ? 0 : -next);
     }
     if (this.sitUpMode && this.sitUpReference) {
       this.sitUpPath = new SitUpPath({ standEyeHeight: next });
@@ -1460,6 +1417,13 @@ export class QuietShoreApp {
   }
 
   private setVirtualPosture(rising: boolean): void {
+    // The rise animates the sit-up frame, which is a different world frame from
+    // the calibrated one the floating mode runs in. Switching under the patient
+    // would snap the world; the mode selector is the sanctioned way across.
+    if (this.lifecycle.mode !== 'posture') {
+      this.start.setStatus('虚拟起身在起身模式中可用，请先切换模式', 'error');
+      return;
+    }
     if (!this.session || !this.sitUpMode || !this.sitUpPath) {
       this.start.setStatus('虚拟起身仅能在完成校准后的训练中使用', 'error');
       return;
@@ -1646,9 +1610,7 @@ export class QuietShoreApp {
       // In float mode the motes rise with the buoyancy: amplitude over the
       // envelope is the flow, so a stopped drift fades them out with the cue's
       // own tau instead of cutting them.
-      return this.floatAmplitude > 0
-        ? Math.min(1, this.floatAmplitude / this.floatProfile.amplitudeM)
-        : 0;
+      return this.floating.getFlow();
     }
     return comfort.getPosturePhase() === 'rising' ? 1 : 0;
   }
@@ -1678,8 +1640,9 @@ export class QuietShoreApp {
     const comfortState = this.comfort?.getState();
     input.confidence = comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0);
     // Applied motion, not the requested level: the mirror adds these verbatim.
-    input.floatMm = this.floatOffsetApplied * 1000;
-    input.swayDeg = this.floatSwayApplied;
+    const motion = this.floating.getState();
+    input.floatMm = motion.offsetM * 1000;
+    input.swayDeg = motion.swayDeg;
     input.sessionSec = this.sessionStartedAt > 0
       ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
       : 0;
@@ -1709,8 +1672,8 @@ export class QuietShoreApp {
     const cue = this.postureCueState?.getState();
     input.cueEnabled = cue?.enabled ?? false;
     input.cueIntensity = cue?.intensity ?? 0;
-    input.floatLevel = this.floatLevel;
-    input.floatProfile = this.floatProfile.id;
+    input.floatLevel = motion.level;
+    input.floatProfile = motion.profile;
     return this.snapshot.capture(input);
   }
 

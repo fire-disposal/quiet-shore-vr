@@ -63,6 +63,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 ## 文档索引
 
 - [docs/core.md](docs/core.md) — 目标、场景接口与核心设计规范
+- [docs/animation.md](docs/animation.md) — 漂浮/起身/俯仰修正的分层、帧规则与验收
 - [docs/control-plane.md](docs/control-plane.md) — BLE 与 WebSocket 控制面通信契约
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state v10 编解码
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
