@@ -15,6 +15,14 @@
 - [ ] `SceneSummary.description` 两端界面都没用（入口只显示名字、平板只显示一句话）；决定展开显示或删除。
 - [ ] 按场景夹紧漂浮上限（`comfortLevel`）：光井的垂直流风险最高，目前只靠文档约束。
 
+## 状态管理（见 `docs/state-management.md`）
+
+- [ ] 平板：`notice/error` 改 `SharedFlow<UiEvent>`（S）。
+- [ ] 平板：`ControlUiState` 拆成远程镜像 / 本地意图两块，消灭 `floatLevel` 与 `sessionMode` 的双写（M）。
+- [ ] 页面：40 处 `start.setStatus` 收口到 `StatusBus`（S）。
+- [ ] 头显：`sealed Command` + `CommandRouter`，与页面 `commands.ts` 同形（M）。
+- [ ] 补一条"镜像不得覆盖意图"的测试；`breathEnabled` 缺回读位，UI 需标注"本机设置"。
+
 ## 待确认
 
 - [ ] D1：起身作为备选模式并行保留（实现已完成，等书面确认）。

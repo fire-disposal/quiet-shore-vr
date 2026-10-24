@@ -68,6 +68,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/scenes.md](docs/scenes.md) — 三场景的代码边界、画面/运动、用途与选择规则
 - [docs/control-plane.md](docs/control-plane.md) — BLE 与 WebSocket 控制面通信契约
 - [docs/protocol-conformance.md](docs/protocol-conformance.md) — 两侧实现（头显 / 页面）的命令语法与状态字段对照
+- [docs/state-management.md](docs/state-management.md) — 双端状态容器核验：所有权、瞬时事件、是否引入状态库
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state 编解码
 - [docs/state-v11.md](docs/state-v11.md) — state 帧 28 字节 v11 的字段定义
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
