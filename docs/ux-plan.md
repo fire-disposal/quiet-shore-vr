@@ -259,6 +259,8 @@ README 与 `core.md` §10 写“标准 35 mm / 11 s、温和 22 mm / 14 s、沉�
 
 ### F17 · 镜像看不见起伏，也看不见真实场景
 
+> **已过时（0.9.30 起）**：镜像已按 state 的 `scene` 重建场景，地面偏移由场景 `eyeY` 决定，`settleFloor()` 不再是 `session ? -eyeHeight : 0`。以下为当时的评估，保留以便对照。
+
 `SceneMirror.kt:101` 每 200 ms 推一次 JSON，字段只有 session/eyeHeight/world*/pose/postureRise；`mirror/main.ts` 的 `settleFloor()` 只算 `session ? -eyeHeight : 0`，所以**漂浮完全不在画面里**；场景来自注册表默认（`import { SCENE }`），不跟随实际场景；FOV 写死 72°；没有粒子、没有音频；相机只用 yaw/pitch，**丢掉 roll**。它能回答“朝哪”，不能回答“在动吗”。
 
 ### F18 · 跨端采样没有补帧

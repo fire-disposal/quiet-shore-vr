@@ -118,7 +118,7 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 | --- | --- | --- |
 | 0 | version | `10` |
 | 1 | floatLevel | 0–3 |
-| 2 | flags | bit0 session, bit1 calibrating, bit2 audioMuted, bit3 cueEnabled, bit4 sitUpActive, bit5 postureMode, bit6–7 float profile (0=a, 1=b, 2=c) |
+| 2 | flags | bit0 session, bit1 calibrating, bit2 **ambience off（水声关，语音无关）**, bit3 cueEnabled, bit4 sitUpActive, bit5 postureMode, bit6–7 float profile (0=a, 1=b, 2=c) |
 | 3 | eyeHeight | 厘米，120–190 |
 | 4 | posturePitch | **有符号**整数度：测得的世界倾角（0 → +90 为起身） |
 | 5 | postureRoll | **有符号**整数度：测得的世界横滚 |
@@ -204,12 +204,12 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
 | `mode:float\|posture` | 会话前选择模式；会话中拒绝。起身为备选分支 |
 | `float:level:0-3` | 漂浮强度；0 为停用，停止时按 tau 0.25 s 渐出 |
-| `float:profile:a\|b\|c` | 漂浮档位：a 温和（22 mm / 14 s）、b 标准（35 mm / 11 s）、c 沉浸（45 mm / 9 s + 1.5° 地平线微摆）。实机选型用 |
+| `float:profile:a\|b\|c` | 漂浮档位：a 温和（40 mm / 15 s）、b 标准（65 mm / 12 s）、c 沉浸（100 mm / 9 s + 1° 地平线微摆，最高 1 级）。实机选型用 |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
 | `calibrate` / `recalibrate` | 记录当前朝向为新中立帧（无倒计时、无稳定检测）；训练中可用 |
-| `audio:on` / `audio:off` / `audio:toggle` | 设置/切换静音 |
+| `audio:on` / `audio:off` / `audio:toggle` | 环境声（水声）开关，**默认关**；只影响场景环境声，不静音语音。开启时两路交叉淡化播放，关闭时 0.4 s 渐出 |
 | `exit` / `stop` | 结束训练、退出会话 |
-| `posture:rise` / `posture:lower` / `posture:stop` | 备选模式下由平板驱动起身/回落/保持在当前进度；患者确认键只做开始/停止，不触发起身 |
+| `posture:rise` / `posture:lower` / `posture:stop` | 只在 `mode:posture` 会话内生效（否则页面拒绝并提示先切模式）；患者确认键只做开始/停止，不触发起身 |
 | `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场粒子层开关与强度（应用级；`flow` 由漂浮振幅或起身上升驱动） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `view:orient:<yaw>,<pitch>` | 绝对朝向（度）：yaw ±180（+ = 左转）、pitch ±90（+ = 上仰），无 TTL；免回执 |

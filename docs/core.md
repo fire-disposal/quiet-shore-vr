@@ -31,7 +31,7 @@ stateDiagram-v2
   停止 --> 待机: 渐出 3 s
 ```
 
-- 记录朝向：患者平视正前方，由技术员在平板触发（患者也可按一次确认键）。替代 1.2 s 稳定检测与两步校准。
+- 记录朝向：技术员在平板触发（患者也可按一次确认键）。卡片要求患者保持不动 1.8 s，随后 3 s 取样取平均；超过 9 s 强制落地。**卡片期间世界完全静止**（`world.hold(true)`）。
 - 停止：患者确认键、技术员停止、平板断链、头显摘下、姿态丢失，任一发生即渐出，不等待。停止对两种模式一视同仁。
 
 ## 4. 模式
@@ -106,16 +106,19 @@ interface SceneHandle {
 ### 6.1 患者端（头显）
 
 - 确认键：短按开始 / 停止。停止语义永远可用，平板不能屏蔽。
-- 界面仅一张确认卡：场景名、开始按钮、提示。无设置、无菜单、无性能开关、无量表、无注视选择。
+- 入口只有一张确认卡：场景名、开始按钮、提示。无设置、无菜单、无性能开关。
+- 唯一可作答的空间面板是 SUS 量表：由平板打开，一张卡片内装标题、题干、五点选项与翻页；患者注视选项 5 秒即作答，答案随完成或关闭上报平板归档。
 - 漂浮强度 0–3 档，由技术员设置。
 
 ### 6.2 技术员端（平板）
 
 - 连接状态与会话时长。
-- 模式选择：漂浮（默认）/ 起身（仅 `CAP_POSTURE` 可用时显示）。
+- 模式选择：漂浮（默认）/ 起身（仅 `CAP_POSTURE` 可用时显示）；只能在会话开始前选。
 - 开始 / 停止。
-- 强度 0–3。
-- 水声开关。
+- 强度 0–3 与档位 a/b/c。
+- 场景选择（会话开始前）。
+- SUS：打开/关闭头显面板、逐题显示、目视选择开关、代患者作答；完成后归档。
+- 水声开关，**默认关**（语音不受它影响）。
 - 紧急停止，常驻可见，不依赖界面层级。
 
 平板不显示患者 3D 镜像，不录屏，不显示排尿相关字样。
@@ -149,16 +152,20 @@ interface SceneHandle {
 - 患者界面只做确认，不做选择。
 - 文档只写当前事实；过时内容直接删除，历史见 git。
 
-## 10. 现状事实（以代码为准，本轮改造后）
+## 10. 现状事实（以代码为准）
 
-- 场景：两个，`washroom`（站立卫生间）与 `shore`（仰望湖面），见 `src/scenes/`。`landscape`/`ward`/`bathroom`/`lab` 与 `legacy-handle` 已删除。
+- 场景：三个 —— `washroom`（洁净立便间）、`shore`（仰望湖面）、`lightwell`（光井），见 `src/scenes/`。
+  每个场景声明 `eyeY`（作者把眼睛放在内容坐标的哪个高度），应用据此放置画面。
 - 场景预算：`washroom` 10 draw / 568 三角形 / 0 透明；`shore` 6 draw / 626 三角形 / 3 透明；`lightwell` 5 draw / 2.6 k 三角形 / 0 透明。上限由 `tests/scenes.test.ts` 断言。
-- 渲染档位：`quality` 参数、`quality-memory` 自适应降档、`?aa=`/`?scale=` 全部删除。`src/core/xr/renderer.ts` 固定 `antialias: true`、`XR_SCALE = 1.25`（超采样是 Gecko 78 上唯一可用的抗锯齿手段）。
-- 场景选择：由控制端主导。平板场景页发 `scene:<id>`，头显校验后存入 `HeadsetSettings` 并转发页面，页面在会话外重建；协议申报 `CAP_SCENE`，state byte 11 回报已加载场景索引，镜像跟随 state 重建。
-- 会话：`src/app/session.ts` 纯 reducer 驱动；确认键只做开始/停止；所有停止路径经 `App.dispatch` 收口，进入 `stopping` 后 1 s 转 `idle`。
-- 校准：无稳定检测、无倒计时；会话开始后的第一帧直接记录当前朝向（`captureHeading`）。
-- 漂浮：`src/core/xr/float.ts`，三档参数 `float:profile:a|b|c`，`float:level:0-3` 在档位内线性缩放；停止时 tau 0.25 s 渐出。近场微粒由 `src/core/xr/posture-cue.ts` 提供，流动强度跟随实际振幅。
-- 起身：备选模式，仅在 `mode:posture` 且 `CAP_POSTURE` 时启用；`mode:` 只能在会话前设置。
-- 平板：镜像、急停、模式、强度、水声，加一个只读姿态仪表；没有场景页。
-- 协议：state 20 字节 v10；`HELLO/WELCOME` 版本号为 2；能力位去掉 `CAP_SCENE`。
-- 验证：`tsc`、vitest 18 文件 / 185 用例、web 构建、`:protocol:test`、两个 APK 构建通过。未在 PICO 实机验证。
+- 世界帧：漂浮模式一律用已校准帧（偏移 `-eyeY`），起身模式用起身路径（偏移 `视点高度 - eyeY`）；
+  选帧只有 `src/core/xr/world-frame.ts` 一处，`src/app/world-runtime.ts` 是唯一写 base 的地方。详见 `docs/animation.md`。
+- 校准：保持不动 1.8 s + 3 s 取样；世界在卡片期间冻结。
+- 漂浮：`src/app/floating.ts` 拥有等级、档位、包络、位移与 sway；起伏沿患者视觉竖直（`visualUpInContent()`），
+  只在漂浮模式、会话进行中、非取帧窗口、非起身过程中运行。
+- 起身：`mode:posture` 且 `CAP_POSTURE` 时可用；`posture:rise|lower|stop` 只在起身模式内生效。
+- 命令：`src/app/commands.ts` 把字符串解析成类型化意图，`App` 只执行；语法有 9 组单测。
+- SUS：头显单卡片、注视 5 s 作答；结果经 JSON socket → 头显 `sus` 特征（UTF-8 JSON）→ 平板计分并持久化（最近 50 份）。
+- 音频：环境声默认关，由平板水声开关开启；语音独立音量，不受水声开关影响。
+  环境声播放器双路交叉淡化（±0.6% 速率错开、11–19 s 随机交换），叠加 6–15 s 一次的短片段细节。
+- 协议：state v11（28 B，MTU 不足时回落 v10 20 B）；能力位含 `CAP_SCENE`、`CAP_POSTURE`；新增 `sus` 特征。
+- 验证：`tsc`；vitest 29 文件 / 276 用例；web 构建 + standalone；`:protocol:test`；两个 APK 构建。实机：0.9.31 待烧录验证。

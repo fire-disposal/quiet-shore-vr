@@ -63,7 +63,7 @@ ATT 默认 MTU 23 只是**初始值**：Android 5+ / PICO G2（Android 8.1）都
 | 字节 | 字段 | 类型/范围 | 说明 |
 | --- | --- | --- | --- |
 | 0 | version | `11` | 不匹配直接丢弃并提示，不猜测 |
-| 1 | flags | bit0 session · bit1 calibrating · bit2 muted · bit3 cue · bit4 sitUp · bit5 posture · **bit6 hold** · **bit7 autoVoice** | 保持与自动模式从此可见 |
+| 1 | flags | bit0 session · bit1 calibrating · **bit2 环境声关** · bit3 cue · bit4 sitUp · bit5 posture · **bit6 hold** · **bit7 autoVoice** | bit2 只表示水声（环境声）关闭，语音不受影响；保持与自动模式从此可见 |
 | 2 | 打包 | level 2b · profile 2b · scene 4b | 场景留在快通道，镜像要跟它；无级强度的百分比在高 4 位预留 |
 | 3 | eyeHeight | cm，120–190 | |
 | 4 | **floatMm** | int8，±127 mm | **已应用**的竖直偏移，镜像直接加 |

@@ -52,7 +52,7 @@
 ```ts
 viewerPose: {
   /** 患者此刻的身体姿态：仰卧场景是直躺，立姿场景是将要"站"起来。 */
-  posture: 'supine' | 'standing';
+  posture: 'supine' | 'standing';   // 已否决，见本文 §4 末注
   /** 校准后患者视线的目标仰角（度，+ = 朝天）。 */
   gazePitchDeg: number;
 }

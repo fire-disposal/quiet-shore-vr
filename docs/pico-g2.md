@@ -3,7 +3,7 @@
 本文把草稿阶段的实机结论迁入正式库，作为发布/调试的唯一设备基线。代码侧对应实现：
 
 - `src/core/xr/renderer.ts`：`xrCompatible: true` 上下文、WebGL2 优先、参考空间 `local`、帧缓冲缩放。
-- `src/app/App.ts`：`immersive-vr` 会话、`select` 确认键、`-eyeHeight` 地面偏移、校准/退出流程。
+- `src/app/App.ts`：`immersive-vr` 会话、`select` 确认键、校准/退出流程；画面高度由场景声明的 `eyeY` 决定（`core/xr/world-frame.ts`）。
 - `android/headset/`：`127.0.0.1:8130` 静态服务与控制桥、BLE 外设、常驻通知/快捷磁贴、显式 Intent 拉起 Firefox Reality。
 - `android/control/`：平板控制台（BLE 中心 + Compose 单屏）。
 - `scripts/pico-adb.sh`：设备/日志/截图等设备级辅助命令；它仍按旧单 APK 流程编写，安装/启动命令见第 5 节。
@@ -62,7 +62,7 @@ makeXRCompatible on the WebGLRenderingContext or WebGL2RenderingContext.
 
 ### 3.3 参考空间与地面
 
-使用 `local` reference space；会话开始时原点约在头部高度。场景根节点的地面偏移由 `SceneHost.setFloorOffset()` 统一应用：XR 为 `-eyeHeight`，2D 预览为 `0`。场景模块自身不位移。
+使用 `local` reference space；会话开始时原点约在头部高度。画面偏移由 `SceneHost.setContentPosition()` 统一应用：漂浮模式为 `-eyeY`（场景声明），起身模式为 `视点高度 - eyeY`，预览为 `0`。场景模块自身不位移。
 
 ### 3.4 退出耗时
 
