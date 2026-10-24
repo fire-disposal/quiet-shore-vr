@@ -5,7 +5,7 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 98061,
+      "totalMs": 129062,
       "files": [
         {
           "id": "v-arrive-1",
@@ -294,13 +294,130 @@
           "bytes": 23276,
           "sha256": "4e58b328a22c9d5c1fb80d8c69e7693bbbf85141c5c130f41dc7ded2fea1d5bf",
           "textHash": "1a13c8758e625493"
+        },
+        {
+          "id": "v-sus-intro",
+          "group": "SUS 量表",
+          "file": "male/v-sus-intro.mp3",
+          "ms": 3157,
+          "bytes": 19532,
+          "sha256": "da036c60780692cbbe605c98707e5b3919fe992e8268a85e3adf2905af1ed0f5",
+          "textHash": "bb75a8e151480833"
+        },
+        {
+          "id": "v-sus-1",
+          "group": "SUS 量表",
+          "file": "male/v-sus-1.mp3",
+          "ms": 1903,
+          "bytes": 12044,
+          "sha256": "5048d0d879cfc76ca876f1497451010c3a730be905a7d48e261a36a20bd0777c",
+          "textHash": "6bbb4967aa7c9e7a"
+        },
+        {
+          "id": "v-sus-2",
+          "group": "SUS 量表",
+          "file": "male/v-sus-2.mp3",
+          "ms": 2080,
+          "bytes": 13052,
+          "sha256": "83017aa9d50b374e254c0de26d261806fcdd0d3bd8afffcd44fc0e761c4a1b71",
+          "textHash": "8c2edd947e602f5b"
+        },
+        {
+          "id": "v-sus-3",
+          "group": "SUS 量表",
+          "file": "male/v-sus-3.mp3",
+          "ms": 1658,
+          "bytes": 10604,
+          "sha256": "7fdee95061211d4aed5aa140c64924eb266f364450de1962a062744547f7d158",
+          "textHash": "ae1243c5126daf0b"
+        },
+        {
+          "id": "v-sus-4",
+          "group": "SUS 量表",
+          "file": "male/v-sus-4.mp3",
+          "ms": 2736,
+          "bytes": 16940,
+          "sha256": "6d675d01363d3026c0c5dc4f66f7e2f7e30ec04c7bdc9da5b856e09d4fb58eac",
+          "textHash": "23e3fee94711ae57"
+        },
+        {
+          "id": "v-sus-5",
+          "group": "SUS 量表",
+          "file": "male/v-sus-5.mp3",
+          "ms": 2314,
+          "bytes": 14492,
+          "sha256": "cee83e86df57f0ca58e7e3c6204c9dd007095f579bd24a9d3dab79c85e554ba1",
+          "textHash": "2a2766ba437b9bd0"
+        },
+        {
+          "id": "v-sus-6",
+          "group": "SUS 量表",
+          "file": "male/v-sus-6.mp3",
+          "ms": 2086,
+          "bytes": 13052,
+          "sha256": "abd01691f1cf4e161d3e99f1631b9f377abb41ac4b4aacead099916b8b8730b5",
+          "textHash": "a9b014e9eddd71f4"
+        },
+        {
+          "id": "v-sus-7",
+          "group": "SUS 量表",
+          "file": "male/v-sus-7.mp3",
+          "ms": 2921,
+          "bytes": 18092,
+          "sha256": "c69fbf34508b2e2a427f74bcd07f1f4bd1bd9654a1320ab3fd9127159bc4a373",
+          "textHash": "cd580acaa1710b26"
+        },
+        {
+          "id": "v-sus-8",
+          "group": "SUS 量表",
+          "file": "male/v-sus-8.mp3",
+          "ms": 1894,
+          "bytes": 11900,
+          "sha256": "288eea639c55f6786f32173d953202205736c491ee20f4e2cde3a9c99e6028c2",
+          "textHash": "3837f5512e1fc94d"
+        },
+        {
+          "id": "v-sus-9",
+          "group": "SUS 量表",
+          "file": "male/v-sus-9.mp3",
+          "ms": 2083,
+          "bytes": 13052,
+          "sha256": "814d0d4304680afd35e1810a6a93228a997e1830adc93ba1f3604eb7544173d5",
+          "textHash": "0fa3920d1514a82b"
+        },
+        {
+          "id": "v-sus-10",
+          "group": "SUS 量表",
+          "file": "male/v-sus-10.mp3",
+          "ms": 3341,
+          "bytes": 20684,
+          "sha256": "3c091e2872359b392b44b375d40b128b9591d0ec93c42502805bf1d7dbd04ef3",
+          "textHash": "212e3b620e84057a"
+        },
+        {
+          "id": "v-sus-scale",
+          "group": "SUS 量表",
+          "file": "male/v-sus-scale.mp3",
+          "ms": 3349,
+          "bytes": 20684,
+          "sha256": "5a7b19ff34f9fd676b9770ac41fc4192da373db155c8799f82bfac40b53cc476",
+          "textHash": "e8be4bdcf556dfd6"
+        },
+        {
+          "id": "v-sus-done",
+          "group": "SUS 量表",
+          "file": "male/v-sus-done.mp3",
+          "ms": 1479,
+          "bytes": 9452,
+          "sha256": "cf8b9b20a41fbcea87d85c03290ef0ea96a6f8abdecd6e20d9e1aec2ddbce988",
+          "textHash": "e13228dae6da0ddc"
         }
       ]
     },
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 111973,
+      "totalMs": 145992,
       "files": [
         {
           "id": "v-arrive-1",
@@ -589,9 +706,126 @@
           "bytes": 21980,
           "sha256": "3335a4aa84562c4f25d9cfbf16c422bf596ec48d394f2950611d1111bc674056",
           "textHash": "1a13c8758e625493"
+        },
+        {
+          "id": "v-sus-intro",
+          "group": "SUS 量表",
+          "file": "female/v-sus-intro.mp3",
+          "ms": 3572,
+          "bytes": 21980,
+          "sha256": "5fb8f20a7af2826632b7661e06bf7c42ee876a802a7bbd43041a85d3b29d587b",
+          "textHash": "bb75a8e151480833"
+        },
+        {
+          "id": "v-sus-1",
+          "group": "SUS 量表",
+          "file": "female/v-sus-1.mp3",
+          "ms": 1899,
+          "bytes": 12044,
+          "sha256": "13aed2f1535203dcb88da9df1cc17619d1a5ddd38c3f90af6ef2d1313efba913",
+          "textHash": "6bbb4967aa7c9e7a"
+        },
+        {
+          "id": "v-sus-2",
+          "group": "SUS 量表",
+          "file": "female/v-sus-2.mp3",
+          "ms": 2091,
+          "bytes": 13196,
+          "sha256": "78e6c217d67cea8419c88fa40af8ac3c3bec474f309f5cf79bbce0cdb39b02f7",
+          "textHash": "8c2edd947e602f5b"
+        },
+        {
+          "id": "v-sus-3",
+          "group": "SUS 量表",
+          "file": "female/v-sus-3.mp3",
+          "ms": 2076,
+          "bytes": 13052,
+          "sha256": "f3ee3fabdbf221a05814a2ceceb2ea943ad6f89b7aaef94a12bc6402c55416be",
+          "textHash": "ae1243c5126daf0b"
+        },
+        {
+          "id": "v-sus-4",
+          "group": "SUS 量表",
+          "file": "female/v-sus-4.mp3",
+          "ms": 2741,
+          "bytes": 17084,
+          "sha256": "fa753ebe89b8d95ec073421522d063eba200a82db52b43b146eed838dbb92c30",
+          "textHash": "23e3fee94711ae57"
+        },
+        {
+          "id": "v-sus-5",
+          "group": "SUS 量表",
+          "file": "female/v-sus-5.mp3",
+          "ms": 2512,
+          "bytes": 15644,
+          "sha256": "06fc4d25acbc1e6c912690ac374c0b9aa7e7df80c4e17a1b72f6b4d6d91c5a4c",
+          "textHash": "2a2766ba437b9bd0"
+        },
+        {
+          "id": "v-sus-6",
+          "group": "SUS 量表",
+          "file": "female/v-sus-6.mp3",
+          "ms": 2314,
+          "bytes": 14492,
+          "sha256": "584c0e4b2644feea34dc7f6b32be23a1b3ff82f78c913872951e71c61d3bbc5f",
+          "textHash": "a9b014e9eddd71f4"
+        },
+        {
+          "id": "v-sus-7",
+          "group": "SUS 量表",
+          "file": "female/v-sus-7.mp3",
+          "ms": 3353,
+          "bytes": 20684,
+          "sha256": "eec2ca38f8ea98954fa01bcfc14ec5c9b27bbe5ca831b25e049b0e76b4756ec7",
+          "textHash": "cd580acaa1710b26"
+        },
+        {
+          "id": "v-sus-8",
+          "group": "SUS 量表",
+          "file": "female/v-sus-8.mp3",
+          "ms": 1891,
+          "bytes": 11900,
+          "sha256": "cff79041244a8b63835c8ed18da4b70384869c38e88afe54effb1fd56a77b809",
+          "textHash": "3837f5512e1fc94d"
+        },
+        {
+          "id": "v-sus-9",
+          "group": "SUS 量表",
+          "file": "female/v-sus-9.mp3",
+          "ms": 2499,
+          "bytes": 15644,
+          "sha256": "380a2525ee006065b91fb50fcf7e49eb3a5d044618e0cb9073376450a3175f63",
+          "textHash": "0fa3920d1514a82b"
+        },
+        {
+          "id": "v-sus-10",
+          "group": "SUS 量表",
+          "file": "female/v-sus-10.mp3",
+          "ms": 3584,
+          "bytes": 22124,
+          "sha256": "9a59bb6e6fe8ed41794e06f42526b3710d0f665fff7655cd215e63dabbf74d3b",
+          "textHash": "212e3b620e84057a"
+        },
+        {
+          "id": "v-sus-scale",
+          "group": "SUS 量表",
+          "file": "female/v-sus-scale.mp3",
+          "ms": 4006,
+          "bytes": 24572,
+          "sha256": "7210b0db44e885a08d95950b4c5be3f6199826cbe74d381b7571ee0f4a5a3904",
+          "textHash": "e8be4bdcf556dfd6"
+        },
+        {
+          "id": "v-sus-done",
+          "group": "SUS 量表",
+          "file": "female/v-sus-done.mp3",
+          "ms": 1481,
+          "bytes": 9452,
+          "sha256": "df0679e05d445fdc4a562b04123efe0132c1b2388560d42e39dba97839b1ff43",
+          "textHash": "e13228dae6da0ddc"
         }
       ]
     }
   },
-  "generatedAt": "2026-10-24T08:46:59+08:00"
+  "generatedAt": "2026-10-24T09:05:01+08:00"
 }

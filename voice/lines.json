@@ -241,6 +241,97 @@
       "text": "现在可以解手，弄湿了也没关系，之后会更换。",
       "estSec": 5.0,
       "trigger": "仅患者询问时"
+    },
+    {
+      "id": "v-sus-intro",
+      "group": "SUS 量表",
+      "text": "接下来有十个问题，每题选一个最接近的答案。",
+      "estSec": 5.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-1",
+      "group": "SUS 量表",
+      "text": "我愿意经常使用这个系统。",
+      "estSec": 3.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-2",
+      "group": "SUS 量表",
+      "text": "这个系统没有必要这么复杂。",
+      "estSec": 3.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-3",
+      "group": "SUS 量表",
+      "text": "我觉得这个系统容易使用。",
+      "estSec": 3.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-4",
+      "group": "SUS 量表",
+      "text": "我需要技术人员的帮助才能用这个系统。",
+      "estSec": 4.5,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-5",
+      "group": "SUS 量表",
+      "text": "这个系统的各项功能整合得很好。",
+      "estSec": 3.5,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-6",
+      "group": "SUS 量表",
+      "text": "这个系统有太多不一致的地方。",
+      "estSec": 3.5,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-7",
+      "group": "SUS 量表",
+      "text": "我认为大多数人能很快学会使用这个系统。",
+      "estSec": 4.5,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-8",
+      "group": "SUS 量表",
+      "text": "这个系统用起来很麻烦。",
+      "estSec": 3.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-9",
+      "group": "SUS 量表",
+      "text": "使用这个系统时我很有信心。",
+      "estSec": 3.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-10",
+      "group": "SUS 量表",
+      "text": "我需要先学习很多内容才能开始使用这个系统。",
+      "estSec": 5.0,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-scale",
+      "group": "SUS 量表",
+      "text": "选项从非常不同意到非常同意，一共五级。",
+      "estSec": 4.5,
+      "trigger": "面板/逐题"
+    },
+    {
+      "id": "v-sus-done",
+      "group": "SUS 量表",
+      "text": "十个问题结束。",
+      "estSec": 2.0,
+      "trigger": "面板/逐题"
     }
   ]
 }

@@ -47,11 +47,27 @@ data class ControlUiState(
     val susOpen: Boolean = false,
     /** Milliseconds since the headset reported a running session. */
     val sessionElapsedMs: Long = 0L,
+    /** Voice set the operator picked: "male" or "female". */
+    val voiceSet: String = "male",
+    /** Cue volume 0–100, independent of the scene bed. */
+    val voiceVolume: Int = 70,
+    /** Scene ducking depth while a cue speaks, 0–18 dB. */
+    val duckDb: Int = 12,
+    /** Auto mode is driving the cue schedule. */
+    val voiceAuto: Boolean = false,
+    /** Index of the cue the headset reports as speaking, or -1. */
+    val voiceId: Int = -1,
+    /** Last few cues the operator played, newest first. */
+    val voiceRecent: List<String> = emptyList(),
     val notice: String? = null,
     val error: String? = null,
     val scanAttempted: Boolean = false
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
+
+    /** The cue the headset reports, resolved against the shipped catalog. */
+    val voiceLine: com.quietshore.control.voice.VoiceCatalog.Line?
+        get() = com.quietshore.control.voice.VoiceCatalog.lineAt(voiceId)
 
     /** Last two MAC octets, without separators ("A1B2"). */
     val deviceSuffix: String

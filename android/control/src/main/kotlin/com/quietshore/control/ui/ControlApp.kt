@@ -122,6 +122,13 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onPostureLower = viewModel::postureLower,
                 onPostureRise = viewModel::postureRise,
                 onPostureStop = viewModel::postureStop,
+                onVoicePlay = viewModel::playVoice,
+                onVoiceSequence = viewModel::playVoiceSequence,
+                onVoiceStop = viewModel::stopVoice,
+                onVoiceAuto = viewModel::setVoiceAuto,
+                onVoiceVolume = viewModel::setVoiceVolume,
+                onVoiceDuck = viewModel::setVoiceDuck,
+                onVoiceSet = viewModel::setVoiceSet,
                 onDisconnect = viewModel::disconnect,
                 onReconnect = viewModel::reconnect,
                 onLeave = viewModel::leaveControl

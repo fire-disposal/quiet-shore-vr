@@ -14,6 +14,7 @@ import com.quietshore.control.model.SessionMode
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
+import com.quietshore.control.voice.VoiceCatalog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -289,6 +290,54 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.POSTURE_STOP)
     }
 
+    // ── Voice cues ─────────────────────────────────────────────────────────
+    // The tablet names a clip or a sequence; the headset plays pre-generated
+    // audio. Microphone never opens: this is playback only.
+
+    fun playVoice(id: String) {
+        if (VoiceCatalog.line(id) == null) {
+            return
+        }
+        _uiState.update { state ->
+            state.copy(voiceRecent = (listOf(id) + state.voiceRecent).distinct().take(3))
+        }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
+    }
+
+    fun playVoiceSequence(name: String) {
+        if (name !in VoiceCatalog.SEQUENCES) {
+            return
+        }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "seq:" + name)
+    }
+
+    fun stopVoice() {
+        sendCommand(ControlProtocol.VOICE_PREFIX + "stop")
+    }
+
+    fun setVoiceAuto(enabled: Boolean) {
+        _uiState.update { it.copy(voiceAuto = enabled) }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "auto:" + if (enabled) "on" else "off")
+    }
+
+    fun setVoiceVolume(percent: Int) {
+        val value = percent.coerceIn(0, 100)
+        _uiState.update { it.copy(voiceVolume = value) }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "volume:" + value)
+    }
+
+    fun setVoiceDuck(db: Int) {
+        val value = db.coerceIn(0, 18)
+        _uiState.update { it.copy(duckDb = value) }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "mix:duck:" + value)
+    }
+
+    fun setVoiceSet(set: String) {
+        val value = if (set == "female") "female" else "male"
+        _uiState.update { it.copy(voiceSet = value) }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "set:" + value)
+    }
+
     fun preview() {
         sendCommand("preview")
     }
@@ -416,6 +465,9 @@ class ControlViewModel(application: Application) :
                 },
                 floatLevel = state.floatLevel,
                 floatProfile = state.floatProfile,
+                // Voice is authoritative on the headset: the tablet only echoes.
+                voiceId = state.voiceId,
+                voiceAuto = state.voiceAuto,
                 sessionElapsedMs = if (sessionStartedAt == 0L) {
                     0L
                 } else {

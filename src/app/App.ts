@@ -142,7 +142,9 @@ export class QuietShoreApp {
     floatProfile: 'b',
     floatMm: 0,
     swayDeg: 0,
-    sessionSec: 0
+    sessionSec: 0,
+    voiceId: -1,
+    voiceAuto: false
   };
   private controlMode = false;
 
@@ -1499,6 +1501,9 @@ export class QuietShoreApp {
     input.sessionSec = this.sessionStartedAt > 0
       ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
       : 0;
+    const playing = this.voice.nowPlaying().id;
+    input.voiceId = playing ? this.voice.indexOf(playing) : -1;
+    input.voiceAuto = this.voiceAuto;
     input.sitUp = this.sitUpMode ? this.sitUpPath : null;
     input.sitUpT = this.sitUpMotion.t;
     input.sitUpTarget = this.sitUpMotion.target;

@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -105,12 +106,62 @@ def tts_request(text: str, voice: dict, defaults: dict):
     )
 
 
+KOTLIN_CATALOG = (
+    ROOT / "android/control/src/main/kotlin/com/quietshore/control/voice/VoiceCatalog.kt"
+)
+
+
+def short_label(text: str) -> str:
+    head = re.split(r"[，。；：]", text)[0]
+    return head if len(head) <= 12 else head[:11] + "…"
+
+
+def write_catalog(lines: list[dict]) -> None:
+    rows = "\n".join(
+        f'        Line("{line["id"]}", "{line["group"]}", "{short_label(line["text"])}"),'
+        for line in lines
+    )
+    KOTLIN_CATALOG.write_text(
+        f'''package com.quietshore.control.voice
+
+/**
+ * The shipped cue list, generated from `voice/lines.json` by
+ * `scripts/voice/build.py --catalog`. The tablet never reads files: it needs
+ * the ids to send commands and a short label to show.
+ */
+object VoiceCatalog {{
+    data class Line(val id: String, val group: String, val label: String)
+
+    val SEQUENCES: List<String> = listOf("start", "imagine", "relax", "close")
+
+    val LINES: List<Line> = listOf(
+{rows}
+    )
+
+    private val byId: Map<String, Line> = LINES.associateBy {{ it.id }}
+
+    fun line(id: String): Line? = byId[id]
+
+    /** Wire voiceId is an index into this list; 255 means "nothing playing". */
+    fun lineAt(index: Int): Line? = if (index < 0) null else LINES.getOrNull(index)
+
+    fun indexOf(id: String): Int = LINES.indexOfFirst {{ it.id == id }}
+}}
+''',
+        encoding="utf-8",
+    )
+    print(f"catalog -> {KOTLIN_CATALOG.relative_to(ROOT)} ({len(lines)} lines)")
+
+
 async def run(args: argparse.Namespace) -> int:
     load_env()
     data = json.loads(SOURCE.read_text(encoding="utf-8"))
     defaults = data["defaults"]
     voices = data["voices"]
     lines = data["lines"]
+    if args.catalog:
+        write_catalog(data["lines"])
+        return 0
     if args.only:
         wanted = {item.strip() for item in args.only.split(",") if item.strip()}
         unknown = wanted - {line["id"] for line in lines}
@@ -136,6 +187,7 @@ async def run(args: argparse.Namespace) -> int:
     manifest = {"version": 1, "source": "voice/lines.json", "voices": {}}
     if args.update and MANIFEST.is_file():
         manifest.update(json.loads(MANIFEST.read_text(encoding="utf-8")))
+        manifest["voices"] = dict(manifest.get("voices") or {})
 
     for name in selected:
         voice = voices[name]
@@ -173,11 +225,20 @@ async def run(args: argparse.Namespace) -> int:
             print(f"[{index:2d}/{len(lines)}] {name:6s} {line['id']:18s} {ms:5d} ms  {state}")
         if client is not None:
             await client.__aexit__(None, None, None)
+        # A partial run (--only) must not drop the clips it did not touch.
+        previous = manifest["voices"].get(name, {}).get("files", [])
+        merged = {entry["id"]: entry for entry in previous}
+        merged.update({entry["id"]: entry for entry in entries})
+        ordered = [
+            merged[line["id"]]
+            for line in data["lines"]
+            if line["id"] in merged
+        ]
         manifest["voices"][name] = {
             "speaker": voice["speaker"],
             "label": voice.get("label", name),
-            "totalMs": total_ms,
-            "files": entries,
+            "totalMs": sum(entry["ms"] for entry in ordered),
+            "files": ordered,
         }
         print(f"{name}: {len(entries)} files, {total_ms / 1000:.1f} s, "
               f"{sum(e['bytes'] for e in entries) / 1024:.0f} KB")
@@ -200,6 +261,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--out", help="output directory (default: voice/)")
     p.add_argument("--update", action="store_true", help="merge into the existing manifest")
+    p.add_argument("--catalog", action="store_true", help="rewrite the tablet cue catalog")
     return p
 
 

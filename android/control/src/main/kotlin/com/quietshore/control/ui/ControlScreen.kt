@@ -43,6 +43,7 @@ import com.quietshore.control.ui.components.SceneMirror
 import com.quietshore.control.ui.components.ScenePage
 import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.StatusPanel
+import com.quietshore.control.ui.components.VoicePanel
 import com.quietshore.control.ui.theme.QuietPalette
 
 @Composable
@@ -72,9 +73,14 @@ fun ControlScreen(
         // The mirror is mounted only while open: a closed mirror should cost
         // nothing, not keep a renderer alive behind the panel.
         var mirrorOpen by rememberSaveable { mutableStateOf(false) }
-        // Two operator pages: live control, and scene choice.
+        // The rail shows one of two pages; the scene page is operator-driven
+        // and disabled while a session runs.
         var scenePage by rememberSaveable { mutableStateOf(false) }
+        // Voice cues are a drawer of their own: the rail stays about motion,
+        // and the cue panel can be used while a session runs.
+        var voiceOpen by rememberSaveable { mutableStateOf(false) }
         val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
+        val voiceWidth = if (compact) minOf(360.dp, maxWidth * 0.92f) else 420.dp
         // Banners and notices live in the same top band as the rail; inset
         // them so the rail cannot cover their recovery actions.
         val railOverlayInset = if (controlsOpen) railWidth + 14.dp else 0.dp
@@ -104,10 +110,16 @@ fun ControlScreen(
                 infoOpen = infoOpen,
                 mirrorOpen = mirrorOpen,
                 scenePage = scenePage,
+                voiceOpen = voiceOpen,
                 onToggleControls = { controlsOpen = !controlsOpen },
+                onToggleVoice = {
+                    val next = !voiceOpen
+                    voiceOpen = next
+                    if (next) controlsOpen = false
+                },
+                onToggleScenePage = { scenePage = !scenePage },
                 onToggleInfo = { infoOpen = !infoOpen },
                 onToggleMirror = { mirrorOpen = !mirrorOpen },
-                onToggleScenePage = { scenePage = !scenePage },
                 onDisconnect = actions.onDisconnect
             )
 
@@ -146,6 +158,21 @@ fun ControlScreen(
                             top = if (compact) 78.dp else 82.dp,
                             end = railOverlayInset
                         )
+                )
+            }
+
+            if (voiceOpen) {
+                VoicePanel(
+                    state = state,
+                    actions = actions,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(
+                            top = if (compact) 78.dp else 82.dp,
+                            end = 14.dp,
+                            bottom = 14.dp
+                        )
+                        .width(voiceWidth)
                 )
             }
 
@@ -193,10 +220,12 @@ private fun ControlTopBar(
     infoOpen: Boolean,
     mirrorOpen: Boolean,
     scenePage: Boolean,
+    voiceOpen: Boolean,
     onToggleControls: () -> Unit,
+    onToggleVoice: () -> Unit,
+    onToggleScenePage: () -> Unit,
     onToggleInfo: () -> Unit,
     onToggleMirror: () -> Unit,
-    onToggleScenePage: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     Surface(
@@ -257,6 +286,9 @@ private fun ControlTopBar(
             }
             TextButton(onClick = onToggleMirror) {
                 Text(if (mirrorOpen) "收镜像" else "镜像", color = QuietPalette.TextPrimary)
+            }
+            TextButton(onClick = onToggleVoice) {
+                Text(if (voiceOpen) "收语音" else "语音", color = QuietPalette.TextPrimary)
             }
             TextButton(onClick = onToggleControls) {
                 Text(if (controlsOpen) "收起" else "面板", color = QuietPalette.TextPrimary)

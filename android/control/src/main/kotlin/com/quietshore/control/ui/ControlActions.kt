@@ -36,5 +36,15 @@ data class ControlActions(
     val onPostureStop: () -> Unit,
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
-    val onLeave: () -> Unit
+    val onLeave: () -> Unit,
+    /** Plays one pre-generated cue; ids come from [com.quietshore.control.voice.VoiceCatalog]. */
+    val onVoicePlay: (String) -> Unit,
+    /** Plays a whole sequence: start / imagine / relax / close. */
+    val onVoiceSequence: (String) -> Unit,
+    val onVoiceStop: () -> Unit,
+    val onVoiceAuto: (Boolean) -> Unit,
+    val onVoiceVolume: (Int) -> Unit,
+    /** How far the scene bed is pulled down while a cue speaks, in dB. */
+    val onVoiceDuck: (Int) -> Unit,
+    val onVoiceSet: (String) -> Unit
 )
