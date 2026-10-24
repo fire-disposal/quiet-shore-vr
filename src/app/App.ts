@@ -160,6 +160,8 @@ export class QuietShoreApp {
   private shell: WorldShellApi | null = null;
   private capturePending = false;
   private captureAttempts = 0;
+  /** True while the calibration cloak (black + hidden scene) is up. */
+  private calibrationCloaked = false;
   private readonly calibrationSampler = createCalibrationSampler({
     durationMs: CALIBRATION_SAMPLE_MS,
     maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
@@ -528,6 +530,11 @@ export class QuietShoreApp {
 
       this.start.showStage();
       this.start.setEnterEnabled(false);
+      // A page that opened before the cue route was ready retries here: the
+      // manifest is small and this runs inside the entry gesture.
+      if (!this.voice.isReady()) {
+        void this.voice.load();
+      }
       this.host.setFloorOffset(-this.eyeHeight);
       if (this.controlMode) {
         this.input.setLayers(false, false);
@@ -604,10 +611,9 @@ export class QuietShoreApp {
     this.sitUpMotion.reset();
     this.sitUpBase0.identity();
     this.stopSceneAudio();
-    this.scene.background = this.savedBackground;
-    if (this.handle) {
-      this.handle.root.visible = true;
-    }
+    // A session that ends *during* calibration must not leave the black cloak
+    // behind: that state is exactly "sound but no picture" on the next entry.
+    this.restoreSceneVisibility();
     this.host.setFloorOffset(0);
     this.comfort?.reset();
     // Drop the sit-up base pose so the reset comfort frame is what remains.
@@ -897,7 +903,10 @@ export class QuietShoreApp {
     // Calibrate first, then show the scene: the patient should not see a world
     // that is about to be re-oriented under them. The scene is swapped for
     // black until the heading lands.
-    this.savedBackground = this.scene.background;
+    if (!this.calibrationCloaked) {
+      this.savedBackground = this.scene.background;
+      this.calibrationCloaked = true;
+    }
     this.scene.background = new THREE.Color(0x000000);
     this.handle.root.visible = false;
     this.input.setLayers(false, false);
@@ -946,6 +955,21 @@ export class QuietShoreApp {
     this.applyCalibration(result.quaternion);
   }
 
+  /**
+   * Takes the calibration cloak down. Idempotent, so every exit path (success,
+   * stop during calibration, session end) can call it without bookkeeping.
+   */
+  private restoreSceneVisibility(): void {
+    if (this.handle) {
+      this.handle.root.visible = true;
+    }
+    if (!this.calibrationCloaked) {
+      return;
+    }
+    this.calibrationCloaked = false;
+    this.scene.background = this.savedBackground ?? this.handle?.settings.background ?? null;
+  }
+
   private applyCalibration(orientation: { x: number; y: number; z: number; w: number }): void {
     const comfort = this.comfort;
     if (!comfort) {
@@ -970,10 +994,7 @@ export class QuietShoreApp {
       return;
     }
     // Scene back on, now that the world frame is known.
-    this.scene.background = this.savedBackground;
-    if (this.handle) {
-      this.handle.root.visible = true;
-    }
+    this.restoreSceneVisibility();
     this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
     this.dispatch({ type: 'calibrated' });
     // The sit-up layer is armed for every session: rising to a standing view is
@@ -992,7 +1013,7 @@ export class QuietShoreApp {
     );
     this.host.setFloorOffset(0);
     this.applySitUpTransform();
-    if (this.session) {
+    if (this.session && this.handle) {
       this.startSceneAudio();
     }
     this.link.sendStateNow();

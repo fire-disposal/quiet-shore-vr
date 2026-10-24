@@ -1,4 +1,4 @@
-import { duckScene, getVoiceBus } from './audio';
+import { duckScene, getAudioContext, getVoiceBus } from './audio';
 
 /**
  * Pre-generated voice cues.
@@ -142,26 +142,11 @@ export function createVoicePlayer(): VoicePlayerApi {
   let volume = 0.9;
 
   const decoded = new Map<string, AudioBuffer>();
-  let context: AudioContext | null = null;
   let source: AudioBufferSourceNode | null = null;
   let activeId: string | null = null;
   let activeSequence: SequenceName | null = null;
   let sequenceTimer: number | null = null;
   let stopToken = 0;
-
-  function ensureContext(): AudioContext | null {
-    if (!context) {
-      const Ctor = window.AudioContext;
-      if (!Ctor) {
-        return null;
-      }
-      context = new Ctor();
-    }
-    if (context.state === 'suspended') {
-      void context.resume();
-    }
-    return context;
-  }
 
   function urlFor(file: VoiceFile): string {
     return `${BASE}/${file.file}`;
@@ -176,7 +161,7 @@ export function createVoicePlayer(): VoicePlayerApi {
   }
 
   async function bufferFor(id: string): Promise<AudioBuffer | null> {
-    const ctx = ensureContext();
+    const ctx = getAudioContext();
     if (!ctx) {
       return null;
     }
@@ -219,7 +204,7 @@ export function createVoicePlayer(): VoicePlayerApi {
   }
 
   async function play(id: string): Promise<boolean> {
-    const ctx = ensureContext();
+    const ctx = getAudioContext();
     const bus = getVoiceBus();
     if (!ctx || !bus) {
       return false;
@@ -350,8 +335,9 @@ export function createVoicePlayer(): VoicePlayerApi {
     setVolume(percent: number): void {
       volume = Math.max(0, Math.min(1, percent / 100));
       const bus = getVoiceBus();
-      if (bus && context) {
-        bus.gain.setTargetAtTime(volume, context.currentTime, 0.05);
+      const ctx = getAudioContext();
+      if (bus && ctx) {
+        bus.gain.setTargetAtTime(volume, ctx.currentTime, 0.05);
       }
     },
     play,

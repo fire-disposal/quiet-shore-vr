@@ -94,6 +94,11 @@ async function bufferFor(track: AudioTrack): Promise<AudioBuffer | null> {
   return buffer;
 }
 
+/** The one AudioContext the page owns: scene bed, cues and swell share it. */
+export function getAudioContext(): AudioContext | null {
+  return ensureContext();
+}
+
 export async function unlockAudio(): Promise<void> {
   const ctx = ensureContext();
   if (ctx && ctx.state === 'suspended') {
