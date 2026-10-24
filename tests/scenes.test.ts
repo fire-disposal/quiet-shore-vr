@@ -221,6 +221,35 @@ describe('scene budgets', () => {
     handle.dispose();
   });
 
+  it('keeps the urinal mouth broad and clear of the wall', () => {
+    const { handle } = build('washroom');
+    try {
+      const fixture = handle.root.getObjectByName('washroom-urinal') as THREE.Mesh;
+      const position = fixture.geometry.getAttribute('position') as THREE.BufferAttribute;
+      let minX = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxZ = Number.NEGATIVE_INFINITY;
+      let minZ = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < position.count; i += 1) {
+        const x = position.getX(i);
+        const y = position.getY(i);
+        const z = position.getZ(i);
+        minZ = Math.min(minZ, z);
+        if (y < 0.88 || y > 1.2 || z < -0.76) {
+          continue;
+        }
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        maxZ = Math.max(maxZ, z);
+      }
+      expect(maxX - minX).toBeGreaterThan(0.33);
+      expect(maxZ).toBeLessThan(-0.35);
+      expect(minZ).toBeGreaterThan(-0.85);
+    } finally {
+      handle.dispose();
+    }
+  });
+
   it('builds a shoreline with a fog horizon and soft anchors', () => {
     const { handle } = build('shore');
     expect(handle.settings.fog).toBeInstanceOf(THREE.Fog);

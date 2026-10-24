@@ -32,6 +32,11 @@ export interface StateSnapshot {
   worldYaw: number;
   worldPitch: number;
   worldRoll: number;
+  /** Applied world translation, metres, device frame: the pivot the mirror
+   *  must subtract before undoing the rotation. */
+  worldXM: number;
+  worldYM: number;
+  worldZM: number;
   posturePitch: number;
   postureRoll: number;
   postureRise: number;
@@ -113,6 +118,9 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     worldYaw: snapshot.appliedWorldYawDeg,
     worldPitch: snapshot.appliedWorldPitchDeg,
     worldRoll: snapshot.appliedWorldRollDeg,
+    worldXM: snapshot.appliedWorldXM,
+    worldYM: snapshot.appliedWorldYM,
+    worldZM: snapshot.appliedWorldZM,
     posturePitch: snapshot.worldPitchDeg,
     postureRoll: snapshot.worldRollDeg,
     postureRise: snapshot.postureRiseM,

@@ -34,13 +34,14 @@ export interface FloatProfile {
  *    sickness (NASA Neurolab). The horizon therefore **never tilts**: there is
  *    no sway channel at all, and the world only translates along the visual up.
  *
- * Amplitudes sit right under the near-field speed cap (2 °/s at the ~1.1 m
- * shore), judged on the shaped curve's peak speed rather than the sine's.
+ * Amplitudes doubled on 2026-10-24 field request ("浮动大一倍"). The near-field
+ * speed budget doubles with them, pending volunteer re-calibration — see
+ * FLOAT_LEVEL_CAP.
  */
 export const FLOAT_PROFILES: Readonly<Record<FloatProfileId, FloatProfile>> = {
-  a: { id: 'a', label: '温和', amplitudeM: 0.055, periodS: 16 },
-  b: { id: 'b', label: '标准', amplitudeM: 0.075, periodS: 13 },
-  c: { id: 'c', label: '沉浸', amplitudeM: 0.1, periodS: 9 }
+  a: { id: 'a', label: '温和', amplitudeM: 0.11, periodS: 16 },
+  b: { id: 'b', label: '标准', amplitudeM: 0.15, periodS: 13 },
+  c: { id: 'c', label: '飘浮', amplitudeM: 0.2, periodS: 9 }
 };
 
 export const DEFAULT_FLOAT_PROFILE: FloatProfileId = 'b';
@@ -52,15 +53,17 @@ export const FLOAT_MAX_LEVEL = 3;
  * Highest level each profile may be asked for, from the near-field speed cap.
  *
  * The world translates along one axis only — no rotation, no looming — so the
- * budget is expressed at the near field (~1.1 m at the shore): 2.5 °/s, i.e.
- * 0.048 m/s of travel. The shaped curve's peak speed is what counts, not the
- * sine's. That puts the 9 s immersive profile at 100 mm for level 1 only;
- * the gentle and standard profiles stay inside the cap at level 3.
+ * budget is expressed at the near field (~1.1 m at the shore). The desk budget
+ * was 2.5 °/s (0.048 m/s of travel); the 2026-10-24 field pass doubled the
+ * amplitudes and the budget with them (5 °/s, 0.096 m/s), explicitly pending
+ * volunteer re-calibration. The shaped curve's peak speed is what counts, not
+ * the sine's: numerically that keeps the gentle and standard profiles at
+ * level 3 and lets the immersive 9 s profile reach level 2.
  */
 export const FLOAT_LEVEL_CAP: Readonly<Record<FloatProfileId, number>> = {
   a: FLOAT_MAX_LEVEL,
   b: FLOAT_MAX_LEVEL,
-  c: 1
+  c: 2
 };
 
 
@@ -109,6 +112,11 @@ const JITTER_HZ = 0.31;
  */
 const BREATH_PERIOD_S = 7.5;
 const BREATH_FRACTION = 0.16;
+/**
+ * The breath swell every scene gets when the big heave is scene-gated off:
+ * ±12 mm at the breath period, slow enough to read as breathing, not motion.
+ */
+const BREATH_ONLY_M = 0.012;
 
 /** Normalises the shaped curve so its crest is exactly 1 before scaling. */
 const CURVE_NORM = ((): number => {
@@ -140,7 +148,7 @@ export function floatOffsetAt(
   // little quicker. Measured: crest/trough dwell ≈ 1.06–1.11.
   const warped = phase - WARP * Math.sin(phase);
   const shaped = (Math.sin(warped) + HARMONIC * Math.sin(2 * warped)) / CURVE_NORM;
-  const swell = 1 - SWELL_DEPTH * 0.5 * (1 - Math.cos((seconds * 2 * Math.PI) / SWELL_PERIOD_S));
+  const swell = swellFactor(seconds);
   const wobble = Math.sin(seconds * 2 * Math.PI * JITTER_HZ) * JITTER_FRACTION;
   const breathWave = breath ? Math.sin((seconds * 2 * Math.PI) / BREATH_PERIOD_S) : 0;
   // The breathing term is scaled by how much envelope is in use and folded in
@@ -148,6 +156,19 @@ export function floatOffsetAt(
   const combined = shaped * (1 - JITTER_FRACTION - (breath ? BREATH_FRACTION : 0)) +
     wobble + breathWave * BREATH_FRACTION;
   return combined * amplitudeM * swell;
+}
+
+function swellFactor(seconds: number): number {
+  return 1 - SWELL_DEPTH * 0.5 * (1 - Math.cos((seconds * 2 * Math.PI) / SWELL_PERIOD_S));
+}
+
+/**
+ * The breath swell on its own, at a fixed small amplitude. Scenes that do not
+ * take the big heave (everything except the lake) still get this, so the world
+ * never reads as frozen while the switch is on.
+ */
+export function breathOffsetAt(seconds: number): number {
+  return Math.sin((seconds * 2 * Math.PI) / BREATH_PERIOD_S) * BREATH_ONLY_M * swellFactor(seconds);
 }
 
 /**

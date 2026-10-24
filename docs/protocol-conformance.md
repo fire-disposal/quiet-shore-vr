@@ -7,7 +7,7 @@ flowchart LR
   T["平板<br/>ControlViewModel"] -->|"BLE 命令字符串"| H["头显服务<br/>ControlProtocol.isAllowedCommand"]
   H -->|"WebSocket #seq"| P["页面<br/>commands.ts 解析"]
   P -->|"state JSON"| H2["头显服务<br/>PortalService.applyState"]
-  H2 -->|"state v11 / v10 帧"| T2["平板<br/>ControlProtocol.decodeState"]
+  H2 -->|"state v12 帧"| T2["平板<br/>ControlProtocol.decodeState"]
   P2["页面<br/>STATUS / SUS"] -->|"sus JSON"| H3["sus 特征"] --> T3["平板归档"]
 ```
 
@@ -55,13 +55,16 @@ flowchart LR
 | `floatLevel` / `floatProfile` | 已应用 | 夹紧 0–3 / a,b,c | — |
 | `viewPitch` / `viewYaw` | 已应用角度 | 原样透传（不在头显侧夹紧） | 度，页面是唯一夹紧点 |
 | `worldYaw/Pitch/Roll` | 外壳 × 基座 | 原样 | 度 |
+| `worldXM/YM/ZM` | 外壳 × 基座平移 | 原样 | m，float32，修正枢轴 |
 | `floatMm` | 已应用 | ±127 | mm |
 | `swayDeg` | 恒为 0（摆动通道已退役） | ±12.7 | 度 |
 | `elapsedSec` | 会话秒 | 0–65535 | s |
 | `voiceId` | 目录索引 | −1..63 | — |
 | `viewAnim` / `viewPreset` | 枚举串 | 未知值按 idle/none | — |
 
-头显把 `ControlState` 编成 **v11（28 B）**；MTU < 31 时回落 **v10（20 B）**。平板两份都解，
+头显把 `ControlState` 编成 **v12（40 B）**：v11 的 28 B 布局原样保留，末尾追加 float32 世界平移
+x/y/z（米，设备系）——修正绕校准眼点旋转，镜像需要这个枢轴才能还原患者视角。平板连接建立时显式
+`requestMtu(128)`，MTU 不足不再回落：v11/v10 帧直接拒收（两端同版本发布）。
 `StateFrameTest` 用金向量锁住字段偏移。bit2 的语义是"环境声关"，与语音无关（语音有独立总线）。
 
 ## 3 反向通道

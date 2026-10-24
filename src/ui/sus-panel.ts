@@ -60,15 +60,19 @@ export interface SusPanelApi {
  * The 5 s dwell this panel used to carry fired after roughly two seconds of
  * looking in the headset. The panel is the one place where a mistaken answer is
  * expensive, so the dwell is set to 8 s: four times the trigger a patient
- * noticed, not a number that merely looks plausible on paper.
+ * noticed, not a number that merely looks plausible on paper. Field tuning
+ * brought it 8 s → 4 s → 3 s: still half again the observed ~2 s premature
+ * trigger, without reading as stuck.
  */
-export const SUS_DWELL_SECONDS = 8;
+export const SUS_DWELL_SECONDS = 3;
 
 /**
  * Reading hold after the card changes. The gaze lands on a new option before
- * the patient has read the statement, so no dwell may start for this long.
+ * patient has read the statement, so no dwell may start for this long.
+ * 1 s after field tuning (was 2 s; the statement counter already tells the
+ * patient a change is coming).
  */
-export const SUS_READ_HOLD_SECONDS = 2;
+export const SUS_READ_HOLD_SECONDS = 1;
 
 export interface SusPanelOptions {
   scene: THREE.Scene;
@@ -83,6 +87,12 @@ export interface SusPanelOptions {
    * touches audio.
    */
   onShow?: (index: number, firstTime: boolean) => void;
+  /**
+   * The patient dwelled the finish target after the last statement: the card
+   * turns into the thank-you page and the app speaks the closing line and
+   * stops driving the sheet. The panel never touches audio.
+   */
+  onFinish?: () => void;
 }
 
 export function createSusPanel(options: SusPanelOptions): SusPanelApi {
@@ -128,6 +138,8 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
 
   const answers: SusAnswers = new Array(SUS_STATEMENTS.length).fill(null);
   let page = 0;
+  /** questions → finish (dwell target) → thanks. Pager/answers only touch questions. */
+  let phase: 'questions' | 'finish' | 'thanks' = 'questions';
   let open = false;
   let dwellEnabled = true;
   /**
@@ -191,7 +203,12 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     if (!open) {
       return;
     }
-    const targets = [...optionButtons, prevButton, nextButton];
+    const targets =
+      phase === 'questions'
+        ? [...optionButtons, prevButton, nextButton]
+        : phase === 'finish'
+          ? [nextButton]
+          : [];
     for (const button of targets) {
       const off = input.register(interactableFor(button));
       offs.push(off);
@@ -209,6 +226,9 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   let spokenPage = -1;
 
   function render(): void {
+    if (phase !== 'questions') {
+      return;
+    }
     surface.setTitle(`SUS ${page + 1}/${SUS_STATEMENTS.length}`);
     const chosen = answers[page];
     surface.setBody(
@@ -220,6 +240,12 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     const atEnd = page === SUS_STATEMENTS.length - 1;
     prevButton.setEnabled(!atStart);
     nextButton.setEnabled(!atEnd);
+    nextButton.setLabel(atEnd ? '完成' : '下一题');
+    for (const button of optionButtons) {
+      button.object.visible = true;
+    }
+    prevButton.object.visible = true;
+    nextButton.object.visible = true;
     if (open && spokenPage !== page) {
       const firstTime = spokenPage === -1;
       spokenPage = page;
@@ -227,6 +253,37 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       input.lockDwell(SUS_READ_HOLD_SECONDS);
       options.onShow?.(page, firstTime);
     }
+  }
+
+  /** After the last statement: one dwell target between the sheet and the thanks. */
+  function enterFinish(): void {
+    if (phase !== 'questions') {
+      return;
+    }
+    phase = 'finish';
+    surface.setTitle('SUS · 已完成');
+    surface.setBody('十道题已全部作答。\n请注视下方「完成」结束。');
+    for (const button of optionButtons) {
+      button.object.visible = false;
+    }
+    prevButton.object.visible = false;
+    nextButton.setLabel('完成');
+    nextButton.object.visible = true;
+    registerTargets();
+    input.lockDwell(SUS_READ_HOLD_SECONDS);
+  }
+
+  /** The dwell target fired: thank the patient and hand the rest to the app. */
+  function enterThanks(): void {
+    if (phase !== 'finish') {
+      return;
+    }
+    phase = 'thanks';
+    surface.setTitle('感谢参与');
+    surface.setBody('可以摘下头显了。\n如果有任何感受或建议，\n请告诉身边的工作人员。');
+    nextButton.object.visible = false;
+    registerTargets();
+    options.onFinish?.();
   }
 
   function move(delta: number): void {

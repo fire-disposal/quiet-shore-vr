@@ -12,16 +12,17 @@ import { createRandom, makeTexture } from '../shared/canvas';
  * §2.1 names as the strongest vection stimulus for a supine viewer, with a
  * 1–10 s onset that must be ramped, never switched on.
  *
- * Depth discipline: the shaft is 120 m tall and 18 m across, so its ends sit
- * ~60 m away in every direction. The wall's brightness is baked into the
- * texture — bright at the top, black at the bottom — and the two caps use the
- * *exact* colours of those end rows, so neither end ever reads as a lid. There
- * is no horizon, no floor line and no edge to catch the eye; the only edges in
- * the picture are the wall fixtures.
+ * Depth discipline: the shaft is 240 m tall and 18 m across, so its ends sit
+ * ~120 m away in every direction — the previous 60 m ends showed their caps
+ * too soon (field finding: looking up or down gave the depth away). The wall's
+ * brightness is baked into the texture — bright at the top, dim at the bottom —
+ * and the two caps use the *exact* colours of those end rows, so neither end
+ * ever reads as a lid. There is no horizon, no floor line and no edge to catch
+ * the eye; the only edges in the picture are the wall fixtures.
  */
 
 const SHAFT_RADIUS = 9;
-const SHAFT_HEIGHT = 120;
+const SHAFT_HEIGHT = 240;
 const EYE_Y = 1.7;
 
 /**
@@ -41,32 +42,29 @@ const EYE_Y = 1.7;
  *  - a handful of protruding shelves that ride up with it and recycle at the
  *    top of a 40 m band, faded into the wall tone before they wrap.
  */
-const FIXTURE_COUNT = 8;
+const FIXTURE_COUNT = 16;
 const FIXTURE_BAND = 40;
 /** One tie of the detail texture spans this many metres of wall. */
 const DETAIL_COURSE_M = 20;
 /**
- * Terminal-velocity motion with a real drag term.
+ * Terminal speed approached with an exponential ease.
  *
- * The stack starts from rest and accelerates under a visual gravity, while a
- * quadratic drag term grows with speed² until the two balance at
- * TERMINAL_SPEED. That is why the last stretch *approaches* the speed instead
- * of hitting it: acceleration decays to zero, which is exactly what a body
- * falling through air does. A constant-rate ramp (the previous version) snaps
- * from accelerating to coasting, and exponential easing never settles at all.
+ * The field pass replaced the gravity/drag model: its release jerked from
+ * 1.8 m/s² and hung near the top of the ease. The rate form starts at
+ * EASE_RATE · speed (≈ 0.49 m/s², a gentle release) and decays as the speed
+ * closes on target, so the fall both starts softly and lands smoothly.
  */
 /** 0.35 m/s at the 8.3 m ring radius is 2.4 °/s, inside the near-field budget. */
 const TERMINAL_SPEED = 0.35;
-/** Visual gravity, m/s². Sets how briskly the stack gets going. */
-const GRAVITY = 1.8;
-/** Drag coefficient chosen so gravity and drag balance at TERMINAL_SPEED. */
-const DRAG = GRAVITY / (TERMINAL_SPEED * TERMINAL_SPEED);
+/** 1/s: ~63% of terminal after one second, asymptotic after that. */
+const EASE_RATE = 1.4;
 /** Stop is a brake, not drag: this cue must die quickly. */
 const BRAKE = 2.6;
 
 /** End colours, shared by the wall gradient and the caps so they match. */
 const TOP_COLOR = '#E9DCC4';
-const BOTTOM_COLOR = '#0B0D0F';
+/** Dark warm grey, not black: the shaft walls stay readable end to end. */
+const BOTTOM_COLOR = '#181B1F';
 
 export interface LightWellParts {
   root: THREE.Group;
@@ -87,8 +85,8 @@ function shaftTexture(): THREE.CanvasTexture | null {
     ramp.addColorStop(0.05, '#C9BCA4');
     ramp.addColorStop(0.16, '#6A6C6C');
     ramp.addColorStop(0.3, '#3C4044');
-    ramp.addColorStop(0.45, '#171A1D');
-    ramp.addColorStop(0.7, '#0D0F11');
+    ramp.addColorStop(0.45, '#26292E');
+    ramp.addColorStop(0.7, '#1C1F23');
     ramp.addColorStop(1.0, BOTTOM_COLOR);
     ctx.fillStyle = ramp;
     ctx.fillRect(0, 0, width, height);
@@ -104,12 +102,12 @@ function shaftTexture(): THREE.CanvasTexture | null {
     }
 
     // Faint mottling so the panels are not flat colour after magnification.
+    // Dark only: bright blobs on the wall read as glare spots (field finding)
+    // and grab the eye during the fall.
     const random = createRandom(0x4f21);
-    for (let i = 0; i < 420; i += 1) {
+    for (let i = 0; i < 300; i += 1) {
       const alpha = 0.012 + random() * 0.02;
-      ctx.fillStyle = random() > 0.5
-        ? `rgba(255, 255, 255, ${alpha.toFixed(3)})`
-        : `rgba(0, 0, 0, ${(alpha * 1.5).toFixed(3)})`;
+      ctx.fillStyle = `rgba(0, 0, 0, ${(alpha * 1.5).toFixed(3)})`;
       const radius = 4 + random() * 22;
       ctx.beginPath();
       ctx.arc(random() * width, random() * height, radius, 0, Math.PI * 2);
@@ -318,10 +316,12 @@ export function createLightWell(): LightWellParts {
     update(dt: number): void {
       const targetSpeed = TERMINAL_SPEED * targetFlow;
       if (targetSpeed > 0 && speed < targetSpeed) {
-        // Gravity minus quadratic drag: acceleration fades to zero exactly at
-        // the balance point, so the approach is asymptotic, never a step.
-        const accel = Math.max(0, GRAVITY - DRAG * speed * speed);
-        speed = Math.min(targetSpeed, speed + accel * dt);
+        // Exponential ease: strongest acceleration right at release, decaying
+        // to zero as the speed closes on target — soft start, smooth landing.
+        speed = Math.min(
+          targetSpeed,
+          speed + (targetSpeed - speed) * Math.min(1, EASE_RATE * dt)
+        );
       } else {
         speed = Math.max(targetSpeed, speed - BRAKE * dt);
       }
@@ -381,7 +381,7 @@ export function createLightWell(): LightWellParts {
   };
 }
 
-const BACKGROUND = 0x0b0d0f;
+const BACKGROUND = 0x121418;
 
 export const lightwellScene = defineScene(
   {
@@ -392,8 +392,8 @@ export const lightwellScene = defineScene(
       en: 'Brackets on the wall sweep upward and carry the body down with them.'
     },
     description: {
-      zh: '约 18 米直径、120 米高的竖井：井壁顶部亮成天光，底部沉进黑里，两头都在六十米外，看不到“盖”。井壁上的托架与横档自下而上升起、到顶前淡出回收，像身体在下沉。所有运动都在井壁上，视点不动，也没有任何东西穿过眼前。',
-      en: 'A shaft about 18 m across and 120 m tall: daylight above, black below, both ends sixty metres away with no visible lid. Brackets and courses on the wall rise, fade before the top and recycle, so the body reads as descending. All motion is on the wall; nothing crosses the eye.'
+      zh: '约 18 米直径、240 米高的竖井：井壁顶部亮成天光，底部沉进暗灰里，两头都在一百二十米外，看不到“盖”。井壁上的托架与横档自下而上升起、到顶前淡出回收，像身体在下沉。所有运动都在井壁上，视点不动，也没有任何东西穿过眼前。',
+      en: 'A shaft about 18 m across and 240 m tall: daylight above, dim grey below, both ends 120 metres away with no visible lid. Brackets and courses on the wall rise, fade before the top and recycle, so the body reads as descending. All motion is on the wall; nothing crosses the eye.'
     },
     // No ambience: water belongs to the shore and the washroom. This shaft is
     // meant to be heard as one's own breathing, not as a room.

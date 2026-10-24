@@ -3,6 +3,7 @@ import {
   FLOAT_LEVEL_CAP,
   FLOAT_MAX_LEVEL,
   FLOAT_PROFILES,
+  breathOffsetAt,
   easeAmplitude,
   floatAmplitudeForLevel,
   floatOffsetAt,
@@ -47,6 +48,11 @@ export interface FloatingDeps {
   gate(): BuoyancyGate;
   /** Visual up in content space; the heave runs along it, whatever the frame. */
   axis(out: THREE.Vector3): THREE.Vector3;
+  /**
+   * 1 when the loaded scene takes the big heave (the shore), 0 elsewhere —
+   * those scenes keep only the breath swell so the world never reads frozen.
+   */
+  heaveScale?(): number;
 }
 
 export interface FloatingState {
@@ -132,13 +138,16 @@ export function createFloating(
   }
 
   function update(dt: number): void {
-    const target = buoyancyAllowed(gate())
-      ? floatAmplitudeForLevel(profile, level)
+    const allowed = buoyancyAllowed(gate());
+    const target = allowed
+      ? floatAmplitudeForLevel(profile, level) * (deps.heaveScale?.() ?? 1)
       : 0;
     amplitudeM = easeAmplitude(amplitudeM, target, dt, FADE_TAU_S);
-    if (amplitudeM <= 0 && target === 0) {
-      // Settle exactly once, so an idle scene pays nothing per frame. The frame
-      // offset is not touched here: it belongs to the calibration/sit-up layer.
+    // Breath rides even where the big heave is gated off, but only while the
+    // operator has the switch on: a closed gate, level 0 or breath off means
+    // settle exactly once, so an idle scene pays nothing per frame.
+    const breathStandby = allowed && level > 0 && breath;
+    if (amplitudeM <= 0 && target === 0 && !breathStandby) {
       amplitudeM = 0;
       if (offsetM !== 0) {
         offsetM = 0;
@@ -147,7 +156,9 @@ export function createFloating(
       return;
     }
     seconds += dt;
-    offsetM = floatOffsetAt(profile, seconds, amplitudeM, breath);
+    offsetM = amplitudeM > 0
+      ? floatOffsetAt(profile, seconds, amplitudeM, breath)
+      : breathOffsetAt(seconds);
     apply();
   }
 

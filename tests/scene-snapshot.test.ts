@@ -23,6 +23,9 @@ function neutralInput(): SceneSnapshotInput {
     worldYawDeg: -12,
     worldPitchDeg: 8,
     worldRollDeg: -3,
+    worldXM: 0.1,
+    worldYM: -0.2,
+    worldZM: 0.3,
     confidence: 0.62,
     correctionMix: 0,
     correctionTarget: 0,
@@ -152,6 +155,9 @@ describe('scene snapshot', () => {
     expect(payload.worldYaw).toBe(-12);
     expect(payload.worldPitch).toBe(8);
     expect(payload.worldRoll).toBe(-3);
+    expect(payload.worldXM).toBe(0.1);
+    expect(payload.worldYM).toBe(-0.2);
+    expect(payload.worldZM).toBe(0.3);
     expect(payload.viewAnim).toBe('playing');
     expect(payload.viewPreset).toBe('breathe');
     expect(payload.eyeHeight).toBe(1.7);
@@ -192,7 +198,10 @@ describe('scene snapshot', () => {
         'viewYaw',
         'worldYaw',
         'worldPitch',
-        'worldRoll'
+        'worldRoll',
+        'worldXM',
+        'worldYM',
+        'worldZM'
       ].sort()
     );
   });

@@ -28,6 +28,14 @@ export interface SceneSnapshotInput {
   worldYawDeg: number;
   worldPitchDeg: number;
   worldRollDeg: number;
+  /**
+   * Applied world translation (shell x base), metres in the device frame.
+   * The rotation is taken about the calibration eye, not the origin, so the
+   * mirror cannot reconstruct the patient view from the quaternion alone.
+   */
+  worldXM: number;
+  worldYM: number;
+  worldZM: number;
   confidence: number;
   /**
    * How much of the pitch correction is applied (0 = real ceiling, 1 = facing
@@ -79,6 +87,10 @@ export class SceneSnapshot {
   appliedWorldYawDeg = 0;
   appliedWorldPitchDeg = 0;
   appliedWorldRollDeg = 0;
+  /** Total world translation as applied to scene content, metres, device frame. */
+  appliedWorldXM = 0;
+  appliedWorldYM = 0;
+  appliedWorldZM = 0;
   sitUpActive = false;
   postureMode = false;
   sitUpT = 0;
@@ -121,6 +133,9 @@ export class SceneSnapshot {
     this.appliedWorldYawDeg = input.worldYawDeg;
     this.appliedWorldPitchDeg = input.worldPitchDeg;
     this.appliedWorldRollDeg = input.worldRollDeg;
+    this.appliedWorldXM = input.worldXM;
+    this.appliedWorldYM = input.worldYM;
+    this.appliedWorldZM = input.worldZM;
     this.lookYawDeg = input.lookYawDeg;
     this.lookYawTargetDeg = input.lookYawTargetDeg;
     this.upGazeDeg = input.upGazeDeg;

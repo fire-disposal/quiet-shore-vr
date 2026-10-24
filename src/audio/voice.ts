@@ -139,6 +139,12 @@ export interface VoicePlayerApi {
 const BASE = '/voice';
 const MANIFEST_URL = `${BASE}/manifest.json`;
 
+/** Read the live state outside the caller's flow analysis: `ctx.state` is
+ *  narrowed by the entry branch, and the resume above may have changed it. */
+function audioContextRunning(ctx: AudioContext): boolean {
+  return ctx.state === 'running';
+}
+
 export function createVoicePlayer(): VoicePlayerApi {
   let manifest: VoiceManifest | null = null;
   let loading: Promise<boolean> | null = null;
@@ -221,7 +227,26 @@ export function createVoicePlayer(): VoicePlayerApi {
     const ctx = getAudioContext();
     const bus = getVoiceBus();
     if (!ctx || !bus) {
+      lastError = '音频总线不可用';
       return false;
+    }
+    if (ctx.state !== 'running') {
+      // A cue started on a suspended context decodes fine and then plays
+      // silence, with play() still reporting success — on the tablet that is
+      // indistinguishable from a lost command. Resume first; if the platform
+      // refuses (no gesture yet), fail loudly so the headset says why.
+      try {
+        await Promise.race([
+          ctx.resume(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('resume timeout')), 500))
+        ]);
+      } catch {
+        // The state check below reports the outcome either way.
+      }
+      if (!audioContextRunning(ctx)) {
+        lastError = '音频未解锁';
+        return false;
+      }
     }
     const token = ++stopToken;
     const buffer = await bufferFor(id);

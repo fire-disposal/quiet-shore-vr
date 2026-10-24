@@ -36,6 +36,28 @@ describe('shore buoyancy distribution', () => {
     handle.dispose();
   });
 
+  it('heaves the lake relative to stationary posts during buoyancy', () => {
+    const handle = shoreScene.build({ registry: null as never });
+    const water = part(handle, 'shore-water');
+    const swell = part(handle, 'shore-swell');
+    const shore = part(handle, 'shore-shoreline');
+    handle.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 1, z: 0 } });
+
+    // A quarter period (5.5 s of 22 s) lands on the crest; three quarters on
+    // the trough. The exact amplitude is the comfort envelope's business
+    // (see the scene capabilities test), not this one's.
+    handle.update?.(5.5, 5.5);
+    const crest = swell.position.y;
+    expect(Math.abs(crest)).toBeGreaterThan(0.005);
+    expect(Math.abs(crest)).toBeLessThan(0.05);
+    expect(swell.position.y + water.position.y - shore.position.y).toBeCloseTo(crest, 6);
+
+    handle.update?.(11, 16.5);
+    expect(swell.position.y).toBeCloseTo(-crest, 6);
+    expect(swell.position.y + water.position.y - shore.position.y).toBeCloseTo(-crest, 6);
+    handle.dispose();
+  });
+
   it('follows the axis when the visual up is not the lake up', () => {
     const handle = shoreScene.build({ registry: null as never });
     // Supine frame: the patient's up runs along the scene's depth.

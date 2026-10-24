@@ -386,16 +386,15 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.POSTURE_STOP)
     }
 
-    // ── Voice cues ─────────────────────────────────────────────────────────
-    // The tablet names a clip or a sequence; the headset plays pre-generated
-    // audio. Microphone never opens: this is playback only.
-
-    fun playVoice(id: String) {
-        if (VoiceCatalog.line(id) == null) {
-            return
-        }
-        sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
+    /** Hold the current view angles; only `view:anim:recenter` returns to 0. */
+    fun stopView() {
+        sendCommand(ControlProtocol.VIEW_STOP)
     }
+
+    // ── Voice cues ─────────────────────────────────────────────────────────
+    // The tablet only interrupts and mixes: reading is scheduled by the flow
+    // itself. Microphone never opens: this is playback only.
+
 
     // ── SUS ────────────────────────────────────────────────────────────────
     /**
@@ -447,6 +446,49 @@ class ControlViewModel(application: Application) :
         // The page advances after each answer; mirror that here.
         if (index < 10) {
             _uiState.update { it.copy(susIndex = index + 1) }
+        }
+    }
+
+    /** Share the archived sheets as JSON through the system chooser. */
+    fun exportSus() {
+        val history = _uiState.value.susHistory
+        if (history.isEmpty()) {
+            error("暂无已归档的 SUS 结果")
+            return
+        }
+        val array = org.json.JSONArray()
+        for (record in history) {
+            array.put(
+                org.json.JSONObject().apply {
+                    put("answers", org.json.JSONArray(record.answers))
+                    put("filled", record.filled)
+                    put("complete", record.complete)
+                    put("score", record.score ?: org.json.JSONObject.NULL)
+                    put("scene", record.scene)
+                    put("sessionSec", record.sessionSec)
+                    put("completedAt", record.completedAt)
+                }
+            )
+        }
+        val payload = org.json.JSONObject()
+            .put("version", 1)
+            .put("count", history.size)
+            .put("sheets", array)
+            .toString()
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "SUS 结果 ${history.size} 份")
+            putExtra(android.content.Intent.EXTRA_TEXT, payload)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            getApplication<Application>().startActivity(
+                android.content.Intent.createChooser(intent, "导出 SUS 结果")
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            notice("已打开导出分享")
+        } catch (error: RuntimeException) {
+            error("没有可接收导出的应用")
         }
     }
 

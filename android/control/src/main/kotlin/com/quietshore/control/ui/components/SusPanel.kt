@@ -49,7 +49,6 @@ fun SusPanel(
 ) {
     val connected = state.sessionActive || state.controlGranted
     val items = VoiceCatalog.LINES.filter { it.group == "SUS" }
-    val intro = items.firstOrNull { it.id == "v-sus-intro" }
     val questions = items.filter { it.id != "v-sus-intro" }
 
     Surface(
@@ -94,7 +93,7 @@ fun SusPanel(
                 Column {
                     Text("目视选择", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        text = "患者注视选项 8 秒即可作答（翻题后 2 秒不计时）",
+                        text = "患者注视选项 3 秒即可作答（翻题后 1 秒不计时）",
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextSecondary
                     )
@@ -125,14 +124,6 @@ fun SusPanel(
                 )
             }
 
-            if (intro != null) {
-                OutlinedButton(
-                    onClick = { actions.onVoicePlay(intro.id) },
-                    enabled = connected,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("播放说明") }
-            }
-
             for ((index, line) in questions.withIndex()) {
                 val number = index + 1
                 val answer = state.susAnswers.getOrNull(index) ?: 0
@@ -153,11 +144,6 @@ fun SusPanel(
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f)
                         )
-                        OutlinedButton(
-                            onClick = { actions.onVoicePlay(line.id) },
-                            enabled = connected
-                        ) { Text("播放") }
-                        Spacer(Modifier.height(4.dp))
                         OutlinedButton(
                             onClick = { actions.onSusShow(number) },
                             enabled = connected
@@ -194,11 +180,18 @@ fun SusPanel(
             // keeps them, so a session's usability record survives the session.
             if (state.susHistory.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "已归档 ${state.susHistory.size} 份",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                for (record in state.susHistory.takeLast(3).reversed()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "已归档 ${state.susHistory.size} 份",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    OutlinedButton(onClick = actions.onSusExport) { Text("导出") }
+                }
+                for (record in state.susHistory.asReversed()) {
                     val score = record.score?.let { "$it 分" } ?: "${record.filled}/10"
                     Text(
                         text = "$score · ${record.scene} · ${stamp(record.completedAt)}",

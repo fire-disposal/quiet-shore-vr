@@ -35,9 +35,8 @@ const FLOOR_UV = 0.5;
 
 type Vec3 = [number, number, number];
 
-/** Wall reveal: basin rim height, lip projection, and the bowl axis tilt. */
-const LIP_Y = 1.0;
-const LIP_R = 0.105;
+/** Wall-hung bowl lip height in metres. */
+const LIP_Y = 1.05;
 
 /**
  * A geometry accumulator.
@@ -299,26 +298,39 @@ class MeshBuilder {
 }
 
 /**
- * The bowl profile, mouth first.
- *
- * `[radius, height]` in bowl-local metres: the rolled lip, then the throat
- * narrowing to a 25 mm drain. Heights are negative because the bowl runs down
- * away from its mouth.
+ * One continuous section through the ceramic shell: outside lip, tapered
+ * body, rounded sump, and the inside basin returning to the rolled rim.
+ * Radii and depth are in metres; the opening faces up and slightly forward.
  */
 const BOWL_PROFILE: readonly (readonly [number, number])[] = [
-  [0.104, 0.0],
-  [0.1055, 0.006],
-  [0.1045, 0.014],
-  [0.0995, 0.015],
-  [0.0975, 0.010],
-  [0.094, -0.02],
-  [0.086, -0.06],
-  [0.072, -0.105],
-  [0.055, -0.145],
-  [0.038, -0.175],
-  [0.026, -0.19],
-  [0.0, -0.192]
+  [0.176, 0.000],
+  [0.182, 0.006],
+  [0.183, 0.013],
+  [0.179, 0.019],
+  [0.171, 0.018],
+  [0.166, 0.010],
+  [0.164, -0.012],
+  [0.158, -0.046],
+  [0.144, -0.092],
+  [0.124, -0.145],
+  [0.100, -0.196],
+  [0.075, -0.238],
+  [0.052, -0.265],
+  [0.035, -0.276],
+  [0.026, -0.273],
+  [0.028, -0.263],
+  [0.043, -0.247],
+  [0.066, -0.222],
+  [0.091, -0.186],
+  [0.115, -0.145],
+  [0.136, -0.101],
+  [0.151, -0.058],
+  [0.161, -0.023],
+  [0.166, -0.002],
+  [0.176, 0.000]
 ];
+
+const BOWL_TROUGH_DEPTH = 0.276;
 
 export interface RoomLayer {
   root: THREE.Group;
@@ -390,6 +402,26 @@ export function createRoom(): RoomLayer {
     0.92,
     WALL_UV
   );
+  // A restrained porcelain backsplash panel gives the wall a scale cue without
+  // adding a draw call or competing with the fixture.
+  const panelZ = BACK_Z + 0.003;
+  wallBuilder.quad(
+    [-0.52, 0.24, panelZ],
+    [0.52, 0.24, panelZ],
+    [0.52, 1.82, panelZ],
+    [-0.52, 1.82, panelZ],
+    0.97,
+    WALL_UV
+  );
+  for (const y of [0.68, 1.42]) {
+    wallBuilder.quad(
+      [-0.48, y, panelZ + 0.001],
+      [0.48, y, panelZ + 0.001],
+      [0.48, y + 0.003, panelZ + 0.001],
+      [-0.48, y + 0.003, panelZ + 0.001],
+      0.78
+    );
+  }
   wallBuilder.quad(
     [-ROOM_WIDTH / 2, 0, FRONT_Z],
     [-ROOM_WIDTH / 2, 0, BACK_Z],
@@ -487,59 +519,28 @@ export function createRoom(): RoomLayer {
   root.add(oak);
   disposables.push(oak.geometry);
 
-  // ── Ceramic: back plate + revolved bowl with a rolled lip ───────────────
+  // ── Ceramic: a full, wall-mounted bowl with a rolled oval mouth ─────────
   const ceramic = new MeshBuilder();
 
-  // Ceramic shroud: the fixture's body on the wall, a curved slab rather than a
-  // card. A flat card read as a poster taped to the wall.
-  {
-    // Built around the local axis first: a revolve is centred on the origin,
-    // and a shroud left there sits around the patient's knees.
-    const shroudBuilder = new MeshBuilder();
-    // Kept shallow: a deep shroud sits in front of the bowl and turns the
-    // fixture into a slab with a slot cut in it.
-    shroudBuilder.revolve(
-      [
-        [0.112, 0.60],
-        [0.128, 0.64],
-        [0.128, 1.01],
-        [0.112, 1.05]
-      ],
-      18,
-      { arc: 1.5, start: Math.PI / 2 - 0.75, tint: () => 0.93, uvScale: 1.6 }
-    );
-    const shroud = shroudBuilder.build();
-    shroud.translate(0, 0, BACK_Z + 0.02);
-    ceramic.merge(shroud);
-    shroud.dispose();
-  }
-
-  // Bowl: the mouth sits at the lip height and faces up-and-out; the throat
-  // runs down and back into the wall. The emitted half is the front one, so the
-  // missing half is the part already inside the wall.
-  const bowlTilt = 0.62;
-  const bowlDepth = 0.30;
-  const profileDepth = Math.abs(BOWL_PROFILE[BOWL_PROFILE.length - 1][1]);
-  const bowlScaleY = bowlDepth / profileDepth;
-  const mouth = new THREE.Vector3(0, LIP_Y, BACK_Z + 0.30);
-  const throatPoint = new THREE.Vector3(
-    mouth.x,
-    mouth.y - Math.cos(bowlTilt) * bowlDepth,
-    mouth.z - Math.sin(bowlTilt) * bowlDepth
-  );
+  // The opening faces up and forward; the rear of the bowl sits into the wall.
+  const bowlTilt = 0.52;
+  const bowlDepth = 0.34;
+  const bowlScaleY = bowlDepth / BOWL_TROUGH_DEPTH;
+  const mouth = new THREE.Vector3(0, LIP_Y, BACK_Z + 0.25);
+  const bowlTints = [
+    0.91, 0.94, 0.97, 0.99, 0.98, 0.96, 0.94, 0.92, 0.90,
+    0.88, 0.85, 0.82, 0.78, 0.75, 0.73, 0.74, 0.77, 0.81,
+    0.85, 0.89, 0.92, 0.95, 0.97, 0.97, 0.94
+  ];
   const bowlShell = new MeshBuilder();
-  bowlShell.revolve(BOWL_PROFILE, 26, {
-    arc: Math.PI,
+  bowlShell.revolve(BOWL_PROFILE, 32, {
+    arc: Math.PI * 2,
     start: 0,
-    tint: (index) => {
-      // Darker into the throat: the only depth cue without shadows.
-      const d = 1 - index / (BOWL_PROFILE.length - 1);
-      return 0.6 + 0.38 * d;
-    },
+    tint: (index) => bowlTints[index] ?? 0.94,
     uvScale: 1.4
   });
   const bowlGeometry = bowlShell.build();
-  bowlGeometry.scale(1, bowlScaleY, 1);
+  bowlGeometry.scale(1, bowlScaleY, 1.18);
   bowlGeometry.rotateX(bowlTilt);
   bowlGeometry.translate(mouth.x, mouth.y, mouth.z);
   ceramic.merge(bowlGeometry);
@@ -550,43 +551,28 @@ export function createRoom(): RoomLayer {
   root.add(ceramicMesh);
   disposables.push(ceramicMesh.geometry);
 
-  // ── Metal: flush plate, pipe into the bowl, brackets, floor drain ────────
+  // ── Metal: one discreet flush button and a small floor drain ────────────
   const metal = new MeshBuilder();
-  metal.box(0, 1.42, BACK_Z + 0.007, 0.16, 0.115, 0.014, 0.9);
-  // Pipe: flush plate down the wall, then a short spout into the mouth.
-  metal.box(0, 1.30, BACK_Z + 0.03, 0.032, 0.22, 0.032, 0.86);
-  metal.box(0, 1.19, BACK_Z + 0.06, 0.028, 0.14, 0.028, 0.8);
-  // Spout reaches the mouth's back edge: a nozzle that stops short reads as a
-  // second, floating fixture.
-  metal.box(0, 1.045, BACK_Z + 0.235, 0.045, 0.022, 0.30, 0.78);
-  metal.box(0, 1.028, BACK_Z + 0.375, 0.05, 0.03, 0.05, 0.7);
-  // Two wall brackets under the bowl.
-  for (const x of [-0.11, 0.11]) {
-    metal.box(x, 0.66, BACK_Z + 0.05, 0.035, 0.03, 0.11, 0.8);
-  }
-  // Floor drain: a 150 mm square grate under the bowl.
+  metal.box(0, 1.44, BACK_Z + 0.014, 0.12, 0.075, 0.014, 0.88);
+  metal.disc(0, 1.44, BACK_Z + 0.026, 0.011, 16, 'front', 0.72);
   const drainZ = BACK_Z + 0.34;
-  for (let i = 0; i < 5; i += 1) {
-    const offset = -0.06 + i * 0.03;
-    metal.box(offset, 0.003, drainZ, 0.012, 0.006, 0.14, 0.55);
+  for (let i = 0; i < 3; i += 1) {
+    const offset = -0.03 + i * 0.03;
+    metal.box(offset, 0.003, drainZ, 0.007, 0.004, 0.10, 0.72);
   }
-  metal.box(0, 0.003, drainZ - 0.07, 0.15, 0.006, 0.012, 0.5);
-  metal.box(0, 0.003, drainZ + 0.07, 0.15, 0.006, 0.012, 0.5);
+  metal.box(0, 0.003, drainZ - 0.05, 0.10, 0.004, 0.007, 0.68);
+  metal.box(0, 0.003, drainZ + 0.05, 0.10, 0.004, 0.007, 0.68);
   const metalMesh = new THREE.Mesh(metal.build(), metalMaterial);
   metalMesh.name = 'washroom-metal';
   root.add(metalMesh);
   disposables.push(metalMesh.geometry);
 
-  // ── Dark: the drain throat and the hole behind the grate ────────────────
   const dark = new MeshBuilder();
-  dark.box(0, 0.0015, drainZ, 0.15, 0.002, 0.15, 0.35);
-  // The bowl's throat: a dark cap so the bowl does not read as a hollow cone
-  // with the wall showing through it.
-  dark.box(throatPoint.x, throatPoint.y, throatPoint.z, 0.05, 0.03, 0.05, 0.3);
-  const throat = new THREE.Mesh(dark.build(), darkMaterial);
-  throat.name = 'washroom-dark';
-  root.add(throat);
-  disposables.push(throat.geometry);
+  dark.box(0, 0.0015, drainZ, 0.10, 0.002, 0.10, 0.35);
+  const darkMesh = new THREE.Mesh(dark.build(), darkMaterial);
+  darkMesh.name = 'washroom-dark';
+  root.add(darkMesh);
+  disposables.push(darkMesh.geometry);
 
   // Recessed light above the bowl: an emissive-looking plane.
   const lightGeometry = new THREE.PlaneGeometry(0.26, 0.9);

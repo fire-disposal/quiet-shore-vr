@@ -38,6 +38,10 @@ interface MirrorState {
   worldYaw?: number;
   worldPitch?: number;
   worldRoll?: number;
+  /** Applied world translation, metres, device frame (the correction pivot). */
+  worldXM?: number;
+  worldYM?: number;
+  worldZM?: number;
   /** Buoyancy already applied by the page, in millimetres. */
   floatMm?: number;
   /** Horizon pitch already applied by the page, in degrees. */
@@ -96,6 +100,7 @@ let lastFrame = 0;
 const target = {
   yaw: 0, pitch: 0, roll: 0,
   worldYaw: 0, worldPitch: 0, worldRoll: 0,
+  worldXM: 0, worldYM: 0, worldZM: 0,
   floatMm: 0, swayDeg: 0,
   /** Device-frame eye position from telemetry, metres. */
   x: 0, y: 1.7, z: 0
@@ -106,6 +111,7 @@ let hasPose = false;
 const applied = {
   yaw: 0, pitch: 0, roll: 0,
   worldYaw: 0, worldPitch: 0, worldRoll: 0,
+  worldXM: 0, worldYM: 0, worldZM: 0,
   floatMm: 0, swayDeg: 0,
   x: 0, y: 1.7, z: 0
 };
@@ -148,6 +154,9 @@ function setTarget(next: MirrorState): void {
   target.worldYaw = (next.worldYaw ?? 0) * DEG;
   target.worldPitch = (next.worldPitch ?? 0) * DEG;
   target.worldRoll = (next.worldRoll ?? 0) * DEG;
+  target.worldXM = next.worldXM ?? 0;
+  target.worldYM = next.worldYM ?? 0;
+  target.worldZM = next.worldZM ?? 0;
   target.floatMm = next.floatMm ?? 0;
   target.swayDeg = next.swayDeg ?? 0;
   if (primed) {
@@ -160,6 +169,9 @@ function setTarget(next: MirrorState): void {
   applied.worldYaw = target.worldYaw;
   applied.worldPitch = target.worldPitch;
   applied.worldRoll = target.worldRoll;
+  applied.worldXM = target.worldXM;
+  applied.worldYM = target.worldYM;
+  applied.worldZM = target.worldZM;
   applied.floatMm = target.floatMm;
   applied.swayDeg = target.swayDeg;
   applied.x = target.x;
@@ -210,6 +222,9 @@ function smooth(dt: number): void {
   applied.worldYaw += shortestAngleDelta(applied.worldYaw, target.worldYaw) * alpha;
   applied.worldPitch += (target.worldPitch - applied.worldPitch) * alpha;
   applied.worldRoll += (target.worldRoll - applied.worldRoll) * alpha;
+  applied.worldXM += (target.worldXM - applied.worldXM) * alpha;
+  applied.worldYM += (target.worldYM - applied.worldYM) * alpha;
+  applied.worldZM += (target.worldZM - applied.worldZM) * alpha;
   applied.floatMm += (target.floatMm - applied.floatMm) * alpha;
   applied.swayDeg += (target.swayDeg - applied.swayDeg) * alpha;
   applied.x += (target.x - applied.x) * alpha;
@@ -327,12 +342,19 @@ function applyCamera(): void {
     // at `eyeHeight` put the eye 1.7 m above the room.
     camera.position.set(0, 0, 0);
   }
-  // The patient sees content rotated by the world shell; undo that rotation
-  // here, so calibration, view and posture offsets are visible in the mirror.
+  // The patient sees content moved by the full world transform; undo it here,
+  // so calibration, view and posture offsets are visible in the mirror.
   // Roll is the head's own, so it stays in the YXZ head rotation.
   mirrorCameraTransform(
     camera,
-    { yaw: applied.worldYaw, pitch: applied.worldPitch, roll: applied.worldRoll },
+    {
+      yaw: applied.worldYaw,
+      pitch: applied.worldPitch,
+      roll: applied.worldRoll,
+      xM: applied.worldXM,
+      yM: applied.worldYM,
+      zM: applied.worldZM
+    },
     { yaw: applied.yaw, pitch: applied.pitch, roll: applied.roll },
     { x: camera.position.x, y: camera.position.y, z: camera.position.z }
   );
@@ -402,6 +424,11 @@ function onState(json: string): void {
     lastStateAt = performance.now();
     setTarget(next);
     syncScene();
+    // First data means the host wants a picture: never leave the canvas black
+    // because a native `start()` call raced the page load.
+    if (!running) {
+      start();
+    }
   } catch {
     // A malformed frame is dropped; the next one supersedes it anyway.
   }

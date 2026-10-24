@@ -38,6 +38,8 @@ data class ControlActions(
     val onViewPitch: (Int) -> Unit,
     /** One discrete view preset: up / down / recenter / breathe. */
     val onViewAnim: (String) -> Unit,
+    /** Hold the current view angles; only `recenter` returns to level. */
+    val onViewStop: () -> Unit,
     /** Shows the patient-facing explanation page on the headset. */
     val onShowAbout: () -> Unit,
     val onEmergencyStop: () -> Unit,
@@ -48,8 +50,6 @@ data class ControlActions(
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
     val onLeave: () -> Unit,
-    /** Plays one pre-generated cue; ids come from [com.quietshore.control.voice.VoiceCatalog]. */
-    val onVoicePlay: (String) -> Unit,
     /** Plays a whole sequence: start / imagine / relax / close. */
     val onVoiceStop: () -> Unit,
     val onVoiceVolume: (Int) -> Unit,
@@ -59,5 +59,7 @@ data class ControlActions(
     /** SUS: show question [index] (1-based) on the headset. */
     val onSusShow: (Int) -> Unit,
     /** SUS: record the operator's answer for the current question. */
-    val onSusAnswer: (Int) -> Unit
+    val onSusAnswer: (Int) -> Unit,
+    /** SUS: share the archived sheets as JSON through the system chooser. */
+    val onSusExport: () -> Unit,
 )

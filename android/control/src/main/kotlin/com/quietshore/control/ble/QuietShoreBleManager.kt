@@ -15,7 +15,8 @@ import java.nio.charset.StandardCharsets
  *
  * The peripheral exposes one writable command characteristic and three
  * notifying characteristics. Telemetry is a fixed 20 byte little endian
- * payload, so no MTU negotiation is required.
+ * payload, but the v12 state frame is 40 bytes, so bring-up requests a
+ * widened ATT MTU before notifications start.
  *
  * The 10 Hz `view:orient` stream is written with `WRITE_TYPE_NO_RESPONSE`; every
  * discrete command keeps `WRITE_TYPE_DEFAULT` so its ATT response still proves
@@ -101,6 +102,11 @@ class QuietShoreBleManager(
                     }
                 }
             }
+
+            // v12 state frames are 40 bytes; ask for a widened ATT MTU before
+            // notifications start, so the frame never depends on whatever MTU
+            // the platform negotiated by default.
+            requestMtu(REQUEST_MTU).enqueue()
 
             val queue = beginAtomicRequestQueue()
                 .add(enableNotifications(status))
@@ -238,5 +244,7 @@ class QuietShoreBleManager(
 
     private companion object {
         const val WRITE_TIMEOUT_MS = 6000L
+        /** Covers the 40-byte v12 state frame with room for the SUS JSON split. */
+        const val REQUEST_MTU = 128
     }
 }

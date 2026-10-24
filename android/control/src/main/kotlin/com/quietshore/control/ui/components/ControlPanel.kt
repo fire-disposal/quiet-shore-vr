@@ -25,6 +25,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,24 +73,15 @@ fun ControlPanel(
             ) {
             ConnectionRow(state = state, connected = connected)
 
-            // Read-only facts the operator needs while a session runs. Each one
-            // is the applied value the headset reports, not the requested one:
-            // a control whose effect cannot be observed is not offered.
+            // One line of state, not a dashboard: everything else here is a
+            // control whose effect the headset shows, or it lives on its tab.
             Section("会话") {
                 LabeledValue("状态", when {
                     !connected -> "未连接"
                     calibrating -> "校准中"
-                    running -> "进行中"
+                    running -> "进行中 · ${clock(state.sessionElapsedMs)}"
                     else -> "待机"
                 })
-                LabeledValue("时长", if (running) clock(state.sessionElapsedMs) else "—")
-                LabeledValue("已应用起伏", "${state.control.floatMm.roundToInt()} mm")
-                LabeledValue("SUS", if (state.susOpen) "第 ${state.susIndex}/10 题" else "未打开")
-                Text(
-                    text = "开始、停止与场景选择在「场景」页；答题在「SUS」页。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
             }
 
             // One switch, not four levels: the only thing an operator can
@@ -108,21 +100,20 @@ fun ControlPanel(
                     )
                 }
                 Text(
-                    text = "开 = 满包络（约 75 mm，13 s 一个来回）；关 = 世界静止",
+                    text = "开 = 湖面飘浮（约 150 mm，13 s 一个来回）；其他场景 = 轻缓呼吸起伏；关 = 世界静止",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
                 )
             }
 
-            Section("起身") {
+            Section("世界修正") {
                 // The dial the operator asked for: the patient's calibration
                 // angle, and what the system is currently correcting.
                 val calib = abs(state.control.worldPitch)
                 val rise = state.control.postureRise.coerceIn(0f, 1f)
-                LabeledValue("校准仰角", "${calib.roundToInt()}°")
                 LabeledValue(
-                    "系统修正",
-                    "${state.control.posturePitch.roundToInt()}° · ${(rise * 100).roundToInt()}%"
+                    "修正角度",
+                    "${state.control.posturePitch.roundToInt()}° · ${(rise * 100).roundToInt()}%（校准仰角 ${calib.roundToInt()}°）"
                 )
                 LinearProgressIndicator(
                     progress = { rise },
@@ -135,24 +126,64 @@ fun ControlPanel(
                         onClick = actions.onPostureRise,
                         enabled = connected && running && rise < 0.999f,
                         modifier = Modifier.weight(1f)
-                    ) { Text("起身修正") }
+                    ) { Text("起身") }
                     OutlinedButton(
                         onClick = actions.onPostureLower,
                         enabled = connected && running && rise > 0.001f,
                         modifier = Modifier.weight(1f)
-                    ) { Text("撤销起身") }
+                    ) { Text("躺下") }
+                    OutlinedButton(
+                        onClick = actions.onPostureStop,
+                        enabled = connected && running,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("停止") }
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "斜坡时长", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "${state.animDurationMs / 1000} s",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Slider(
+                    value = state.animDurationMs.toFloat(),
+                    onValueChange = { actions.onAnimDuration((it / 1000).roundToInt() * 1000) },
+                    valueRange = 4000f..20000f,
+                    steps = 15,
+                    enabled = connected && running
+                )
                 Text(
-                    text = "起身修正把世界从「天花板」缓缓转到面向前方；撤销回到仰卧基准",
+                    text = "起身把世界从「天花板」缓缓转到面向前方；停止冻结在当前角度",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
                 )
             }
 
-            // Removed on purpose (docs/control-perception.md): 漂浮强度 /
-            // 漂浮档位 / 呼吸层 / 视角修正 / 视角 / 提示强度. Their effects are
-            // fixed by design or invisible in float mode, so every one of them
-            // read as "I pressed it and nothing happened".
+            // The view layer's four presets, straight to the page's player.
+            Section("视角动画") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (preset in listOf("向上" to "up", "向下" to "down", "回正" to "recenter", "呼吸" to "breathe")) {
+                        OutlinedButton(
+                            onClick = { actions.onViewAnim(preset.second) },
+                            enabled = connected && running,
+                            modifier = Modifier.weight(1f)
+                        ) { Text(preset.first) }
+                    }
+                }
+                OutlinedButton(
+                    onClick = actions.onViewStop,
+                    enabled = connected && running,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("保持当前视角") }
+            }
+
+            // Still removed on purpose (docs/control-perception.md): 漂浮档位
+            // / 呼吸层 / 无级视角滑条 / 提示强度. 视角动画 presets came back —
+            // each one has a visible, self-limiting playback in the headset.
             }
 
             Spacer(Modifier.height(10.dp))

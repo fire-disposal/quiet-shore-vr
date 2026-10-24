@@ -25,9 +25,10 @@ import { createShoreline } from './shoreline';
 const FOG_COLOR = 0xe7d7bd;
 /** Cube-deck parallax: a little motion up there, none in the dome itself. */
 const CLOUD_GAIN = 0.4;
-/** Lake swell: centimetres of heave, hundredths of a degree of tilt. */
-const SWELL_M = 0.012;
-const SWELL_PERIOD_S = 19;
+/** Independent vertical heave against the posts: ±2 cm over 22 s, a 4 cm
+ *  peak-to-peak that stays inside the comfort envelope the scene test pins. */
+const SWELL_M = 0.02;
+const SWELL_PERIOD_S = 22;
 const SWELL_TILT_RAD = 0.0004;
 const SWELL_PITCH_PERIOD_S = 13;
 const SWELL_ROLL_RAD = 0.0003;
@@ -45,10 +46,10 @@ export const shoreScene = defineScene(
       en: 'The clouds drift, the water brightens, and the breathing slows with it.'
     },
     description: {
-      zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条柔和的日光，近处有三根木桩与两丛芦苇作为参照。',
-      en: 'A lakeside morning built for a supine view: a brightening sky overhead, a slowly drifting cloud deck, a low sun, and water running into haze with a soft sun path on it. Three mooring posts and two reed clumps anchor the near field.'
+      zh: '仰卧视角的清晨湖面：头顶是渐亮的天空、缓慢漂移的云与一轮低悬的太阳，脚下方向是延伸到雾里的水面与一条柔和的日光；近处木桩固定不动，湖面缓慢涨落。',
+      en: 'A lakeside morning built for a supine view: a brightening sky overhead, a slowly drifting cloud deck, a low sun, and water running into haze with a soft sun path. The near posts stay fixed while the lake rises and falls slowly.'
     },
-    audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true, width: 0.8 }
+    audio: { track: 'lake', volume: 0.4, fadeMs: 1200, loop: true, width: 0.8 }
   },
   // Drawn for a body on its back on the water: the eye rides 0.45 m above the
   // surface, which is the sit-up path's lying eye height.
@@ -89,8 +90,8 @@ export const shoreScene = defineScene(
       update: function (dt: number): void {
         elapsed += dt;
         clouds.update(dt, elapsed);
-        // A lake is never still: a few millimetres of rise and fall, plus a
-        // tilt small enough that the horizon line still reads as level.
+        // A calm, slow rise and fall remains visible against the fixed posts.
+        // The ±2 cm amplitude stays below 1°/s at the nearest 1.1 m anchor.
         swell.position.y = Math.sin((elapsed * Math.PI * 2) / SWELL_PERIOD_S) * SWELL_M;
         swell.rotation.x = Math.sin((elapsed * Math.PI * 2) / SWELL_PITCH_PERIOD_S) * SWELL_TILT_RAD;
         swell.rotation.z = Math.sin((elapsed * Math.PI * 2) / SWELL_ROLL_PERIOD_S + 1.3) * SWELL_ROLL_RAD;

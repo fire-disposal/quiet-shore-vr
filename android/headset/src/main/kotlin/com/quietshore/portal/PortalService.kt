@@ -136,8 +136,8 @@ class PortalService : Service() {
         const val PAGE_OFFLINE_MS = 2000L
         /** At most one automatic page relaunch per half minute. */
         const val PAGE_RELAUNCH_COOLDOWN_MS = 30_000L
-        /** Grace period after a session before a dark page returns to the app. */
-        const val PAGE_RETURN_GRACE_MS = 6000L
+        /** Stop-fade breathing room before the console comes forward. */
+        const val SESSION_RETURN_MS = 2000L
         const val NO_STORE = "no-store, no-cache, must-revalidate"
 
         /** Page command replayed once whenever the console loses its lease. */
@@ -826,16 +826,18 @@ class PortalService : Service() {
     }
 
     /**
-     * One pre-generated voice clip. Paths are restricted to `<set>/<id>.mp3`
-     * with a lowercase set name so a request can never walk out of the asset
-     * directory; anything else is a 404, not a traversal.
+     * One pre-generated voice clip, the manifest, or the cue-text index the
+     * subtitle card fetches once. Paths are restricted to `<set>/<id>.mp3` and
+     * the two root JSON files with lowercase names, so a request can never
+     * walk out of the asset directory; anything else is a 404, not a traversal.
      */
     private fun voiceResponse(target: String): Response {
         val name = target.removePrefix(ROUTE_VOICE)
         if (!VOICE_PATH.matches(name)) {
             return Response(404, CONTENT_TYPE_TEXT, NOT_FOUND)
         }
-        val contentType = if (name == VOICE_MANIFEST) CONTENT_TYPE_JSON else CONTENT_TYPE_MP3
+        val contentType =
+            if (name == VOICE_MANIFEST || name == VOICE_LINES) CONTENT_TYPE_JSON else CONTENT_TYPE_MP3
         return try {
             assets.open("$VOICE_DIR$name").use { stream ->
                 Response(
@@ -852,9 +854,10 @@ class PortalService : Service() {
     }
 
     /** Clips plus the one index file the page needs before it can fetch them. */
-    private val VOICE_PATH = Regex("^(manifest\\.json|[a-z]+/[a-z0-9-]+\\.mp3)$")
+    private val VOICE_PATH = Regex("^(manifest\\.json|lines\\.json|[a-z]+/[a-z0-9-]+\\.mp3)$")
     private val VOICE_DIR = "voice/"
     private val VOICE_MANIFEST = "manifest.json"
+    private val VOICE_LINES = "lines.json"
 
     /** Allowlisted command router shared by BLE, loopback HTTP and future intents. */
     /** Commands the service can satisfy without a page (launch, prefs, media). */
@@ -1078,14 +1081,18 @@ class PortalService : Service() {
         lastPageFrameAt = System.currentTimeMillis()
         val running = json.optBoolean("session", false)
         if (lastSessionRunning && !running) {
-            // The session just ended. A browser that then goes dark is a dead
-            // end for the operator: bring the console back after a grace period.
+            // The exercise is over: the patient has nothing to do on the
+            // portal page, so skip it — give the stop fade a moment, then
+            // bring the console app forward. If a new session already started
+            // (operator re-entered from the tablet), stay in the browser.
             mainHandler.postDelayed({
-                if (!isPageOnline()) {
-                    Log.i(TAG, "page dark after session end, returning to the app")
-                    PortalActions.home(this)
+                // A restarted session means the operator re-entered from the
+                // tablet; only return when no new session has begun.
+                if (!lastSessionRunning) {
+                    Log.i(TAG, "session ended, returning to the app")
+                    PortalActions.showConsole(this)
                 }
-            }, PAGE_RETURN_GRACE_MS)
+            }, SESSION_RETURN_MS)
         }
         lastSessionRunning = running
         fun finite(name: String, fallback: Float): Float =
@@ -1118,10 +1125,14 @@ class PortalService : Service() {
             viewPitch = finite("viewPitch", 0f),
             // 视角偏航：+ = 患者视线向左（与世界层符号相反，页面已换算）。
             viewYaw = finite("viewYaw", 0f),
-            // 实际写入场景内容的世界旋转（外壳 × 基座），供镜像复现患者视角。
+            // 实际写入场景内容的世界变换（外壳 × 基座），供镜像复现患者视角；
+            // 平移是修正绕校准眼点旋转的枢轴，缺了它镜像相机最多偏两倍眼距。
             worldYaw = finite("worldYaw", 0f),
             worldPitch = finite("worldPitch", 0f),
             worldRoll = finite("worldRoll", 0f),
+            worldXM = finite("worldXM", 0f),
+            worldYM = finite("worldYM", 0f),
+            worldZM = finite("worldZM", 0f),
             // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
             viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
             viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),

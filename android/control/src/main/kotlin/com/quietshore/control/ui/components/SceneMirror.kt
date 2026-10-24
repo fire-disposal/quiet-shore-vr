@@ -43,16 +43,22 @@ fun SceneMirror(
     val live = state.phase == com.quietshore.control.ble.BlePhase.READY
     // The camera mode is local to this WebView: no link traffic, so it is
     // pushed straight to the page whenever the operator flips the top-bar tab.
-    LaunchedEffect(state.mirrorMode) {
+    // Keyed on the WebView as well: the first composition runs this effect
+    // before the factory has handed the view over, so a mode-only key left the
+    // page stopped and the mirror area black.
+    LaunchedEffect(state.mirrorMode, webView.value) {
+        // Kotlin binds `+` tighter than the else-branch: a inline if inside a
+        // concatenation dropped the closing quote on the OVERVIEW arm and the
+        // whole script was a syntax error. Build the argument first.
+        val mode = if (state.mirrorMode == com.quietshore.control.model.MirrorMode.OVERVIEW)
+            "overview" else "patient"
         webView.value?.evaluateJavascript(
-            "window.QuietShoreMirror && window.QuietShoreMirror.setMode(" +
-                "'" + if (state.mirrorMode == com.quietshore.control.model.MirrorMode.OVERVIEW)
-                    "overview" else "patient" + "')",
+            "window.QuietShoreMirror && window.QuietShoreMirror.setMode('$mode')",
             null
         )
     }
 
-    LaunchedEffect(live) {
+    LaunchedEffect(live, webView.value) {
         val view = webView.value ?: return@LaunchedEffect
         view.evaluateJavascript(
             "window.QuietShoreMirror && window.QuietShoreMirror.${if (live) "start" else "stop"}()",
@@ -118,6 +124,11 @@ private fun mirrorPayload(state: ControlUiState): String {
         put("worldYaw", control.worldYaw.toDouble())
         put("worldPitch", control.worldPitch.toDouble())
         put("worldRoll", control.worldRoll.toDouble())
+        // The correction pivot: the mirror subtracts it before undoing the
+        // rotation, else the sit-up slides the patient view off the eye.
+        put("worldXM", control.worldXM.toDouble())
+        put("worldYM", control.worldYM.toDouble())
+        put("worldZM", control.worldZM.toDouble())
         // Applied motion the page already computed; the mirror only adds it.
         put("floatMm", control.floatMm.toDouble())
         put("swayDeg", control.swayDeg.toDouble())
@@ -137,6 +148,6 @@ private fun mirrorPayload(state: ControlUiState): String {
             )
         }
         // pose.roll is still absent: telemetry is five floats and carries no
-        // roll. Everything else the mirror renders now comes from v11.
+        // roll. Everything else the mirror renders now comes from v12.
     }.toString()
 }

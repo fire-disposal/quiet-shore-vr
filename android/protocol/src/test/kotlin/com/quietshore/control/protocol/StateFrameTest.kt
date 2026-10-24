@@ -4,19 +4,22 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.abs
 
 /**
- * Golden vectors for the wire contract (`docs/state-v11.md`).
+ * Golden vectors for the wire contract (layout documented on
+ * `ControlProtocol.encodeState`; history in `docs/state-v11.md`).
  *
- * v11 is 28 bytes and adds applied buoyancy, horizon sway, voice state, a
- * session clock and a timestamped sequence. v10's 20-byte frame is still
- * decoded, because a link that never widened past the default MTU keeps
- * sending it.
+ * v12 is 40 bytes: the v11 layout through byte 27, plus the applied world
+ * translation (float32 x/y/z, metres, device frame) the mirror needs to undo
+ * the correction about its pivot. Older shapes are rejected outright — both
+ * sides ship together.
  */
 class StateFrameTest {
     @Test
-    fun `v11 frame is 28 bytes with the documented offsets`() {
+    fun `v12 frame is 40 bytes with the documented offsets`() {
         val state = ControlState(
             session = true,
             cueEnabled = true,
@@ -38,6 +41,9 @@ class StateFrameTest {
             worldYaw = -35f,
             worldPitch = 12f,
             worldRoll = -7f,
+            worldXM = 0.125f,
+            worldYM = -1.625f,
+            worldZM = 0.5f,
             viewAnim = ViewAnim.PLAYING,
             viewPreset = ViewPreset.BREATHE,
             envelope = Envelope.HOLD,
@@ -47,8 +53,8 @@ class StateFrameTest {
         )
         val bytes = ControlProtocol.encodeState(state, nowMs = 0x1234, seq = 0x0042)
 
-        assertEquals(28, bytes.size)
-        assertEquals(11, bytes[0].toInt())
+        assertEquals(40, bytes.size)
+        assertEquals(12, bytes[0].toInt())
         // flags: session | cue | hold | auto
         assertEquals(1 or 8 or 64 or 128, bytes[1].toInt() and 0xFF)
         // level 2 bits, profile 2 bits, scene index 4 bits
@@ -76,6 +82,9 @@ class StateFrameTest {
         assertEquals(50, bytes[24].toInt() and 0xFF)
         assertEquals(92, bytes[25].toInt() and 0xFF)
         assertEquals(312, shortAt(bytes, 26) and 0xFFFF)
+        assertEquals(0.125f, floatAt(bytes, 28))
+        assertEquals(-1.625f, floatAt(bytes, 32))
+        assertEquals(0.5f, floatAt(bytes, 36))
 
         val decoded = requireNotNull(ControlProtocol.decodeState(bytes))
         assertEquals(32f, decoded.floatMm)
@@ -84,6 +93,9 @@ class StateFrameTest {
         assertEquals(1.2f, decoded.postureRise)
         assertEquals(-90f, decoded.viewYaw)
         assertEquals(12f, decoded.worldPitch)
+        assertEquals(0.125f, decoded.worldXM)
+        assertEquals(-1.625f, decoded.worldYM)
+        assertEquals(0.5f, decoded.worldZM)
         assertEquals(expectedScene(), decoded.scene)
         assertEquals(Envelope.HOLD, decoded.envelope)
         assertEquals(ViewAnim.PLAYING, decoded.viewAnim)
@@ -116,33 +128,12 @@ class StateFrameTest {
     }
 
     @Test
-    fun `legacy v10 frames still decode`() {
-        val legacy = ControlProtocol.encodeLegacyState(
-            ControlState(
-                session = true,
-                floatLevel = 3,
-                floatProfile = "a",
-                scene = ControlProtocol.SCENE_IDS.first()
-            )
-        )
-        assertEquals(20, legacy.size)
-        assertEquals(10, legacy[0].toInt())
-        val decoded = requireNotNull(ControlProtocol.decodeState(legacy))
-        assertEquals(true, decoded.session)
-        assertEquals(3, decoded.floatLevel)
-        assertEquals("a", decoded.floatProfile)
-        assertEquals(ControlProtocol.SCENE_IDS.first(), decoded.scene)
-        // Fields that only v11 carries stay at their defaults.
-        assertEquals(0f, decoded.floatMm)
-        assertEquals(-1, decoded.voiceId)
-    }
-
-    @Test
-    fun `an unknown version is rejected`() {
+    fun `an unknown version or shape is rejected`() {
         val bytes = ControlProtocol.encodeState(ControlState())
-        bytes[0] = 12
+        bytes[0] = 13
         assertNull(ControlProtocol.decodeState(bytes))
         assertNull(ControlProtocol.decodeState(ByteArray(19)))
+        assertNull(ControlProtocol.decodeState(ByteArray(28)))
     }
 
     @Test
@@ -197,4 +188,7 @@ class StateFrameTest {
 
     private fun shortAt(bytes: ByteArray, offset: Int): Int =
         ((bytes[offset].toInt() and 0xFF) or ((bytes[offset + 1].toInt() and 0xFF) shl 8)).toShort().toInt()
+
+    private fun floatAt(bytes: ByteArray, offset: Int): Float =
+        ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).float
 }

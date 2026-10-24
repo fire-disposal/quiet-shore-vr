@@ -98,6 +98,7 @@ export class QuietShoreApp {
   private readonly voiceTimers: number[] = [];
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly worldQuat = new THREE.Quaternion();
+  private readonly worldPos = new THREE.Vector3();
   private readonly worldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   private readonly viewMotion: ViewMotionControllerApi;
   private readonly snapshot = new SceneSnapshot();
@@ -153,8 +154,8 @@ export class QuietShoreApp {
   /** Debounce for the single physical confirm: `select*` plus DOM fallbacks. */
   private selectHandledAt = 0;
   private showPerf: boolean;
-  /** Scene bed. Off until the operator starts it; voice cues are independent. */
-  private sceneBedOn = false;
+  /** Scene bed (water sound) default: on, at half the authored loudness. */
+  private sceneBedOn = true;
   private lastFrame = 0;
   private elapsed = 0;
   private frames = 0;
@@ -248,7 +249,10 @@ export class QuietShoreApp {
       },
       level: this.config.floatLevel,
       profile: isFloatProfileId(this.config.floatProfile) ? this.config.floatProfile : undefined,
-      breath: true
+      breath: true,
+      // The big heave is the lake's 飘浮; the other scenes keep the breath
+      // swell only, so a tiled room or the shaft never sways like water.
+      heaveScale: () => (this.sceneId === 'shore' ? 1 : 0)
     });
     // The base pose owner sits on top of buoyancy: it decides which frame poses
     // the world and hands the frame's offset to the buoyancy module.
@@ -797,7 +801,20 @@ export class QuietShoreApp {
             }
           });
         },
+        onFinish: () => {
+          // The patient dwelled "完成": thank them, tell them they can take
+          // the headset off and to share feedback with the staff.
+          if (!this.susVoice) {
+            return;
+          }
+          void this.voice.play('v-thanks-1').then((played) => {
+            if (!played && this.voice.isReady()) {
+              this.start.setHint(`SUS 结束语播放失败：${this.voice.lastError()}`);
+            }
+          });
+        },
         onClose: () => {
+
           // Give the layers back to whatever the session mode dictates.
           this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
           const filled = this.susAnswers.filter((answer) => answer !== null).length;
@@ -1648,10 +1665,18 @@ export class QuietShoreApp {
     const shell = this.shell;
     // The mirror must see the same world the patient sees: shell (view) times
     // base (comfort calibration or sit-up inverse), not just the head pose.
+    // Rotation alone is not enough: the correction turns about the calibration
+    // eye, so the composed transform also carries a translation the mirror
+    // must subtract before undoing the rotation.
     if (shell) {
       this.worldQuat.copy(shell.group.quaternion).multiply(shell.base.quaternion);
+      this.worldPos
+        .copy(shell.base.position)
+        .applyQuaternion(shell.group.quaternion)
+        .add(shell.group.position);
     } else {
       this.worldQuat.identity();
+      this.worldPos.set(0, 0, 0);
     }
     this.worldEuler.setFromQuaternion(this.worldQuat, 'XYZ');
     const cue = this.postureCueState?.getState();
@@ -1668,6 +1693,9 @@ export class QuietShoreApp {
       worldYawDeg: THREE.MathUtils.radToDeg(this.worldEuler.y),
       worldPitchDeg: THREE.MathUtils.radToDeg(this.worldEuler.x),
       worldRollDeg: THREE.MathUtils.radToDeg(this.worldEuler.z),
+      worldXM: this.worldPos.x,
+      worldYM: this.worldPos.y,
+      worldZM: this.worldPos.z,
       confidence: comfort?.isCalibrated() ? 1 : 0,
       correctionMix: world.mix,
       correctionTarget: world.target,

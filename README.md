@@ -70,7 +70,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/protocol-conformance.md](docs/protocol-conformance.md) — 两侧实现（头显 / 页面）的命令语法与状态字段对照
 - [docs/state-management.md](docs/state-management.md) — 双端状态容器核验：所有权、瞬时事件、是否引入状态库
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state 编解码
-- [docs/state-v11.md](docs/state-v11.md) — state 帧 28 字节 v11 的字段定义
+- [docs/state-v11.md](docs/state-v11.md) — state 帧的字段定义与协议推演（当前实现见 `ControlProtocol.encodeState`，v12 40 字节）
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
 - [docs/ux-plan.md](docs/ux-plan.md) — UX/UI 现状评估、运动编排与四带控制台计划
 - [docs/introduction.md](docs/introduction.md) — 系统名、口号与三档总介绍（起草版）

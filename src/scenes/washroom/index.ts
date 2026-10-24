@@ -32,7 +32,7 @@ export const washroomScene = defineScene(
       en: 'A single stall at true standing scale: a pale sage micro-cement wall 0.85 m ahead with a white ceramic urinal, a light oak screen on the right, warm grey stone underfoot and one soft band of light above. No figures, no signage, no machinery; only the room and its quiet edges.'
     },
     // A small tiled room: the water reads close and narrow, not open.
-    audio: { track: 'stream', volume: 0.8, fadeMs: 1200, loop: true, width: 0.35 }
+    audio: { track: 'stream', volume: 0.4, fadeMs: 1200, loop: true, width: 0.35 }
   },
   // Standing scale: the floor is at content y=0 and the eye that sees the
   // urinal at 1.00 m sits at 1.70 m.

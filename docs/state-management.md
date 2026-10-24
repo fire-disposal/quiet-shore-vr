@@ -68,7 +68,7 @@
 | 拆分 `ControlUiState`（平板，纯类型） | 镜像/意图/事件三个容器 | 需要改 UI 读取处；无第三方依赖 | **建议做**（M） |
 | `SharedFlow<UiEvent>`（平板） | `notice/error` 变成一次性事件 | 小；`StatusPanel` 改订阅 | **建议做**（S） |
 | Room / DataStore（平板历史） | SUS 归档查询、导出 | 50 条以内的读写，SharedPreferences 足够 | 暂不 |
-| kotlinx.serialization / protobuf（跨端） | 从一份 schema 生成两端编解码 | 28 字节手写帧是刻意的（MTU 约束），生成模型反而更重 | 暂不；保留金向量测试 |
+| kotlinx.serialization / protobuf（跨端） | 从一份 schema 生成两端编解码 | 40 字节手写帧是刻意的（MTU 约束），生成模型反而更重 | 暂不；保留金向量测试 |
 | `sealed interface Command`（头显） | 命令路由从字符串 `when` 变成类型 | 需要迁移 `isAllowedCommand` 的白名单 | **建议做**（M），与页面 `commands.ts` 对齐 |
 
 ## 4 建议的目标形态

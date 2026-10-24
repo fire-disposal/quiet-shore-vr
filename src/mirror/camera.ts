@@ -25,6 +25,15 @@ export interface MirrorWorldDeg {
   readonly yaw: number;
   readonly pitch: number;
   readonly roll: number;
+  /**
+   * Applied world translation, metres, device frame. The correction rotates
+   * about the calibration eye, not the origin, so the inverse must subtract
+   * this before the inverse rotation; skipping it offset the mirror camera by
+   * up to twice the eye's distance from the origin during a sit-up.
+   */
+  readonly xM: number;
+  readonly yM: number;
+  readonly zM: number;
 }
 
 export interface MirrorHeadRad {
@@ -61,10 +70,9 @@ export function mirrorCameraTransform(
   headEuler.set(head.pitch, head.yaw, head.roll, 'YXZ');
   headQuat.setFromEuler(headEuler);
 
-  // The head position is a device-frame vector: inverse-rotate it into the
-  // content space the mirror camera lives in. Unrotated, a supine session put
-  // the eye 1.7 m above the water instead of at the patient's head.
-  target.position.copy(pose as THREE.Vector3);
+  // Full rigid inverse: the head position is inverse-rotated only after the
+  // world's own translation is taken out; both live in the device frame.
+  target.position.set(pose.x - world.xM, pose.y - world.yM, pose.z - world.zM);
   target.position.applyQuaternion(worldQuat.clone().invert());
   // World first, then head: see the derivation above.
   target.quaternion.copy(worldQuat.invert()).multiply(headQuat);

@@ -116,7 +116,7 @@ describe('perceptible heave', () => {
     const low = harness({ level: 1 });
     low.run(20);
     const lowPeak = Math.max(...low.applied.map((entry) => Math.abs(entry.amountM)));
-    expect(lowPeak).toBeLessThan(0.03);
+    expect(lowPeak).toBeLessThan(0.06);
   });
 
   it('carries the breathing layer inside the same envelope', () => {
@@ -136,7 +136,7 @@ describe('perceptible heave', () => {
 describe('technician choice', () => {
   it('clamps the level to the profile cap', () => {
     const h = harness({ profile: 'c' });
-    expect(h.floating.setLevel(3)).toBe(1);
+    expect(h.floating.setLevel(3)).toBe(2);
     expect(h.floating.setLevel(-2)).toBe(0);
     expect(h.floating.setLevel(Number.NaN)).toBe(0);
   });
@@ -144,8 +144,8 @@ describe('technician choice', () => {
   it('pulls the level down when the profile gets stricter', () => {
     const h = harness({ level: 3, profile: 'b' });
     expect(h.floating.getLevel()).toBe(3);
-    expect(h.floating.setProfile('c')).toBe(1);
-    expect(h.floating.getLevel()).toBe(1);
+    expect(h.floating.setProfile('c')).toBe(2);
+    expect(h.floating.getLevel()).toBe(2);
     expect(h.floating.getProfile().label).toBe(FLOAT_PROFILES.c.label);
   });
 

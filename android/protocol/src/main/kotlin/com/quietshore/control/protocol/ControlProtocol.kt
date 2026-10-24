@@ -29,12 +29,9 @@ object ControlProtocol {
 
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
-    /** v11 frame size; needs an MTU of at least 31 to reach the tablet. */
-    const val stateMaxBytes: Int = 28
-    const val stateVersion: Int = 11
-    /** Fallback frame when the link was never widened past the default MTU. */
-    const val legacyStateBytes: Int = 20
-    const val legacyStateVersion: Int = 10
+    /** v12 frame size; needs an MTU of at least 43 to reach the tablet. */
+    const val stateMaxBytes: Int = 40
+    const val stateVersion: Int = 12
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -546,35 +543,38 @@ object ControlProtocol {
     }
 
     /**
-     * 20-byte state frame, little endian:
+     * 40-byte state frame (v12), little endian:
      *
      * | byte | field |
      * | --- | --- |
-     * | 0 | version (10) |
-     * | 1 | float level (0–3) |
-     * | 2 | flags: bit0 session, bit1 calibrating, bit2 audio muted, bit3 cue enabled, bit4 sit-up active, bit5 posture mode, bit6–7 float profile (0=a, 1=b, 2=c) |
+     * | 0 | version (12) |
+     * | 1 | flags: bit0 session, bit1 calibrating, bit2 audio muted, bit3 cue enabled, bit4 sit-up active, bit5 posture mode, bit6 hold, bit7 voice auto |
+     * | 2 | float level 2b / profile 2b / scene index 4b |
      * | 3 | eye height (cm) |
-     * | 4 | posturePitch — signed integer degrees, measured world tilt |
-     * | 5 | postureRoll — signed integer degrees, measured world tilt |
-     * | 6 | postureRise (cm) |
-     * | 7 | postureProgress (%) |
-     * | 8 | viewPitch — signed integer degrees, + = up-gaze |
-     * | 9 | viewAnim |
-     * | 10 | cueIntensity (%) |
-     * | 11 | scene index (255 = unknown) |
-     * | 12 | viewPreset |
-     * | 13–14 | viewYaw — signed int16 degrees, + = view turned left |
-     * | 15–16 | worldYaw — signed int16 degrees, applied shell × base |
-     * | 17–18 | worldPitch — signed int16 degrees |
-     * | 19 | worldRoll — signed int8 degrees |
+     * | 4 | floatMm (mm, signed) |
+     * | 5 | swayDeg × 10 (signed) |
+     * | 6 | voiceId (0xFF = none) |
+     * | 7 | posturePitch (signed °) |
+     * | 8 | postureRoll (signed °) |
+     * | 9 | postureRise (cm) |
+     * | 10 | postureProgress (%) |
+     * | 11 | viewPitch (signed °) |
+     * | 12 | viewAnim/viewPreset/envelope packed |
+     * | 13–14 | viewYaw (int16 °) |
+     * | 15–16 | worldYaw (int16 °) |
+     * | 17–18 | worldPitch (int16 °) |
+     * | 19 | worldRoll (int8 °) |
+     * | 20–21 | tMs (uint16) |
+     * | 22–23 | seq (uint16) |
+     * | 24 | cueIntensity (%) |
+     * | 25 | calibrationConfidence (%) |
+     * | 26–27 | elapsedSec (uint16) |
+     * | 28–39 | worldX/Y/Z (float32 metres, device frame) |
      *
-     * The degree fields carry whatever the page measured. This layer only
-     * guarantees the bit width: the envelope is enforced once, in the page
-     * (see `docs/rotation-contract.md`), never re-applied here.
-     */
-    /**
-     * v11: 28 bytes, fixed layout. `nowMs`/`seq` are assigned here so every
-     * frame is self-describing; `target` lets the service reuse one array.
+     * The v11 28-byte layout is identical up to byte 27; v12 appends the world
+     * translation. The degree fields carry whatever the page measured. This
+     * layer only guarantees the bit width: the envelope is enforced once, in
+     * the page (see `docs/rotation-contract.md`), never re-applied here.
      */
     fun encodeState(
         state: ControlState,
@@ -623,50 +623,31 @@ object ControlProtocol {
         buffer.put((state.cueIntensity * 100f).roundToInt().coerceIn(0, 100).toByte())
         buffer.put(state.calibrationConfidence.roundToInt().coerceIn(0, 100).toByte())
         buffer.putShort(state.elapsedSec.coerceIn(0, 65535).toShort())
+        buffer.putFloat(state.worldXM)
+        buffer.putFloat(state.worldYM)
+        buffer.putFloat(state.worldZM)
         return target
     }
 
-    /** v10 frame, used when the MTU stayed at the 23-byte default. */
-    fun encodeLegacyState(state: ControlState): ByteArray {
-        var flags = 0
-        if (state.session) flags = flags or 1
-        if (state.calibrating) flags = flags or 2
-        if (state.audioMuted) flags = flags or 4
-        if (state.cueEnabled) flags = flags or 8
-        if (state.sitUpActive) flags = flags or 16
-        if (state.postureMode) flags = flags or 32
-        flags = flags or ((profileIndex(state.floatProfile) and 0x3) shl 6)
-        val buffer = ByteBuffer.allocate(legacyStateBytes).order(ByteOrder.LITTLE_ENDIAN)
-        buffer.put(legacyStateVersion.toByte())
-        buffer.put(state.floatLevel.coerceIn(0, 3).toByte())
-        buffer.put(flags.toByte())
-        buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(120, 190).toByte())
-        buffer.put(state.posturePitch.roundToInt().coerceIn(-128, 127).toByte())
-        buffer.put(state.postureRoll.roundToInt().coerceIn(-128, 127).toByte())
-        buffer.put((state.postureRise * 100f).roundToInt().coerceIn(0, 120).toByte())
-        buffer.put((state.postureProgress * 100f).roundToInt().coerceIn(0, 100).toByte())
-        buffer.put(state.viewPitch.roundToInt().coerceIn(-128, 127).toByte())
-        buffer.put(state.viewAnim.code.toByte())
-        buffer.put((state.cueIntensity * 100f).roundToInt().coerceIn(0, 100).toByte())
-        buffer.put(sceneIndex(state.scene).toByte())
-        buffer.put(state.viewPreset.code.toByte())
-        buffer.putShort(state.viewYaw.roundToInt().coerceIn(-32768, 32767).toShort())
-        buffer.putShort(state.worldYaw.roundToInt().coerceIn(-32768, 32767).toShort())
-        buffer.putShort(state.worldPitch.roundToInt().coerceIn(-32768, 32767).toShort())
-        buffer.put(state.worldRoll.roundToInt().coerceIn(-128, 127).toByte())
-        return buffer.array()
-    }
-
-    /** Accepts both frame shapes: 28 bytes (v11) and 20 bytes (v10). */
+    /** Only the v12 shape exists; both sides ship together. */
     fun decodeState(bytes: ByteArray): ControlState? = when {
-        bytes.size == stateMaxBytes -> decodeStateV11(bytes)
-        bytes.size == legacyStateBytes -> decodeLegacyState(bytes)
+        bytes.size == stateMaxBytes -> decodeStateV12(bytes)
         else -> null
     }
 
-    private fun decodeStateV11(bytes: ByteArray): ControlState? {
+    private fun decodeStateV12(bytes: ByteArray): ControlState? {
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if ((buffer.get().toInt() and 0xFF) != stateVersion) return null
+        val state = decodeStateBody(buffer) ?: return null
+        return state.copy(
+            worldXM = buffer.float,
+            worldYM = buffer.float,
+            worldZM = buffer.float
+        )
+    }
+
+    /** Bytes 1–27 follow the version byte. */
+    private fun decodeStateBody(buffer: ByteBuffer): ControlState? {
         val flags = buffer.get().toInt() and 0xFF
         val levels = buffer.get().toInt() and 0xFF
         val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
@@ -724,53 +705,6 @@ object ControlProtocol {
             seq = seq
         )
     }
-
-    private fun decodeLegacyState(bytes: ByteArray): ControlState? {
-        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        if ((buffer.get().toInt() and 0xFF) != legacyStateVersion) return null
-        val floatLevel = (buffer.get().toInt() and 0xFF).coerceIn(0, 3)
-        val flags = buffer.get().toInt() and 0xFF
-        val eyeHeight = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val posturePitch = buffer.get().toFloat()
-        val postureRoll = buffer.get().toFloat()
-        val postureRise = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val postureProgress = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val viewPitch = buffer.get().toFloat()
-        val viewAnim = ViewAnim.fromCode(buffer.get().toInt() and 0xFF)
-        val cueIntensity = (buffer.get().toInt() and 0xFF).toFloat() / 100f
-        val sceneIndex = buffer.get().toInt() and 0xFF
-        val viewPreset = ViewPreset.fromCode(buffer.get().toInt() and 0xFF)
-        val viewYaw = buffer.short.toInt().toFloat()
-        val worldYaw = buffer.short.toInt().toFloat()
-        val worldPitch = buffer.short.toInt().toFloat()
-        val worldRoll = buffer.get().toFloat()
-        if (eyeHeight < EYE_HEIGHT_MIN || eyeHeight > EYE_HEIGHT_MAX) return null
-        return ControlState(
-            session = flags and 1 != 0,
-            calibrating = flags and 2 != 0,
-            audioMuted = flags and 4 != 0,
-            cueEnabled = flags and 8 != 0,
-            sitUpActive = flags and 16 != 0,
-            postureMode = flags and 32 != 0,
-            floatLevel = floatLevel,
-            floatProfile = profileName((flags shr 6) and 0x3),
-            eyeHeight = eyeHeight,
-            posturePitch = posturePitch,
-            postureRoll = postureRoll,
-            postureRise = postureRise,
-            postureProgress = postureProgress,
-            viewPitch = viewPitch,
-            viewYaw = viewYaw,
-            worldYaw = worldYaw,
-            worldPitch = worldPitch,
-            worldRoll = worldRoll,
-            viewAnim = viewAnim,
-            cueIntensity = cueIntensity,
-            scene = SCENE_IDS.getOrElse(sceneIndex) { SCENE_IDS[0] },
-            viewPreset = viewPreset
-        )
-    }
-
 
     /**
      * Shipped scenes. Index order is the wire contract for state byte 11:
@@ -914,6 +848,14 @@ data class ControlState(
     val worldYaw: Float = 0f,
     val worldPitch: Float = 0f,
     val worldRoll: Float = 0f,
+    /**
+     * Applied world translation (shell × base), metres, device frame. The
+     * correction rotates about the calibration eye, not the origin, so the
+     * mirror needs the pivot, not just the rotation. v11 frames report 0.
+     */
+    val worldXM: Float = 0f,
+    val worldYM: Float = 0f,
+    val worldZM: Float = 0f,
     /** Coarse animation phase reported by the page; see [ViewAnim]. */
     val viewAnim: ViewAnim = ViewAnim.IDLE,
     /** Preset the page last played (or is playing); see [ViewPreset]. */

@@ -134,8 +134,6 @@ internal class BluetoothControl(
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
     private var susCharacteristic: BluetoothGattCharacteristic? = null
-    /** Negotiated ATT MTU; 23 is the default and only fits the legacy frame. */
-    private var mtu = 23
     private var stateSeq = 0
     private var advertiser: BluetoothLeAdvertiser? = null
 
@@ -463,20 +461,12 @@ internal class BluetoothControl(
         listener.onStateChanged(value)
     }
 
-    /** Telemetry and state go only to the current controller. */
-    /**
-     * v11 is 28 bytes and needs an MTU of at least 31; a link that never widened
-     * past the default still gets the 20-byte v10 frame, which the tablet also
-     * decodes. The fallback is visible in the app log, never silent.
-     */
+    /** v12 is 40 bytes and needs an MTU of at least 43; the tablet requests
+     *  a widened MTU during bring-up, so this never negotiates down. */
     private fun encodeStateFrame(state: ControlState): ByteArray {
         val seq = stateSeq++ and 0xFFFF
         val now = (android.os.SystemClock.elapsedRealtime() and 0xFFFFL).toInt()
-        return if (mtu >= ControlProtocol.stateMaxBytes + 3) {
-            ControlProtocol.encodeState(state, now, seq)
-        } else {
-            ControlProtocol.encodeLegacyState(state)
-        }
+        return ControlProtocol.encodeState(state, now, seq)
     }
 
     private fun notifyValue(
@@ -812,11 +802,6 @@ internal class BluetoothControl(
     }
 
     private val callback = object : BluetoothGattServerCallback() {
-        /** Server-side callback takes two arguments (no status code). */
-    override fun onMtuChanged(device: BluetoothDevice, negotiatedMtu: Int) {
-        mtu = negotiatedMtu.coerceAtLeast(23)
-    }
-
     override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val address = addressOf(device) ?: return
             if (newState == BluetoothProfile.STATE_CONNECTED) {
