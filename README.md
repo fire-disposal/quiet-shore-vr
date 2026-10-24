@@ -2,7 +2,7 @@
 
 面向卧床患者的引导想象与失重体验 WebXR 系统：患者佩戴 PICO G2 4K 仰卧观看定制虚拟场景，技术员使用 Android 平板通过蓝牙远程控制会话模式、漂浮强度与声音。
 
-**状态**：v0.9.0（单场景 + 漂浮模式；状态机 v10；双端 debug 签名，待实机验收）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v0.9.0（单场景 `shore` + 漂浮模式；状态机 v10；双端 debug 签名，待实机验收）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
 **烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.0.apk`、`artifacts/flash/quiet-shore-control-0.9.0.apk`，校验见同目录 `SHA256SUMS.txt`。
 
@@ -17,8 +17,8 @@
 - 运行时
   - Android 8.1 (SDK 27 / Snapdragon 835) + Node 22
 - WebXR 渲染
-  - Three.js 0.152
-  - TypeScript + Vite
+  - Three.js 0.152（固定 `XR_SCALE 1.25`、`antialias: true`，无画质挡位）
+  - TypeScript + esbuild
 - Android 头显端 (`com.quietshore.portal`)
   - Kotlin + Android 前台服务 + BLE GATT 外设 + 本地回环 HTTP/WS 桥
 - Android 控制端 (`com.quietshore.control`)
@@ -31,13 +31,13 @@
 
 ## 功能
 
-- 会话：患者按确认键开始/停止；会话模式由技术员在平板选定（漂浮默认，起身为备选分支）。
+- 会话：患者按确认键开始/停止；会话模式由技术员在平板选定（漂浮默认，起身为备选分支）。场景不可切换。
 - 漂浮：世界竖向缓慢漂移（周期 11 s，满强度 ±35 mm）+ 近场微粒上飘，强度 0–3；停止时按 tau 0.25 s 渐出，1 s 内收住。
 - 朝向记录：会话开始后的第一帧取当前头部朝向作为站立中立帧，没有稳定检测与倒计时。
-- 场景：单一 `landscape`（湖畔晨岸），含天穹渐变与三片缓慢漂移的云层，供仰卧观看。
+- 场景：单一 `shore`（仰望湖面）。仰视只有天穹、一层缓慢漂移的云和太阳；脚下是水面与日光，4 m 内有三根木桩与两丛芦苇作为近场锚定。没有岸线、栈桥、树或第二套天穹。
 - 双 APK 通信：头显前台服务广播 BLE 外设，平板自动扫描连接、`HELLO 2` / `WELCOME 2` 握手与 5 s PING 存活检测；state 为 20 字节 v10。
 - 平板界面：单屏——连接、会话时长、模式、开始/结束、漂浮强度、水声、常驻急停。
-- 未完成：场景仰视构图实机定稿；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。
+- 未完成：新场景的仰视构图实机定稿；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。
 
 ## 启动流程
 
@@ -57,7 +57,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - 设备限制：PICO G2 4K 仅支持 3DoF 姿态追踪（无位置位移），漂浮与起身均为纯视觉偏移。
 - 浏览器绑定：WebXR 能力仅在内置 Firefox Reality 10 中可用，系统自带 Chromium 67 内核浏览器无法创建 WebXR 会话。
 - 认证边界：本地回环 HTTP 与 BLE GATT 均无应用层密码认证，设计为受控医疗环境下的单头显对单平板使用。
-- 场景观感：从下往上看时，既有湖岸几何会暴露栈桥方块与浮空山体；云层亮度待实机定稿。
+- 场景观感：云层亮度与漂浮幅度需在实机定稿；`shore` 已无仰视穿帮几何。
 - 签名状态：当前产物为 debug 签名，生产化前需建立持久化 Release Keystore。
 
 ## 文档索引
@@ -67,4 +67,5 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state v10 编解码
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
 - [docs/ux-plan.md](docs/ux-plan.md) — UX/UI 现状评估、运动编排与四带控制台计划
+- [docs/voice-script.md](docs/voice-script.md) — 引导语音脚本（40 句）、控制端触发与 TTS 生成规范
 - [TODO.md](TODO.md) — 迭代演进与重构路线
