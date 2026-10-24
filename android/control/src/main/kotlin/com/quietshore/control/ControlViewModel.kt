@@ -671,6 +671,15 @@ class ControlViewModel(application: Application) :
         }
     }
 
+    override fun onMtu(mtu: Int, code: Int) {
+        // A 40-byte state frame needs 43; anything narrower truncates the
+        // notification and the tablet then shows a panel of disabled controls
+        // with no explanation. Say which it is.
+        if (code != 0 || mtu < MIN_STATE_MTU) {
+            error("蓝牙包长不足（MTU $mtu）· 头显状态可能收不到")
+        }
+    }
+
     override fun onSignal(rssi: Int) {
         _uiState.update { it.copy(rssi = rssi) }
     }
@@ -692,6 +701,8 @@ class ControlViewModel(application: Application) :
         ble.close()
         super.onCleared()
     }
+
+    private val MIN_STATE_MTU = com.quietshore.control.protocol.ControlProtocol.stateMaxBytes + 3
 
     private fun refreshStaleness() {
         val now = SystemClock.elapsedRealtime()

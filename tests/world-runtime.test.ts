@@ -60,40 +60,48 @@ describe('world runtime', () => {
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
   });
 
-  it('starts at the real ceiling and then corrects itself over eight seconds', () => {
+  it('starts at the real ceiling and waits for the operator', () => {
     const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
 
-    // The first frame is honest: no correction, and a ramp already heading up.
+    // The first frame is honest and stays honest: no automatic rise.
     expect(h.lastMix()).toBe(0);
     expect(h.runtime.state().mix).toBe(0);
-    expect(h.runtime.state().target).toBe(1);
-    expect(h.runtime.state().moving).toBe(true);
+    expect(h.runtime.state().target).toBe(0);
+    expect(h.runtime.state().moving).toBe(false);
     expect(h.runtime.state().ready).toBe(true);
 
-    h.run(4);
-    const halfway = h.runtime.state().mix;
-    expect(halfway).toBeGreaterThan(0.2);
-    expect(halfway).toBeLessThan(0.8);
+    h.run(10);
+    expect(h.runtime.state().mix).toBe(0);
 
-    h.run(5);
+    // The operator's rise is the only driver.
+    h.runtime.setDuration(6000);
+    expect(h.runtime.rise(1)).toBe(true);
+    h.run(6.5);
     expect(h.runtime.state().mix).toBe(1);
     expect(h.runtime.state().moving).toBe(false);
   });
 
-  it('any operator action takes over the automatic correction', () => {
+  it('stopping mid-ramp freezes the correction where it is', () => {
     const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(6000);
+    h.runtime.rise(1);
     h.run(2);
     h.runtime.stopRise();
     const frozen = h.runtime.state().mix;
-    h.run(2);
-    expect(h.runtime.state().mix).toBe(frozen);
+    expect(frozen).toBeGreaterThan(0.05);
+    expect(frozen).toBeLessThan(0.95);
 
+    h.run(3);
+    expect(h.runtime.state().mix).toBe(frozen);
+    expect(h.runtime.state().moving).toBe(false);
+
+    // And the lie-back still works from the frozen angle.
     h.runtime.rise(0);
-    h.run(6);
+    h.run(7);
     expect(h.runtime.state().mix).toBe(0);
   });
 
@@ -180,10 +188,13 @@ describe('world runtime', () => {
     h.runtime.hold(true);
     h.runtime.clearBase();
 
-    // After a stop during calibration the world must move again next session.
+    // After a stop during calibration the world must move again next session:
+    // a fresh calibration is ready and the operator's rise still lands.
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
-    h.run(9);
+    expect(h.runtime.state().ready).toBe(true);
+    expect(h.runtime.rise(1)).toBe(true);
+    h.run(7);
     expect(h.runtime.state().mix).toBe(1);
   });
 

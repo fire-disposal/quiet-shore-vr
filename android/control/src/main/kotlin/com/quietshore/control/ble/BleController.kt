@@ -46,6 +46,8 @@ class BleController(
         fun onControlState(state: ControlState)
         fun onSus(json: String)
         fun onSignal(rssi: Int)
+        /** Negotiated ATT MTU, or [code] non-zero when negotiation failed. */
+        fun onMtu(mtu: Int, code: Int)
         fun onStatus(raw: String)
         fun onError(message: String)
     }
@@ -812,6 +814,14 @@ class BleController(
         var owner: QuietShoreBleManager? = null
 
         private fun isCurrent(): Boolean = owner != null && manager === owner
+
+        override fun onMtu(mtu: Int, code: Int) {
+            mainHandler.post {
+                if (isCurrent()) {
+                    listener.onMtu(mtu, code)
+                }
+            }
+        }
 
         override fun onNotificationsEnabled() {
             mainHandler.post {

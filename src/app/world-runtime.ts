@@ -43,16 +43,7 @@ export interface WorldRuntimeState {
 
 /** Manual ramp (the operator's rise / lie-back); settable 4–14 s. */
 const DEFAULT_RAMP_MS = 6000;
-/**
- * After calibration the world corrects itself once, slowly.
- *
- * The session still *starts* at the real ceiling — that is the honest first
- * frame — but leaving a patient parked at the ceiling until someone presses a
- * button is a worse default than a deliberate eight-second settle into the
- * standing view. Any operator action (correct / back to ceiling / stop) takes
- * over immediately.
- */
-const AUTO_RAMP_MS = 8000;
+
 
 export interface WorldRuntimeApi {
   /** A new scene: its authored eye decides the placement from now on. */
@@ -140,16 +131,17 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (!comfortApi.calibrate(pose)) {
       return false;
     }
-    // Enter the session the way the room actually looks, then settle into the
-    // standing view on our own: mix 0 at this instant, 1 eight seconds later.
+    // Enter the session the way the room actually looks and stay there. The
+    // ramp is the operator's alone: an automatic 8 s rise fought the 起身 /
+    // 停止 buttons (a stop pressed inside it froze a half-corrected world) and
+    // made "起身" look dead because the world had already risen by itself.
     pushMix(0);
     ready = true;
     apply();
     from = 0;
-    target = 1;
+    target = 0;
     elapsedMs = 0;
-    rampMs = AUTO_RAMP_MS;
-    moving = true;
+    moving = false;
     return true;
   }
 

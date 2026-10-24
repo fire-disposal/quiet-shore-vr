@@ -30,6 +30,8 @@ class QuietShoreBleManager(
 ) : BleManager(context) {
 
     interface Events {
+        /** Negotiated ATT MTU, or [code] non-zero when the request failed. */
+        fun onMtu(mtu: Int, code: Int)
         fun onNotificationsEnabled()
         fun onStatus(raw: String)
         fun onTelemetry(pose: TelemetryPose)
@@ -103,25 +105,35 @@ class QuietShoreBleManager(
                 }
             }
 
-            // v12 state frames are 40 bytes; ask for a widened ATT MTU before
-            // notifications start, so the frame never depends on whatever MTU
-            // the platform negotiated by default.
-            requestMtu(REQUEST_MTU).enqueue()
-
-            val queue = beginAtomicRequestQueue()
-                .add(enableNotifications(status))
-                .add(enableNotifications(telemetry))
-                .add(enableNotifications(state))
-            susCharacteristic?.let { queue.add(enableNotifications(it)) }
-            queue
-                .done {
-                    // Once per connection, after notifications are live: the
-                    // shortest connection interval the headset accepts keeps
-                    // the 10 Hz movement stream and state readback responsive.
-                    requestHighPriority()
-                    events.onNotificationsEnabled()
+            // v12 state frames are 40 bytes, which needs an ATT MTU of 43+.
+            // Negotiate it *first* and only then enable notifications: a
+            // request enqueued alongside an atomic queue can be dropped, and a
+            // dropped MTU silently truncated every state frame afterwards.
+            val startNotifications = {
+                val queue = beginAtomicRequestQueue()
+                    .add(enableNotifications(status))
+                    .add(enableNotifications(telemetry))
+                    .add(enableNotifications(state))
+                susCharacteristic?.let { queue.add(enableNotifications(it)) }
+                queue
+                    .done {
+                        // Once per connection, after notifications are live: the
+                        // shortest connection interval the headset accepts keeps
+                        // the 10 Hz movement stream and state readback responsive.
+                        requestHighPriority()
+                        events.onNotificationsEnabled()
+                    }
+                    .fail { _, code -> events.onFailure("启用头显通知失败，错误码 $code") }
+                    .enqueue()
+            }
+            requestMtu(REQUEST_MTU)
+                .with { _, mtu -> events.onMtu(mtu, 0) }
+                .fail { _, code ->
+                    // A narrow MTU does not stop the link, but the state frame
+                    // will not fit: say so instead of failing silently.
+                    events.onMtu(mtu, code)
+                    startNotifications()
                 }
-                .fail { _, code -> events.onFailure("启用头显通知失败，错误码 $code") }
                 .enqueue()
         }
 

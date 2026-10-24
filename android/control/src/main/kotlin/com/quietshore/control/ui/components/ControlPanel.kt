@@ -72,6 +72,16 @@ fun ControlPanel(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
             ConnectionRow(state = state, connected = connected)
+            // A link can be READY while no state frame ever arrives (narrow
+            // MTU, version mismatch). Every control below then looks enabled
+            // but reports stale data — say it instead of looking broken.
+            if (connected && state.stateStale) {
+                Text(
+                    text = "未收到头显状态帧：先确认两端版本一致、蓝牙包长 ≥ 43",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.Danger
+                )
+            }
 
             // One line of state, not a dashboard: everything else here is a
             // control whose effect the headset shows, or it lives on its tab.
