@@ -271,7 +271,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     }
     phase = 'thanks';
     surface.setTitle('谢谢您');
-    surface.setBody('可以摘下来了，慢慢来。\n有什么想说的，\n随时告诉身边的护士或医生。');
+    surface.setBody('可以摘下头显了。\n如果有任何感受或建议，\n请告诉身边的工作人员。');
     nextButton.object.visible = false;
     registerTargets();
     options.onFinish?.();

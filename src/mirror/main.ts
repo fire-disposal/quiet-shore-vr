@@ -122,6 +122,14 @@ let primed = false;
 let mode: MirrorMode = 'patient';
 let sceneId = SCENE.id;
 let sceneName = SCENE.name.zh;
+/**
+ * The room's own walls and ceiling. In the overview the camera sits outside the
+ * room, so these are hidden — the same cutaway the washroom's walls read as —
+ * or the diorama is a closed box with the patient invisible inside it.
+ */
+let cutaway: THREE.Mesh[] = [];
+/** Scene bounds, for deciding whether the camera is inside the room. */
+const sceneBounds = new THREE.Box3();
 /** Last scene name reported as unknown, so the console is not spammed at 5 Hz. */
 let warnedSceneId = '';
 
@@ -181,6 +189,18 @@ function setTarget(next: MirrorState): void {
 }
 
 /** Swap to the reported scene when the registry can build it. */
+/** Find the room's shell in whatever was just loaded, and its bounds. */
+function collectCutaway(): void {
+  cutaway = [];
+  sceneHost.content.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (mesh.isMesh && /(-walls?|-shell)$/.test(mesh.name)) {
+      cutaway.push(mesh);
+    }
+  });
+  sceneBounds.setFromObject(sceneHost.content);
+}
+
 function syncScene(): void {
   const id = state.scene;
   if (!id || id === sceneId) {
@@ -199,6 +219,7 @@ function syncScene(): void {
   sceneHost.load(definition);
   sceneId = definition.id;
   sceneName = definition.name.zh;
+  collectCutaway();
   settleFloor();
 }
 
@@ -461,6 +482,25 @@ function applyCamera(): void {
   camera.updateProjectionMatrix();
 }
 
+/**
+ * Inside the room the walls stay; outside it they step aside. Recomputed per
+ * frame because the overview orbit crosses the wall when the operator zooms in.
+ */
+const CAMERA_INSET_M = 0.05;
+function applyCutaway(): void {
+  if (cutaway.length === 0 || sceneBounds.isEmpty()) {
+    return;
+  }
+  const inside =
+    camera.position.x > sceneBounds.min.x + CAMERA_INSET_M &&
+    camera.position.x < sceneBounds.max.x - CAMERA_INSET_M &&
+    camera.position.z > sceneBounds.min.z + CAMERA_INSET_M &&
+    camera.position.z < sceneBounds.max.z - CAMERA_INSET_M;
+  for (const mesh of cutaway) {
+    mesh.visible = inside;
+  }
+}
+
 /** Operator view: the patient's own view, or a pulled-back diorama. */
 function setMode(next: MirrorMode): void {
   if (next !== 'patient' && next !== 'overview') {
@@ -484,6 +524,7 @@ function frame(now: number): void {
   }
   settleFloor();
   applyCamera();
+  applyCutaway();
   renderer.render(scene, camera);
   const stale = lastStateAt > 0 && now - lastStateAt > 2500;
   const hint = mode === 'overview' ? ' · 拖动旋转 · 双指缩放' : '';
@@ -564,4 +605,6 @@ document.addEventListener('visibilitychange', () => {
 });
 
 resize();
+// The startup scene never passes through syncScene: take its shell now.
+collectCutaway();
 start();

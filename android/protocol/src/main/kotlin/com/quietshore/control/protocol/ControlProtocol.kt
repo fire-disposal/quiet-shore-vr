@@ -35,7 +35,8 @@ object ControlProtocol {
     const val maxChunks: Int = 255
 
     const val deviceName: String = "QuietShore"
-    const val telemetryBytes: Int = 20
+    /** Six floats: x, y, z, yaw, pitch, roll. The mirror needs the roll too. */
+    const val telemetryBytes: Int = 24
     /** v12 frame size; needs an MTU of at least 43 to reach the tablet. */
     const val stateMaxBytes: Int = 40
     const val stateVersion: Int = 12
@@ -535,6 +536,7 @@ object ControlProtocol {
             putFloat(pose.z)
             putFloat(pose.yaw)
             putFloat(pose.pitch)
+            putFloat(pose.roll)
         }.array()
 
     fun decodeTelemetry(bytes: ByteArray): TelemetryPose? {
@@ -545,7 +547,8 @@ object ControlProtocol {
             y = buffer.float,
             z = buffer.float,
             yaw = buffer.float,
-            pitch = buffer.float
+            pitch = buffer.float,
+            roll = buffer.float
         )
     }
 
@@ -800,7 +803,9 @@ data class TelemetryPose(
     val y: Float,
     val z: Float,
     val yaw: Float,
-    val pitch: Float
+    val pitch: Float,
+    /** Head roll about the gaze; the mirror cannot show a tilt without it. */
+    val roll: Float = 0f
 )
 
 /**

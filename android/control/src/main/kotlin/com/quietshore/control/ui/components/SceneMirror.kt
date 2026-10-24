@@ -144,10 +144,10 @@ private fun mirrorPayload(state: ControlUiState): String {
                     put("z", pose.z.toDouble())
                     put("yaw", pose.yaw.toDouble())
                     put("pitch", pose.pitch.toDouble())
+                    put("roll", pose.roll.toDouble())
                 }
             )
         }
-        // pose.roll is still absent: telemetry is five floats and carries no
-        // roll. Everything else the mirror renders now comes from v12.
+        // Telemetry carries six floats now, so the mirror shows a tilted head.
     }.toString()
 }

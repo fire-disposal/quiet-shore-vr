@@ -6,7 +6,7 @@ import {
   type StateSnapshot
 } from '../src/app/portal-link';
 
-const POSE: PoseSnapshot = { x: 0, y: 1.6, z: 0, yaw: 0.1, pitch: -0.2 };
+const POSE: PoseSnapshot = { x: 0, y: 1.6, z: 0, yaw: 0.1, pitch: -0.2, roll: 0.05 };
 
 class FakeSocket {
   static readonly CONNECTING = 0;

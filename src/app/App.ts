@@ -290,7 +290,8 @@ export class QuietShoreApp {
           y: this.headPose.position.y,
           z: this.headPose.position.z,
           yaw: this.headEuler.y,
-          pitch: this.headEuler.x
+          pitch: this.headEuler.x,
+          roll: this.headEuler.z
         };
       },
       // One collected snapshot feeds the state payload; no caller re-derives

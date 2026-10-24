@@ -11,6 +11,8 @@ export interface PoseSnapshot {
   z: number;
   yaw: number;
   pitch: number;
+  /** Head roll; without it the mirror cannot show a tilted head. */
+  roll: number;
 }
 
 /**
@@ -492,7 +494,7 @@ export class PortalLink {
 
   private sendPose(): void {
     const pose = this.getPose();
-    if (![pose.x, pose.y, pose.z, pose.yaw, pose.pitch].every(Number.isFinite)) {
+    if (![pose.x, pose.y, pose.z, pose.yaw, pose.pitch, pose.roll].every(Number.isFinite)) {
       return;
     }
     this.send({ type: 'telemetry', data: pose });
