@@ -1,81 +1,80 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { SCENE, SCENES, getSceneDefinition } from '../src/scenes/registry';
+import { SCENE } from '../src/scenes/registry';
 import { ResourceRegistry } from '../src/core/geometry/registry';
 import { measureObject } from '../src/core/geometry/budget';
 
-function build(id: string, quality: 'high' | 'low') {
-  const definition = getSceneDefinition(id);
-  if (!definition) {
-    throw new Error(`scene ${id} must be registered`);
-  }
+function build() {
   const registry = new ResourceRegistry();
-  const handle = definition.build({ quality, eyeHeight: 1.6, registry });
-  return { definition, handle, registry };
+  const handle = SCENE.build({ eyeHeight: 1.7, registry });
+  return { handle, registry };
 }
 
-describe('scene registry', () => {
-  it('ships the four scenes in registry order', () => {
-    expect(SCENES.map((scene) => scene.id)).toEqual(['bathroom', 'landscape', 'ward', 'lab']);
-    expect(SCENE).toBe(SCENES[0]);
-  });
-
-  it('resolves every registered scene and nothing else', () => {
-    for (const scene of SCENES) {
-      expect(getSceneDefinition(scene.id)).toBe(scene);
+function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
+  const found: THREE.Mesh[] = [];
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) {
+      return;
     }
-    expect(getSceneDefinition('unknown')).toBeUndefined();
-  });
-
-  it('exposes localized metadata and an audio track for each scene', () => {
-    for (const scene of SCENES) {
-      expect(scene.name.zh.length).toBeGreaterThan(0);
-      expect(scene.name.en.length).toBeGreaterThan(0);
-      expect(scene.tagline.zh.length).toBeGreaterThan(0);
-      expect(scene.description.zh.length).toBeGreaterThan(scene.tagline.zh.length);
-      expect(['lake', 'stream', 'rain']).toContain(scene.audio.track);
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    if (materials.some((material) => material && material.transparent)) {
+      found.push(mesh);
     }
   });
-});
+  return found;
+}
 
-describe('scene builds', () => {
-  it('builds a usable handle for every shipped scene', () => {
-    for (const scene of SCENES) {
-      const { handle, registry } = build(scene.id, 'low');
-      try {
-        expect(handle.root).toBeInstanceOf(THREE.Object3D);
-        expect(handle.settings.background).toBeInstanceOf(THREE.Color);
-        expect(handle.settings.fog).toBeInstanceOf(THREE.Fog);
-        expect(handle.root.parent).toBeNull();
-        expect(measureObject(handle.root).drawCalls).toBeGreaterThan(0);
-      } finally {
-        handle.dispose();
-        registry.disposeAll();
-      }
-    }
+describe('shore scene', () => {
+  it('is the only shipped scene', () => {
+    expect(SCENE.id).toBe('shore');
+    expect(SCENE.name.zh).toBe('仰望湖面');
   });
 
-  it('keeps the landscape inside its declared budget in both tiers', () => {
-    for (const quality of ['high', 'low'] as const) {
-      const { handle, registry } = build('landscape', quality);
-      try {
-        const stats = measureObject(handle.root);
-        expect(handle.budget).toBeDefined();
-        expect(handle.budget!.check(stats)).toEqual([]);
-      } finally {
-        handle.dispose();
-        registry.disposeAll();
-      }
-    }
+  it('declares localized copy and a bundled audio track', () => {
+    expect(SCENE.name.en.length).toBeGreaterThan(0);
+    expect(SCENE.tagline.zh.length).toBeGreaterThan(0);
+    expect(SCENE.description.zh.length).toBeGreaterThan(SCENE.tagline.zh.length);
+    expect(SCENE.audio.track).toBe('lake');
   });
 
-  it('disposes idempotently', () => {
-    const { handle, registry } = build('landscape', 'low');
-    expect(() => {
+  it('stays inside the one-device frame budget', () => {
+    const { handle, registry } = build();
+    try {
+      const stats = measureObject(handle.root);
+      // The ceiling is what makes 1.25x supersampling affordable on Adreno
+      // 540: six calls, one full-screen dome, three transparent passes.
+      expect(stats.drawCalls).toBeLessThanOrEqual(6);
+      expect(stats.triangles).toBeLessThanOrEqual(1500);
+      expect(stats.textures).toBeLessThanOrEqual(5);
+      expect(transparentMeshes(handle.root).length).toBeLessThanOrEqual(4);
+      expect(handle.budget).toBeDefined();
+      expect(handle.budget!.check(stats)).toEqual([]);
+    } finally {
       handle.dispose();
-      handle.dispose();
-    }).not.toThrow();
+      registry.disposeAll();
+    }
+  });
+
+  it('keeps its own settings and releases them on dispose', () => {
+    const { handle } = build();
+    expect(handle.settings.background).toBeInstanceOf(THREE.Color);
+    expect(handle.settings.fog).toBeInstanceOf(THREE.Fog);
+    expect(handle.root.parent).toBeNull();
+    handle.dispose();
     expect(handle.root.children).toHaveLength(0);
-    registry.disposeAll();
+    expect(() => handle.dispose()).not.toThrow();
+  });
+
+  it('advances clouds and motes without allocating new objects', () => {
+    const { handle } = build();
+    const motes = handle.root.getObjectByName('shore-motes') as THREE.Points;
+    const attribute = motes.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const before = (attribute.array as Float32Array).slice(0, 3);
+    handle.update(0.5, 0.5);
+    const after = attribute.array as Float32Array;
+    expect(after[1]).not.toBe(before[1]);
+    expect(handle.root.getObjectByName('shore-clouds-0')).toBeDefined();
+    handle.dispose();
   });
 });

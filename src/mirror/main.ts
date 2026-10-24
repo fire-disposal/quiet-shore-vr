@@ -10,7 +10,7 @@ import { SceneHost } from '../core/scene/host';
  * reticle, no recording, no menus. Only the scene, a camera driven by the
  * headset's own world rotation, and a status line when data stops arriving.
  *
- * Cost control: low quality build, pixel ratio capped at 1, and the loop stops
+ * Cost control: pixel ratio capped at 1 and the loop stops
  * entirely when the host says the view is hidden (the operator collapsed it) or
  * when the page is not visible. A mirror nobody is looking at should not warm
  * the tablet.
@@ -59,7 +59,7 @@ canvasHost.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 300);
 const sceneHost = new SceneHost(scene);
-sceneHost.load(SCENE, { quality: 'low', eyeHeight: 1.7 });
+sceneHost.load(SCENE, { eyeHeight: 1.7 });
 
 const headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const headQuat = new THREE.Quaternion();

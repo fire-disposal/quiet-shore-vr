@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SceneHost } from '../src/core/scene/host';
-import { SceneRegistry } from '../src/core/scene/registry';
 import type {
   SceneBuildContext,
   SceneDefinition,
@@ -179,27 +178,5 @@ describe('SceneHost', () => {
     expect(scene.state.disposed).toBe(1);
     expect(host.registry.stats().geometries).toBe(0);
     expect(host.content.parent).toBeNull();
-  });
-});
-
-describe('SceneRegistry', () => {
-  it('registers, lists in insertion order and rejects duplicates', () => {
-    const registry = new SceneRegistry();
-    const first = createDefinition('ward', () => createHandle().handle);
-    const second = createDefinition('landscape', () => createHandle().handle);
-
-    registry.register(first);
-    registry.register(second);
-
-    expect(registry.get('ward')).toBe(first);
-    expect(registry.has('landscape')).toBe(true);
-    expect(registry.list()).toEqual([first, second]);
-    expect(registry.size).toBe(2);
-    expect(() => registry.register(first)).toThrow('duplicate scene id "ward"');
-
-    expect(registry.unregister('ward')).toBe(true);
-    expect(registry.unregister('ward')).toBe(false);
-    expect(registry.get('ward')).toBeUndefined();
-    expect(registry.list()).toEqual([second]);
   });
 });

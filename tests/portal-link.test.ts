@@ -130,7 +130,7 @@ describe('PortalLink', () => {
 
   function state(): StateSnapshot {
     return {
-      scene: 'ward',
+      scene: 'shore',
       session: false,
       calibrating: false,
       audio: false,

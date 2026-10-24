@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN, readConfig, type AppConfig } from './config';
-import { createRenderer, type Quality } from '../core/xr/renderer';
+import { createRenderer } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
 import { SitUpPath, type CameraPose } from '../core/xr/situp-path';
 import { createSitUpMotion } from '../core/xr/situp-run';
@@ -12,7 +12,7 @@ import {
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
-import { getSceneDefinition, SCENE } from '../scenes/registry';
+import { SCENE } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
@@ -46,7 +46,6 @@ import {
 } from '../core/xr/float';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { PortalLink, stateFromSnapshot } from './portal-link';
-import { lowerScaleStep, storeScale } from './quality-memory';
 import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
 import {
   createViewMotionController,
@@ -69,8 +68,6 @@ const CUE_FULL_DEG_PER_S = 40;
 const CUE_IDLE_FLOW = 0.25;
 /** Time from a stop to the fade-complete state; motion is frozen at once. */
 const STOP_FADE_MS = 1000;
-/** 60 fps budget in ms; a session above this at p95 lowers the next one's scale. */
-const FRAME_BUDGET_MS = 18;
 /** How deep the water bed breathes with the buoyancy; 0.12 is audible, not pumping. */
 const SWELL_AUDIO_DEPTH = 0.12;
 /** Bad frames tolerated before a capture reports itself as a lost pose. */
@@ -140,7 +137,6 @@ export class QuietShoreApp {
   private eyeHeight: number;
   private cueFlow = 0;
 
-  private sceneId: string = SCENE.id;
   /** Mode the next session starts in; set before a session, never during one. */
   private pendingMode: 'float' | 'posture' = 'float';
   private handle: SceneHandle | null = null;
@@ -204,12 +200,6 @@ export class QuietShoreApp {
     this.eyeHeight = this.config.eyeHeight;
     this.strings = getStrings(this.config.lang);
     this.showPerf = this.config.showPerf;
-    if (this.config.initialScene) {
-      const requested = getSceneDefinition(this.config.initialScene);
-      if (requested) {
-        this.sceneId = requested.id;
-      }
-    }
     if (isFloatProfileId(this.config.floatProfile)) {
       this.floatProfile = FLOAT_PROFILES[this.config.floatProfile];
     }
@@ -227,12 +217,7 @@ export class QuietShoreApp {
     this.camera.position.set(0, this.eyeHeight, 3.2);
     this.camera.rotation.order = 'YXZ';
 
-    const quality: Quality = {
-      high: this.config.highQuality,
-      aa: this.config.aa,
-      xrScale: this.config.xrScale
-    };
-    this.renderer = createRenderer(this.start.stageElement, quality);
+    this.renderer = createRenderer(this.start.stageElement);
     // WebXRManager's public surface differs across Three typings; the narrow
     // interface is the only part this app uses.
     this.xr = this.renderer.xr as unknown as XRManagerLike;
@@ -403,9 +388,8 @@ export class QuietShoreApp {
 
   private loadScene(): void {
     this.disposeScene();
-    const definition = getSceneDefinition(this.sceneId) ?? SCENE;
+    const definition = SCENE;
     const handle = this.host.load(definition, {
-      quality: this.config.highQuality ? 'high' : 'low',
       eyeHeight: this.eyeHeight
     });
     this.handle = handle;
@@ -557,7 +541,6 @@ export class QuietShoreApp {
   }
 
   private onSessionEnd(): void {
-    this.adaptScale();
     this.dispatch({ type: 'stop', reason: 'session-end' });
     this.dispatch({ type: 'faded' });
     this.session = null;
@@ -620,35 +603,6 @@ export class QuietShoreApp {
   }
 
   /**
-   * Scene switch is a pre-session action: swapping art under a running patient
-   * would drop their frame and their bearings. The tablet disables the choice
-   * while a session runs; the page refuses it for the same reason.
-   */
-  private applySceneCommand(id: string): void {
-    const definition = getSceneDefinition(id);
-    if (!definition) {
-      this.start.setStatus('未知场景', 'error');
-      return;
-    }
-    if (this.session) {
-      this.start.setStatus('训练中不可切换场景', 'error');
-      return;
-    }
-    if (definition.id === this.sceneId && this.handle) {
-      return;
-    }
-    this.sceneId = definition.id;
-    this.loadScene();
-    if (this.previewing) {
-      this.startSceneAudio();
-      this.start.showStage();
-    }
-    this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
-    this.link.sendStateNow();
-    this.updateHud(performance.now());
-  }
-
-  /**
    * Mode can be chosen before a session or switched during one. While running,
    * the phase follows the mode and the world is handed over without a jump:
    * entering posture arms the sit-up at "standing" (what the patient currently
@@ -684,26 +638,6 @@ export class QuietShoreApp {
     this.start.setStatus(value === 'posture' ? '已切到起身' : '已切回漂浮', 'ok');
     this.link.sendStateNow();
     this.updateHud(performance.now());
-  }
-
-  /**
-   * Between sessions: if this run could not hold ~60 fps at 95th percentile,
-   * remember one notch lower for the next launch. The framebuffer scale can
-   * only be set before a session starts, so this is the honest place to adjust.
-   */
-  private adaptScale(): void {
-    const budget = this.renderMonitor.snapshot();
-    if (budget.p95Ms <= FRAME_BUDGET_MS || !Number.isFinite(budget.p95Ms) || budget.p95Ms <= 0) {
-      return;
-    }
-    const next = lowerScaleStep(this.config.xrScale);
-    if (next < this.config.xrScale - 1e-3) {
-      storeScale(next);
-      this.start.setStatus(
-        `帧时间偏高（p95 ${budget.p95Ms.toFixed(1)} ms），下次进入改用 ${Math.round(next * 100)}%`,
-        'neutral'
-      );
-    }
   }
 
   /** Arms the sit-up layer at [t] (0 = supine, 1 = standing) with no motion. */
@@ -951,10 +885,6 @@ export class QuietShoreApp {
       // Hold, never recenter: only `view:anim:recenter` returns to 0°.
       this.viewMotion.stop();
       this.start.setStatus('已保持当前视角', 'ok');
-      return;
-    }
-    if (command.startsWith('scene:')) {
-      this.applySceneCommand(command.slice('scene:'.length));
       return;
     }
     if (command.startsWith('mode:')) {
@@ -1349,7 +1279,7 @@ export class QuietShoreApp {
       mode,
       SCENE.name[this.config.lang],
       calibrationState,
-      this.config.highQuality ? `高 ${Math.round(this.config.xrScale * 100)}%` : `低 ${Math.round(this.config.xrScale * 100)}%`,
+      '1.25x',
       triangles,
       draws,
       `p95 ${budget.p95Ms.toFixed(0)}ms`,
@@ -1394,7 +1324,7 @@ export class QuietShoreApp {
   /** Collect the facts telemetry, the HUD and command handlers all read. */
   private captureSnapshot(): SceneSnapshot {
     const input = this.snapshotInput;
-    input.sceneId = this.sceneId;
+    input.sceneId = SCENE.id;
     input.loaded = this.handle !== null;
     input.session = this.session !== null;
     input.calibrating = this.lifecycle.phase === 'calibrating';

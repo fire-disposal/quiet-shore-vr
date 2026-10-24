@@ -5,7 +5,6 @@ import { ResourceRegistry } from '../geometry/registry';
 export interface SceneHostOptions {
   /** Shared resource registry; created when omitted. */
   registry?: ResourceRegistry;
-  quality?: 'high' | 'low';
   eyeHeight?: number;
 }
 
@@ -30,7 +29,6 @@ export class SceneHost {
   private currentDefinition: SceneDefinition | null = null;
   private readonly baselineBackground: THREE.Color | THREE.Texture | null;
   private readonly baselineFog: THREE.FogBase | null;
-  private readonly defaultQuality: 'high' | 'low';
   private readonly defaultEyeHeight: number;
   private floorOffset = 0;
   private elapsed = 0;
@@ -43,7 +41,6 @@ export class SceneHost {
     this.scene.add(this.content);
     this.baselineBackground = this.scene.background;
     this.baselineFog = this.scene.fog;
-    this.defaultQuality = options.quality ?? 'high';
     this.defaultEyeHeight = options.eyeHeight ?? 1.7;
   }
 
@@ -72,7 +69,6 @@ export class SceneHost {
    */
   load(def: SceneDefinition, ctx: Partial<SceneBuildContext> = {}): SceneHandle {
     const handle = def.build({
-      quality: ctx.quality ?? this.defaultQuality,
       eyeHeight: ctx.eyeHeight ?? this.defaultEyeHeight,
       registry: this.registry
     });

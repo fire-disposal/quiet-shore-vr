@@ -13,8 +13,11 @@ export interface SceneSettings {
   fog: THREE.Fog | null;
 }
 
+/**
+ * Build inputs. There is deliberately no quality tier: the system targets one
+ * headset, so a scene has one shape and one budget.
+ */
 export interface SceneBuildContext {
-  quality: 'high' | 'low';
   eyeHeight: number;
   registry: ResourceRegistry;
 }

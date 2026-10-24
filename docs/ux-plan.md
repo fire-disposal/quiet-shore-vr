@@ -71,8 +71,8 @@
 
 | 词 | 含义 | 取值 | 默认 | 生效方式 |
 | --- | --- | --- | --- | --- |
-| 强度 | 幅度 0–3 | 0–3 | 2 | 3 s 斜坡，不跳变 |
-| 节律 | 主波周期 | 8–24 s，步长 2 | 18 s | 3 s 斜坡 |
+| 强度 | 幅度，无级 | 0–100%，1% 步进 | 55% | 3 s 斜坡，不跳变 |
+| 节律 | 主波周期，无级 | 6–24 s，0.5 s 步进 | 18 s | 3 s 斜坡 |
 | 呼吸 | 引导呼吸 | 4–8 次/分 | 6 | 驱动微粒与音频低通 |
 | 颗粒 | 近场微粒 | 关 / 低 / 高 | 低 | 立即，带 τ |
 | 渐入 | 会话起始包络 | 15 / 30 / 45 / 60 s | 30 s | 会话前设定 |
@@ -82,6 +82,13 @@
 | 急停 | 立即停止 | — | — | ≤1 s，不走渐出 |
 
 强度与节律必须解耦。现状 `FLOAT_PROFILES`（`float.ts:47-51`）里 a/b/c 同时改幅度与周期，技术员无法回答“再高一点但别更快”这种最基本的要求。
+
+无级之后：
+
+- 百分比线性映射到**本次会话的幅度上限**（标准 = 65 mm，故 55% 即 36 mm），读数同时显示 % 与 mm，两者不再分家。
+- 预设（安静/标准/沉浸）不再是“档位”，只保存三件事：幅度上限、初始节律、初始强度（安静 60% / 标准 85% / 沉浸 100%）。滑杆可以拖到 100%，但**上限由预设钳制**：安静预设下拖不到 85% 以上。
+- 上限的存在是为了让一次误拖不会直接推向最大幅度，而不是限制技术员的选择——换预设即可放开。
+- `core.md` §6.1/§6.2 的“强度 0–3 档”需同步改写为“强度无级，百分比显示”。
 
 ### 4.2 会话弧
 
@@ -113,12 +120,15 @@ state 帧 20 字节已满（`ControlProtocol.kt:668-698` 的字段全部在用�
 
 | 命令 | 语义 |
 | --- | --- |
-| `float:period:<8..24>` | 节律，步长 2 s |
+| `float:level:<0..100>` | 强度百分比，取代 `float:level:0-3` |
+| `float:period:<6000..24000>` | 节律，毫秒（0.5 s 步进由 UI 保证） |
 | `float:breath:rate:<4..8>` | 呼吸频率；`float:breath:on\|off` 保留为总开关 |
 | `float:ramp:<attackMs>:<releaseMs>` | 包络，会话前设定 |
 | `float:hold:on\|off` | 保持 / 继续 |
 | `session:limit:<minutes>` | 时限，到点自动渐出 |
 | `audio:volume:<0..100>` | 音量（当前只有静音开关） |
+
+`float:profile:a|b|c` 在 v11 后不再作为控制项存在：档位信息（幅度上限、默认节律）由预设携带，页面只接受强度百分比与节律毫秒。
 
 ### 4.5 不做的事
 
@@ -195,6 +205,14 @@ README 与 `core.md` §10 写“标准 35 mm / 11 s、温和 22 mm / 14 s、沉�
 
 落地页写“场景、眼高、SUS 量表与虚拟起身”，`README` 写“单屏——连接、会话时长、模式、开始/结束、漂浮强度、水声、常驻急停”，两者与代码、与 `core.md` 三方不一致。
 
+### F15 · 强度只有四级，且与节律绑死
+
+`FLOAT_MAX_LEVEL = 3`、电平线性取整（`float.ts:57-60`），命令白名单只收 `float:level:0-3`（`ControlProtocol.kt:412-413`）；同时 `FLOAT_PROFILES` 把幅度与周期写在同一条记录里，a/b/c 一次改两个维度。技术员无法表达“再高一点、但别更快”，也无法在同一档里找到患者的临界点。
+
+### F16 · 角度只有数字，没有参照
+
+平板上唯一的姿态显示是左下角 74 dp 的 `AngleGauge`（`AngleGauge.kt`），把偏航画进罗盘、俯仰画成气泡，两者共用一张图；`StatusPanel` 则直接打印“视点高度 1.35 米”“位置 0.00 0.00 1.35 米”。线协议里真正有用的角度是分开的三个量——`viewPitch`（已应用的视图仰角）、`worldPitch/worldRoll`（实际写进场景的世界旋转）、`posturePitch`（测得的世界倾角）——它们各有自己的参照系，用一张罗盘图和一堆浮点数表达不出来。
+
 ## 6 目标交互模型
 
 两条不变量：**患者端只做确认**；**技术员端任一时刻只有一个主决定**（运行中就是“停止”）。
@@ -239,6 +257,8 @@ stateDiagram-v2
 
 ## 8 平板：四带布局
 
+左列三张卡：会话（做什么）、姿态（现在朝哪）、会话弧（这一段怎么走）。
+
 ```svg
 <svg viewBox="0 0 1280 800" width="100%" role="img" aria-label="平板四带布局">
   <rect x="16" y="16" width="1248" height="52" rx="10" fill="var(--surface)" stroke="var(--border)"/>
@@ -249,96 +269,129 @@ stateDiagram-v2
   <text x="1112" y="47" font-size="14" fill="var(--muted)">日志</text>
   <text x="1176" y="47" font-size="14" fill="var(--muted)">断开</text>
 
-  <rect x="16" y="84" width="744" height="248" rx="14" fill="var(--surface)" stroke="var(--border)"/>
-  <text x="40" y="116" font-size="12" letter-spacing="1" fill="var(--muted)">会话</text>
-  <text x="40" y="176" font-size="34" fill="var(--fg)">训练中</text>
-  <text x="736" y="176" font-size="34" text-anchor="end" fill="var(--muted)">04:12 / 10:00</text>
-  <text x="40" y="204" font-size="13" fill="var(--muted)">患者可随时按确认键停止；停止立即渐出</text>
-  <rect x="40" y="224" width="200" height="56" rx="10" fill="none" stroke="var(--border)"/>
-  <text x="140" y="259" font-size="16" text-anchor="middle" fill="var(--fg)">结束本次</text>
-  <rect x="256" y="224" width="160" height="56" rx="10" fill="none" stroke="var(--border)"/>
-  <text x="336" y="259" font-size="16" text-anchor="middle" fill="var(--fg)">保持</text>
-  <rect x="432" y="224" width="160" height="56" rx="10" fill="none" stroke="var(--border)"/>
-  <text x="512" y="259" font-size="16" text-anchor="middle" fill="var(--fg)">重新校准</text>
-  <text x="40" y="310" font-size="13" fill="var(--muted)">校准 09:41:02 · 置信度 92 · 渐入 30 s · 渐出 20 s</text>
+  <rect x="16" y="84" width="744" height="212" rx="14" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="40" y="112" font-size="12" letter-spacing="1" fill="var(--muted)">会话</text>
+  <text x="40" y="168" font-size="34" fill="var(--fg)">训练中</text>
+  <text x="736" y="168" font-size="34" text-anchor="end" fill="var(--muted)">04:12 / 10:00</text>
+  <text x="40" y="194" font-size="13" fill="var(--muted)">患者可随时按确认键停止；停止立即渐出</text>
+  <rect x="40" y="212" width="176" height="52" rx="10" fill="none" stroke="var(--border)"/>
+  <text x="128" y="244" font-size="16" text-anchor="middle" fill="var(--fg)">结束本次</text>
+  <rect x="228" y="212" width="136" height="52" rx="10" fill="none" stroke="var(--border)"/>
+  <text x="296" y="244" font-size="16" text-anchor="middle" fill="var(--fg)">保持</text>
+  <rect x="376" y="212" width="152" height="52" rx="10" fill="none" stroke="var(--border)"/>
+  <text x="452" y="244" font-size="16" text-anchor="middle" fill="var(--fg)">重新校准</text>
+  <text x="40" y="288" font-size="13" fill="var(--muted)">校准 09:41:02 · 置信度 92 · 渐入 30 s · 渐出 20 s</text>
 
-  <rect x="16" y="344" width="744" height="356" rx="14" fill="var(--surface)" stroke="var(--border)"/>
-  <text x="40" y="376" font-size="12" letter-spacing="1" fill="var(--muted)">会话弧</text>
-  <rect x="40" y="392" width="96" height="20" rx="4" fill="var(--accent)" opacity="0.10" stroke="var(--accent)"/>
-  <rect x="140" y="392" width="536" height="20" rx="4" fill="var(--accent)" opacity="0.28" stroke="var(--accent)"/>
-  <rect x="680" y="392" width="56" height="20" rx="4" fill="var(--accent)" opacity="0.10" stroke="var(--accent)"/>
-  <text x="88" y="434" font-size="12" text-anchor="middle" fill="var(--muted)">渐入</text>
-  <text x="408" y="434" font-size="12" text-anchor="middle" fill="var(--muted)">稳定</text>
-  <text x="708" y="434" font-size="12" text-anchor="middle" fill="var(--muted)">渐出</text>
-  <line x1="332" y1="388" x2="332" y2="418" stroke="var(--error)" stroke-width="2"/>
-  <text x="332" y="452" font-size="12" text-anchor="middle" fill="var(--error)">现在 04:12</text>
-  <text x="40" y="486" font-size="12" letter-spacing="1" fill="var(--muted)">幅度 60 s</text>
-  <polyline points="40,610 70,588 100,566 130,552 160,560 190,584 220,606 250,612 280,596 310,572 340,556 370,558 400,578 430,600 460,610 490,596 520,574 550,558 580,558 610,576 640,598 670,608 700,600 730,588"
+  <rect x="16" y="308" width="744" height="220" rx="14" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="40" y="336" font-size="12" letter-spacing="1" fill="var(--muted)">姿态</text>
+  <text x="744" y="336" font-size="11" text-anchor="end" fill="var(--muted)">实测 / 已应用 · 角度按真实值绘制</text>
+  <line x1="80" y1="478" x2="400" y2="461" stroke="var(--accent)" stroke-width="2"/>
+  <text x="404" y="459" font-size="12" fill="var(--accent)">世界 −3°</text>
+  <path d="M330 470 A120 120 0 0 0 210 350" fill="none" stroke="var(--border)"/>
+  <line x1="313.9" y1="410" x2="321.9" y2="406" stroke="var(--border)"/>
+  <line x1="270" y1="366.1" x2="275" y2="359.5" stroke="var(--border)"/>
+  <text x="326" y="406" font-size="10" fill="var(--muted)">30</text>
+  <text x="278" y="356" font-size="10" fill="var(--muted)">60</text>
+  <text x="330" y="486" font-size="11" fill="var(--muted)">0°</text>
+  <text x="196" y="342" font-size="11" text-anchor="middle" fill="var(--muted)">90°</text>
+  <line x1="120" y1="470" x2="200" y2="470" stroke="var(--fg)" stroke-width="3"/>
+  <circle cx="210" cy="470" r="9" fill="none" stroke="var(--fg)" stroke-width="2"/>
+  <line x1="210" y1="470" x2="327.4" y2="445.1" stroke="var(--fg)" stroke-width="2"/>
+  <text x="332" y="443" font-size="12" fill="var(--fg)">头部</text>
+  <line x1="90" y1="470" x2="90" y2="410" stroke="var(--muted)"/>
+  <line x1="84" y1="470" x2="96" y2="470" stroke="var(--muted)"/>
+  <line x1="84" y1="410" x2="96" y2="410" stroke="var(--muted)"/>
+  <text x="102" y="444" font-size="12" fill="var(--muted)">眼高 1.35 m</text>
+  <text x="470" y="368" font-size="13" fill="var(--muted)">头部（实测）</text>
+  <text x="744" y="368" font-size="15" text-anchor="end" fill="var(--fg)">+12°</text>
+  <line x1="470" y1="378" x2="744" y2="378" stroke="var(--border)"/>
+  <line x1="607" y1="378" x2="607" y2="384" stroke="var(--muted)"/>
+  <line x1="607" y1="381" x2="678" y2="381" stroke="var(--fg)" stroke-width="2"/>
+  <text x="470" y="408" font-size="13" fill="var(--muted)">世界（已应用）</text>
+  <text x="744" y="408" font-size="15" text-anchor="end" fill="var(--fg)">−3° · 横滚 −0.5°</text>
+  <line x1="470" y1="418" x2="744" y2="418" stroke="var(--border)"/>
+  <line x1="607" y1="418" x2="607" y2="424" stroke="var(--muted)"/>
+  <line x1="597" y1="421" x2="607" y2="421" stroke="var(--accent)" stroke-width="2"/>
+  <text x="470" y="448" font-size="13" fill="var(--muted)">视线（已应用）</text>
+  <text x="744" y="448" font-size="15" text-anchor="end" fill="var(--fg)">+15°</text>
+  <line x1="470" y1="458" x2="744" y2="458" stroke="var(--border)"/>
+  <line x1="607" y1="458" x2="607" y2="464" stroke="var(--muted)"/>
+  <line x1="607" y1="461" x2="688" y2="461" stroke="var(--success)" stroke-width="2"/>
+  <text x="470" y="488" font-size="13" fill="var(--muted)">姿态 0% · 起身 0.00 m</text>
+  <text x="744" y="488" font-size="13" text-anchor="end" fill="var(--muted)">仅起身模式显示进度</text>
+
+  <rect x="16" y="540" width="744" height="168" rx="14" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="40" y="568" font-size="12" letter-spacing="1" fill="var(--muted)">会话弧 04:12 / 10:00</text>
+  <rect x="40" y="578" width="96" height="18" rx="4" fill="var(--accent)" opacity="0.10" stroke="var(--accent)"/>
+  <rect x="140" y="578" width="536" height="18" rx="4" fill="var(--accent)" opacity="0.28" stroke="var(--accent)"/>
+  <rect x="680" y="578" width="56" height="18" rx="4" fill="var(--accent)" opacity="0.10" stroke="var(--accent)"/>
+  <line x1="332" y1="574" x2="332" y2="600" stroke="var(--error)" stroke-width="2"/>
+  <text x="88" y="616" font-size="11" text-anchor="middle" fill="var(--muted)">渐入</text>
+  <text x="408" y="616" font-size="11" text-anchor="middle" fill="var(--muted)">稳定</text>
+  <text x="708" y="616" font-size="11" text-anchor="middle" fill="var(--muted)">渐出</text>
+  <text x="332" y="636" font-size="11" text-anchor="middle" fill="var(--error)">现在</text>
+  <polyline points="40,690 70,668 100,650 130,644 160,652 190,672 220,686 250,690 280,676 310,656 340,646 370,648 400,666 430,684 460,690 490,676 520,658 550,646 580,646 610,662 640,682 670,690 700,680 736,668"
     fill="none" stroke="var(--accent)" stroke-width="2"/>
-  <line x1="40" y1="632" x2="736" y2="632" stroke="var(--border)"/>
-  <text x="40" y="662" font-size="13" fill="var(--muted)">03:40 保持 → 03:52 继续</text>
-  <text x="40" y="686" font-size="13" fill="var(--muted)">02:10 强度 1 → 2 · 起伏 14 mm</text>
+  <text x="40" y="652" font-size="11" fill="var(--muted)">幅度 60 s</text>
+  <text x="744" y="652" font-size="11" text-anchor="end" fill="var(--muted)">峰 36 mm · 55%</text>
 
-  <rect x="776" y="84" width="488" height="616" rx="14" fill="var(--surface)" stroke="var(--border)"/>
+  <rect x="776" y="84" width="488" height="624" rx="14" fill="var(--surface)" stroke="var(--border)"/>
   <text x="800" y="116" font-size="12" letter-spacing="1" fill="var(--muted)">运动</text>
-  <text x="800" y="148" font-size="12" fill="var(--muted)">预设</text>
-  <rect x="800" y="158" width="104" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="852" y="184" font-size="15" text-anchor="middle" fill="var(--muted)">安静</text>
-  <rect x="912" y="158" width="104" height="40" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
-  <text x="964" y="184" font-size="15" text-anchor="middle" fill="var(--fg)">标准</text>
-  <rect x="1024" y="158" width="104" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1076" y="184" font-size="15" text-anchor="middle" fill="var(--muted)">沉浸</text>
-  <text x="800" y="238" font-size="12" fill="var(--muted)">强度</text>
-  <text x="1240" y="238" font-size="12" text-anchor="end" fill="var(--muted)">当前 34 / 目标 45 mm</text>
-  <rect x="800" y="248" width="74" height="44" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="837" y="276" font-size="15" text-anchor="middle" fill="var(--muted)">关</text>
-  <rect x="882" y="248" width="74" height="44" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="919" y="276" font-size="15" text-anchor="middle" fill="var(--muted)">1</text>
-  <rect x="964" y="248" width="74" height="44" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
-  <text x="1001" y="276" font-size="15" text-anchor="middle" fill="var(--fg)">2</text>
-  <rect x="1046" y="248" width="74" height="44" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1083" y="276" font-size="15" text-anchor="middle" fill="var(--muted)">3</text>
-  <rect x="800" y="302" width="320" height="8" rx="4" fill="var(--border)"/>
-  <rect x="800" y="302" width="242" height="8" rx="4" fill="var(--accent)"/>
-  <text x="800" y="338" font-size="12" fill="var(--muted)">节律</text>
-  <text x="800" y="368" font-size="15" fill="var(--fg)">18 s</text>
-  <text x="1240" y="368" font-size="12" text-anchor="end" fill="var(--muted)">8 — 24 s</text>
-  <rect x="800" y="382" width="440" height="6" rx="3" fill="var(--border)"/>
-  <rect x="800" y="382" width="300" height="6" rx="3" fill="var(--accent)"/>
-  <circle cx="1100" cy="385" r="8" fill="var(--accent)"/>
-  <text x="800" y="424" font-size="12" fill="var(--muted)">呼吸</text>
-  <rect x="800" y="434" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="836" y="460" font-size="15" text-anchor="middle" fill="var(--muted)">4</text>
-  <rect x="880" y="434" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="916" y="460" font-size="15" text-anchor="middle" fill="var(--muted)">5</text>
-  <rect x="960" y="434" width="72" height="40" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
-  <text x="996" y="460" font-size="15" text-anchor="middle" fill="var(--fg)">6</text>
-  <rect x="1040" y="434" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1076" y="460" font-size="15" text-anchor="middle" fill="var(--muted)">7</text>
-  <rect x="1120" y="434" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1156" y="460" font-size="15" text-anchor="middle" fill="var(--muted)">8</text>
-  <text x="1240" y="424" font-size="12" text-anchor="end" fill="var(--muted)">次/分</text>
-  <text x="800" y="492" font-size="12" fill="var(--muted)">颗粒</text>
-  <rect x="800" y="504" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="870" y="530" font-size="15" text-anchor="middle" fill="var(--muted)">关</text>
-  <rect x="950" y="504" width="140" height="40" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
-  <text x="1020" y="530" font-size="15" text-anchor="middle" fill="var(--fg)">低</text>
-  <rect x="1100" y="504" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1170" y="530" font-size="15" text-anchor="middle" fill="var(--muted)">高</text>
-  <text x="800" y="576" font-size="12" fill="var(--muted)">包络与时限</text>
-  <rect x="800" y="588" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="870" y="614" font-size="14" text-anchor="middle" fill="var(--fg)">渐入 30 s</text>
-  <rect x="950" y="588" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1020" y="614" font-size="14" text-anchor="middle" fill="var(--fg)">渐出 20 s</text>
-  <rect x="1100" y="588" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
-  <text x="1170" y="614" font-size="14" text-anchor="middle" fill="var(--fg)">10 min</text>
-  <line x1="800" y1="630" x2="1240" y2="630" stroke="var(--border)"/>
-  <text x="800" y="662" font-size="13" fill="var(--muted)">水声</text>
-  <rect x="1164" y="646" width="76" height="28" rx="14" fill="var(--success)" opacity="0.18" stroke="var(--success)"/>
-  <circle cx="1224" cy="660" r="10" fill="var(--success)"/>
-  <text x="880" y="662" font-size="13" fill="var(--muted)">音量 60</text>
-  <rect x="948" y="652" width="196" height="6" rx="3" fill="var(--border)"/>
-  <rect x="948" y="652" width="118" height="6" rx="3" fill="var(--success)"/>
+  <text x="800" y="144" font-size="12" fill="var(--muted)">预设</text>
+  <rect x="800" y="154" width="104" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="852" y="180" font-size="15" text-anchor="middle" fill="var(--muted)">安静</text>
+  <rect x="912" y="154" width="104" height="40" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
+  <text x="964" y="180" font-size="15" text-anchor="middle" fill="var(--fg)">标准</text>
+  <rect x="1024" y="154" width="104" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="1076" y="180" font-size="15" text-anchor="middle" fill="var(--muted)">沉浸</text>
+  <text x="800" y="228" font-size="12" fill="var(--muted)">强度</text>
+  <text x="1240" y="228" font-size="12" text-anchor="end" fill="var(--muted)">55% · 36 mm / 上限 85%</text>
+  <line x1="800" y1="252" x2="1240" y2="252" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/>
+  <line x1="800" y1="252" x2="1042" y2="252" stroke="var(--accent)" stroke-width="8" stroke-linecap="round"/>
+  <line x1="1174" y1="238" x2="1174" y2="266" stroke="var(--muted)"/>
+  <circle cx="1030" cy="252" r="11" fill="var(--accent)"/>
+  <text x="800" y="286" font-size="11" fill="var(--muted)">0</text>
+  <text x="1240" y="286" font-size="11" text-anchor="end" fill="var(--muted)">100%</text>
+  <text x="800" y="322" font-size="12" fill="var(--muted)">节律</text>
+  <text x="1240" y="322" font-size="12" text-anchor="end" fill="var(--muted)">18.0 s</text>
+  <line x1="800" y1="346" x2="1240" y2="346" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/>
+  <line x1="800" y1="346" x2="1093" y2="346" stroke="var(--accent)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="1093" cy="346" r="11" fill="var(--accent)"/>
+  <text x="800" y="378" font-size="11" fill="var(--muted)">6 s</text>
+  <text x="1240" y="378" font-size="11" text-anchor="end" fill="var(--muted)">24 s</text>
+  <text x="800" y="412" font-size="12" fill="var(--muted)">呼吸</text>
+  <rect x="800" y="422" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="836" y="448" font-size="15" text-anchor="middle" fill="var(--muted)">4</text>
+  <rect x="880" y="422" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="916" y="448" font-size="15" text-anchor="middle" fill="var(--muted)">5</text>
+  <rect x="960" y="422" width="72" height="40" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
+  <text x="996" y="448" font-size="15" text-anchor="middle" fill="var(--fg)">6</text>
+  <rect x="1040" y="422" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="1076" y="448" font-size="15" text-anchor="middle" fill="var(--muted)">7</text>
+  <rect x="1120" y="422" width="72" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="1156" y="448" font-size="15" text-anchor="middle" fill="var(--muted)">8</text>
+  <text x="1240" y="412" font-size="11" text-anchor="end" fill="var(--muted)">次/分</text>
+  <text x="800" y="496" font-size="12" fill="var(--muted)">颗粒</text>
+  <rect x="800" y="506" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="870" y="532" font-size="15" text-anchor="middle" fill="var(--muted)">关</text>
+  <rect x="950" y="506" width="140" height="40" rx="8" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
+  <text x="1020" y="532" font-size="15" text-anchor="middle" fill="var(--fg)">低</text>
+  <rect x="1100" y="506" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="1170" y="532" font-size="15" text-anchor="middle" fill="var(--muted)">高</text>
+  <text x="800" y="580" font-size="12" fill="var(--muted)">包络与时限</text>
+  <rect x="800" y="590" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="870" y="616" font-size="14" text-anchor="middle" fill="var(--fg)">渐入 30 s</text>
+  <rect x="950" y="590" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="1020" y="616" font-size="14" text-anchor="middle" fill="var(--fg)">渐出 20 s</text>
+  <rect x="1100" y="590" width="140" height="40" rx="8" fill="none" stroke="var(--border)"/>
+  <text x="1170" y="616" font-size="14" text-anchor="middle" fill="var(--fg)">10 min</text>
+  <line x1="800" y1="648" x2="1240" y2="648" stroke="var(--border)"/>
+  <text x="800" y="680" font-size="13" fill="var(--muted)">水声</text>
+  <text x="872" y="680" font-size="13" fill="var(--muted)">音量 60</text>
+  <line x1="948" y1="676" x2="1140" y2="676" stroke="var(--border)" stroke-width="6" stroke-linecap="round"/>
+  <line x1="948" y1="676" x2="1063" y2="676" stroke="var(--success)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="1164" y="662" width="76" height="28" rx="14" fill="var(--success)" opacity="0.18" stroke="var(--success)"/>
+  <circle cx="1224" cy="676" r="10" fill="var(--success)"/>
 
   <rect x="16" y="724" width="1248" height="56" rx="12" fill="var(--error)" opacity="0.14" stroke="var(--error)"/>
   <text x="640" y="759" font-size="18" text-anchor="middle" fill="var(--error)">急停 · 立即停止（≤1 s）</text>
@@ -348,12 +401,30 @@ stateDiagram-v2
 | 带 | 高度 | 内容 | 规则 |
 | --- | --- | --- | --- |
 | 状态带 | 52 dp | 连接、尾号、信号；日志、断开 | 只有“断开”不可逆，置最右 |
-| 会话带 | 248 dp | 状态、时钟、结束/保持/校准、校准与包络摘要 | 运行中主按钮是“结束本次” |
-| 会话弧 | 356 dp | 三段包络条 + 播放头、幅度轨迹、最近事件 | 只读；改参数不改历史 |
-| 运动带 | 616 dp | 预设、强度、节律、呼吸、颗粒、包络与时限、水声与音量 | 强度是主控制（最大字号），其余同权 |
+| 会话带 | 212 dp | 状态、时钟、结束/保持/校准、校准与包络摘要 | 运行中主按钮是“结束本次” |
+| 姿态带 | 220 dp | 侧视示意：水平参考、世界、头部、视线、眼高；右侧三条读数 | 只读；三个角度各有参照系，不合成一个数 |
+| 会话弧 | 168 dp | 包络条 + 播放头 + 60 s 幅度轨迹 | 只读；改参数不改历史 |
+| 运动带 | 624 dp | 预设、强度（滑杆）、节律（滑杆）、呼吸、颗粒、包络与时限、水声与音量 | 强度与节律无级；上限由预设钳制 |
 | 停止带 | 56 dp | 急停（≤1 s）；计划内结束是会话带的“结束本次”，走渐出 | 固定带，不滚动，不叠 alpha |
 
-删除清单（**待 D1/D2 书面确认后执行**）：`ScenePage`、`SceneMirror`、SUS、目视选择、呼吸开关（并入频率）、起身三段按钮与 4/6/10/14 s 档位、`AngleGauge` 姿态坐标行、`StatusPanel` 的“视点高度/起身进度”。能力位、白名单、`CAPABILITIES_MASK` 同批收敛。
+### 8.1 姿态卡：三个角度，三个参照
+
+`AngleGauge` 把偏航和俯仰塞进一张罗盘，`StatusPanel` 又打印一串浮点数，两者都不能回答“患者现在到底朝哪”。改成一张侧视图 + 三条读数：
+
+| 量 | 来源 | 参照 | 画法 |
+| --- | --- | --- | --- |
+| 头部俯仰 | `telemetry.pitch`（页面 `readHeadPose` 欧拉角） | 设备自身·会话起始帧 | 从头部圆点出发的实线箭头，标注“实测” |
+| 世界俯仰 / 横滚 | `state.worldPitch`、`worldRoll` | 场景内容实际写入的旋转（舒适层 × 起身基座 × 视图重定向） | 一条与水平参考成该角的实线，标注“已应用” |
+| 视线仰角 | `state.viewPitch` | 页面已应用的视图偏移（+ = 更多天空） | 不画针：与头部只差几度时两针必然重合；只给中点式读数条 + 数字 |
+
+- 三者**不合成**成“最终视线”：头部是设备帧、世界是内容帧、视线是偏移量，硬加会教给技术员一个错的模型。
+- 读数条以 0 为中点向左右生长，所以 `−3°` 与 `+12°` 的差别一眼可见；这是数字列表给不了的。
+- 世界线按真实角度绘制，横滚（±0.5° 量级）只在读数里出现——放大它等于撒谎，不放大也不影响判断。
+- 起身模式下追加一行“姿态 42% · 起身 0.55 m”，并显示 `posturePitch` 作为测得值与 `worldPitch` 的对照（两者不一致说明有角度被夹紧）。
+- 数据全部来自 state v10 与 telemetry，**不需要新协议**；纯投影函数 `attitudeView(state, pose)` 可单测（±90° 夹紧、姿态过期、起身比例、符号保持）。
+- 同一张卡在 2D 预览里可用同一函数渲染，桌面调参不必依赖平板。
+
+删除清单（**待 D1/D2 书面确认后执行**）：`ScenePage`、`SceneMirror`、SUS、目视选择、呼吸开关（并入呼吸频率）、起身三段按钮与 4/6/10/14 s 档位、`AngleGauge` 的姿态坐标行、`StatusPanel` 的“视点高度/起身进度”。能力位、白名单、`CAPABILITIES_MASK` 同批收敛；`float:profile` 在 v11 后由预设取代。
 
 ## 9 头显端入口
 
@@ -381,7 +452,8 @@ stateDiagram-v2
 | **P0 安全** | 急停移出滚动区；点击收窄到卡片；“结束”走渐出、“急停”走 1 s | 10 英寸平板上急停 0 滚动可见且 ≥56 dp；空白处点击不进入 XR；急停实测 ≤1 s | `ControlScreen.kt`、`ControlPanel.kt`、`start-screen.ts`、`App.ts` |
 | **P0 运动** | 分层视差（天穹补偿）、删微颤、周期 18 s/幅度 45 mm、微粒同相位；渐入 30 s | 头显内 A/B 盲测：仰卧能否在 5 s 内说出“上升/下降”；幅度轨迹与实测一致 | `float.ts`、`App.ts`、`posture-cue.ts`、`scenes/landscape/sky.ts` |
 | **P0 主线** | 等待患者确认；校准五态；校准改技术员触发 | 平板五态与头显一致；正常路径 ≤15 s；不触发时 20 s 自愈 | `ControlUiState.kt`、`ControlViewModel.kt`、`calibration-card.ts` |
-| **P1 控制** | 运动带（节律/呼吸/颗粒/包络/时限/保持）、幅度条与轨迹；协议 v11 | 每个参数变更 3 s 内从轨迹上可读；保持/继续不丢会话；到时限自动渐出 | `ControlPanel.kt`、`ControlProtocol.kt`、`App.ts` |
+| **P1 控制** | 运动带（无级强度、无级节律、呼吸、颗粒、包络、时限、保持）、幅度条与轨迹；协议 v11 | 强度 1% 与节律 0.5 s 步进；预设上限钳制生效；每个参数变更 3 s 内从轨迹上可读；保持/继续不丢会话 | `ControlPanel.kt`、`ControlProtocol.kt`、`App.ts` |
+| **P1 姿态** | 姿态卡：侧视图 + 三条读数，取代 `AngleGauge` 与 `StatusPanel` 的坐标行 | 三个角度与 state/telemetry 逐个对上；投影函数单测覆盖夹紧与过期 | `ControlScreen.kt`、`AngleGauge.kt`、`StatusPanel.kt`、新增 `AttitudeCard.kt` |
 | **P1 收敛** | 按 D1/D2 删除死面与能力位；页签收敛到“日志/断开” | 平板单屏无滚动即可完成主线 | `ControlProtocol.kt`、`ScenePage.kt`、`SceneMirror.kt` |
 | **P1 视觉** | 三/四带布局；对比度、字号、触控；回执语义（已发出/已执行） | 正文 ≥4.5:1；触控 ≥48 dp；“已执行”只在 ACK OK 后出现 | `ControlTheme.kt`、`StatusPanel.kt` |
 | **P2 患者端** | 入口卡片重做、校准卡版面预算、HUD 收敛、8 s 提示条 | 卡片内容不越界（按纹理算术核对）；提示条只出现一次 | `index.html`、`styles.css`、`calibration-card.ts`、`spatial-hud.ts` |
@@ -400,12 +472,14 @@ stateDiagram-v2
 | D7 | “结束”与“急停”是否分开 | ① 合并为单一停止（1 s）② 结束走渐出、急停 1 s | ②：有了包络之后两者语义确实不同 |
 | D8 | 是否为“已应用幅度/包络段”升协议 v11 | ① 升到 22 B ② 压字段凑 20 B ③ 不做，平板自行推算 | ①：这是控制侧唯一的真值来源，②会让协议难读 |
 | D9 | 漂浮是否改为单向慢漂 | ① 保持对称往复 ② 长上升 + 长回落（非对称） | ②更接近失重、不易读作摇篮；需在志愿者里 A/B |
+| D10 | 无级强度的标定 | ① 100% = 预设幅度上限（标准 65 mm）② 100% = 固定绝对值，预设只改节律 | ①：换预设即换上限，读数仍用百分比与 mm 双单位 |
 
 ## 13 验收与度量
 
 - **感知**：仰卧 A/B 盲测（同一场景，运动开/关随机），患者或操作员在 5 s 内能否指认运动方向；不能指认即判定该档无效，回退到下一档参数。
 - **上限**：任何时刻主视层的峰值角速度 ≤2°/s，地平线摆 ≤0.6°；超限即视为缺陷，不再上调。
 - **包络**：从按下“启动训练”到幅度到达目标的实测时间与设定值误差 ≤20%；结束时渐出曲线无阶跃（逐帧位移差 ≤1 mm）。
+- **无级**：滑杆拖到任意位置后，实测幅度在 3 s 内到达且误差 ≤2 mm；拖过预设上限时被钳住并有触觉/视觉反馈。
 - **上机 ≤3 min 拆解**：配对 ≤60 s、启动到患者确认 ≤45 s、校准 ≤20 s；超时写原因。
 - **停止**：任意状态 ≤1 次触控、0 次滚动；急停“按下到运动归零” ≤1 s。
 - **误触**：志愿者上机前 30 s 记录未经提示的确认/点击次数（验证 F7）。
