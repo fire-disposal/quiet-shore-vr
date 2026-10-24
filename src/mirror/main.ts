@@ -62,7 +62,8 @@ host.id = 'mirror-host';
 host.style.cssText = 'position:fixed;inset:0;overflow:hidden;';
 
 const canvasHost = document.createElement('div');
-canvasHost.style.cssText = 'position:absolute;inset:0;';
+// Pointer events only: without this a drag on a touch panel scrolls instead.
+canvasHost.style.cssText = 'position:absolute;inset:0;touch-action:none;';
 host.appendChild(canvasHost);
 
 const label = document.createElement('div');
@@ -311,21 +312,104 @@ const headUp = new THREE.Vector3();
 const upAxis = new THREE.Vector3(0, 1, 0);
 const lookAt = new THREE.Vector3();
 const basis = new THREE.Matrix4();
+const orbitOffset = new THREE.Vector3();
+
+/**
+ * Overview camera orbit: **not** driven by the patient's gaze.
+ *
+ * The operator's own gesture owns this camera — drag to walk around the
+ * diorama, pinch to zoom — while the patient's head only steers the frustum.
+ * Following the gaze here made the whole room swing whenever the patient
+ * looked around, which read as the mirror being broken rather than as a view.
+ */
+const orbit = {
+  azimuthDeg: 205,
+  elevationDeg: 24,
+  distance: 3.6
+};
+const ORBIT_DISTANCE_MIN = 1.6;
+const ORBIT_DISTANCE_MAX = 9;
+const ORBIT_ELEVATION_MIN = 2;
+const ORBIT_ELEVATION_MAX = 82;
+
+/** Active pointers, in CSS pixels; one drags, two pinch. */
+const pointers = new Map<number, { x: number; y: number }>();
+let pinchSpan = 0;
+let pinchDistance = 0;
+
+function pointerSpan(): number {
+  const [a, b] = [...pointers.values()];
+  return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+canvasHost.addEventListener('pointerdown', (event) => {
+  if (mode !== 'overview') {
+    return;
+  }
+  canvasHost.setPointerCapture(event.pointerId);
+  pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (pointers.size === 2) {
+    pinchSpan = pointerSpan();
+    pinchDistance = orbit.distance;
+  }
+});
+
+canvasHost.addEventListener('pointermove', (event) => {
+  const previous = pointers.get(event.pointerId);
+  if (!previous || mode !== 'overview') {
+    return;
+  }
+  const dx = event.clientX - previous.x;
+  const dy = event.clientY - previous.y;
+  pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (pointers.size >= 2) {
+    const span = pointerSpan();
+    if (pinchSpan > 8 && span > 8) {
+      // Fingers apart = closer: the diorama is what the gesture scales.
+      orbit.distance = clamp(
+        (pinchDistance * pinchSpan) / span,
+        ORBIT_DISTANCE_MIN,
+        ORBIT_DISTANCE_MAX
+      );
+    }
+    return;
+  }
+  // One finger walks around the patient; elevation stops short of both poles.
+  orbit.azimuthDeg = (orbit.azimuthDeg - dx * 0.35) % 360;
+  orbit.elevationDeg = clamp(orbit.elevationDeg + dy * 0.25, ORBIT_ELEVATION_MIN, ORBIT_ELEVATION_MAX);
+});
+
+const releasePointer = (event: PointerEvent): void => {
+  pointers.delete(event.pointerId);
+  if (pointers.size < 2) {
+    pinchSpan = 0;
+  }
+};
+canvasHost.addEventListener('pointerup', releasePointer);
+canvasHost.addEventListener('pointercancel', releasePointer);
 
 function applyOverview(): void {
-  const patientQuat = camera.quaternion.clone();
   eyePoint.copy(camera.position);
-  gazeDir.set(0, 0, -1).applyQuaternion(patientQuat).normalize();
-  headUp.set(0, 1, 0).applyQuaternion(patientQuat).normalize();
+  // Patient orientation, used for the frustum only.
+  gazeDir.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+  headUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
 
-  // Pulled back along the gaze and raised to a technician's height: the eye is
-  // 1.7 m above the art floor, so 1.5 m more puts the diorama at ~3.2 m — high
-  // enough to see the room, low enough not to read as a floor plan.
-  camera.position
-    .copy(eyePoint)
-    .addScaledVector(gazeDir, -3.1)
-    .addScaledVector(upAxis, 1.5);
-  lookAt.copy(eyePoint).addScaledVector(gazeDir, 1.0);
+  const azimuth = (orbit.azimuthDeg * Math.PI) / 180;
+  const elevation = (orbit.elevationDeg * Math.PI) / 180;
+  orbitOffset.set(
+    Math.cos(elevation) * Math.sin(azimuth),
+    Math.sin(elevation),
+    Math.cos(elevation) * Math.cos(azimuth)
+  );
+
+  camera.position.copy(eyePoint).addScaledVector(orbitOffset, orbit.distance);
+  // Aim a little above the eye: the eye itself sits on the art floor's 1.7 m
+  // line, so aiming exactly at it puts the room's furniture at the frame edge.
+  lookAt.copy(eyePoint).addScaledVector(upAxis, 0.35);
   camera.up.copy(upAxis);
   camera.lookAt(lookAt);
 
@@ -382,6 +466,9 @@ function setMode(next: MirrorMode): void {
   if (next !== 'patient' && next !== 'overview') {
     return;
   }
+  // Drop any half-finished gesture: the next one starts from a clean slate.
+  pointers.clear();
+  pinchSpan = 0;
   mode = next;
 }
 
@@ -399,9 +486,10 @@ function frame(now: number): void {
   applyCamera();
   renderer.render(scene, camera);
   const stale = lastStateAt > 0 && now - lastStateAt > 2500;
-  label.textContent = stale
+  const hint = mode === 'overview' ? ' · 拖动旋转 · 双指缩放' : '';
+  label.textContent = (stale
     ? `${sceneName} · 头显数据已中断`
-    : `${sceneName} · ${state.session ? '训练中' : '待机'}`;
+    : `${sceneName} · ${state.session ? '训练中' : '待机'}`) + hint;
   raf = requestAnimationFrame(frame);
 }
 
