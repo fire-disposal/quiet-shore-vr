@@ -60,15 +60,41 @@ describe('world runtime', () => {
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
   });
 
-  it('starts uncorrected: the real ceiling is what the patient sees', () => {
+  it('starts at the real ceiling and then corrects itself over eight seconds', () => {
     const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
 
+    // The first frame is honest: no correction, and a ramp already heading up.
     expect(h.lastMix()).toBe(0);
     expect(h.runtime.state().mix).toBe(0);
-    expect(h.runtime.state().target).toBe(0);
+    expect(h.runtime.state().target).toBe(1);
+    expect(h.runtime.state().moving).toBe(true);
     expect(h.runtime.state().ready).toBe(true);
+
+    h.run(4);
+    const halfway = h.runtime.state().mix;
+    expect(halfway).toBeGreaterThan(0.2);
+    expect(halfway).toBeLessThan(0.8);
+
+    h.run(5);
+    expect(h.runtime.state().mix).toBe(1);
+    expect(h.runtime.state().moving).toBe(false);
+  });
+
+  it('any operator action takes over the automatic correction', () => {
+    const h = harness();
+    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.run(2);
+    h.runtime.stopRise();
+    const frozen = h.runtime.state().mix;
+    h.run(2);
+    expect(h.runtime.state().mix).toBe(frozen);
+
+    h.runtime.rise(0);
+    h.run(6);
+    expect(h.runtime.state().mix).toBe(0);
   });
 
   it('ramps the correction up and back down with smootherstep', () => {

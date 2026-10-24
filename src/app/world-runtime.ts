@@ -41,8 +41,18 @@ export interface WorldRuntimeState {
   offsetY: number;
 }
 
-/** Default ramp; the operator can ask for 4–14 s with `anim:duration`. */
+/** Manual ramp (the operator's rise / lie-back); settable 4–14 s. */
 const DEFAULT_RAMP_MS = 6000;
+/**
+ * After calibration the world corrects itself once, slowly.
+ *
+ * The session still *starts* at the real ceiling — that is the honest first
+ * frame — but leaving a patient parked at the ceiling until someone presses a
+ * button is a worse default than a deliberate eight-second settle into the
+ * standing view. Any operator action (correct / back to ceiling / stop) takes
+ * over immediately.
+ */
+const AUTO_RAMP_MS = 8000;
 
 export interface WorldRuntimeApi {
   /** A new scene: its authored eye decides the placement from now on. */
@@ -88,6 +98,8 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   let from = 0;
   let elapsedMs = 0;
   let durationMs = DEFAULT_RAMP_MS;
+  /** Length of the ramp currently running (auto ramp vs operator ramp). */
+  let rampMs = DEFAULT_RAMP_MS;
   let moving = false;
   let ready = false;
   let held = false;
@@ -128,14 +140,16 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (!comfortApi.calibrate(pose)) {
       return false;
     }
-    // Enter the session the way the room actually looks: no pitch correction.
-    moving = false;
-    target = 0;
-    from = 0;
-    elapsedMs = 0;
+    // Enter the session the way the room actually looks, then settle into the
+    // standing view on our own: mix 0 at this instant, 1 eight seconds later.
     pushMix(0);
     ready = true;
     apply();
+    from = 0;
+    target = 1;
+    elapsedMs = 0;
+    rampMs = AUTO_RAMP_MS;
+    moving = true;
     return true;
   }
 
@@ -156,7 +170,7 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     }
     if (moving) {
       elapsedMs += dt * 1000;
-      const t = durationMs > 0 ? Math.min(1, elapsedMs / durationMs) : 1;
+      const t = rampMs > 0 ? Math.min(1, elapsedMs / rampMs) : 1;
       pushMix(from + (target - from) * smootherstep(t));
       if (t >= 1) {
         pushMix(target);
@@ -176,6 +190,7 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     from = mix;
     target = next;
     elapsedMs = 0;
+    rampMs = durationMs;
     moving = true;
     return true;
   }
