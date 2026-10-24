@@ -23,10 +23,6 @@ let duck: GainNode | null = null;
 /** Voice cues get their own bus so ducking cannot touch them. */
 let voiceBus: GainNode | null = null;
 let duckDepthDb = 12;
-/** Buoyancy swell: LFO -> depth -> this gain -> master. One node, no per-frame work. */
-let swell: GainNode | null = null;
-let swellDepth: GainNode | null = null;
-let swellLfo: OscillatorNode | null = null;
 /**
  * One ambience lane: a looping source with its own cross-fade gain and panner.
  * Two lanes exist per bed; exactly one is open at a time.
@@ -65,26 +61,16 @@ function ensureContext(): AudioContext | null {
     master = context.createGain();
     master.gain.value = VOLUME;
     master.connect(context.destination);
-    // Tracks feed the swell bus, which breathes with the buoyancy, then the
-    // duck bus, which the voice player pulls down while a cue is speaking.
-    swell = context.createGain();
-    swell.gain.value = 1;
+    // Tracks feed the duck bus, which the voice player pulls down while a cue
+    // is speaking. The bed itself is steady: no self-motion modulation, so the
+    // only thing that ever moves the level is a cue speaking.
     duck = context.createGain();
     duck.gain.value = 1;
-    swell.connect(duck);
     duck.connect(master);
     voiceBus = context.createGain();
     // Cue level lives here and only here: a per-clip gain would scale it twice.
     voiceBus.gain.value = 0.9;
     voiceBus.connect(master);
-    swellDepth = context.createGain();
-    swellDepth.gain.value = 0;
-    swellLfo = context.createOscillator();
-    swellLfo.type = 'sine';
-    swellLfo.frequency.value = 1 / 12;
-    swellLfo.connect(swellDepth);
-    swellDepth.connect(swell.gain);
-    swellLfo.start();
   }
   if (context.state === 'suspended') {
     void context.resume();
@@ -159,7 +145,7 @@ export function playTrack(track: AudioTrack, options: PlayOptions = {}): void {
     const ctx = context;
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    gain.connect(swell ?? master);
+    gain.connect(duck ?? master);
 
     const stereo = width > 0.02 && typeof ctx.createStereoPanner === 'function';
     const lanes: Lane[] = [0, 1].map((index) => {
@@ -362,25 +348,6 @@ export function duckScene(on: boolean): void {
 export function preloadSceneAudio(audio: SceneAudio | undefined): void {
   if (audio) {
     preloadTrack(audio.track);
-  }
-}
-
-/**
- * Low-frequency gain swell used as a self-motion cue.
- *
- * Auditory stimuli produce weak vection on their own but add significantly to
- * it when paired with visual motion (Sci Rep 2020, water-immersion vection).
- * The swell follows the buoyancy phase instead of running free, so what the
- * patient hears rises and falls with what they see. [depth] 0 disables it.
- */
-export function setBuoyancySwell(depth: number, periodSeconds: number): void {
-  if (!swellDepth || !swellLfo || !context) {
-    return;
-  }
-  const now = context.currentTime;
-  swellDepth.gain.setTargetAtTime(Math.max(0, Math.min(0.2, depth)), now, 0.4);
-  if (periodSeconds > 0) {
-    swellLfo.frequency.setTargetAtTime(1 / periodSeconds, now, 0.6);
   }
 }
 

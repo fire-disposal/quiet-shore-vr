@@ -35,8 +35,6 @@ import type { SceneHandle } from '../core/scene/contract';
  * writing) in ~1.6 s, so a stopped scene pays nothing per frame.
  */
 const FADE_TAU_S = 0.25;
-/** Audio LFO depth at full amplitude; the swell rides the same period. */
-const SWELL_AUDIO_DEPTH = 0.12;
 
 export interface FloatingDeps {
   /** Scene host; owns the content group the offset is written to. */
@@ -49,8 +47,6 @@ export interface FloatingDeps {
   };
   handle(): SceneHandle | null;
   gate(): BuoyancyGate;
-  /** Audio buoyancy LFO: depth 0..1, period in seconds. */
-  swell(depth: number, periodS: number): void;
   /** Visual up in content space; the heave runs along it, whatever the frame. */
   axis(out: THREE.Vector3): THREE.Vector3;
 }
@@ -98,7 +94,7 @@ export function createFloating(
     breath?: boolean;
   }
 ): FloatingApi {
-  const { host, handle, gate, swell, axis } = deps;
+  const { host, handle, gate, axis } = deps;
   const up = new THREE.Vector3(0, 1, 0);
 
   let profile = FLOAT_PROFILES[deps.profile ?? 'b'] ?? FLOAT_PROFILES.b;
@@ -154,13 +150,9 @@ export function createFloating(
         swayDeg = 0;
         apply();
       }
-      swell(0, profile.periodS);
       return;
     }
     seconds += dt;
-    // The swell follows the visible heave: same period, depth scaled by how
-    // much of the envelope is currently in use.
-    swell((amplitudeM / profile.amplitudeM) * SWELL_AUDIO_DEPTH, profile.periodS);
     offsetM = floatOffsetAt(profile, seconds, amplitudeM, breath);
     // Horizon sway: a couple of degrees of world pitch, in phase with the
     // drift, is what makes the horizon feel unmoored rather than the floor.

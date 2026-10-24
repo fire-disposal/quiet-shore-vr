@@ -24,7 +24,6 @@ import {
   disposeAudio,
   playSceneAudio,
   preloadSceneAudio,
-  setBuoyancySwell,
   setDuckDepth,
   stopAudio,
   unlockAudio
@@ -126,6 +125,8 @@ export class QuietShoreApp {
   private readonly world: WorldRuntimeApi;
   /** Scratch for the visual-up axis and the frame plan; per-frame, no allocation. */
   private readonly visualUp = new THREE.Vector3();
+  /** Scratch for the composed parent rotation (shell x base) of the content. */
+  private readonly parentQuaternion = new THREE.Quaternion();
   /** Sit-up ramp length; the operator can slow it down for comfort. */
   private postureCueState: PostureCueApi | null = null;
   private susPanel: SusPanelApi | null = null;
@@ -205,13 +206,18 @@ export class QuietShoreApp {
         capturePending: this.capturePending,
         rising: this.world.isRising()
       }),
-      swell: (depth, periodS) => setBuoyancySwell(depth, periodS),
-      axis: (out) =>
-        visualUpInContent(
-          this.headPose.quaternion,
-          this.shell?.base.quaternion ?? this.identityQuaternion,
-          out
-        ),
+      // The axis must undo **every** parent rotation, not just the base: the
+      // shell's view pitch sits on top of the base, so with the operator's
+      // up-gaze at 30 degrees a heave computed from the base alone would tilt
+      // 30 degrees in the patient's view. Compose shell x base, invert once.
+      axis: (out) => {
+        const shell = this.shell;
+        if (!shell) {
+          return out.set(0, 1, 0);
+        }
+        this.parentQuaternion.copy(shell.group.quaternion).multiply(shell.base.quaternion);
+        return visualUpInContent(this.headPose.quaternion, this.parentQuaternion, out);
+      },
       level: 1,
       profile: isFloatProfileId(this.config.floatProfile) ? this.config.floatProfile : undefined,
       breath: true
@@ -295,9 +301,19 @@ export class QuietShoreApp {
       }
     });
     this.pipeline.add({
-      id: 'world-motion',
+      id: 'view-motion',
       phase: 'render',
       order: 0,
+      // Easing lives in the controller; the shell only composes transforms.
+      run: (dt: number) => {
+        this.viewMotion.update(dt);
+        this.shell?.update(this.headPose.position);
+      }
+    });
+    this.pipeline.add({
+      id: 'world-motion',
+      phase: 'render',
+      order: 1,
       run: (dt: number, now: number) => {
         // One owner: the runtime advances the sit-up ramp or the comfort
         // posture, and never both.
@@ -308,16 +324,6 @@ export class QuietShoreApp {
         this.updateFloat(dt);
         this.susPanel?.update(dt, now, this.headPose);
         this.input.update(dt, now, this.headPose);
-      }
-    });
-    this.pipeline.add({
-      id: 'view-motion',
-      phase: 'render',
-      order: 1,
-      // Easing lives in the controller; the shell only composes transforms.
-      run: (dt: number) => {
-        this.viewMotion.update(dt);
-        this.shell?.update(this.headPose.position);
       }
     });
     this.pipeline.add({

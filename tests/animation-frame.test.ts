@@ -5,6 +5,7 @@ import { createComfort } from '../src/core/xr/comfort';
 import { createWorldShell } from '../src/core/xr/world-shell';
 import { buoyancyAllowed, contentOffsetFor } from '../src/core/xr/buoyancy-frame';
 import { planFrame, visualUpInContent } from '../src/core/xr/world-frame';
+import { viewToWorld } from '../src/core/xr/view-motion';
 import type { PoseLike } from '../src/core/xr/types';
 
 /** What the patient sees: a distant point in head-local frame. */
@@ -13,6 +14,9 @@ function stack(options: {
   eyeY?: number;
   t?: number;
   bob?: number;
+  /** Operator up-gaze, in degrees: the shell rotation on top of the base. */
+  upGazeDeg?: number;
+  yawDeg?: number;
 }) {
   const standEyeHeight = 1.7;
   const path = new SitUpPath({ standEyeHeight });
@@ -42,8 +46,13 @@ function stack(options: {
   if (plan.base === 'situp') {
     shell.setBasePose(path.worldFor(cam0, path.at(options.t ?? 0)));
   }
-  // Heave along the visual up, exactly as `floating` writes it.
-  const axis = visualUpInContent(headQuat, shell.base.quaternion, new THREE.Vector3());
+  // The operator's view channel sits on top of the base, so the heave axis has
+  // to compose both: undoing only the base would tilt the heave by the view.
+  if (options.upGazeDeg || options.yawDeg) {
+    shell.setWorldRotation(viewToWorld(options.yawDeg ?? 0, options.upGazeDeg ?? 0));
+  }
+  const parent = shell.group.quaternion.clone().multiply(shell.base.quaternion);
+  const axis = visualUpInContent(headQuat, parent, new THREE.Vector3());
   const bob = options.bob ?? 0;
   content.position.set(axis.x * bob, plan.offsetY + axis.y * bob, axis.z * bob);
   shell.update(headPos);
@@ -123,6 +132,20 @@ describe('what the patient sees', () => {
     const standing = stack({ mode: 'posture', t: 1 });
     expect(elevationDeg(supine.horizon)).toBeLessThan(-80);
     expect(Math.abs(elevationDeg(standing.horizon))).toBeLessThan(5);
+  });
+
+  it('keeps the heave vertical while the operator tilts the view', () => {
+    // The shell rotation is a correction on top of the base; a heave computed
+    // from the base alone tilts with that correction and reads as a sideways
+    // slide. Every up-gaze in the envelope must leave the lift vertical.
+    for (const upGazeDeg of [-30, -12, 0, 12, 30]) {
+      const rest = stack({ mode: 'float', bob: 0, upGazeDeg });
+      const lifted = stack({ mode: 'float', bob: 0.065, upGazeDeg });
+      const rise = Math.abs(elevationDeg(lifted.horizon) - elevationDeg(rest.horizon));
+      const depth = Math.abs(lifted.horizon.z - rest.horizon.z);
+      expect(rise).toBeLessThan(0.5);
+      expect(depth).toBeLessThan(0.2);
+    }
   });
 
   it('the heave reads as up and down in both frames', () => {

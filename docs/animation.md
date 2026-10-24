@@ -91,6 +91,13 @@ A5 的量化证据（复现栈 = comfort + world-shell + situp-path，头部为�
 | --- | --- | --- |
 | `eyeY` | 作者把眼睛放在内容坐标的哪个高度（米） | washroom 1.70；shore 0.45；lightwell 1.70 |
 
+合成顺序是 **shell（视角）∘ base（帧）∘ content（偏移）**。任何"世界里的方向"都要先过这两层旋转：
+漂浮的起伏轴用 `visualUpInContent(headUp, (shellQ × baseQ)⁻¹)`——只反解 base，在操作员把视角抬到 30° 时
+会把起伏斜推 28.6°（实测），看起来像侧向滑动而不是起伏。
+
+帧的推进顺序（`App` 的 render 管线）：`view-motion` → `world-motion`。视角先落定，同一帧里漂浮再读
+`shell` 的旋转算轴，因此没有一帧滞后。
+
 `planFrame()`（`src/core/xr/world-frame.ts`）是唯一的选帧处：
 
 | 场景 | `eyeY` |

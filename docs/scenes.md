@@ -120,7 +120,7 @@ flowchart TB
 | 场景文案曾有两份 | 平板 `SceneCatalog` 自己写了一份，洁净立便间被描述成"扶手与呼叫绳"（房间里没有） | **已修**：`SCENE_BLURBS` 移入 `ControlProtocol`，`SceneCatalog` 只做排序与查找；`SceneTableTest` 校验 id 集合一致 |
 | `SceneSummary.description` 无人使用 | 入口卡片只显示 `name`，平板只显示 `name + blurb` | 二选一：在平板卡片上做"展开看更多"，或从类型里删掉 |
 | 无场景的每帧成本断言 | 只有静态预算（draw/三角形/纹理/透明） | 给光井的 `writeRings()` 加一个上限断言（环数 × 2 个 InstancedMesh，每帧一次矩阵写） |
-| 光井没有声音，漂浮的水声呼吸也随环境声关闭而消失 | `setBuoyancySwell` 只作用在环境声总线上，环境声默认关＝听觉自运动线索为零 | 要么给光井一条极轻的自有床（呼吸声），要么把 swell 改成独立的低频合成，与环境声无关 |
+| 自运动线索曾经依赖声音 | `setBuoyancySwell` 只作用在环境声总线上，环境声默认关＝听觉线索为零 | **已按"只修运动、不加声音"处理**：0.9.33 移除 swell，环境声保持恒定；光井的线索来自光环上行（由漂浮包络驱动），湖面来自近场位移 |
 | 三个场景的晕动风险只写在文档里 | — | **已修**：`SceneDefinition.comfortLevel`（光井 = 2，其余默认 3），`float:level` 与场景切换都按它夹紧，平板收到「本场景最高 N 级」 |
 
 ## 6 变更记录

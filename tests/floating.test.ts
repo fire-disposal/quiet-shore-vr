@@ -15,7 +15,6 @@ function harness(options: {
   const content = new THREE.Group();
   const floor = { y: 0 };
   const applied: { amountM: number; swayDeg: number }[] = [];
-  const swell: { depth: number; period: number }[] = [];
   const gate: BuoyancyGate = {
     mode: 'float',
     active: true,
@@ -45,7 +44,6 @@ function harness(options: {
     },
     handle: () => handle,
     gate: () => gate,
-    swell: (depth, period) => swell.push({ depth, period }),
     axis: (out) => out.copy(options.axis ?? new THREE.Vector3(0, 1, 0)),
     level: options.level,
     profile: options.profile,
@@ -56,7 +54,7 @@ function harness(options: {
       floating.update(step);
     }
   };
-  return { floating, floor, content, applied, swell, gate, run };
+  return { floating, floor, content, applied, gate, run };
 }
 
 describe('buoyancy envelope', () => {
@@ -95,13 +93,16 @@ describe('buoyancy envelope', () => {
     }
   });
 
-  it('stops the audio swell with the motion', () => {
+  it('returns the scene to rest once the gate closes', () => {
     const h = harness({ level: 2 });
-    h.run(1);
-    expect(h.swell.at(-1)!.depth).toBeGreaterThan(0);
+    h.run(1.5);
     h.gate.active = false;
     h.run(2.5);
-    expect(h.swell.at(-1)!.depth).toBe(0);
+    expect(h.floating.getState().offsetM).toBe(0);
+    expect(h.floating.getState().swayDeg).toBe(0);
+    const last = h.applied.at(-1)!;
+    expect(last.amountM).toBe(0);
+    expect(last.swayDeg).toBe(0);
   });
 });
 
