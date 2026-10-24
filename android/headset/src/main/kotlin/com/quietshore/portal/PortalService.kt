@@ -6,7 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
@@ -134,6 +136,8 @@ class PortalService : Service() {
         const val PAGE_OFFLINE_MS = 2000L
         /** At most one automatic page relaunch per half minute. */
         const val PAGE_RELAUNCH_COOLDOWN_MS = 30_000L
+        /** Grace period after a session before a dark page returns to the app. */
+        const val PAGE_RETURN_GRACE_MS = 6000L
         const val NO_STORE = "no-store, no-cache, must-revalidate"
 
         /** Page command replayed once whenever the console loses its lease. */
@@ -1051,10 +1055,14 @@ class PortalService : Service() {
     }
 
     /** Same decode path the removed `POST /state` used, now fed by `ws.state`. */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @Volatile
     private var lastPageFrameAt = 0L
     @Volatile
     private var lastPageRelaunchAt = 0L
+    @Volatile
+    private var lastSessionRunning = false
 
     /** The page is the only real controller: no frames, no commands. */
     fun isPageOnline(): Boolean =
@@ -1062,6 +1070,18 @@ class PortalService : Service() {
 
     private fun applyState(json: JSONObject) {
         lastPageFrameAt = System.currentTimeMillis()
+        val running = json.optBoolean("session", false)
+        if (lastSessionRunning && !running) {
+            // The session just ended. A browser that then goes dark is a dead
+            // end for the operator: bring the console back after a grace period.
+            mainHandler.postDelayed({
+                if (!isPageOnline()) {
+                    Log.i(TAG, "page dark after session end, returning to the app")
+                    PortalActions.home(this)
+                }
+            }, PAGE_RETURN_GRACE_MS)
+        }
+        lastSessionRunning = running
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
         val state = ControlState(

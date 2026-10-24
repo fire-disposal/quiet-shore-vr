@@ -686,8 +686,8 @@ export class QuietShoreApp {
     this.shell?.update(this.headPose.position);
     this.postureCueState?.update(0, this.headPose.position, 0);
     this.renderer.setAnimationLoop(null);
-    this.start.showStart();
-    this.start.setEnterEnabled(true);
+    // The session is over: do not invite the patient to start again.
+    this.start.showEnded();
     this.input.setLayers(true, true);
     this.start.setStatus(
       this.patientStopped ? this.strings.patientStop : this.strings.sessionEnded

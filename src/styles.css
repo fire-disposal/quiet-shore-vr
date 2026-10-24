@@ -283,6 +283,15 @@ html, body {
   }
 }
 
+/* ended: the target is no longer an invitation */
+.entry-core.is-ended .target-visual {
+  opacity: .3;
+}
+.entry-core.is-ended .target-halo,
+.entry-core.is-ended .controller-guide {
+  animation: none;
+}
+
 /* immersive stage */
 .entry-note {
   position: absolute;

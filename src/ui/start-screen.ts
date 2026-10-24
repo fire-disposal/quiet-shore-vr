@@ -109,6 +109,28 @@ export class StartScreen {
   showStart(): void {
     this.start.hidden = false;
     this.stageElement.hidden = true;
+    this.setEnded(false);
+  }
+
+  /**
+   * After a session the entry target is not an invitation: the patient must
+   * stay put until the operator starts again. Say so instead of re-prompting.
+   */
+  showEnded(): void {
+    this.start.hidden = false;
+    this.stageElement.hidden = true;
+    this.setEnded(true);
+    if (this.hint) {
+      this.hint.textContent = '训练已结束。请保持现在的姿势，等待技术员。';
+    }
+  }
+
+  private setEnded(ended: boolean): void {
+    this.enter.disabled = ended || !this.enterAvailable;
+    this.core?.classList.toggle('is-ended', ended);
+    if (ended) {
+      this.setEnterLabel('训练已结束');
+    }
   }
 
   setHint(text: string): void {
