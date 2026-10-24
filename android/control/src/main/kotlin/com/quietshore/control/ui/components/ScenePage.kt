@@ -10,11 +10,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -117,30 +120,36 @@ fun ScenePage(
                     enabled = enabled,
                     modifier = Modifier.weight(1f)
                 ) { Text("退出场景") }
-                // Leaving the system is the one irreversible action here: a
-                // second tap within three seconds confirms it.
+                // Irreversible: a real dialog, not a second tap on the same
+                // button, so the operator reads what will happen.
                 var confirming by remember { mutableStateOf(false) }
-                LaunchedEffect(confirming) {
-                    if (confirming) {
-                        delay(3000)
-                        confirming = false
-                    }
-                }
                 OutlinedButton(
-                    onClick = {
-                        if (confirming) {
-                            confirming = false
-                            actions.onExitSystem()
-                        } else {
-                            confirming = true
-                        }
-                    },
+                    onClick = { confirming = true },
                     enabled = enabled,
                     modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        if (confirming) "确认退出？" else "退出系统",
-                        color = if (confirming) QuietPalette.Danger else QuietPalette.TextPrimary
+                ) { Text("退出系统") }
+                if (confirming) {
+                    AlertDialog(
+                        onDismissRequest = { confirming = false },
+                        title = { Text("退出系统？") },
+                        text = {
+                            Text(
+                                if (sessionRunning) {
+                                    "会先结束当前会话，再让头显回到桌面。患者仍在佩戴时不要这样做。"
+                                } else {
+                                    "头显会回到桌面，训练页面关闭。"
+                                }
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirming = false
+                                actions.onExitSystem()
+                            }) { Text("退出", color = QuietPalette.Danger) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirming = false }) { Text("取消") }
+                        }
                     )
                 }
             }
