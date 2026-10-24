@@ -154,6 +154,9 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   }
 
   function clearBase(): void {
+    // A stop during calibration must not leave the world frozen for the next
+    // session: releasing the base releases the hold too.
+    held = false;
     moving = false;
     target = 0;
     from = 0;

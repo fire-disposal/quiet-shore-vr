@@ -291,7 +291,9 @@ export class QuietShoreApp {
         this.calibrationOverlay?.update(dt, now, this.headPose);
         // Driven by the card's own visibility: the reducer phase was a second
         // source of truth, and a stale phase left the bar frozen.
-        if (this.calibrationOverlay?.isVisible() && this.xr.isPresenting) {
+        // Driven by the capture flag, not by the card's visibility: a hidden
+        // card must never be able to keep `capturePending` latched forever.
+        if (this.capturePending && this.xr.isPresenting) {
           this.stepCalibration(performance.now());
         }
       }
@@ -929,7 +931,6 @@ export class QuietShoreApp {
     quaternion?: { x: number; y: number; z: number; w: number };
     deviationDeg: number;
   } | null): void {
-    this.capturePending = false;
     this.calibrationOverlay?.setProgress(null);
     if (!result || !result.ok || !result.quaternion) {
       // A wobbly countdown still has to produce a world frame: take the pose
@@ -946,6 +947,9 @@ export class QuietShoreApp {
     if (!comfort) {
       return;
     }
+    // One place releases the capture, whichever path arrived here: the window
+    // timing out, the patient pressing confirm, or the tablet's recalibrate.
+    this.capturePending = false;
     const finite =
       Number.isFinite(orientation.x) &&
       Number.isFinite(orientation.y) &&
@@ -953,8 +957,10 @@ export class QuietShoreApp {
       Number.isFinite(orientation.w) &&
       (orientation.x !== 0 || orientation.y !== 0 || orientation.z !== 0 || orientation.w !== 0);
     if (!finite) {
-      // No usable pose: leave the comfort frame alone rather than building a
-      // world from zeros.
+      // No usable pose: leave the frame alone rather than building a world from
+      // zeros — but release the freeze, or the session would run with the world
+      // nailed in place and no ramp ever starting.
+      this.world.hold(false);
       this.calibrationOverlay?.hide();
       this.dispatch({ type: 'calibrated' });
       return;
@@ -973,8 +979,10 @@ export class QuietShoreApp {
       }
     });
     if (!ok) {
+      // Restart the window rather than leaving an inert card on screen: the
+      // hint asks for another attempt, so the run that produces it must live.
       this.calibrationOverlay?.setHint('这次没有取到有效朝向，请再试一次');
-      this.calibrationOverlay?.show();
+      this.restartCalibration();
       return;
     }
     // Overlay down, now that the world frame is known.
@@ -1007,6 +1015,10 @@ export class QuietShoreApp {
    * view recentred, sit-up base dropped, comfort frame cleared, buoyancy off.
    */
   private resetWorldToRest(): void {
+    // A stop during calibration must release every flag it set, or the next
+    // session starts with the float gated off and the view commands refused.
+    this.capturePending = false;
+    this.world.hold(false);
     // A panel is session furniture: leaving the world at rest closes it, or a
     // stopped session would keep a SUS card floating in front of the patient.
     this.susPanel?.close();

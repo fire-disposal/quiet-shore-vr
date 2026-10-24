@@ -173,6 +173,20 @@ describe('world runtime', () => {
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
   });
 
+  it('clearing the base releases the calibration freeze', () => {
+    const h = harness();
+    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.hold(true);
+    h.runtime.clearBase();
+
+    // After a stop during calibration the world must move again next session.
+    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.run(9);
+    expect(h.runtime.state().mix).toBe(1);
+  });
+
   it('clearing the base drops the calibration and the mix', () => {
     const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
