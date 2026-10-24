@@ -55,6 +55,7 @@ fun ControlPanel(
 ) {
     val connected = state.phase == BlePhase.READY
     val running = state.control.session
+    val calibrating = state.control.calibrating
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
@@ -76,11 +77,18 @@ fun ControlPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (running) "训练中" else "待机",
+                        text = when {
+                            running -> "训练中"
+                            calibrating -> "校准中"
+                            state.startPending -> "等待患者确认"
+                            else -> "待机"
+                        },
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = clock(state.sessionElapsedMs),
+                        // The clock only runs once the patient is in: a
+                        // calibration phase is not session time.
+                        text = if (state.startPending || calibrating) "--:--" else clock(state.sessionElapsedMs),
                         style = MaterialTheme.typography.titleMedium,
                         color = QuietPalette.TextSecondary
                     )
@@ -88,7 +96,9 @@ fun ControlPanel(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = if (running) actions.onEnd else actions.onEnterTraining,
-                        enabled = connected,
+                        // A pending launch is one tap only: the patient has not
+                        // confirmed yet, and a second `enter` would queue again.
+                        enabled = connected && (running || !state.startPending),
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (running) QuietPalette.Danger else QuietPalette.Primary
@@ -100,7 +110,13 @@ fun ControlPanel(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.size(6.dp))
-                        Text(if (running) "结束" else "启动训练")
+                        Text(
+                            when {
+                                running -> "结束"
+                                state.startPending -> "等待确认…"
+                                else -> "启动训练"
+                            }
+                        )
                     }
                     OutlinedButton(
                         onClick = actions.onRecalibrate,
@@ -129,10 +145,11 @@ fun ControlPanel(
                     ) { Text("退出系统") }
                 }
                 Text(
-                    text = if (running) {
-                        "会话由患者按头显确认键开始；这里只做结束与急停"
-                    } else {
-                        "启动训练会在头显里打开页面，患者按一次确认键进入；退出场景回到头显控制台"
+                    text = when {
+                        running -> "会话由患者按头显确认键开始；这里只做结束与急停"
+                        calibrating -> "正在记录起始朝向：请患者保持仰卧、平视前方"
+                        state.startPending -> "已打开页面，等待患者按一次确认键进入"
+                        else -> "启动训练会在头显里打开页面，患者按一次确认键进入；退出场景回到头显控制台"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary

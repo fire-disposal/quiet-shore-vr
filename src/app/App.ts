@@ -38,6 +38,7 @@ import type { PostureCueApi } from '../core/xr/posture-cue';
 import {
   DEFAULT_FLOAT_PROFILE,
   FLOAT_PROFILES,
+  FLOAT_LEVEL_CAP,
   FLOAT_MAX_LEVEL,
   easeAmplitude,
   floatAmplitudeForLevel,
@@ -1046,8 +1047,14 @@ export class QuietShoreApp {
         this.start.setStatus('漂浮强度无效', 'error');
         return;
       }
-      this.floatLevel = level;
-      this.start.setStatus(`漂浮强度 ${level}/${FLOAT_MAX_LEVEL}`, 'ok');
+      const capped = Math.min(level, FLOAT_LEVEL_CAP[this.floatProfile.id]);
+      this.floatLevel = capped;
+      this.start.setStatus(
+        capped === level
+          ? `漂浮强度 ${level}/${FLOAT_MAX_LEVEL}`
+          : `沉浸档最高 ${capped} 级（近场角速度上限）`,
+        'ok'
+      );
       this.link.sendStateNow();
       return;
     }
@@ -1058,6 +1065,11 @@ export class QuietShoreApp {
         return;
       }
       this.floatProfile = FLOAT_PROFILES[id];
+      // Switching to a stricter profile must also pull the level back down.
+      const capped = Math.min(this.floatLevel, FLOAT_LEVEL_CAP[id]);
+      if (capped !== this.floatLevel) {
+        this.floatLevel = capped;
+      }
       this.start.setStatus(`漂浮档位：${this.floatProfile.label}`, 'ok');
       this.link.sendStateNow();
       return;

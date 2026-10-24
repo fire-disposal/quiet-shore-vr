@@ -138,7 +138,7 @@ export function createVoicePlayer(): VoicePlayerApi {
   let manifest: VoiceManifest | null = null;
   let loading: Promise<boolean> | null = null;
   let set: VoiceSet = 'male';
-  let volume = 0.7;
+  let volume = 0.9;
 
   const decoded = new Map<string, AudioBuffer>();
   let context: AudioContext | null = null;
@@ -229,8 +229,9 @@ export function createVoicePlayer(): VoicePlayerApi {
       return false;
     }
     stopSource();
+    // Unity here: the bus already carries the cue level.
     const gain = ctx.createGain();
-    gain.gain.value = volume;
+    gain.gain.value = 1;
     const next = ctx.createBufferSource();
     next.buffer = buffer;
     next.connect(gain);

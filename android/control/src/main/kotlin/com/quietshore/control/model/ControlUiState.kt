@@ -50,7 +50,7 @@ data class ControlUiState(
     /** Voice set the operator picked: "male" or "female". */
     val voiceSet: String = "male",
     /** Cue volume 0–100, independent of the scene bed. */
-    val voiceVolume: Int = 70,
+    val voiceVolume: Int = 90,
     /** Scene ducking depth while a cue speaks, 0–18 dB. */
     val duckDb: Int = 12,
     /** Auto mode is driving the cue schedule. */
@@ -61,7 +61,9 @@ data class ControlUiState(
     val voiceRecent: List<String> = emptyList(),
     val notice: String? = null,
     val error: String? = null,
-    val scanAttempted: Boolean = false
+    val scanAttempted: Boolean = false,
+    /** Launch requested, waiting for the patient's confirm key. */
+    val startPending: Boolean = false
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 

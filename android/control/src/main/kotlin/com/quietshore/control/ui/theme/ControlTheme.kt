@@ -30,7 +30,8 @@ object QuietPalette {
     val TextSecondary = Color(0xFF5E655A)
     val Outline = Color(0xFFD5CCBB)
     val Success = Color(0xFF486B58)
-    val Warning = Color(0xFF96652C)
+    // 4.74:1 on Surface; the previous 0xFF96652C measured 4.03:1 and failed AA
+    val Warning = Color(0xFF8A5A24)
     val Danger = Color(0xFFA34D3D)
 }
 
@@ -97,9 +98,11 @@ private val QuietTypography = Typography(
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.08.sp
+        // Section labels and chips are read at arm's length on a 10" tablet;
+        // 12 sp was below the floor the design doc sets (14 sp).
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.06.sp
     )
 )
 

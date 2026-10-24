@@ -53,7 +53,8 @@ function ensureContext(): AudioContext | null {
     swell.connect(duck);
     duck.connect(master);
     voiceBus = context.createGain();
-    voiceBus.gain.value = 0.7;
+    // Cue level lives here and only here: a per-clip gain would scale it twice.
+    voiceBus.gain.value = 0.9;
     voiceBus.connect(master);
     swellDepth = context.createGain();
     swellDepth.gain.value = 0;

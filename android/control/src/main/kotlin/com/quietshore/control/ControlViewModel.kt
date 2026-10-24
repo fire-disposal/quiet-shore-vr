@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -58,6 +59,7 @@ class ControlViewModel(application: Application) :
     private var lastPoseAt = 0L
     /** Monotonic start of the running session; 0 when no session is running. */
     private var sessionStartedAt = 0L
+    private var enterPendingJob: Job? = null
 
     init {
         refreshBluetoothState()
@@ -174,9 +176,28 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    /** Launches the headset page; the Firefox door gesture stays with the patient. */
+    /**
+     * Launches the headset page; the Firefox door gesture stays with the
+     * patient. Until that gesture lands the tablet shows "waiting", so a second
+     * tap cannot queue a second launch.
+     */
     fun enterTraining() {
+        if (_uiState.value.startPending) {
+            return
+        }
+        if (_uiState.value.phase != BlePhase.READY) {
+            sendCommand(ControlProtocol.ENTER)
+            return
+        }
+        _uiState.update {
+            it.copy(startPending = true, notice = "已请求启动，等待患者按确认键")
+        }
         sendCommand(ControlProtocol.ENTER)
+        enterPendingJob?.cancel()
+        enterPendingJob = viewModelScope.launch {
+            delay(ENTER_PENDING_MS)
+            _uiState.update { it.copy(startPending = false) }
+        }
     }
 
     fun endSession() {
@@ -468,10 +489,13 @@ class ControlViewModel(application: Application) :
                 // Voice is authoritative on the headset: the tablet only echoes.
                 voiceId = state.voiceId,
                 voiceAuto = state.voiceAuto,
-                sessionElapsedMs = if (sessionStartedAt == 0L) {
-                    0L
-                } else {
-                    SystemClock.elapsedRealtime() - sessionStartedAt
+                startPending = if (state.session) false else current.startPending,
+                // The headset owns the session clock (v11); the local stopwatch
+                // only covers a link that has not reported a second yet.
+                sessionElapsedMs = when {
+                    state.session && state.elapsedSec > 0 -> state.elapsedSec * 1000L
+                    sessionStartedAt == 0L -> 0L
+                    else -> SystemClock.elapsedRealtime() - sessionStartedAt
                 }
             )
         }
@@ -503,7 +527,11 @@ class ControlViewModel(application: Application) :
         val now = SystemClock.elapsedRealtime()
         val stale = lastPoseAt == 0L || now - lastPoseAt > POSE_STALE_MS
         _uiState.update { state ->
-            val elapsed = if (sessionStartedAt == 0L) 0L else now - sessionStartedAt
+            val elapsed = when {
+                state.control.session && state.control.elapsedSec > 0 -> state.control.elapsedSec * 1000L
+                sessionStartedAt == 0L -> 0L
+                else -> now - sessionStartedAt
+            }
             if (state.poseStale == stale && state.sessionElapsedMs == elapsed) {
                 state
             } else {
@@ -514,6 +542,8 @@ class ControlViewModel(application: Application) :
 
     private companion object {
         const val TICK_MS = 500L
+        /** How long "waiting for the patient" survives without a session. */
+        const val ENTER_PENDING_MS = 20_000L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
 

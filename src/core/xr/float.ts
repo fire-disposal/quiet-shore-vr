@@ -51,6 +51,21 @@ export const DEFAULT_FLOAT_PROFILE: FloatProfileId = 'b';
 /** Intensity levels the technician can pick (0 = off). */
 export const FLOAT_MAX_LEVEL = 3;
 
+/**
+ * Highest level each profile may be asked for, from the near-field speed cap.
+ *
+ * The world translates as one piece, so the nearest content (the shore at
+ * ~1.1 m) sees the fastest angular motion: `2πA/T / d`. Keeping that under
+ * 2 °/s gives a ≤55 mm ceiling for the 9 s immersive profile, i.e. level 1.
+ * The gentle and standard profiles stay inside the cap at level 3.
+ */
+export const FLOAT_LEVEL_CAP: Readonly<Record<FloatProfileId, number>> = {
+  a: FLOAT_MAX_LEVEL,
+  b: FLOAT_MAX_LEVEL,
+  c: 1
+};
+
+
 export function isFloatProfileId(value: unknown): value is FloatProfileId {
   return value === 'a' || value === 'b' || value === 'c';
 }
