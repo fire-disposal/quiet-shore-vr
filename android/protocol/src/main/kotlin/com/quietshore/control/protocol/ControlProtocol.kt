@@ -191,6 +191,8 @@ object ControlProtocol {
     const val RESULT_OK: String = "OK"
     const val RESULT_REJECTED: String = "REJECTED"
     const val RESULT_BUSY: String = "BUSY"
+    /** The command never reached a page: nothing is listening on the socket. */
+    const val RESULT_OFFLINE: String = "OFFLINE"
 
     /** The controller wrote a command before completing HELLO. */
     const val STATUS_PROTOCOL_REQUIRED: String = "PROTOCOL_REQUIRED"
@@ -260,7 +262,9 @@ object ControlProtocol {
         }
         val seq = parts[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
         val result = parts[2]
-        if (result != RESULT_OK && result != RESULT_REJECTED && result != RESULT_BUSY) {
+        if (result != RESULT_OK && result != RESULT_REJECTED &&
+            result != RESULT_BUSY && result != RESULT_OFFLINE
+        ) {
             return null
         }
         return Ack(seq, result)

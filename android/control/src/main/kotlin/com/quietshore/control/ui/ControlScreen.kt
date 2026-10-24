@@ -68,27 +68,19 @@ fun ControlScreen(
             .safeDrawingPadding()
     ) {
         val compact = maxWidth < 1000.dp
-        var controlsOpen by rememberSaveable { mutableStateOf(!compact) }
+        // Exactly one right-hand panel is visible; the mirror is not a tab, it
+        // is always on the left so the operator never loses the patient view.
+        var tab by rememberSaveable { mutableStateOf(PanelTab.MOTION) }
         var infoOpen by rememberSaveable { mutableStateOf(false) }
-        // The mirror is mounted only while open: a closed mirror should cost
-        // nothing, not keep a renderer alive behind the panel.
-        var mirrorOpen by rememberSaveable { mutableStateOf(false) }
-        // The rail shows one of two pages; the scene page is operator-driven
-        // and disabled while a session runs.
-        var scenePage by rememberSaveable { mutableStateOf(false) }
-        // Voice cues are a drawer of their own: the rail stays about motion,
-        // and the cue panel can be used while a session runs.
-        var voiceOpen by rememberSaveable { mutableStateOf(false) }
         val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
         val voiceWidth = if (compact) minOf(360.dp, maxWidth * 0.92f) else 420.dp
-        // Banners and notices live in the same top band as the rail; inset
-        // them so the rail cannot cover their recovery actions.
-        val railOverlayInset = if (controlsOpen) railWidth + 14.dp else 0.dp
+        val panelWidth = if (tab == PanelTab.VOICE) voiceWidth else railWidth
+        val railOverlayInset = panelWidth + 14.dp
 
         Box(Modifier.fillMaxSize()) {
             // Bottom layer: the scene mirror. Every control surface is drawn
             // after it, so the top-left status panel is never covered.
-            if (mirrorOpen) {
+            run {
                 SceneMirror(
                     state = state,
                     modifier = Modifier
@@ -106,20 +98,10 @@ fun ControlScreen(
             ControlTopBar(
                 state = state,
                 compact = compact,
-                controlsOpen = controlsOpen,
                 infoOpen = infoOpen,
-                mirrorOpen = mirrorOpen,
-                scenePage = scenePage,
-                voiceOpen = voiceOpen,
-                onToggleControls = { controlsOpen = !controlsOpen },
-                onToggleVoice = {
-                    val next = !voiceOpen
-                    voiceOpen = next
-                    if (next) controlsOpen = false
-                },
-                onToggleScenePage = { scenePage = !scenePage },
+                tab = tab,
+                onSelectTab = { tab = it },
                 onToggleInfo = { infoOpen = !infoOpen },
-                onToggleMirror = { mirrorOpen = !mirrorOpen },
                 onDisconnect = actions.onDisconnect
             )
 
@@ -161,43 +143,33 @@ fun ControlScreen(
                 )
             }
 
-            if (voiceOpen) {
-                VoicePanel(
+            when (tab) {
+                PanelTab.MOTION -> ControlPanel(
                     state = state,
                     actions = actions,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(
-                            top = if (compact) 78.dp else 82.dp,
-                            end = 14.dp,
-                            bottom = 14.dp
-                        )
+                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
+                        .width(railWidth)
+                )
+                PanelTab.SCENE -> ScenePage(
+                    selectedScene = state.control.scene,
+                    sessionRunning = state.control.session,
+                    enabled = state.phase == BlePhase.READY,
+                    onSelect = actions.onSceneSelect,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
+                        .width(railWidth)
+                )
+                PanelTab.VOICE -> VoicePanel(
+                    state = state,
+                    actions = actions,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
                         .width(voiceWidth)
                 )
-            }
-
-            if (controlsOpen) {
-                if (scenePage) {
-                    ScenePage(
-                        selectedScene = state.control.scene,
-                        sessionRunning = state.control.session,
-                        enabled = state.phase == BlePhase.READY,
-                        onSelect = actions.onSceneSelect,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                            .width(railWidth)
-                    )
-                } else {
-                    ControlPanel(
-                        state = state,
-                        actions = actions,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                            .width(railWidth)
-                    )
-                }
             }
 
             // Read-only heading readout: a corner badge, never a touch target.
@@ -212,20 +184,27 @@ fun ControlScreen(
     }
 }
 
+/** The right half of the console: one panel at a time. */
+private enum class PanelTab { MOTION, SCENE, VOICE }
+
+@Composable
+private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text(
+            text = label,
+            color = if (selected) QuietPalette.Primary else QuietPalette.TextSecondary
+        )
+    }
+}
+
 @Composable
 private fun ControlTopBar(
     state: ControlUiState,
     compact: Boolean,
-    controlsOpen: Boolean,
     infoOpen: Boolean,
-    mirrorOpen: Boolean,
-    scenePage: Boolean,
-    voiceOpen: Boolean,
-    onToggleControls: () -> Unit,
-    onToggleVoice: () -> Unit,
-    onToggleScenePage: () -> Unit,
+    tab: PanelTab,
+    onSelectTab: (PanelTab) -> Unit,
     onToggleInfo: () -> Unit,
-    onToggleMirror: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     Surface(
@@ -281,18 +260,11 @@ private fun ControlTopBar(
                 )
             }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onToggleScenePage) {
-                Text(if (scenePage) "控制" else "场景", color = QuietPalette.TextPrimary)
-            }
-            TextButton(onClick = onToggleMirror) {
-                Text(if (mirrorOpen) "收镜像" else "镜像", color = QuietPalette.TextPrimary)
-            }
-            TextButton(onClick = onToggleVoice) {
-                Text(if (voiceOpen) "收语音" else "语音", color = QuietPalette.TextPrimary)
-            }
-            TextButton(onClick = onToggleControls) {
-                Text(if (controlsOpen) "收起" else "面板", color = QuietPalette.TextPrimary)
-            }
+            // Tabs, not toggles: exactly one right-hand panel is visible and
+            // the selected one is never ambiguous.
+            TabButton("控制", tab == PanelTab.MOTION) { onSelectTab(PanelTab.MOTION) }
+            TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
+            TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }
             TextButton(
                 onClick = onDisconnect,
                 enabled = state.phase.isConnected,

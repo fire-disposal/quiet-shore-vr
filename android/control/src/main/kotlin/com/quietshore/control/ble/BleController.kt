@@ -509,6 +509,8 @@ class BleController(
         when (ack.result) {
             ControlProtocol.RESULT_OK -> Unit
             ControlProtocol.RESULT_BUSY -> listener.onError("头显忙，命令未执行：$command")
+            ControlProtocol.RESULT_OFFLINE ->
+                listener.onError("页面未连接：请在头显里重新进入场景")
             else -> listener.onError("头显拒绝命令：$command")
         }
     }

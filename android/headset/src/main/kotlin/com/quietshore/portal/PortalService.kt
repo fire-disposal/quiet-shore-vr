@@ -130,6 +130,8 @@ class PortalService : Service() {
         const val CONTENT_TYPE_JSON = "application/json; charset=utf-8"
         const val CONTENT_TYPE_TEXT = "text/plain; charset=utf-8"
         const val CONTENT_TYPE_MP3 = "audio/mpeg"
+        /** Two missed state frames: commands are refused instead of queued. */
+        const val PAGE_OFFLINE_MS = 2000L
         const val NO_STORE = "no-store, no-cache, must-revalidate"
 
         /** Page command replayed once whenever the console loses its lease. */
@@ -200,6 +202,8 @@ class PortalService : Service() {
             this,
             object : BluetoothControl.Listener {
                 override fun onCommand(command: String): Boolean = dispatchControl(command)
+
+            override fun isPageOnline(): Boolean = this@PortalService.isPageOnline()
 
                 override fun onControlMode(active: Boolean) {
                     val changed = controlMode != active
@@ -842,10 +846,25 @@ class PortalService : Service() {
     private val VOICE_MANIFEST = "manifest.json"
 
     /** Allowlisted command router shared by BLE, loopback HTTP and future intents. */
+    /** Commands the service can satisfy without a page (launch, prefs, media). */
+    private fun isHostCommand(command: String): Boolean =
+        command == "enter" ||
+            command == "exit" ||
+            command == "home" ||
+            command == "allapps" ||
+            command.startsWith(ControlProtocol.SETTINGS_SKIP_CALIBRATION) ||
+            command.startsWith(ControlProtocol.SETTINGS_HUD) ||
+            command.startsWith(ControlProtocol.SETTINGS_EYE_HEIGHT) ||
+            command.startsWith(ControlProtocol.SCENE_PREFIX)
+
     private fun dispatchControl(raw: String): Boolean {
         val command = ControlProtocol.normalize(raw) ?: return false
         if (!ControlProtocol.isAllowedCommand(command)) {
             Log.w(TAG, "rejected command: $raw")
+            return false
+        }
+        if (!isHostCommand(command) && !isPageOnline()) {
+            Log.w(TAG, "page offline, dropped: $command")
             return false
         }
         val seq = controlSeq.incrementAndGet()
@@ -1021,7 +1040,15 @@ class PortalService : Service() {
     }
 
     /** Same decode path the removed `POST /state` used, now fed by `ws.state`. */
+    @Volatile
+    private var lastPageFrameAt = 0L
+
+    /** The page is the only real controller: no frames, no commands. */
+    fun isPageOnline(): Boolean =
+        lastPageFrameAt != 0L && System.currentTimeMillis() - lastPageFrameAt < PAGE_OFFLINE_MS
+
     private fun applyState(json: JSONObject) {
+        lastPageFrameAt = System.currentTimeMillis()
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
         val state = ControlState(

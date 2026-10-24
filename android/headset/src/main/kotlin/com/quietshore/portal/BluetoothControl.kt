@@ -59,6 +59,9 @@ internal class BluetoothControl(
         /** Returns true only when the command passed semantic routing. */
         fun onCommand(command: String): Boolean
 
+        /** False when no page has reported state recently. */
+        fun isPageOnline(): Boolean = true
+
         fun onControlMode(active: Boolean)
 
         /** Advertising/GATT lifecycle state, mirroring [state]. */
@@ -713,7 +716,12 @@ internal class BluetoothControl(
                 return
             }
             val accepted = listener.onCommand(command)
-            val result = if (accepted) ControlProtocol.RESULT_OK else ControlProtocol.RESULT_REJECTED
+            val result = when {
+                accepted -> ControlProtocol.RESULT_OK
+                // Say why: a silent queue looked like "the tablet does nothing".
+                !listener.isPageOnline() -> ControlProtocol.RESULT_OFFLINE
+                else -> ControlProtocol.RESULT_REJECTED
+            }
             synchronized(controlLock) { rememberSeqLocked(sequenced.seq, result) }
             replyAck(device, requestId, sequenced.seq, result)
             return
