@@ -11,6 +11,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -85,6 +86,8 @@ fun ControlApp(viewModel: ControlViewModel) {
         }
     }
 
+    var showInfo by rememberSaveable { mutableStateOf(false) }
+
     val onOpenSettings: () -> Unit = {
         val intent = Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -95,6 +98,11 @@ fun ControlApp(viewModel: ControlViewModel) {
         } catch (error: Exception) {
             viewModel.reportError("无法打开应用设置")
         }
+    }
+
+    if (showInfo) {
+        InfoScreen(onBack = { showInfo = false })
+        return
     }
 
     if (state.showControls) {
@@ -146,7 +154,8 @@ fun ControlApp(viewModel: ControlViewModel) {
             onStopScan = viewModel::stopScan,
             onCancelConnect = viewModel::cancelConnect,
             onEnableBluetooth = onEnableBluetooth,
-            onOpenSettings = onOpenSettings
+            onOpenSettings = onOpenSettings,
+            onOpenInfo = { showInfo = true }
         )
     }
 }

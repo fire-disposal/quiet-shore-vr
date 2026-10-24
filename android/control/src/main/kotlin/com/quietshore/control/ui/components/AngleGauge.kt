@@ -57,7 +57,7 @@ fun AngleGauge(
     Surface(
         modifier = modifier.semantics(mergeDescendants = true) { contentDescription = description },
         shape = RoundedCornerShape(14.dp),
-        color = QuietPalette.Surface.copy(alpha = 0.86f),
+        color = QuietPalette.Surface,
         contentColor = QuietPalette.TextPrimary
     ) {
         Row(

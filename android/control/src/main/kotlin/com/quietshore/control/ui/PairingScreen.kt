@@ -47,7 +47,8 @@ fun PairingScreen(
     onStopScan: () -> Unit,
     onCancelConnect: () -> Unit,
     onEnableBluetooth: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenInfo: () -> Unit = {}
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -70,6 +71,7 @@ fun PairingScreen(
             ) {
                 PairingIntro(
                     compact = compact,
+                    onOpenInfo = onOpenInfo,
                     modifier = Modifier
                         .weight(2f)
                         .fillMaxHeight()
@@ -97,7 +99,11 @@ fun PairingScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                PairingIntro(compact = compact, modifier = Modifier.fillMaxWidth())
+                PairingIntro(
+                    compact = compact,
+                    onOpenInfo = onOpenInfo,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 PairingCard(
                     state = state,
                     bluetoothEnabled = bluetoothEnabled,
@@ -117,13 +123,24 @@ fun PairingScreen(
 }
 
 @Composable
-private fun PairingIntro(compact: Boolean, modifier: Modifier = Modifier) {
+private fun PairingIntro(
+    compact: Boolean,
+    onOpenInfo: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(modifier = modifier) {
-        Text(
-            text = "静岸控制台",
-            style = MaterialTheme.typography.labelLarge,
-            color = QuietPalette.Primary
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "静岸控制台",
+                style = MaterialTheme.typography.labelLarge,
+                color = QuietPalette.Primary
+            )
+            TextButton(onClick = onOpenInfo) { Text("流程说明") }
+        }
         Spacer(Modifier.height(if (compact) 6.dp else 14.dp))
         Text(
             text = "连接头显",

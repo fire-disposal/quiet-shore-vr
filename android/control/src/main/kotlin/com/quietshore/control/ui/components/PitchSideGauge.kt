@@ -50,7 +50,7 @@ fun PitchSideGauge(
             contentDescription = "患者俯仰侧视图，$label"
         },
         shape = RoundedCornerShape(14.dp),
-        color = QuietPalette.Surface.copy(alpha = 0.86f),
+        color = QuietPalette.Surface,
         contentColor = QuietPalette.TextPrimary
     ) {
         Column(modifier = Modifier.padding(10.dp)) {

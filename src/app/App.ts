@@ -81,6 +81,8 @@ const SWELL_AUDIO_DEPTH = 0.12;
 const CALIBRATION_HOLD_MS = 1800;
 /** Countdown, also the averaging window (2 s × 1.5). */
 const CALIBRATION_COUNTDOWN_MS = 3000;
+/** The card may never outlive this, whatever the pose does. */
+const CALIBRATION_DEADLINE_MS = 9000;
 /** Spread allowed inside that window before it is rejected. */
 const CALIBRATION_MAX_DEVIATION_DEG = 6;
 /** The card must stay readable even when the sample lands immediately. */
@@ -169,6 +171,7 @@ export class QuietShoreApp {
   private calibRef: THREE.Quaternion | null = null;
   private calibStableMs = 0;
   private calibCountdownAt = 0;
+  private calibShownAt = 0;
   private lastCalibrationFrame = 0;
   private readonly calibrationSampler = createCalibrationSampler({
     durationMs: CALIBRATION_COUNTDOWN_MS,
@@ -325,7 +328,9 @@ export class QuietShoreApp {
         );
         this.hud.update(this.headPose, dt, now);
         this.calibrationOverlay?.update(dt, now, this.headPose);
-        if (this.lifecycle.phase === 'calibrating' && this.xr.isPresenting) {
+        // Driven by the card's own visibility: the reducer phase was a second
+        // source of truth, and a stale phase left the bar frozen.
+        if (this.calibrationOverlay?.isVisible() && this.xr.isPresenting) {
           this.stepCalibration(performance.now());
         }
       }
@@ -931,6 +936,12 @@ export class QuietShoreApp {
       scene: this.scene,
       theme: DEFAULT_SPATIAL_THEME
     });
+    if (this.lifecycle.phase !== 'calibrating') {
+      this.lifecycle = reduceSession(
+        { ...this.lifecycle, phase: 'idle' },
+        { type: 'start', mode: this.pendingMode }
+      );
+    }
     this.calibrationOverlay.show();
     this.restartCalibration();
     this.link.sendStateNow();
@@ -947,6 +958,7 @@ export class QuietShoreApp {
     this.calibStableMs = 0;
     this.calibCountdownAt = 0;
     this.lastCalibrationFrame = 0;
+    this.calibShownAt = performance.now();
     this.capturePending = true;
     this.calibrationOverlay?.setHint('保持不动…');
     this.calibrationOverlay?.setProgress(0);
@@ -957,6 +969,23 @@ export class QuietShoreApp {
   /** Called every frame while the card is up. */
   private stepCalibration(nowMs: number): void {
     const head = this.headPose.quaternion;
+    // An unread pose is 0,0,0,0: every comparison against it is meaningless.
+    const valid =
+      Number.isFinite(head.x) &&
+      Number.isFinite(head.y) &&
+      Number.isFinite(head.z) &&
+      Number.isFinite(head.w) &&
+      (head.x !== 0 || head.y !== 0 || head.z !== 0 || head.w !== 0);
+    // Hard deadline: whatever the pose does, the card cannot hold the session.
+    if (this.calibShownAt > 0 && nowMs - this.calibShownAt > CALIBRATION_DEADLINE_MS) {
+      this.finishCalibration(null);
+      return;
+    }
+    if (!valid && this.calibShownAt > 0 && nowMs - this.calibShownAt > 1500) {
+      // Pose never arrived: open the scene with no re-orientation.
+      this.finishCalibration(null);
+      return;
+    }
     if (this.calibPhase === 'settling') {
       if (!this.calibRef) {
         this.calibRef = head.clone();
@@ -1017,6 +1046,19 @@ export class QuietShoreApp {
   private applyCalibration(orientation: { x: number; y: number; z: number; w: number }): void {
     const comfort = this.comfort;
     if (!comfort) {
+      return;
+    }
+    const finite =
+      Number.isFinite(orientation.x) &&
+      Number.isFinite(orientation.y) &&
+      Number.isFinite(orientation.z) &&
+      Number.isFinite(orientation.w) &&
+      (orientation.x !== 0 || orientation.y !== 0 || orientation.z !== 0 || orientation.w !== 0);
+    if (!finite) {
+      // No usable pose: leave the comfort frame alone rather than building a
+      // world from zeros.
+      this.calibrationOverlay?.hide();
+      this.dispatch({ type: 'calibrated' });
       return;
     }
     this.calibrationOverlay?.hide();
