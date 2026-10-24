@@ -134,8 +134,6 @@ class PortalService : Service() {
         const val CONTENT_TYPE_MP3 = "audio/mpeg"
         /** Two missed state frames: commands are refused instead of queued. */
         const val PAGE_OFFLINE_MS = 2000L
-        /** At most one automatic page relaunch per half minute. */
-        const val PAGE_RELAUNCH_COOLDOWN_MS = 30_000L
         /** Stop-fade breathing room before the console comes forward. */
         const val SESSION_RETURN_MS = 2000L
         /** Change-driven flags, with this heartbeat so a reconnect catches up. */
@@ -879,17 +877,11 @@ class PortalService : Service() {
             Log.w(TAG, "rejected command: $raw")
             return false
         }
-        if (!isHostCommand(command) && !isPageOnline()) {
-            // The page is the only controller. Instead of queueing into the
-            // void, bring it back and tell the caller why this one was lost.
-            val now = System.currentTimeMillis()
-            if (now - lastPageRelaunchAt > PAGE_RELAUNCH_COOLDOWN_MS) {
-                lastPageRelaunchAt = now
-                Log.w(TAG, "page offline, relaunching for: $command")
-                PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())
-            } else {
-                Log.w(TAG, "page offline, dropped: $command")
-            }
+        if (!isHostCommand(command) && !isPageOnline() && command != "enter") {
+            // Only `enter` may bring the page up. A knob or a cue sent while the
+            // page is closed is dropped with a log line: entering a scene is the
+            // operator's decision, never a side effect of a stray command.
+            Log.w(TAG, "page offline, dropped: $command")
             return false
         }
         val seq = controlSeq.incrementAndGet()
@@ -1070,8 +1062,6 @@ class PortalService : Service() {
 
     @Volatile
     private var lastPageFrameAt = 0L
-    @Volatile
-    private var lastPageRelaunchAt = 0L
     @Volatile
     private var lastSessionRunning = false
 

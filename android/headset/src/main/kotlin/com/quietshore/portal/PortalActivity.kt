@@ -44,9 +44,6 @@ class PortalActivity : Activity() {
     }
 
     private companion object {
-        /** One auto-launch per process: a recreate must not fight the browser. */
-        var autoLaunchedThisProcess = false
-        const val AUTO_LAUNCH_DELAY_MS = 1500L
         val BG_TOP: Int = 0xFFF3EFE6.toInt()
         val BG_BOTTOM: Int = 0xFFE8E1D4.toInt()
         val SURFACE: Int = 0xFFECE6DA.toInt()
@@ -137,7 +134,6 @@ class PortalActivity : Activity() {
         super.onCreate(savedInstanceState)
         settings = HeadsetSettings.read(this)
         PortalActions.startServer(this)
-        autoLaunchTraining()
         window.statusBarColor = BG_TOP
         window.navigationBarColor = BG_TOP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -719,30 +715,6 @@ class PortalActivity : Activity() {
             .setMessage("静岸的 WebXR 训练只能在 Firefox Reality 10 中运行。当前设备未检测到该浏览器，训练无法工作。")
             .setPositiveButton("知道了", null)
             .show()
-    }
-
-    /**
-     * Opens the training page without waiting for a click.
-     *
-     * The headset has no in-app buttons by design: the operator drives
-     * everything from the tablet, and the patient's only interaction is the
-     * gesture Firefox Reality itself requires. The static guard keeps a
-     * recreate/rotation from launching twice and fighting the browser.
-     */
-    private fun autoLaunchTraining() {
-        if (autoLaunchedThisProcess || !PortalActions.isFirefoxAvailable(this)) {
-            return
-        }
-        autoLaunchedThisProcess = true
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            if (isFinishing || isDestroyed) {
-                return@postDelayed
-            }
-            // Never steal the foreground while a tablet is mid-session.
-            if (!PortalStatus.isControlActive()) {
-                PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())
-            }
-        }, AUTO_LAUNCH_DELAY_MS)
     }
 
     private fun launchTraining() {
