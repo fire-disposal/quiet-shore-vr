@@ -320,6 +320,9 @@ export const lightwellScene = defineScene(
     // meant to be heard as one's own breathing, not as a room.
     audio: undefined
   },
+  // Supine inside the shaft: `EYE_Y` is where the rings centre, so it is also
+  // where the eye belongs.
+  { posture: 'supine', eyeY: 1.7 },
   function () {
     const parts = createLightWell();
     const settings: SceneSettings = {

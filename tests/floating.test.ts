@@ -7,6 +7,7 @@ import type { SceneHandle } from '../src/core/scene/contract';
 
 function harness(options: {
   gate?: Partial<BuoyancyGate>;
+  axis?: THREE.Vector3;
   split?: boolean;
   level?: number;
   profile?: 'a' | 'b' | 'c';
@@ -19,7 +20,7 @@ function harness(options: {
     mode: 'float',
     active: true,
     capturePending: false,
-    frame: 'calibrated',
+    rising: false,
     ...options.gate
   };
   const handle = (options.split === false
@@ -36,11 +37,16 @@ function harness(options: {
         floor.y = y;
         content.position.y = y;
       },
+      setContentPosition: (x, y, z) => {
+        floor.y = y;
+        content.position.set(x, y, z);
+      },
       content
     },
     handle: () => handle,
     gate: () => gate,
     swell: (depth, period) => swell.push({ depth, period }),
+    axis: (out) => out.copy(options.axis ?? new THREE.Vector3(0, 1, 0)),
     level: options.level,
     profile: options.profile,
     breath: true
@@ -76,11 +82,13 @@ describe('buoyancy envelope', () => {
     expect(h.floating.getState().amplitudeM).toBe(0);
     expect(h.floating.getState().offsetM).toBe(0);
     // Settled scenes are cheap: the last write is a single zero.
-    expect(h.applied.at(-1)).toEqual({ amountM: 0, swayDeg: 0 });
+    const last = h.applied.at(-1)!;
+    expect(last.amountM).toBe(0);
+    expect(last.swayDeg).toBe(0);
   });
 
   it('never runs outside the floating mode or inside a capture', () => {
-    for (const gate of [{ mode: 'posture' as const }, { capturePending: true }, { frame: 'posture' as const }]) {
+    for (const gate of [{ mode: 'posture' as const }, { capturePending: true }, { rising: true }]) {
       const h = harness({ level: 3, gate });
       h.run(1);
       expect(h.floating.getState().amplitudeM).toBe(0);
@@ -127,6 +135,15 @@ describe('content offset ownership', () => {
     const h = harness({ level: 2, split: false });
     h.floating.setBaseOffset(-1.7);
     h.run(1.5);
+    const { offsetM } = h.floating.getState();
+    expect(offsetM).not.toBe(0);
+    expect(h.floor.y).toBeCloseTo(-1.7 + offsetM, 6);
+  });
+
+  it('moves the art along the visual up, not only along Y', () => {
+    const h = harness({ level: 3, split: false, axis: null });
+    h.floating.setBaseOffset(-1.7);
+    h.run(2);
     const { offsetM } = h.floating.getState();
     expect(offsetM).not.toBe(0);
     expect(h.floor.y).toBeCloseTo(-1.7 + offsetM, 6);

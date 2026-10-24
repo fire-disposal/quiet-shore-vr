@@ -79,7 +79,7 @@ canvasHost.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 300);
 const sceneHost = new SceneHost(scene);
-sceneHost.load(SCENE, { eyeHeight: 1.7 });
+sceneHost.load(SCENE);
 
 const headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const headQuat = new THREE.Quaternion();
@@ -160,7 +160,7 @@ function syncScene(): void {
     }
     return;
   }
-  sceneHost.load(definition, { eyeHeight: state.eyeHeight ?? 1.7 });
+  sceneHost.load(definition);
   sceneId = definition.id;
   sceneName = definition.name.zh;
   settleFloor();

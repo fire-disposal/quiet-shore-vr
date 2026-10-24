@@ -10,7 +10,7 @@ function build(id: string) {
     throw new Error(`scene ${id} must be registered`);
   }
   const registry = new ResourceRegistry();
-  const handle = definition.build({ eyeHeight: 1.7, registry });
+  const handle = definition.build({ registry });
   return { definition, handle, registry };
 }
 
@@ -30,7 +30,22 @@ function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
 }
 
 describe('scene registry', () => {
-  it('ships the two operator-selectable scenes in wire order', () => {
+  it('declares the eye its art was authored for', () => {
+    const placement = Object.fromEntries(
+      SCENES.map((scene) => [scene.id, `${scene.posture}@${scene.eyeY}`])
+    );
+    expect(placement).toEqual({
+      washroom: 'standing@1.7',
+      shore: 'supine@0.45',
+      lightwell: 'supine@1.7'
+    });
+    for (const scene of SCENES) {
+      expect(Number.isFinite(scene.eyeY)).toBe(true);
+      expect(scene.eyeY).toBeGreaterThan(0);
+    }
+  });
+
+  it('ships the operator-selectable scenes in wire order', () => {
     // Index order is the BLE state byte 11 contract: append only.
     expect(SCENES.map((scene) => scene.id)).toEqual(['washroom', 'shore', 'lightwell']);
     expect(SCENE.id).toBe('washroom');

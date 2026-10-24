@@ -16,11 +16,17 @@ export interface SceneSettings {
 /**
  * Build inputs. There is deliberately no quality tier: the system targets one
  * headset, so a scene has one shape and one budget.
+ *
+ * There is no eye height here: a scene states where its eye belongs
+ * (`SceneDefinition.eyeY`) and the frame places it. Passing a height in as
+ * well gave two sources for the same number, and every scene ignored it.
  */
 export interface SceneBuildContext {
-  eyeHeight: number;
   registry: ResourceRegistry;
 }
+
+/** Which eye the art was authored for; decides the frame a session runs in. */
+export type ScenePosture = 'standing' | 'supine';
 
 /**
  * App-computed buoyancy for one frame. The app owns the envelope (attack,
@@ -29,10 +35,16 @@ export interface SceneBuildContext {
  * breathes.
  */
 export interface BuoyancyState {
-  /** Vertical offset in metres, signed. */
+  /** Offset in metres along `axis`, signed. */
   amountM: number;
-  /** Horizon pitch in degrees, signed. */
+  /** Horizon pitch in degrees, signed; 0 when the visual up is not the scene up. */
   swayDeg: number;
+  /**
+   * Unit vector in content space pointing along the patient's visual up. A
+   * supine viewer's up is not the scene's +Y, so a scene that moves layers by
+   * `amountM` alone turns the heave into a push toward the face.
+   */
+  axis: { x: number; y: number; z: number };
 }
 
 export interface SceneHandle {
@@ -70,5 +82,17 @@ export interface SceneSummary {
 }
 
 export interface SceneDefinition extends SceneSummary {
+  /**
+   * The eye the art was authored for. `standing` scenes are laid out for a
+   * viewer on their feet (a floor below them); `supine` scenes for a viewer on
+   * their back (the sky above). The floating mode picks the matching world
+   * frame, so neither kind is shown from the wrong eye.
+   */
+  posture: ScenePosture;
+  /**
+   * Content-space Y of that eye. The frame places the art by it, which is why
+   * the app never needs a global `-eyeHeight` fudge.
+   */
+  eyeY: number;
   build(ctx: SceneBuildContext): SceneHandle;
 }

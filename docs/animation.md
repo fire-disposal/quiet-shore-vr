@@ -18,7 +18,7 @@ flowchart TB
 | 系统 | 所有者 | 写入 | 不写 |
 | --- | --- | --- | --- |
 | 俯仰修正 | `view-motion`（视角）+ `comfort.calibrate`（校准帧） | shell 的旋转；base 的 q0 | 不改相机，不写 content |
-| 漂浮 | `src/app/floating.ts` | content 的 Y（帧偏移 + bob）、sway | 不写 base、不写 shell |
+| 漂浮 | `src/app/floating.ts` | content 偏移（帧偏移 + 沿视觉竖直的 bob）、sway | 不写 base、不写 shell |
 | 起身 | `situp-run`（时间轴）+ `situp-path`（变换） | base 的位姿 | 不写 content、不写 shell |
 
 规则：**同一时刻只有一层写 base**。谁写 base 由会话模式决定，不由命令决定：
@@ -67,19 +67,30 @@ A5 的量化证据（复现栈 = comfort + world-shell + situp-path，头部为�
 验证：`tests/floating.test.ts`（12 例：包络、渐出、闸门、等级/档位夹紧、偏移叠加、reset）
 与 `tests/animation-frame.test.ts`（10 例：闸门真值表、偏移合成、三种帧的地平线角度）。
 
-## 5 场景侧字段：尚未对齐
+## 5 场景侧字段（已对齐）
 
-审查中发现三个字段层面的缺口，都与上面 A5 的帧选择直接相关：
+场景不再"猜帧"，而是声明两件事，应用据此选帧：
 
-| 缺口 | 现状 | 后果 |
+| 字段 | 含义 | 取值 |
 | --- | --- | --- |
-| `SceneDefinition` 没有 `posture: 'standing' \| 'supine'` | `docs/calibration.md` §4 设计过（`R_extra(standing)`、`gazePitchDeg`），从未实现 | 场景无法声明自己是"按站立视角画的"还是"按仰卧视角画的"；漂浮模式对所有场景都套校准帧，于是 `shore` / `lightwell` 这两幅按"仰望"画出来的景，现在以站立视角出现 |
-| `SceneBuildContext.eyeHeight` 无人读取 | 应用与镜像都传了，三个场景都没用 | 每个场景的"眼在哪"各自约定，应用只好用全局 `-eyeHeight` 补偿，这正是 A1 的来源 |
-| `docs/core.md` §5 写"两个场景"，同表列三个 | 代码与 `SCENE_IDS` 都是三个 | 文档与实现不一致 |
+| `posture` | 这幅景是按哪种体位画的 | `washroom: standing`；`shore`、`lightwell`: `supine` |
+| `eyeY` | 该体位下眼睛在内容坐标里的高度（米） | washroom 1.70；shore 0.45；lightwell 1.70 |
 
-推荐（待确认）：给 `SceneDefinition` 加 `posture`，漂浮模式下 `standing` 用校准帧、`supine` 用起身帧 t=0；
-`supine` 场景的漂浮要么关掉（它本来就更适合"静止仰望"），要么把起伏改成沿场景 −Z。
-同时把 `eyeHeight` 从 `SceneBuildContext` 移除，或在三个场景里真正用它定位眼高。
+`planFrame()`（`src/core/xr/world-frame.ts`）是唯一的选帧处：
+
+| 场景 / 模式 | base | 内容偏移 |
+| --- | --- | --- |
+| standing / 漂浮 | 已校准帧 | `-eyeY` |
+| standing / 起身 | 起身路径 | `视点高度 - eyeY` |
+| supine / 两种模式 | 起身路径（t 由命令驱动） | `躺卧眼高 - eyeY` |
+
+同时删掉了两个错位来源：
+
+- `SceneBuildContext.eyeHeight`：三个场景一次都没读过；眼高改由场景自己声明，应用不再用全局 `-eyeHeight` 补偿。
+- 漂浮的固定 −Y：起伏现在沿**视觉竖直**（`visualUpInContent()`），仰卧帧里它等于内容 +Z，因此"上下起伏"在两种帧里都成立，不再变成朝脸的逼近流。
+
+验收：`tests/animation-frame.test.ts`（11 例：选帧表、视觉竖直、两种帧下的地平线角度与位移方向）、
+`tests/scenes.test.ts`（声明值固定）与 `tests/floating.test.ts`（12 例）。
 
 ## 6 未覆盖
 

@@ -10,12 +10,7 @@ import {
   type FloatProfile,
   type FloatProfileId
 } from '../core/xr/float';
-import {
-  buoyancyAllowed,
-  contentOffsetFor,
-  type BuoyancyGate,
-  type BuoyancyFrame
-} from '../core/xr/buoyancy-frame';
+import { buoyancyAllowed, contentOffsetFor, type BuoyancyGate } from '../core/xr/buoyancy-frame';
 import type { SceneHandle } from '../core/scene/contract';
 
 /**
@@ -45,11 +40,19 @@ const SWELL_AUDIO_DEPTH = 0.12;
 
 export interface FloatingDeps {
   /** Scene host; owns the content group the offset is written to. */
-  host: { setFloorOffset(y: number): void; content: THREE.Object3D };
+  host: {
+    setFloorOffset(y: number): void;
+    /** Content-space offset for the whole art, used when the scene has no split. */
+    setContentPosition(x: number, y: number, z: number): void;
+    /** The art group; the fallback sway tilts it. */
+    content: THREE.Object3D;
+  };
   handle(): SceneHandle | null;
   gate(): BuoyancyGate;
   /** Audio buoyancy LFO: depth 0..1, period in seconds. */
   swell(depth: number, periodS: number): void;
+  /** Visual up in content space; the heave runs along it, whatever the frame. */
+  axis(out: THREE.Vector3): THREE.Vector3;
 }
 
 export interface FloatingState {
@@ -92,7 +95,8 @@ export function createFloating(
     breath?: boolean;
   }
 ): FloatingApi {
-  const { host, handle, gate, swell } = deps;
+  const { host, handle, gate, swell, axis } = deps;
+  const up = new THREE.Vector3(0, 1, 0);
 
   let profile = FLOAT_PROFILES[deps.profile ?? 'b'] ?? FLOAT_PROFILES.b;
   let level = clampLevel(deps.level ?? 1, FLOAT_LEVEL_CAP[profile.id]);
@@ -117,12 +121,20 @@ export function createFloating(
   function apply(): void {
     const scene = handle();
     const splits = typeof scene?.applyBuoyancy === 'function';
-    host.setFloorOffset(contentOffsetFor(baseOffset, offsetM, splits));
+    axis(up);
     if (splits && scene?.applyBuoyancy) {
-      scene.applyBuoyancy({ amountM: offsetM, swayDeg });
-    } else {
-      host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
+      host.setFloorOffset(contentOffsetFor(baseOffset, offsetM, true));
+      scene.applyBuoyancy({ amountM: offsetM, swayDeg, axis: { x: up.x, y: up.y, z: up.z } });
+      return;
     }
+    // The frame owns Y; the heave is a vector along the visual up, so a supine
+    // frame lifts the world in view instead of pushing it along the gaze.
+    host.setContentPosition(
+      up.x * offsetM,
+      contentOffsetFor(baseOffset, offsetM, false),
+      up.z * offsetM
+    );
+    host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
   }
 
   function update(dt: number): void {
@@ -149,7 +161,10 @@ export function createFloating(
     offsetM = floatOffsetAt(profile, seconds, amplitudeM, breath);
     // Horizon sway: a couple of degrees of world pitch, in phase with the
     // drift, is what makes the horizon feel unmoored rather than the floor.
-    swayDeg = floatPitchAt(profile, seconds, amplitudeM);
+    // The sway is a horizon tilt; it only means that while the scene's up is
+    // the visual up. A supine viewer would see it as a pitch of the world.
+    axis(up);
+    swayDeg = up.y > 0.7 ? floatPitchAt(profile, seconds, amplitudeM) : 0;
     apply();
   }
 
@@ -209,9 +224,4 @@ export function createFloating(
       return state;
     }
   };
-}
-
-/** Frame labels, kept next to the gate so callers cannot invent a third one. */
-export function frameOf(posturePosesBase: boolean): BuoyancyFrame {
-  return posturePosesBase ? 'posture' : 'calibrated';
 }

@@ -34,6 +34,9 @@ export const washroomScene = defineScene(
     // A small tiled room: the water reads close and narrow, not open.
     audio: { track: 'stream', volume: 0.8, fadeMs: 1200, loop: true, width: 0.35 }
   },
+  // Standing scale: the floor is at content y=0 and the eye that sees the
+  // urinal at 1.00 m sits at 1.70 m.
+  { posture: 'standing', eyeY: 1.7 },
   function () {
     const room = createRoom();
     const settings: SceneSettings = {

@@ -72,13 +72,13 @@ stateDiagram-v2
 
 ```ts
 interface SceneDefinition extends SceneSummary {
-  audio: SceneAudio;
+  posture: 'standing' | 'supine';   // 这幅景是按哪种体位画的
+  eyeY: number;                     // 该体位下眼睛在内容坐标里的高度
   build(ctx: SceneBuildContext): SceneHandle;
 }
 
 interface SceneBuildContext {
-  eyeHeight: number;
-  registry: ResourceRegistry;
+  registry: ResourceRegistry;       // 只注入资源注册表；眼高由场景自己声明
 }
 
 interface SceneHandle {
@@ -91,7 +91,8 @@ interface SceneHandle {
 }
 ```
 
-- 没有画质挡位：`SceneBuildContext` 只有眼高；渲染参数写死在 `src/core/xr/renderer.ts`。
+- 没有画质挡位：渲染参数写死在 `src/core/xr/renderer.ts`。
+- 场景声明 `posture` 与 `eyeY`，应用据此选世界帧（见 `docs/animation.md`）；不再向下传眼高。
 - 音频在场景定义中声明；场景构建器不直接调用音频 API；App 不按场景 ID 选择音频。
 - `root` 只含场景内容，不含相机、HUD、准星或控制对象。
 - `update` 不读写会话状态，不做网络或 BLE。

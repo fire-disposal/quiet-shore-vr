@@ -37,7 +37,7 @@ import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice'
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
 import { FLOAT_MAX_LEVEL, isFloatProfileId } from '../core/xr/float';
-import { calibratedFloorOffset } from '../core/xr/buoyancy-frame';
+import { planFrame, visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { PortalLink, stateFromSnapshot } from './portal-link';
@@ -166,6 +166,11 @@ export class QuietShoreApp {
   });
   /** Buoyancy: level, profile, envelope and the content offset it rides on. */
   private readonly floating: FloatingApi;
+  /** Which eye the loaded scene's art was authored for (from its definition). */
+  private scenePosture: 'standing' | 'supine' = 'standing';
+  private sceneEyeY = 1.7;
+  /** Scratch for the visual-up axis and the frame plan; per-frame, no allocation. */
+  private readonly visualUp = new THREE.Vector3();
   /** Sit-up ramp length; the operator can slow it down for comfort. */
   private sitUpDurationMs = SITUP_DURATION_MS;
   private postureCueState: PostureCueApi | null = null;
@@ -246,9 +251,15 @@ export class QuietShoreApp {
         mode: this.lifecycle.mode,
         active: isActive(this.lifecycle),
         capturePending: this.capturePending,
-        frame: this.sitUpMode ? 'posture' : 'calibrated'
+        rising: this.sitUpMotion.moving
       }),
       swell: (depth, periodS) => setBuoyancySwell(depth, periodS),
+      axis: (out) =>
+        visualUpInContent(
+          this.headPose.quaternion,
+          this.shell?.base.quaternion ?? this.identityQuaternion,
+          out
+        ),
       level: 1,
       profile: isFloatProfileId(this.config.floatProfile) ? this.config.floatProfile : undefined,
       breath: true
@@ -399,7 +410,7 @@ export class QuietShoreApp {
         frame: () => ({
           mode: this.lifecycle.mode,
           phase: this.lifecycle.phase,
-          frame: this.sitUpMode ? 'posture' : 'calibrated',
+          frame: this.sitUpMode ? 'situp' : 'calibrated',
           sitUpT: this.sitUpMotion.t,
           baseFloorOffset: this.floating.getState().baseOffset,
           bobM: this.floating.getState().offsetM,
@@ -514,9 +525,7 @@ export class QuietShoreApp {
   private loadScene(): void {
     this.disposeScene();
     const definition = getSceneDefinition(this.sceneId) ?? SCENE;
-    const handle = this.host.load(definition, {
-      eyeHeight: this.eyeHeight
-    });
+    const handle = this.host.load(definition);
     this.handle = handle;
     // World shell order: view pitch -> base (comfort/sit-up) -> content
     // (floor). Wrapping the host's content group, not the scene root, keeps the
@@ -827,18 +836,14 @@ export class QuietShoreApp {
     if (this.lifecycle.mode === value) {
       return;
     }
+    this.dispatch({ type: 'mode', mode: value });
     if (value === 'posture') {
       this.armPostureAt(1);
     } else {
       this.stopSitUp();
-      this.sitUpMode = false;
-      this.sitUpReady = false;
-      this.sitUpPath = null;
-      this.sitUpReference = null;
-      this.shell?.setBasePose(null);
-      this.setBaseFloorOffset(calibratedFloorOffset(this.eyeHeight, this.xr.isPresenting));
+      this.sitUpReady = this.sitUpPath !== null;
+      this.applyFrame();
     }
-    this.dispatch({ type: 'mode', mode: value });
     this.start.setStatus(value === 'posture' ? '已切到起身' : '已切回漂浮', 'ok');
     this.link.sendStateNow();
     this.updateHud(performance.now());
@@ -853,10 +858,34 @@ export class QuietShoreApp {
     };
     this.sitUpMotion.reset();
     this.sitUpMotion.seek(t);
-    this.sitUpMode = true;
     this.sitUpReady = true;
-    this.applySitUpTransform();
-    this.setBaseFloorOffset(0);
+    this.applyFrame();
+  }
+
+  /**
+   * Hand the world to the frame the session mode and the scene's authored eye
+   * call for. One place decides it, so calibration, a mode switch and an eye
+   * height change cannot disagree about who writes the base layer.
+   */
+  private applyFrame(): void {
+    if (!this.shell) {
+      return;
+    }
+    const plan = planFrame({
+      posture: this.scenePosture,
+      mode: this.lifecycle.mode,
+      eyeY: this.sceneEyeY,
+      standEyeHeight: this.eyeHeight,
+      lyingEyeHeight: this.sitUpPath?.hipHeight ?? 0.45
+    });
+    this.sitUpMode = plan.base === 'situp';
+    if (this.sitUpMode && this.sitUpPath) {
+      this.applySitUpTransform();
+    } else {
+      this.sitUpMode = false;
+      this.shell.setBasePose(null);
+    }
+    this.setBaseFloorOffset(plan.offsetY);
   }
 
   /**
@@ -1065,14 +1094,7 @@ export class QuietShoreApp {
     this.sitUpBase0.copy(
       this.sitUpPath.worldFor(this.sitUpReference, this.sitUpPath.at(0)).quaternion
     );
-    this.sitUpMode = this.lifecycle.mode === 'posture';
-    if (this.sitUpMode) {
-      this.applySitUpTransform();
-      this.setBaseFloorOffset(0);
-    } else {
-      this.shell?.setBasePose(null);
-      this.setBaseFloorOffset(calibratedFloorOffset(this.eyeHeight, this.xr.isPresenting));
-    }
+    this.applyFrame();
     if (this.session && this.handle) {
       this.startSceneAudio();
     }
@@ -1327,6 +1349,9 @@ export class QuietShoreApp {
     if (this.sitUpMode && this.sitUpReference) {
       this.sitUpPath = new SitUpPath({ standEyeHeight: next });
       this.applySitUpTransform();
+    }
+    if (this.session) {
+      this.applyFrame();
     }
     this.start.setStatus(`视点高度 ${next.toFixed(2)} m`, 'ok');
   }

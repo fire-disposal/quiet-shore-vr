@@ -3,25 +3,27 @@ import * as THREE from 'three';
 import { SitUpPath } from '../src/core/xr/situp-path';
 import { createComfort } from '../src/core/xr/comfort';
 import { createWorldShell } from '../src/core/xr/world-shell';
-import {
-  buoyancyAllowed,
-  calibratedFloorOffset,
-  contentOffsetFor
-} from '../src/core/xr/buoyancy-frame';
+import { buoyancyAllowed, contentOffsetFor } from '../src/core/xr/buoyancy-frame';
+import { planFrame, visualUpInContent } from '../src/core/xr/world-frame';
 import type { PoseLike } from '../src/core/xr/types';
 
-
-function elevationDeg(local: THREE.Vector3): number {
-  return (Math.atan2(local.y, Math.hypot(local.x, -local.z)) * 180) / Math.PI;
-}
-
-/**
- * Minimal reproduction of the App's world stack: shell -> base (calibrated
- * frame or sit-up pose) -> content (frame offset + bob).
- */
-function stack(options: { base: 'calibrated' | 'posture'; t?: number; offset: number; bob?: number }) {
-  const eyeHeight = 1.7;
-  const path = new SitUpPath({ standEyeHeight: eyeHeight });
+/** What the patient sees: a distant point in head-local frame. */
+function stack(options: {
+  posture: 'standing' | 'supine';
+  mode: 'float' | 'posture';
+  t?: number;
+  bob?: number;
+}) {
+  const standEyeHeight = 1.7;
+  const path = new SitUpPath({ standEyeHeight });
+  const eyeY = options.posture === 'standing' ? 1.7 : 0.45;
+  const plan = planFrame({
+    posture: options.posture,
+    mode: options.mode,
+    eyeY,
+    standEyeHeight,
+    lyingEyeHeight: path.hipHeight
+  });
   const cam0 = path.at(0);
   // A supine head lying on a bed: same orientation as the supine camera.
   const headPos = new THREE.Vector3(0, 0.62, -1.4);
@@ -38,105 +40,121 @@ function stack(options: { base: 'calibrated' | 'posture'; t?: number; offset: nu
   const comfort = createComfort({ scene, world: content });
   comfort.calibrate(pose);
   const shell = createWorldShell({ scene, base: comfort.group });
-  if (options.base === 'posture') {
+  if (plan.base === 'situp') {
     shell.setBasePose(path.worldFor(cam0, path.at(options.t ?? 0)));
   }
-  content.position.y = options.offset + (options.bob ?? 0);
+  // Heave along the visual up, exactly as `floating` writes it.
+  const axis = visualUpInContent(headQuat, shell.base.quaternion, new THREE.Vector3());
+  const bob = options.bob ?? 0;
+  content.position.set(axis.x * bob, plan.offsetY + axis.y * bob, axis.z * bob);
   shell.update(headPos);
   scene.updateMatrixWorld(true);
-  // What the patient sees: a distant horizon point in head-local frame.
   const horizon = new THREE.Vector3(0, 0, -40)
     .applyMatrix4(content.matrixWorld)
     .sub(headPos)
     .applyQuaternion(headQuat.clone().invert());
-  return { headPos, headQuat, horizon };
+  return { headPos, headQuat, horizon, axis, plan };
 }
 
-describe('buoyancy gate', () => {
-  const base = { active: true, capturePending: false } as const;
+function elevationDeg(local: THREE.Vector3): number {
+  return (Math.atan2(local.y, Math.hypot(local.x, -local.z)) * 180) / Math.PI;
+}
 
-  it('runs only in the floating mode with the calibrated frame', () => {
-    expect(buoyancyAllowed({ ...base, mode: 'float', frame: 'calibrated' })).toBe(true);
-    expect(buoyancyAllowed({ ...base, mode: 'float', frame: 'posture' })).toBe(false);
-    expect(buoyancyAllowed({ ...base, mode: 'posture', frame: 'calibrated' })).toBe(false);
-    expect(buoyancyAllowed({ ...base, mode: 'posture', frame: 'posture' })).toBe(false);
+describe('frame planner', () => {
+  const base = { eyeY: 1.7, standEyeHeight: 1.7, lyingEyeHeight: 0.45 };
+
+  it('gives a standing scene the calibrated frame in the floating mode', () => {
+    expect(planFrame({ ...base, posture: 'standing', mode: 'float' })).toEqual({
+      base: 'calibrated',
+      offsetY: -1.7
+    });
   });
 
-  it('holds still outside a running session or during a capture', () => {
-    for (const phase of ['idle', 'calibrating', 'stopping']) {
-      expect(
-        buoyancyAllowed({
-          mode: 'float',
-          active: phase === 'floating',
-          capturePending: false,
-          frame: 'calibrated'
-        })
-      ).toBe(false);
-    }
-    expect(
-      buoyancyAllowed({ ...base, mode: 'float', frame: 'calibrated', capturePending: true })
-    ).toBe(false);
-  });
-});
-
-describe('frame offset ownership', () => {
-  it('adds the bob to the frame offset instead of replacing it', () => {
-    expect(contentOffsetFor(-1.7, 0.06, false)).toBeCloseTo(-1.64, 6);
-    expect(contentOffsetFor(-1.7, -0.06, false)).toBeCloseTo(-1.76, 6);
-    expect(contentOffsetFor(0, 0.065, false)).toBeCloseTo(0.065, 6);
+  it('keeps a supine scene in the sit-up frame in both modes', () => {
+    const supine = { ...base, posture: 'supine' as const, eyeY: 0.45 };
+    expect(planFrame({ ...supine, mode: 'float' })).toEqual({ base: 'situp', offsetY: 0 });
+    expect(planFrame({ ...supine, mode: 'posture' })).toEqual({ base: 'situp', offsetY: 0 });
   });
 
-  it('leaves the bob to a scene that splits its own layers', () => {
-    expect(contentOffsetFor(-1.7, 0.06, true)).toBeCloseTo(-1.7, 6);
-    expect(contentOffsetFor(0, 0.06, true)).toBe(0);
+  it('moves the standing art by however far the eye setting moved', () => {
+    const plan = planFrame({ ...base, posture: 'standing', mode: 'posture', standEyeHeight: 1.55 });
+    expect(plan.base).toBe('situp');
+    expect(plan.offsetY).toBeCloseTo(-0.15, 9);
   });
 
-  it('never propagates a non-finite number into the scene', () => {
-    expect(contentOffsetFor(Number.NaN, 0.06, false)).toBeCloseTo(0.06, 6);
-    expect(contentOffsetFor(0, Number.NaN, false)).toBe(0);
-  });
-
-  it('offsets the calibrated frame by the eye height only inside a headset', () => {
-    expect(calibratedFloorOffset(1.7, true)).toBeCloseTo(-1.7, 6);
-    expect(calibratedFloorOffset(1.7, false)).toBe(0);
-    expect(calibratedFloorOffset(Number.NaN, true)).toBe(0);
+  it('never produces a non-finite offset', () => {
+    const plan = planFrame({
+      posture: 'standing',
+      mode: 'float',
+      eyeY: Number.NaN,
+      standEyeHeight: Number.NaN,
+      lyingEyeHeight: Number.NaN
+    });
+    expect(Number.isFinite(plan.offsetY)).toBe(true);
+    expect(plan.offsetY).toBe(0);
   });
 });
 
-describe('world frames', () => {
+describe('visual up', () => {
+  it('is the content Y while the calibrated frame poses the world', () => {
+    const head = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.3, 0));
+    const axis = visualUpInContent(head, new THREE.Quaternion(), new THREE.Vector3());
+    expect(axis.y).toBeCloseTo(1, 6);
+  });
+
+  it('points along the scene depth in the supine frame', () => {
+    const path = new SitUpPath({ standEyeHeight: 1.7 });
+    const cam0 = path.at(0);
+    // A head lying exactly in the supine camera pose leaves the base identity,
+    // so the visual up is the head up: the scene's +Z.
+    const world = path.worldFor(cam0, path.at(0));
+    const axis = visualUpInContent(cam0.quaternion, world.quaternion, new THREE.Vector3());
+    expect(axis.z).toBeCloseTo(1, 6);
+    expect(Math.abs(axis.y)).toBeLessThan(1e-6);
+  });
+});
+
+describe('what the patient sees', () => {
   it('the calibrated frame gives a supine patient a standing view', () => {
-    const { horizon } = stack({ base: 'calibrated', offset: -1.7 });
-    // Horizon within a couple of degrees of eye level: the patient is lying,
-    // but sees the world the way a standing person does.
+    const { horizon, plan } = stack({ posture: 'standing', mode: 'float' });
+    expect(plan.base).toBe('calibrated');
     expect(Math.abs(elevationDeg(horizon))).toBeLessThan(5);
   });
 
   it('the sit-up frame starts supine and ends standing', () => {
-    const supine = stack({ base: 'posture', t: 0, offset: 0 });
-    const standing = stack({ base: 'posture', t: 1, offset: 0 });
+    const supine = stack({ posture: 'supine', mode: 'float', t: 0 });
+    const standing = stack({ posture: 'supine', mode: 'float', t: 1 });
     expect(elevationDeg(supine.horizon)).toBeLessThan(-80);
     expect(Math.abs(elevationDeg(standing.horizon))).toBeLessThan(5);
   });
 
-  it('a heave lifts the world in the calibrated frame only', () => {
-    const rest = stack({ base: 'calibrated', offset: -1.7, bob: 0 });
-    const lifted = stack({ base: 'calibrated', offset: -1.7, bob: 0.065 });
-    const angle = Math.abs(elevationDeg(lifted.horizon) - elevationDeg(rest.horizon));
-    expect(angle).toBeLessThan(0.5);
+  it('the heave reads as up and down in both frames', () => {
+    for (const posture of ['standing', 'supine'] as const) {
+      const rest = stack({ posture, mode: 'float', bob: 0 });
+      const lifted = stack({ posture, mode: 'float', bob: 0.065 });
+      const rise = Math.abs(elevationDeg(lifted.horizon) - elevationDeg(rest.horizon));
+      const depth = Math.abs(lifted.horizon.z - rest.horizon.z);
+      // Lifting the world moves it up in view and does not push it at the face:
+      // the head-local depth stays put in both frames.
+      expect(rise).toBeLessThan(0.5);
+      expect(depth).toBeLessThan(0.2);
+      expect(lifted.axis.y).toBeGreaterThan(-1.1);
+    }
+  });
+});
 
-    // In the supine frame the same offset runs along the gaze: the world comes
-    // at the patient instead of rising. That is why the gate exists.
-    const supine = stack({ base: 'posture', t: 0, offset: 0 });
-    const pushed = stack({ base: 'posture', t: 0, offset: 0, bob: 0.065 });
-    expect(Math.abs(pushed.horizon.z - supine.horizon.z)).toBeGreaterThan(0.05);
+describe('legacy helpers', () => {
+  it('still clamp the frame offset composition', () => {
+    expect(contentOffsetFor(-1.7, 0.06, false)).toBeCloseTo(-1.64, 6);
+    expect(contentOffsetFor(-1.7, 0.06, true)).toBeCloseTo(-1.7, 6);
   });
 
-  it('re-applying the frame offset after a bob is a no-op', () => {
-    // Calibration writes the offset once; the first buoyant frame must not add
-    // a second eye height on top of it.
-    const calibrated = stack({ base: 'calibrated', offset: -1.7, bob: 0 });
-    const firstBob = stack({ base: 'calibrated', offset: -1.7, bob: 0.001 });
-    expect(Math.abs(elevationDeg(firstBob.horizon) - elevationDeg(calibrated.horizon)))
-      .toBeLessThan(0.05);
+  it('gate the heave to a running floating session', () => {
+    const ok = { mode: 'float' as const, active: true, capturePending: false, rising: false };
+    expect(buoyancyAllowed(ok)).toBe(true);
+    expect(buoyancyAllowed({ ...ok, rising: true })).toBe(false);
+    expect(buoyancyAllowed({ ...ok, mode: 'posture' })).toBe(false);
+    expect(buoyancyAllowed({ ...ok, active: false })).toBe(false);
+    expect(buoyancyAllowed({ ...ok, capturePending: true })).toBe(false);
   });
 });

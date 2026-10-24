@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SceneSettings } from '../../core/scene/contract';
+import type { BuoyancyState, SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
 import { createDome } from './dome';
 import { createClouds } from './clouds';
@@ -42,6 +42,9 @@ export const shoreScene = defineScene(
     },
     audio: { track: 'lake', volume: 0.8, fadeMs: 1200, loop: true, width: 0.8 }
   },
+  // Drawn for a body on its back on the water: the eye rides 0.45 m above the
+  // surface, which is the sit-up path's lying eye height.
+  { posture: 'supine', eyeY: 0.45 },
   function () {
     const root = new THREE.Group();
     root.name = 'shore';
@@ -80,12 +83,16 @@ export const shoreScene = defineScene(
        * full amplitude. Sway goes to the same near layers, so the horizon line
        * itself stays level.
        */
-      applyBuoyancy: function (state: { amountM: number; swayDeg: number }): void {
+      applyBuoyancy: function (state: BuoyancyState): void {
         const amount = Number.isFinite(state.amountM) ? state.amountM : 0;
         const sway = Number.isFinite(state.swayDeg) ? state.swayDeg : 0;
-        clouds.root.position.y = amount * CLOUD_GAIN;
-        water.root.position.y = amount;
-        shoreline.root.position.y = amount;
+        // The heave runs along the patient's visual up, not the lake's: for a
+        // supine viewer those differ, and moving the near field along +Y would
+        // push it toward their face instead of lifting it.
+        const axis = state.axis ?? { x: 0, y: 1, z: 0 };
+        clouds.root.position.set(axis.x * amount * CLOUD_GAIN, axis.y * amount * CLOUD_GAIN, axis.z * amount * CLOUD_GAIN);
+        water.root.position.set(axis.x * amount, axis.y * amount, axis.z * amount);
+        shoreline.root.position.set(axis.x * amount, axis.y * amount, axis.z * amount);
         const swayRad = (sway * Math.PI) / 180;
         water.root.rotation.x = swayRad;
         shoreline.root.rotation.x = swayRad;

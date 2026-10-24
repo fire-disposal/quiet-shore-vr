@@ -3,6 +3,7 @@ import type {
   BuoyancyState,
   SceneDefinition,
   SceneHandle,
+  ScenePosture,
   SceneSettings,
   SceneSummary
 } from '../../core/scene/contract';
@@ -32,12 +33,20 @@ export interface SceneBuild {
  * a violation instead of silent drift; `dispose` releases the scene, then
  * clears the settings so a stale fog or background cannot outlive it.
  */
+/**
+ * `placement` is the scene's own statement about which eye the art was drawn
+ * for; without it the frame planner would have to guess (and it used to, with
+ * one global eye height for every scene).
+ */
 export function defineScene(
   summary: SceneSummary,
+  placement: { posture: ScenePosture; eyeY: number },
   build: () => SceneBuild
 ): SceneDefinition {
   return {
     ...summary,
+    posture: placement.posture,
+    eyeY: placement.eyeY,
     build(): SceneHandle {
       const parts = build();
       const stats = measureObject(parts.root);

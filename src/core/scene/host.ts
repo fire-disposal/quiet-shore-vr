@@ -5,7 +5,6 @@ import { ResourceRegistry } from '../geometry/registry';
 export interface SceneHostOptions {
   /** Shared resource registry; created when omitted. */
   registry?: ResourceRegistry;
-  eyeHeight?: number;
 }
 
 const NO_SELECTABLES: THREE.Object3D[] = [];
@@ -29,7 +28,6 @@ export class SceneHost {
   private currentDefinition: SceneDefinition | null = null;
   private readonly baselineBackground: THREE.Color | THREE.Texture | null;
   private readonly baselineFog: THREE.FogBase | null;
-  private readonly defaultEyeHeight: number;
   private floorOffset = 0;
   private elapsed = 0;
 
@@ -41,7 +39,6 @@ export class SceneHost {
     this.scene.add(this.content);
     this.baselineBackground = this.scene.background;
     this.baselineFog = this.scene.fog;
-    this.defaultEyeHeight = options.eyeHeight ?? 1.7;
   }
 
   get definition(): SceneDefinition | null {
@@ -64,14 +61,12 @@ export class SceneHost {
    * Build `def` and swap it in. The old scene is disposed only after the new
    * one is live, so shared registry resources survive the switch.
    *
-   * `ctx` only needs the build-time fields the caller controls; the host
-   * always injects its own registry so resource ownership stays single-source.
+   * The host injects its registry so resource ownership stays single-source;
+   * a scene states its own eye (`SceneDefinition.eyeY`) instead of receiving a
+   * height from the caller.
    */
-  load(def: SceneDefinition, ctx: Partial<SceneBuildContext> = {}): SceneHandle {
-    const handle = def.build({
-      eyeHeight: ctx.eyeHeight ?? this.defaultEyeHeight,
-      registry: this.registry
-    });
+  load(def: SceneDefinition): SceneHandle {
+    const handle = def.build({ registry: this.registry });
 
     const previous = this.current;
     if (previous) previous.root.removeFromParent();
@@ -110,10 +105,23 @@ export class SceneHost {
     if (this.current) this.current.update(dt, this.elapsed);
   }
 
-  /** Lift scene content so its floor sits at the user's physical floor. */
+  /** Lift scene content so its eye sits where the frame's eye is. */
   setFloorOffset(y: number): void {
+    this.setContentPosition(this.content.position.x, y, this.content.position.z);
+  }
+
+  /**
+   * Place the whole art at a content-space offset. Y is reported through
+   * `floor` for telemetry; X/Z exist because a supine frame's heave does not
+   * run along Y (see `core/xr/world-frame.ts`).
+   */
+  setContentPosition(x: number, y: number, z: number): void {
     this.floorOffset = y;
-    this.content.position.y = y;
+    this.content.position.set(
+      Number.isFinite(x) ? x : 0,
+      Number.isFinite(y) ? y : 0,
+      Number.isFinite(z) ? z : 0
+    );
   }
 
   dispose(): void {
