@@ -38,13 +38,14 @@ export interface SceneBuild {
  * height for every scene).
  */
 export function defineScene(
-  summary: SceneSummary,
+  summary: SceneSummary & { comfortLevel?: number },
   placement: { eyeY: number },
   build: () => SceneBuild
 ): SceneDefinition {
   return {
     ...summary,
     eyeY: placement.eyeY,
+    comfortLevel: summary.comfortLevel,
     build(): SceneHandle {
       const parts = build();
       const stats = measureObject(parts.root);

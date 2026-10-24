@@ -121,6 +121,15 @@ describe('technician choice', () => {
     expect(h.floating.getProfile().label).toBe(FLOAT_PROFILES.c.label);
   });
 
+  it('honours a scene ceiling below the profile cap', () => {
+    const h = harness({ profile: 'b' });
+    expect(h.floating.setLevel(3, 2)).toBe(2);
+    expect(h.floating.setLevel(3, 1)).toBe(1);
+    expect(h.floating.setLevel(0, 1)).toBe(0);
+    // The scene cap never raises the profile cap.
+    expect(h.floating.setLevel(3, 9)).toBe(3);
+  });
+
   it('scales the envelope with the level', () => {
     const low = harness({ level: 1 });
     const high = harness({ level: 3 });

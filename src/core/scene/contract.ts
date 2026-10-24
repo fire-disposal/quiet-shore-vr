@@ -80,6 +80,14 @@ export interface SceneSummary {
 
 export interface SceneDefinition extends SceneSummary {
   /**
+   * Highest buoyancy level this scene stays comfortable at (1..3).
+   *
+   * The light well is pure vertical optic flow — the strongest self-motion cue
+   * of the three and the one most likely to make someone queasy — so it caps
+   * lower than the room or the lake. Absent means "the global maximum".
+   */
+  comfortLevel?: number;
+  /**
    * Content-space Y of the eye the art was authored for. The frame places the
    * art by it, which is why the app never needs a global `-eyeHeight` fudge:
    * the washroom's floor is 1.70 m below its eye, the lake sits 0.45 m below

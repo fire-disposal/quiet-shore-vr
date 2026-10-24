@@ -132,6 +132,8 @@ export class QuietShoreApp {
   private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
+  /** Highest float level the loaded scene allows (its own comfort ceiling). */
+  private sceneComfortLevel = FLOAT_MAX_LEVEL;
   /** SUS answers live on the headset; the 20-byte state frame has no room. */
   private readonly susAnswers: (number | null)[] = new Array(10).fill(null);
   private readonly calibrationFrame = new THREE.Quaternion();
@@ -1127,11 +1129,13 @@ export class QuietShoreApp {
         this.applyVoiceCommand(command.command);
         return;
       case 'floatLevel': {
-        const capped = this.floating.setLevel(command.level);
+        const capped = this.floating.setLevel(command.level, this.sceneComfortLevel);
         this.start.setStatus(
           capped === command.level
             ? `漂浮强度 ${command.level}/${FLOAT_MAX_LEVEL}`
-            : `沉浸档最高 ${capped} 级（近场角速度上限）`,
+            : this.sceneComfortLevel < FLOAT_MAX_LEVEL
+              ? `本场景最高 ${this.sceneComfortLevel} 级（垂直流动上限）`
+              : `沉浸档最高 ${capped} 级（近场角速度上限）`,
           'ok'
         );
         this.link.sendStateNow();

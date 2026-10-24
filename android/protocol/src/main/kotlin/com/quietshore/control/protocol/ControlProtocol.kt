@@ -755,6 +755,18 @@ object ControlProtocol {
         "lightwell" to "光井"
     )
 
+    /**
+     * One operator-facing line per scene: what the room is and how it moves.
+     * Kept here, next to the ids, because the choice card on the tablet is the
+     * only place an operator sees all three at once — and a blurb that drifts
+     * from the art is worse than none.
+     */
+    val SCENE_BLURBS: Map<String, String> = linkedMapOf(
+        "washroom" to "站立视角：0.85 米外的立便器与木隔屏，房间完全静止。",
+        "shore" to "躺卧视角：水面在身下缓缓起伏，云在头顶漂移，地平线稳定。",
+        "lightwell" to "躺卧视角：竖井里十三道光环持续上行，强度跟着漂浮幅度走。"
+    )
+
     private fun sceneIndex(name: String): Int {
         val index = SCENE_IDS.indexOf(name)
         return if (index < 0) 255 else index

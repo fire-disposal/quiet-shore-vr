@@ -75,6 +75,60 @@ describe('scene registry', () => {
   });
 });
 
+describe('scene capabilities', () => {
+  it('declares one eye height per scene, sane for the headset', () => {
+    for (const id of ['washroom', 'shore', 'lightwell']) {
+      const scene = getSceneDefinition(id)!;
+      // 0.45 m = lying on water, 1.70 m = standing height. Outside this band the
+      // art would either sink through the floor or float above the room.
+      expect(scene.eyeY).toBeGreaterThanOrEqual(0.3);
+      expect(scene.eyeY).toBeLessThanOrEqual(2.0);
+    }
+  });
+
+  it('caps the strongest flow-driven scene below the global maximum', () => {
+    // The ceiling is the app's guard against the one combination we know is
+    // uncomfortable: vertical optic flow at full amplitude.
+    const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfortLevel ?? 3]));
+    expect(ceilings).toEqual({ washroom: 3, shore: 3, lightwell: 2 });
+  });
+
+  it('hands each motion channel to the scene that needs it', () => {
+    const washroom = build('washroom').handle;
+    const shore = build('shore').handle;
+    const lightwell = build('lightwell').handle;
+    try {
+      // The room is static: no per-frame work beyond the patient's own motion.
+      expect(washroom.applyBuoyancy).toBeUndefined();
+      expect(washroom.setFlow).toBeUndefined();
+      // The lake carries the buoyancy itself so the horizon stays level.
+      expect(typeof shore.applyBuoyancy).toBe('function');
+      expect(shore.setFlow).toBeUndefined();
+      // The well manufactures the flow; the app only feeds it a 0..1 value.
+      expect(typeof lightwell.setFlow).toBe('function');
+      expect(lightwell.applyBuoyancy).toBeUndefined();
+    } finally {
+      washroom.dispose();
+      shore.dispose();
+      lightwell.dispose();
+    }
+  });
+
+  it('exposes no gaze targets and no camera of its own', () => {
+    for (const id of ['washroom', 'shore', 'lightwell']) {
+      const { handle } = build(id);
+      try {
+        // Selection in a scene would be a second interaction model; the only
+        // gaze targets in the app belong to the SUS panel.
+        expect(handle.selectables).toHaveLength(0);
+        expect(handle.root.getObjectByProperty('isCamera', true)).toBeUndefined();
+      } finally {
+        handle.dispose();
+      }
+    }
+  });
+});
+
 describe('scene budgets', () => {
   it('keeps every scene inside the one-device frame budget', () => {
     for (const scene of SCENES) {

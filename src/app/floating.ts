@@ -72,8 +72,11 @@ export interface FloatingState {
 export interface FloatingApi {
   /** Advance one frame; the only writer of the heave. */
   update(dt: number): void;
-  /** Clamped to the level range and the profile's near-field cap. */
-  setLevel(level: number): number;
+  /**
+   * Clamped to the level range, the profile's near-field cap and the scene's
+   * own comfort ceiling (the light well cannot be pushed to full amplitude).
+   */
+  setLevel(level: number, sceneCap?: number): number;
   /** Switching profile pulls the level down to its cap; returns the new level. */
   setProfile(id: FloatProfileId): number;
   setBreath(on: boolean): void;
@@ -168,8 +171,8 @@ export function createFloating(
     apply();
   }
 
-  function setLevel(next: number): number {
-    level = clampLevel(next, FLOAT_LEVEL_CAP[profile.id]);
+  function setLevel(next: number, sceneCap = FLOAT_MAX_LEVEL): number {
+    level = clampLevel(next, Math.min(FLOAT_LEVEL_CAP[profile.id], sceneCap));
     return level;
   }
 

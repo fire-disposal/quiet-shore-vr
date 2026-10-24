@@ -318,7 +318,10 @@ export const lightwellScene = defineScene(
     },
     // No ambience: water belongs to the shore and the washroom. This shaft is
     // meant to be heard as one's own breathing, not as a room.
-    audio: undefined
+    audio: undefined,
+    // Vertical flow only: the highest motion-sickness risk of the three, so the
+    // operator cannot take it past level 2 even with a standard profile.
+    comfortLevel: 2
   },
   // Supine inside the shaft: `EYE_Y` is where the rings centre, so it is also
   // where the eye belongs.
