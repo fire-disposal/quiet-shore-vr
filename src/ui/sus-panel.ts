@@ -66,14 +66,6 @@ export interface SusPanelApi {
  */
 export const SUS_DWELL_SECONDS = 3;
 
-/**
- * Reading hold after the card changes. The gaze lands on a new option before
- * patient has read the statement, so no dwell may start for this long.
- * 1 s after field tuning (was 2 s; the statement counter already tells the
- * patient a change is coming).
- */
-export const SUS_READ_HOLD_SECONDS = 1;
-
 export interface SusPanelOptions {
   scene: THREE.Scene;
   theme: SpatialTheme;
@@ -239,7 +231,9 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     const atStart = page === 0;
     const atEnd = page === SUS_STATEMENTS.length - 1;
     prevButton.setEnabled(!atStart);
-    nextButton.setEnabled(!atEnd);
+    // The pager stays live at the end: that is where it becomes the finish
+    // target. Disabling it here left "完成" inert — nothing to dwell on.
+    nextButton.setEnabled(true);
     nextButton.setLabel(atEnd ? '完成' : '下一题');
     for (const button of optionButtons) {
       button.object.visible = true;
@@ -249,8 +243,6 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     if (open && spokenPage !== page) {
       const firstTime = spokenPage === -1;
       spokenPage = page;
-      // Every option is frozen while the new statement is read.
-      input.lockDwell(SUS_READ_HOLD_SECONDS);
       options.onShow?.(page, firstTime);
     }
   }
@@ -270,7 +262,6 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     nextButton.setLabel('完成');
     nextButton.object.visible = true;
     registerTargets();
-    input.lockDwell(SUS_READ_HOLD_SECONDS);
   }
 
   /** The dwell target fired: thank the patient and hand the rest to the app. */
@@ -287,6 +278,11 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   }
 
   function move(delta: number): void {
+    if (delta > 0 && page === SUS_STATEMENTS.length - 1) {
+      // Past the last statement the pager is the finish target.
+      enterFinish();
+      return;
+    }
     const next = Math.min(SUS_STATEMENTS.length - 1, Math.max(0, page + delta));
     if (next === page) {
       return;

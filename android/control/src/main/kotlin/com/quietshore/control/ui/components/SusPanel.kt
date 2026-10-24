@@ -93,7 +93,7 @@ fun SusPanel(
                 Column {
                     Text("目视选择", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        text = "患者注视选项 3 秒即可作答（翻题后 1 秒不计时）",
+                        text = "患者注视选项 3 秒即可作答",
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextSecondary
                     )
