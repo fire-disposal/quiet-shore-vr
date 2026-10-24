@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.UiEvent
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.ui.theme.QuietPalette
 import java.util.Locale
@@ -28,6 +29,8 @@ import kotlin.math.roundToInt
 @Composable
 fun StatusPanel(
     state: ControlUiState,
+    /** Latest one-shot message; null when nothing has been said yet. */
+    event: UiEvent? = null,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -46,19 +49,19 @@ fun StatusPanel(
                 color = QuietPalette.TextSecondary
             )
             StatusSummary(state)
-            state.notice?.let { message ->
-                Text(
-                    text = "消息：$message",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
-            state.error?.let { message ->
-                Text(
-                    text = "错误：$message",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.Danger
-                )
+            event?.let { latest ->
+                when (latest) {
+                    is UiEvent.Notice -> Text(
+                        text = "消息：${latest.text}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                    is UiEvent.Error -> Text(
+                        text = "错误：${latest.text}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.Danger
+                    )
+                }
             }
             Text(
                 text = "再次点击左上信息条收起",

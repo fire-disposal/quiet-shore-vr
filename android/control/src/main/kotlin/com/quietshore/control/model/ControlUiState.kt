@@ -63,8 +63,6 @@ data class ControlUiState(
     val susAnswers: List<Int> = List(10) { 0 },
     /** Every sheet the headset has filed, newest last. Persisted on the tablet. */
     val susHistory: List<com.quietshore.control.protocol.SusResult> = emptyList(),
-    val notice: String? = null,
-    val error: String? = null,
     val scanAttempted: Boolean = false,
     /** Launch requested, waiting for the patient's confirm key. */
     val startPending: Boolean = false,

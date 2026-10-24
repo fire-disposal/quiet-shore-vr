@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,10 +21,27 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.quietshore.control.ControlViewModel
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.UiEvent
+import kotlinx.coroutines.delay
+
+/** How long a one-shot message stays in the status panel. */
+private const val EVENT_VISIBLE_MS = 6_000L
 
 @Composable
 fun ControlApp(viewModel: ControlViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // One-shot messages: the banner shows the latest and forgets it after a
+    // few seconds, so a repeated message still appears.
+    var latestEvent by remember { mutableStateOf<UiEvent?>(null) }
+    LaunchedEffect(viewModel) {
+        viewModel.uiEvents.collect { event ->
+            latestEvent = event
+            delay(EVENT_VISIBLE_MS)
+            if (latestEvent === event) {
+                latestEvent = null
+            }
+        }
+    }
     val bluetoothEnabled by viewModel.bluetoothEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -108,6 +126,7 @@ fun ControlApp(viewModel: ControlViewModel) {
     if (state.showControls) {
         ControlScreen(
             state = state,
+            event = latestEvent,
             onOpenInfo = { showInfo = true },
             actions = ControlActions(
                 onStartTraining = viewModel::enterTraining,

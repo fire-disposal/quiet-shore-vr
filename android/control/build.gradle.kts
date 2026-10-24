@@ -11,8 +11,8 @@ android {
         applicationId = "com.quietshore.control"
         minSdk = 26
         targetSdk = 33
-        versionCode = 67
-        versionName = "0.9.38"
+        versionCode = 68
+        versionName = "0.9.39"
     }
 
     buildFeatures {
@@ -29,6 +29,8 @@ android {
 
 dependencies {
     implementation(project(":protocol"))
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)
@@ -43,6 +45,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("no.nordicsemi.android:ble:2.11.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
 
 val syncMirrorAsset = tasks.register<Copy>("syncMirrorAsset") {

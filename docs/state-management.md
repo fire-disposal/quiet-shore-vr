@@ -97,11 +97,23 @@
 
 | 顺序 | 改动 | 收益 | 风险 |
 | --- | --- | --- | --- |
-| 1 | 平板：`notice/error` → `SharedFlow<UiEvent>` | 提示不再"同句不重绘"，代码里少 24 处状态写入 | S：只动 `StatusPanel` 的订阅 |
-| 2 | 平板：`ControlUiState` 拆 `Remote` / `Intent` | 消灭 `floatLevel`、`sessionMode` 的双写 | M：UI 读取处全部改名 |
-| 3 | 页面：`StatusBus` | 40 个旁路写入收口，文案可测 | S |
-| 4 | 头显：`sealed Command` + `CommandRouter` | 与页面 `commands.ts` 同一套形状 | M：白名单迁移 |
+| 1 | 平板：`notice/error` → `SharedFlow<UiEvent>` | 提示不再"同句不重绘"，代码里少 24 处状态写入 | ✅ 0.9.39 |
+| 2 | 平板：把合并规则抽成 `mergeRemoteFrame()` + 单测 | `floatLevel` / `sessionMode` 的双写变成一条有名字、有测试的契约 | ✅ 0.9.39（字段还没拆成两个容器） |
+| 3 | 页面：`StatusBus` | — | **撤回**：`start.setStatus` 已经是唯一写入者，再加一层只是改名，不是修问题 |
+| 4 | 头显：`sealed Command` + `CommandRouter` | 与页面 `commands.ts` 同一套形状 | 待做（需实机回归，风险最高） |
 | — | XState / Redux / Hilt / Room | — | **不做** |
+
+已落地部分的形状：
+
+```kotlin
+// 平板
+val uiEvents: SharedFlow<UiEvent>          // Notice / Error，一次性，不进状态
+mergeRemoteFrame(current, frame, sessionStartedAt, nowMs)  // 所有权契约，6 例单测
+```
+
+`ControlUiState` 目前仍是一个 data class；合并规则已经从 `onControlState` 里那 30 行 `copy(...)`
+搬进 `model/RemoteMerge.kt`，因此"镜像不得覆盖意图"现在可以被断言。把它彻底拆成 `Remote`/`Intent`
+两个容器仍列在 `TODO.md`（M 级，只影响 UI 读取处）。
 
 ## 6 现状缺口
 

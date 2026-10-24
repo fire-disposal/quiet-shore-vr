@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.LoadingDots
 import com.quietshore.control.ui.theme.QuietPalette
@@ -40,6 +41,8 @@ import com.quietshore.control.ui.theme.QuietPalette
 @Composable
 fun PairingScreen(
     state: ControlUiState,
+    /** Latest one-shot message; a failure is shown inline while pairing. */
+    event: UiEvent? = null,
     bluetoothEnabled: Boolean,
     permissionsGranted: Boolean,
     permissionRequested: Boolean,
@@ -78,6 +81,7 @@ fun PairingScreen(
                 )
                 PairingCard(
                     state = state,
+                    event = event,
                     bluetoothEnabled = bluetoothEnabled,
                     permissionsGranted = permissionsGranted,
                     permissionRequested = permissionRequested,
@@ -106,6 +110,7 @@ fun PairingScreen(
                 )
                 PairingCard(
                     state = state,
+                    event = event,
                     bluetoothEnabled = bluetoothEnabled,
                     permissionsGranted = permissionsGranted,
                     permissionRequested = permissionRequested,
@@ -190,6 +195,7 @@ private fun StepRow(index: String, text: String, compact: Boolean = false) {
 @Composable
 private fun PairingCard(
     state: ControlUiState,
+    event: UiEvent?,
     bluetoothEnabled: Boolean,
     permissionsGranted: Boolean,
     permissionRequested: Boolean,
@@ -232,9 +238,9 @@ private fun PairingCard(
                 ConnectionChip(phase = state.phase)
             }
 
-            state.error?.let { message ->
+            (event as? UiEvent.Error)?.let { failure ->
                 Text(
-                    text = message,
+                    text = failure.text,
                     style = MaterialTheme.typography.bodyMedium,
                     color = QuietPalette.Danger
                 )

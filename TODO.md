@@ -17,11 +17,12 @@
 
 ## 状态管理（见 `docs/state-management.md`）
 
-- [ ] 平板：`notice/error` 改 `SharedFlow<UiEvent>`（S）。
-- [ ] 平板：`ControlUiState` 拆成远程镜像 / 本地意图两块，消灭 `floatLevel` 与 `sessionMode` 的双写（M）。
-- [ ] 页面：40 处 `start.setStatus` 收口到 `StatusBus`（S）。
-- [ ] 头显：`sealed Command` + `CommandRouter`，与页面 `commands.ts` 同形（M）。
-- [ ] 补一条"镜像不得覆盖意图"的测试；`breathEnabled` 缺回读位，UI 需标注"本机设置"。
+- [x] 平板：`notice/error` 改 `SharedFlow<UiEvent>`（0.9.39）。
+- [x] 平板：合并规则抽成 `mergeRemoteFrame()`，“镜像不得覆盖意图”有 6 例单测（0.9.39）。
+- [ ] 平板：`ControlUiState` 仍是一个 data class；拆成远程镜像 / 本地意图两块（M）。
+- [ ] 头显：`sealed Command` + `CommandRouter`，与页面 `commands.ts` 同形（M，需实机回归）。
+- [ ] `breathEnabled` 缺回读位，UI 需标注"本机设置"。
+- ~~页面 StatusBus~~：撤回——`start.setStatus` 已是唯一写入者，多一层只是改名。
 
 ## 待确认
 

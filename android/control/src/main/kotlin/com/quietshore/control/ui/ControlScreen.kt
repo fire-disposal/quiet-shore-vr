@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.ControlPanel
@@ -52,6 +53,8 @@ import com.quietshore.control.ui.theme.QuietPalette
 fun ControlScreen(
     state: ControlUiState,
     actions: ControlActions,
+    /** Latest one-shot operator message, shown in the status panel. */
+    event: UiEvent? = null,
     onOpenInfo: () -> Unit = {}
 ) {
     val offline = state.phase == BlePhase.DISCONNECTED ||
@@ -113,6 +116,7 @@ fun ControlScreen(
             if (infoOpen) {
                 StatusPanel(
                     state = state,
+                    event = event,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(

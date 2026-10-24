@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.quietshore.control.ble.BleController
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.UiEvent
+import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.SessionMode
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.data.SusStore
@@ -20,8 +22,11 @@ import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.voice.VoiceCatalog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -49,6 +54,25 @@ class ControlViewModel(application: Application) :
         )
     )
     val uiState: StateFlow<ControlUiState> = _uiState.asStateFlow()
+
+    /**
+     * One-shot operator messages. Kept out of [ControlUiState] on purpose: an
+     * event must re-render even when it repeats, and it must never survive a
+     * reconnect as stale "state".
+     */
+    private val _events = MutableSharedFlow<UiEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val uiEvents = _events.asSharedFlow()
+
+    private fun notice(text: String) {
+        _events.tryEmit(UiEvent.Notice(text))
+    }
+
+    private fun error(text: String) {
+        _events.tryEmit(UiEvent.Error(text))
+    }
 
     private val _bluetoothEnabled = MutableStateFlow(false)
     val bluetoothEnabled: StateFlow<Boolean> = _bluetoothEnabled.asStateFlow()
@@ -108,8 +132,6 @@ class ControlViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 scanAttempted = true,
-                error = null,
-                notice = null,
                 reconnectAttempt = 0,
                 reconnectMax = 0
             )
@@ -132,8 +154,6 @@ class ControlViewModel(application: Application) :
                 lastDeviceAddress = address,
                 controlGranted = false,
                 poseStale = true,
-                error = null,
-                notice = null,
                 reconnectAttempt = 0,
                 reconnectMax = 0
             )
@@ -144,7 +164,7 @@ class ControlViewModel(application: Application) :
     fun cancelConnect() {
         ble.cancelConnect()
         _uiState.update {
-            it.copy(controlGranted = false, error = null, notice = null)
+            it.copy(controlGranted = false)
         }
     }
 
@@ -158,9 +178,7 @@ class ControlViewModel(application: Application) :
                 sessionActive = false,
                 controlGranted = false,
                 poseStale = true,
-                rssi = null,
-                notice = null,
-                error = null
+                rssi = null
             )
         }
     }
@@ -180,8 +198,7 @@ class ControlViewModel(application: Application) :
             it.copy(
                 sessionActive = false,
                 controlGranted = false,
-                poseStale = true,
-                notice = null
+                poseStale = true
             )
         }
     }
@@ -200,7 +217,7 @@ class ControlViewModel(application: Application) :
             return
         }
         _uiState.update {
-            it.copy(startPending = true, notice = "已请求启动，等待患者按确认键")
+            it.copy(startPending = true).also { notice("已请求启动，等待患者按确认键") }
         }
         sendCommand(ControlProtocol.ENTER)
         enterPendingJob?.cancel()
@@ -449,21 +466,23 @@ class ControlViewModel(application: Application) :
     fun sendCommand(command: String) {
         val normalized = command.trim().lowercase(Locale.US)
         if (normalized.isEmpty() || !ControlProtocol.isAllowedCommand(normalized)) {
-            _uiState.update { it.copy(error = "不支持的命令") }
+            error("不支持的命令")
             return
         }
         if (_uiState.value.phase != BlePhase.READY) {
-            _uiState.update { it.copy(error = "头显未连接") }
+            error("头显未连接")
             return
         }
         ble.sendCommand(normalized)
-        _uiState.update { state ->
-            state.copy(error = null, notice = "命令已发送")
+        // The view channel streams at ≤10 Hz; announcing every sample would
+        // flood the banner, so only discrete commands report.
+        if (!normalized.startsWith(ControlProtocol.VIEW_ORIENT)) {
+            notice("命令已发送")
         }
     }
 
     fun reportError(message: String) {
-        _uiState.update { it.copy(error = message) }
+        error(message)
     }
 
     override fun onPhase(phase: BlePhase) {
@@ -482,10 +501,8 @@ class ControlViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 reconnectAttempt = attempt,
-                reconnectMax = max,
-                error = null,
-                notice = "连接中断，正在重连（$attempt/$max）"
-            )
+                reconnectMax = max
+            ).also { notice("连接中断，正在重连（$attempt/$max）") }
         }
     }
 
@@ -494,9 +511,7 @@ class ControlViewModel(application: Application) :
             it.copy(
                 controlGranted = true,
                 sessionActive = true,
-                poseStale = true,
-                error = null,
-                notice = null
+                poseStale = true
             )
         }
     }
@@ -506,9 +521,8 @@ class ControlViewModel(application: Application) :
             it.copy(
                 controlGranted = false,
                 sessionActive = false,
-                error = reason,
                 poseStale = true
-            )
+            ).also { error(reason) }
         }
     }
 
@@ -516,9 +530,8 @@ class ControlViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 controlGranted = false,
-                error = reason,
                 poseStale = true
-            )
+            ).also { error(reason) }
         }
     }
 
@@ -528,8 +541,7 @@ class ControlViewModel(application: Application) :
             it.copy(
                 controlGranted = false,
                 poseStale = true,
-                rssi = null,
-                notice = null
+                rssi = null
             )
         }
     }
@@ -552,15 +564,13 @@ class ControlViewModel(application: Application) :
             null
         } ?: return
         val history = susStore.append(result)
+        notice(
+            result.score?.let { "SUS 已记录：$it 分" } ?: "SUS 已记录 ${result.filled}/10"
+        )
         _uiState.update { current ->
             current.copy(
                 susHistory = history,
-                susAnswers = if (result.answers.size == 10) result.answers else current.susAnswers,
-                notice = if (result.score != null) {
-                    "SUS 已记录：${result.score} 分"
-                } else {
-                    "SUS 已记录 ${result.filled}/10"
-                }
+                susAnswers = if (result.answers.size == 10) result.answers else current.susAnswers
             )
         }
     }
@@ -585,47 +595,15 @@ class ControlViewModel(application: Application) :
 
     override fun onControlState(state: ControlState) {
         lastStateAt = SystemClock.elapsedRealtime()
-        // The patient stopped, the headset left the session, or a calibration
-        // now owns the pose. The page resets its pitch target to 0 on both
-        // transitions, so only the local request is dropped here.
-        // Session clock: starts on the rising edge, stops and clears on the
-        // falling edge, so the readout never carries time across sessions.
-        if (!state.session && _uiState.value.viewPitchTarget != 0) {
-            // The page recentres on session end; the slider must not keep a
-            // stale correction that the patient is no longer looking through.
-            _uiState.update { current -> current.copy(viewPitchTarget = 0) }
-        }
+        // The session clock: starts on the rising edge, clears on the falling
+        // edge, so the readout never carries time across sessions.
         if (state.session && sessionStartedAt == 0L) {
             sessionStartedAt = SystemClock.elapsedRealtime()
         } else if (!state.session) {
             sessionStartedAt = 0L
         }
         _uiState.update { current ->
-            current.copy(
-                control = state,
-                // While a session runs the headset is authoritative for both
-                // buoyancy and mode, so a rejected command cannot leave the
-                // panel showing something that is not happening.
-                sessionMode = if (state.session && state.postureMode) {
-                    SessionMode.POSTURE
-                } else if (state.session) {
-                    SessionMode.FLOAT
-                } else {
-                    current.sessionMode
-                },
-                floatLevel = state.floatLevel,
-                floatProfile = state.floatProfile,
-                // Voice is authoritative on the headset: the tablet only echoes.
-                voiceId = state.voiceId,
-                startPending = if (state.session) false else current.startPending,
-                // The headset owns the session clock (v11); the local stopwatch
-                // only covers a link that has not reported a second yet.
-                sessionElapsedMs = when {
-                    state.session && state.elapsedSec > 0 -> state.elapsedSec * 1000L
-                    sessionStartedAt == 0L -> 0L
-                    else -> SystemClock.elapsedRealtime() - sessionStartedAt
-                }
-            )
+            mergeRemoteFrame(current, state, sessionStartedAt, SystemClock.elapsedRealtime())
         }
     }
 
@@ -635,15 +613,15 @@ class ControlViewModel(application: Application) :
 
     override fun onStatus(raw: String) {
         when {
-            raw.startsWith(OK_PREFIX) -> _uiState.update { it.copy(notice = "头显已接收指令") }
+            raw.startsWith(OK_PREFIX) -> notice("头显已接收指令")
             raw == ControlProtocol.STATUS_CONTROL_RELEASED ->
-                _uiState.update { it.copy(notice = "已释放控制") }
+                notice("已释放控制")
             else -> Unit
         }
     }
 
     override fun onError(message: String) {
-        _uiState.update { it.copy(error = message) }
+        error(message)
     }
 
     override fun onCleared() {
