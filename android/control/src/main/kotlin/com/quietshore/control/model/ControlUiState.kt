@@ -59,7 +59,9 @@ data class ControlUiState(
     val error: String? = null,
     val scanAttempted: Boolean = false,
     /** Launch requested, waiting for the patient's confirm key. */
-    val startPending: Boolean = false
+    val startPending: Boolean = false,
+    /** No state frame from the headset for a while: the link is not live. */
+    val stateStale: Boolean = false
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 

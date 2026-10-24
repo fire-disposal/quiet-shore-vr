@@ -441,14 +441,21 @@ export class QuietShoreApp {
         return;
       }
       if (event.key === 'Enter' || event.key === ' ' || event.code === 'Enter') {
-        this.onSelectShort();
+        this.onSelectShort('keydown');
       }
-    }, { passive: true });
-    window.addEventListener('click', () => {
+    }, { passive: true, capture: true });
+    // Capture phase: Firefox delivers the headset button as a DOM click on
+    // whatever is focused, which may be the canvas rather than the window.
+    document.addEventListener('click', () => {
       if (this.xr.isPresenting) {
-        this.onSelectShort();
+        this.onSelectShort('click');
       }
-    }, { passive: true });
+    }, { capture: true });
+    document.addEventListener('pointerdown', () => {
+      if (this.xr.isPresenting) {
+        this.onSelectShort('pointer');
+      }
+    }, { capture: true });
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
@@ -590,8 +597,8 @@ export class QuietShoreApp {
       this.renderer.setAnimationLoop(this.onFrame);
       next.addEventListener('end', () => this.onSessionEnd());
       next.addEventListener('selectstart', () => this.onSelectStart());
-      next.addEventListener('selectend', () => this.onSelectEnd());
-      next.addEventListener('select', () => this.onSelectFallback());
+      next.addEventListener('selectend', () => this.onSelectEnd('xr-select'));
+      next.addEventListener('select', () => this.onSelectEnd('xr-select'));
 
       this.start.showStage();
       this.start.setEnterEnabled(false);
@@ -1444,7 +1451,7 @@ export class QuietShoreApp {
     // The press itself is not an action; `selectend`/`select` decide.
   }
 
-  private onSelectEnd(): void {
+  private onSelectEnd(source: string = 'xr'): void {
     // One action per press regardless of how many event shapes the runtime
     // delivers (selectstart/selectend/select, plus the DOM fallbacks).
     const now = performance.now();
@@ -1452,21 +1459,21 @@ export class QuietShoreApp {
       return;
     }
     this.selectHandledAt = now;
-    this.onSelectShort();
+    this.onSelectShort(source);
   }
 
   /** Firefox emits `select` after `selectend`; this is only a fallback. */
-  private onSelectFallback(): void {
-    this.onSelectEnd();
-  }
+
 
   /**
    * The only in-headset click: start (after calibration) or stop the session.
    * It never switches mode. Scene targets are still chosen by 6 s gaze dwell.
    */
-  private onSelectShort(): void {
+  private onSelectShort(source: string = 'xr'): void {
     if (this.lifecycle.phase === 'calibrating') {
-      // Same trigger as the tablet's calibrate command.
+      // Which channel fired is the question that matters in the field: show it
+      // on the card while the window is up.
+      this.calibrationOverlay?.setHint(`确认来源：${source}`);
       this.triggerCalibration();
       return;
     }

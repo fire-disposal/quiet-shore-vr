@@ -272,7 +272,7 @@ private fun ControlTopBar(
                 Spacer(Modifier.width(if (compact) 8.dp else 12.dp))
                 SignalBars(rssi = state.rssi)
                 Spacer(Modifier.width(8.dp))
-                ConnectionChip(phase = state.phase)
+                ConnectionChip(phase = state.phase, stale = state.stateStale)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (infoOpen) "▾" else "▸",

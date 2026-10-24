@@ -57,6 +57,8 @@ class ControlViewModel(application: Application) :
     private val ble = BleController(application, this)
 
     private var lastPoseAt = 0L
+    /** Last time any state frame arrived; the tablet's only liveness signal. */
+    private var lastStateAt = 0L
     /** Monotonic start of the running session; 0 when no session is running. */
     private var sessionStartedAt = 0L
     private var enterPendingJob: Job? = null
@@ -457,6 +459,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlState(state: ControlState) {
+        lastStateAt = SystemClock.elapsedRealtime()
         // The patient stopped, the headset left the session, or a calibration
         // now owns the pose. The page resets its pitch target to 0 on both
         // transitions, so only the local request is dropped here.
@@ -521,16 +524,20 @@ class ControlViewModel(application: Application) :
     private fun refreshStaleness() {
         val now = SystemClock.elapsedRealtime()
         val stale = lastPoseAt == 0L || now - lastPoseAt > POSE_STALE_MS
+        val stateStale = lastStateAt == 0L || now - lastStateAt > STATE_STALE_MS
         _uiState.update { state ->
             val elapsed = when {
                 state.control.session && state.control.elapsedSec > 0 -> state.control.elapsedSec * 1000L
                 sessionStartedAt == 0L -> 0L
                 else -> now - sessionStartedAt
             }
-            if (state.poseStale == stale && state.sessionElapsedMs == elapsed) {
+            if (state.poseStale == stale &&
+                state.stateStale == stateStale &&
+                state.sessionElapsedMs == elapsed
+            ) {
                 state
             } else {
-                state.copy(poseStale = stale, sessionElapsedMs = elapsed)
+                state.copy(poseStale = stale, stateStale = stateStale, sessionElapsedMs = elapsed)
             }
         }
     }
@@ -541,6 +548,8 @@ class ControlViewModel(application: Application) :
         const val ENTER_PENDING_MS = 20_000L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
+        /** Two missed 1 Hz frames: the link is no longer trustworthy. */
+        const val STATE_STALE_MS = 2500L
 
         const val PREFERENCES = "quiet-shore-control"
         const val LAST_DEVICE_KEY = "lastDeviceAddress"

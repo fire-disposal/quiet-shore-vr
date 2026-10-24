@@ -25,7 +25,16 @@ import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.ui.theme.QuietPalette
 
-fun phaseLabel(phase: BlePhase): String = when (phase) {
+/**
+ * "已连接" is a claim about *now*, not about the handshake that happened once.
+ * A ready link with no state frames for two seconds is reported as degraded.
+ */
+fun phaseLabel(phase: BlePhase, stale: Boolean = false): String = when (phase) {
+    BlePhase.READY -> if (stale) "连接受限" else "已连接"
+    else -> phaseLabelBase(phase)
+}
+
+private fun phaseLabelBase(phase: BlePhase): String = when (phase) {
     BlePhase.IDLE -> "未连接"
     BlePhase.SCANNING -> "搜索头显"
     BlePhase.CONNECTING, BlePhase.AUTHENTICATING -> "连接中"
@@ -35,8 +44,8 @@ fun phaseLabel(phase: BlePhase): String = when (phase) {
     BlePhase.DISCONNECTED -> "已断开"
 }
 
-fun phaseColor(phase: BlePhase): Color = when (phase) {
-    BlePhase.READY -> QuietPalette.Success
+fun phaseColor(phase: BlePhase, stale: Boolean = false): Color = when (phase) {
+    BlePhase.READY -> if (stale) QuietPalette.Warning else QuietPalette.Success
     BlePhase.CONNECTING, BlePhase.AUTHENTICATING, BlePhase.SCANNING,
     BlePhase.RECONNECTING -> QuietPalette.Warning
     BlePhase.ERROR -> QuietPalette.Danger
@@ -53,9 +62,10 @@ fun signalLevel(rssi: Int): Int = when {
 @Composable
 fun ConnectionChip(
     phase: BlePhase,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    stale: Boolean = false
 ) {
-    val color = phaseColor(phase)
+    val color = phaseColor(phase, stale)
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(50),
