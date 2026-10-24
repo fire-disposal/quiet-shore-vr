@@ -2,7 +2,7 @@
 
 静岸是一套床边的沉浸式场景体验：在躺卧的体位下，获得近似站立时的视野与感受。戴好头显即可开始，节奏由技术员掌握，随时可以停。
 
-**状态**：v0.9.32（三场景 `washroom` / `shore` / `lightwell`，按 `posture` 声明选世界帧；状态帧 v11 + 独立的 SUS 记录特征；27 句语音提示；三场景各有 `eyeY` 与 `comfortLevel`；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v0.9.35（三场景 `washroom` / `shore` / `lightwell`，按 `posture` 声明选世界帧；状态帧 v11 + 独立的 SUS 记录特征；27 句语音提示；三场景各有 `eyeY` 与 `comfortLevel`；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
 **烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.23.apk`、`artifacts/flash/quiet-shore-control-0.9.23.apk`，校验见同目录 `SHA256SUMS.txt`。
 
@@ -32,7 +32,7 @@
 ## 功能
 
 - 会话：患者按确认键开始/停止；场景与模式都由技术员在平板选定，**只在会话前切换**。
-- 漂浮：世界沿患者视觉竖直缓慢起伏（档位 a 40 mm / 15 s、b 65 mm / 12 s、c 100 mm / 9 s）+ 近场微粒同相位上飘，强度 0–3；停止时按 tau 0.25 s 渐出，1.2 s 内收住。
+- 漂浮：世界沿患者视觉竖直缓慢起伏（档位 a 55 mm / 16 s、b 75 mm / 13 s、c 100 mm / 9 s），**只平移不旋转**，地平线永不倾斜；近场微粒同相位上飘，强度 0–3；停止按 tau 0.25 s 渐出，1.2 s 内收住。
 - 朝向记录：保持不动 1.8 s + 3 s 取样取平均（9 s 强制落地）；卡片期间世界完全静止。
 - 场景：三个，由技术员在平板选择（会话前可换）。`washroom` 洁净立便间（默认）：2.4 × 2.4 × 2.55 m 单间、立便器、木隔屏、天光；`shore` 仰望湖面：天穹、一层漂移云、水面与日光、4 m 内木桩与芦苇；`lightwell` 光井：18 m 直径、120 m 高竖井，十三道自发光环状构件向上掠过。均无人物、无标牌。每个场景声明 `eyeY`，画面据此放置（见 `docs/animation.md`）。
 - 双 APK 通信：头显前台服务广播 BLE 外设，平板自动扫描连接、`HELLO 2` / `WELCOME 2` 握手与 5 s PING 存活检测；state 为 28 字节 v11（MTU 不足时回落 20 字节 v10），另有独立的 `sus` 特征回传量表答卷。
@@ -67,6 +67,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/animation.md](docs/animation.md) — 漂浮/起身/俯仰修正的分层、帧规则与验收
 - [docs/scenes.md](docs/scenes.md) — 三场景的代码边界、画面/运动、用途与选择规则
 - [docs/control-plane.md](docs/control-plane.md) — BLE 与 WebSocket 控制面通信契约
+- [docs/protocol-conformance.md](docs/protocol-conformance.md) — 两侧实现（头显 / 页面）的命令语法与状态字段对照
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state 编解码
 - [docs/state-v11.md](docs/state-v11.md) — state 帧 28 字节 v11 的字段定义
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录

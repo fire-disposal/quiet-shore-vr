@@ -85,7 +85,6 @@ export const shoreScene = defineScene(
        */
       applyBuoyancy: function (state: BuoyancyState): void {
         const amount = Number.isFinite(state.amountM) ? state.amountM : 0;
-        const sway = Number.isFinite(state.swayDeg) ? state.swayDeg : 0;
         // The heave runs along the patient's visual up, not the lake's: for a
         // supine viewer those differ, and moving the near field along +Y would
         // push it toward their face instead of lifting it.
@@ -93,9 +92,6 @@ export const shoreScene = defineScene(
         clouds.root.position.set(axis.x * amount * CLOUD_GAIN, axis.y * amount * CLOUD_GAIN, axis.z * amount * CLOUD_GAIN);
         water.root.position.set(axis.x * amount, axis.y * amount, axis.z * amount);
         shoreline.root.position.set(axis.x * amount, axis.y * amount, axis.z * amount);
-        const swayRad = (sway * Math.PI) / 180;
-        water.root.rotation.x = swayRad;
-        shoreline.root.rotation.x = swayRad;
       },
       dispose: function (): void {
         clouds.dispose();

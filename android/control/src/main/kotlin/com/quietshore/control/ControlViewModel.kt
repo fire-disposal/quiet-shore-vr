@@ -258,6 +258,28 @@ class ControlViewModel(application: Application) :
         }
     }
 
+    /**
+     * One discrete view preset. The page owns the curve and the amplitude
+     * (up/down are relative ±10°, recenter is absolute, breathe round-trips),
+     * so the tablet only names it and keeps its own slider in step.
+     */
+    fun playViewAnim(name: String) {
+        if (name !in ControlProtocol.VIEW_ANIM_NAMES) {
+            return
+        }
+        sendCommand(ControlProtocol.VIEW_ANIM + name)
+        val delta = when (name) {
+            "up" -> 10
+            "down" -> -10
+            "recenter" -> null
+            else -> return
+        }
+        _uiState.update { current ->
+            val target = if (delta == null) 0 else (current.viewPitchTarget + delta)
+            current.copy(viewPitchTarget = target.coerceIn(-30, 30))
+        }
+    }
+
     fun setFloatProfile(id: String) {
         val profile = id.lowercase(Locale.US)
         if (profile !in ControlProtocol.FLOAT_PROFILE_NAMES) {
@@ -568,6 +590,11 @@ class ControlViewModel(application: Application) :
         // transitions, so only the local request is dropped here.
         // Session clock: starts on the rising edge, stops and clears on the
         // falling edge, so the readout never carries time across sessions.
+        if (!state.session && _uiState.value.viewPitchTarget != 0) {
+            // The page recentres on session end; the slider must not keep a
+            // stale correction that the patient is no longer looking through.
+            _uiState.update { current -> current.copy(viewPitchTarget = 0) }
+        }
         if (state.session && sessionStartedAt == 0L) {
             sessionStartedAt = SystemClock.elapsedRealtime()
         } else if (!state.session) {

@@ -6,7 +6,6 @@ import {
   easeAmplitude,
   floatAmplitudeForLevel,
   floatOffsetAt,
-  floatPitchAt,
   type FloatProfile,
   type FloatProfileId
 } from '../core/xr/float';
@@ -15,7 +14,7 @@ import type { SceneHandle } from '../core/scene/contract';
 
 /**
  * Owner of everything buoyancy: the technician's choice, the eased envelope,
- * the applied heave and sway, and the two writes that put them in the scene.
+ * the applied heave, and the two writes that put it in the scene.
  *
  * It owns the content Y too, because a heave is meaningless without knowing
  * which transform it is a delta of: the frame (calibration or sit-up) sets the
@@ -26,7 +25,6 @@ import type { SceneHandle } from '../core/scene/contract';
  * base offset  (frame)  ─┐
  *                         ├─> content.position.y  (+ scene.applyBuoyancy)
  * heave        (bob)   ─┘
- * sway         ──> content.rotation.x  (or the scene's near layers)
  * ```
  */
 
@@ -42,7 +40,7 @@ export interface FloatingDeps {
     setFloorOffset(y: number): void;
     /** Content-space offset for the whole art, used when the scene has no split. */
     setContentPosition(x: number, y: number, z: number): void;
-    /** The art group; the fallback sway tilts it. */
+    /** The art group; the fallback path writes its position. */
     content: THREE.Object3D;
   };
   handle(): SceneHandle | null;
@@ -59,8 +57,6 @@ export interface FloatingState {
   amplitudeM: number;
   /** Applied heave, in metres. */
   offsetM: number;
-  /** Applied horizon sway, in degrees. */
-  swayDeg: number;
   /** Content Y owned by the frame, before the heave. */
   baseOffset: number;
 }
@@ -105,7 +101,6 @@ export function createFloating(
   /** Seconds of continuous drift; kept while fading so the phase never jumps. */
   let seconds = 0;
   let offsetM = 0;
-  let swayDeg = 0;
   let baseOffset = 0;
 
   function clampLevel(value: number, cap: number): number {
@@ -123,7 +118,7 @@ export function createFloating(
     axis(up);
     if (splits && scene?.applyBuoyancy) {
       host.setFloorOffset(contentOffsetFor(baseOffset, offsetM, true));
-      scene.applyBuoyancy({ amountM: offsetM, swayDeg, axis: { x: up.x, y: up.y, z: up.z } });
+      scene.applyBuoyancy({ amountM: offsetM, axis: { x: up.x, y: up.y, z: up.z } });
       return;
     }
     // The frame owns Y; the heave is a vector along the visual up, so a supine
@@ -133,7 +128,7 @@ export function createFloating(
       contentOffsetFor(baseOffset, offsetM, false),
       up.z * offsetM
     );
-    host.content.rotation.x = THREE.MathUtils.degToRad(swayDeg);
+    host.content.rotation.x = 0;
   }
 
   function update(dt: number): void {
@@ -145,21 +140,14 @@ export function createFloating(
       // Settle exactly once, so an idle scene pays nothing per frame. The frame
       // offset is not touched here: it belongs to the calibration/sit-up layer.
       amplitudeM = 0;
-      if (offsetM !== 0 || swayDeg !== 0) {
+      if (offsetM !== 0) {
         offsetM = 0;
-        swayDeg = 0;
         apply();
       }
       return;
     }
     seconds += dt;
     offsetM = floatOffsetAt(profile, seconds, amplitudeM, breath);
-    // Horizon sway: a couple of degrees of world pitch, in phase with the
-    // drift, is what makes the horizon feel unmoored rather than the floor.
-    // The sway is a horizon tilt; it only means that while the scene's up is
-    // the visual up. A supine viewer would see it as a pitch of the world.
-    axis(up);
-    swayDeg = up.y > 0.7 ? floatPitchAt(profile, seconds, amplitudeM) : 0;
     apply();
   }
 
@@ -183,7 +171,6 @@ export function createFloating(
     amplitudeM = 0;
     seconds = 0;
     offsetM = 0;
-    swayDeg = 0;
     apply();
   }
 
@@ -206,7 +193,6 @@ export function createFloating(
         breath: true,
         amplitudeM: 0,
         offsetM: 0,
-        swayDeg: 0,
         baseOffset: 0
       };
       state.level = level;
@@ -214,7 +200,6 @@ export function createFloating(
       state.breath = breath;
       state.amplitudeM = amplitudeM;
       state.offsetM = offsetM;
-      state.swayDeg = swayDeg;
       state.baseOffset = baseOffset;
       return state;
     }

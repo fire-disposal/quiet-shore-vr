@@ -82,7 +82,6 @@ describe('buoyancy envelope', () => {
     // Settled scenes are cheap: the last write is a single zero.
     const last = h.applied.at(-1)!;
     expect(last.amountM).toBe(0);
-    expect(last.swayDeg).toBe(0);
   });
 
   it('never runs outside the floating mode or inside a capture', () => {
@@ -99,10 +98,8 @@ describe('buoyancy envelope', () => {
     h.gate.active = false;
     h.run(2.5);
     expect(h.floating.getState().offsetM).toBe(0);
-    expect(h.floating.getState().swayDeg).toBe(0);
     const last = h.applied.at(-1)!;
     expect(last.amountM).toBe(0);
-    expect(last.swayDeg).toBe(0);
   });
 });
 

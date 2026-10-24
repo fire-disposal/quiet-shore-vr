@@ -6,6 +6,7 @@ import {
 import { isViewPresetId, type ViewPresetId } from '../core/xr/view-motion';
 import { parseViewOrient } from './view-command';
 import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN } from './config';
+import { SUS_ITEMS } from './sus';
 
 /**
  * The remote command grammar, as data.
@@ -122,7 +123,8 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   }
   if (command.startsWith('cue:intensity:')) {
     const payload = command.slice('cue:intensity:'.length);
-    const value = Number(payload);
+    // Same decimal grammar as the Kotlin allowlist: no exponents, no padding.
+    const value = /^-?\d+(?:\.\d+)?$/.test(payload) ? Number(payload) : Number.NaN;
     return Number.isFinite(value) && value >= 0 && value <= 1
       ? { kind: 'cueIntensity', value }
       : { kind: 'invalid', message: '提示强度无效' };
@@ -137,8 +139,9 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
     return { kind: 'susClose' };
   }
   if (command.startsWith('sus:show:')) {
+    // 1..10, the shipped item count; the headset's allowlist uses the same range.
     const index = Number(command.slice('sus:show:'.length));
-    return Number.isInteger(index)
+    return Number.isInteger(index) && index >= 1 && index <= SUS_ITEMS
       ? { kind: 'susShow', index }
       : { kind: 'invalid', message: 'SUS 题号无效' };
   }
@@ -146,9 +149,10 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
     return { kind: 'susMove', delta: command === 'sus:next' ? 1 : -1 };
   }
   if (command.startsWith('sus:answer:')) {
-    const value = Number(command.slice('sus:answer:'.length));
-    return Number.isInteger(value) && value >= 1 && value <= 5
-      ? { kind: 'susAnswer', value }
+    // Exactly one digit: "sus:answer:01" is a malformed frame, not a 1.
+    const payload = command.slice('sus:answer:'.length);
+    return /^[1-5]$/.test(payload)
+      ? { kind: 'susAnswer', value: Number(payload) }
       : { kind: 'invalid', message: 'SUS 分值无效' };
   }
 

@@ -67,7 +67,7 @@ ATT 默认 MTU 23 只是**初始值**：Android 5+ / PICO G2（Android 8.1）都
 | 2 | 打包 | level 2b · profile 2b · scene 4b | 场景留在快通道，镜像要跟它；无级强度的百分比在高 4 位预留 |
 | 3 | eyeHeight | cm，120–190 | |
 | 4 | **floatMm** | int8，±127 mm | **已应用**的竖直偏移，镜像直接加 |
-| 5 | **swayDeg10** | int8，0.1°（±12.7°） | **已应用**的地平线摆 |
+| 5 | **swayDeg10** | int8，0.1° | **已退役**，恒为 0：世界只平移不旋转 |
 | 6 | **voiceId** | 0–31，255=none | 正在播的句子索引（顺序取 `voice/lines.json`） |
 | 7–8 | posturePitch / postureRoll | int8 度 | 测得的世界倾角 |
 | 9 | postureRise | cm | |

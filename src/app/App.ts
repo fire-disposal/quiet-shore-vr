@@ -377,7 +377,7 @@ export class QuietShoreApp {
           sitUpT: this.world.state().sitUpT,
           baseFloorOffset: this.floating.getState().baseOffset,
           bobM: this.floating.getState().offsetM,
-          swayDeg: this.floating.getState().swayDeg,
+          swayDeg: 0, // retired channel: the world never tilts
           contentY: this.host.content.position.y,
           upGazeDeg: this.viewMotion.getUpGazeDeg()
         }),
@@ -1532,7 +1532,8 @@ export class QuietShoreApp {
       floatProfile: motion.profile,
       // Applied motion, not the requested level: the mirror adds these verbatim.
       floatMm: motion.offsetM * 1000,
-      swayDeg: motion.swayDeg,
+      // Retired: the horizon never tilts. The byte stays for frame compatibility.
+      swayDeg: 0,
       sessionSec:
         this.sessionStartedAt > 0
           ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)

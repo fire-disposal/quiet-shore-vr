@@ -50,6 +50,8 @@ object ControlProtocol {
     const val ALL_APPS: String = "allapps"
 
     /** Operator answers the current SUS item when the patient cannot. */
+    const val SUS_SHOW: String = "sus:show:"
+    const val CUE_INTENSITY: String = "cue:intensity:"
     const val SUS_ANSWER: String = "sus:answer:"
     const val SETTINGS_SKIP_CALIBRATION: String = "settings:skipcalibration:"
     const val SETTINGS_HUD: String = "settings:hud:"
@@ -338,7 +340,12 @@ object ControlProtocol {
     }
 
     /** Plain decimal meters only: no sign, exponent or locale-specific comma. */
-    private val EYE_HEIGHT_VALUE = Regex("""\d{1,3}(?:\.\d{1,3})?""")
+    /**
+     * The page's parser is `^1\.\d{1,3}$` (see `src/app/commands.ts`); the two
+     * must accept exactly one grammar, so a value the page would reject can
+     * never be persisted here.
+     */
+    private val EYE_HEIGHT_VALUE = Regex("""1\.\d{1,3}""")
 
     /**
      * Plain decimal axis, identical to the page's `^-?\d+(?:\.\d+)?$`:
@@ -346,6 +353,29 @@ object ControlProtocol {
      * trailing dot never match. Two parsers must accept exactly one grammar.
      */
     private val NORMALIZED_AXIS = Regex("""-?\d+(?:\.\d+)?""")
+
+    /** Parses `cue:intensity:<0..1>`; anything outside the range is rejected. */
+    fun parseCueIntensity(command: String): Float? {
+        if (!command.startsWith(CUE_INTENSITY)) {
+            return null
+        }
+        val raw = command.substring(CUE_INTENSITY.length)
+        if (!NORMALIZED_AXIS.matches(raw)) {
+            return null
+        }
+        val value = raw.toFloatOrNull() ?: return null
+        return value.takeIf { it.isFinite() && it >= 0f && it <= 1f }
+    }
+
+    /** Parses `sus:show:<1..10>`; the page clamps to the item list afterwards. */
+    fun parseSusShow(command: String): Int? {
+        if (!command.startsWith(SUS_SHOW)) {
+            return null
+        }
+        val raw = command.substring(SUS_SHOW.length)
+        val value = raw.toIntOrNull() ?: return null
+        return value.takeIf { it in 1..SUS_ITEMS }
+    }
 
     /** Parses `sus:answer:<1-5>`; anything else is rejected whole. */
     fun parseSusAnswer(command: String): Int? {
@@ -445,12 +475,12 @@ object ControlProtocol {
             normalized == POSTURE_STOP ||
             normalized == "cue:on" ||
             normalized == "cue:off" ||
-            (normalized.startsWith("cue:intensity:") && normalized.length > "cue:intensity:".length) ||
+            parseCueIntensity(normalized) != null ||
             normalized == "home" ||
             normalized == "console:about" ||
             normalized == "allapps" ||
             normalized == "sus:open" ||
-            normalized.startsWith("sus:show:") ||
+            parseSusShow(normalized) != null ||
             normalized == "sus:close" ||
             normalized == "sus:next" ||
             normalized == "sus:prev" ||

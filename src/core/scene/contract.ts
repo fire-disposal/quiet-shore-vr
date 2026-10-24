@@ -34,8 +34,6 @@ export interface SceneBuildContext {
 export interface BuoyancyState {
   /** Offset in metres along `axis`, signed. */
   amountM: number;
-  /** Horizon pitch in degrees, signed; 0 when the visual up is not the scene up. */
-  swayDeg: number;
   /**
    * Unit vector in content space pointing along the patient's visual up. A
    * supine viewer's up is not the scene's +Y, so a scene that moves layers by

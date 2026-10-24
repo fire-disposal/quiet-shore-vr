@@ -32,6 +32,8 @@ data class ControlActions(
     val onFloatProfile: (String) -> Unit,
     /** Extra view-pitch correction in degrees; 0 leaves the frame alone. */
     val onViewPitch: (Int) -> Unit,
+    /** One discrete view preset: up / down / recenter / breathe. */
+    val onViewAnim: (String) -> Unit,
     /** Shows the patient-facing explanation page on the headset. */
     val onShowAbout: () -> Unit,
     val onEmergencyStop: () -> Unit,

@@ -127,6 +127,7 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onSessionMode = viewModel::setSessionMode,
                 onFloatLevel = viewModel::setFloatLevel,
                 onViewPitch = viewModel::setViewPitch,
+                onViewAnim = viewModel::playViewAnim,
                 onShowAbout = viewModel::showAbout,
                 onFloatProfile = viewModel::setFloatProfile,
                 onEmergencyStop = viewModel::emergencyStop,

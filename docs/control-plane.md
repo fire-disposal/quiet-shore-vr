@@ -204,7 +204,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
 | `mode:float\|posture` | 会话前选择模式；会话中拒绝。起身为备选分支 |
 | `float:level:0-3` | 漂浮强度；0 为停用，停止时按 tau 0.25 s 渐出 |
-| `float:profile:a\|b\|c` | 漂浮档位：a 温和（40 mm / 15 s）、b 标准（65 mm / 12 s）、c 沉浸（100 mm / 9 s + 1° 地平线微摆，最高 1 级）。实机选型用 |
+| `float:profile:a\|b\|c` | 漂浮档位：a 温和（55 mm / 16 s）、b 标准（75 mm / 13 s）、c 沉浸（100 mm / 9 s，最高 1 级）。**无地平线摆动**：世界只沿视觉竖直平移，从不旋转 |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
 | `calibrate` / `recalibrate` | 打开校准：保持不动 1.8 s + 3 s 取样取平均，9 s 强制落地；卡片期间世界冻结；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 环境声（水声）开关，**默认关**；只影响场景环境声，不静音语音。开启时两路交叉淡化播放，关闭时 0.4 s 渐出 |

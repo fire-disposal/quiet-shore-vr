@@ -21,12 +21,6 @@ export interface FloatProfile {
   readonly amplitudeM: number;
   /** One full up-down cycle, in seconds. Longer reads as drift, not bobbing. */
   readonly periodS: number;
-  /**
-   * Horizon sway: the world tilts by this many degrees in phase with the drift.
-   * 0 for the gentle profiles; a couple of degrees is what makes the horizon
-   * itself feel unmoored.
-   */
-  readonly pitchSwayDeg: number;
 }
 
 /**
@@ -37,13 +31,16 @@ export interface FloatProfile {
  *    floating body has an ambiguous vestibular "down", so the vertical heave
  *    itself is the strongest cue we can give (Vection Res. 2020, Sci Rep 11:1022).
  *  - An unstable subjective vertical triggers disorientation and space motion
- *    sickness (NASA Neurolab), so the horizon is kept nearly still: the
- *    immersive profile sways one degree, not more.
+ *    sickness (NASA Neurolab). The horizon therefore **never tilts**: there is
+ *    no sway channel at all, and the world only translates along the visual up.
+ *
+ * Amplitudes sit right under the near-field speed cap (2 °/s at the ~1.1 m
+ * shore), judged on the shaped curve's peak speed rather than the sine's.
  */
 export const FLOAT_PROFILES: Readonly<Record<FloatProfileId, FloatProfile>> = {
-  a: { id: 'a', label: '温和', amplitudeM: 0.04, periodS: 15, pitchSwayDeg: 0 },
-  b: { id: 'b', label: '标准', amplitudeM: 0.065, periodS: 12, pitchSwayDeg: 0 },
-  c: { id: 'c', label: '沉浸', amplitudeM: 0.1, periodS: 9, pitchSwayDeg: 1 }
+  a: { id: 'a', label: '温和', amplitudeM: 0.055, periodS: 16 },
+  b: { id: 'b', label: '标准', amplitudeM: 0.075, periodS: 13 },
+  c: { id: 'c', label: '沉浸', amplitudeM: 0.1, periodS: 9 }
 };
 
 export const DEFAULT_FLOAT_PROFILE: FloatProfileId = 'b';
@@ -54,10 +51,11 @@ export const FLOAT_MAX_LEVEL = 3;
 /**
  * Highest level each profile may be asked for, from the near-field speed cap.
  *
- * The world translates as one piece, so the nearest content (the shore at
- * ~1.1 m) sees the fastest angular motion: `2πA/T / d`. Keeping that under
- * 2 °/s gives a ≤55 mm ceiling for the 9 s immersive profile, i.e. level 1.
- * The gentle and standard profiles stay inside the cap at level 3.
+ * The world translates along one axis only — no rotation, no looming — so the
+ * budget is expressed at the near field (~1.1 m at the shore): 2.5 °/s, i.e.
+ * 0.048 m/s of travel. The shaped curve's peak speed is what counts, not the
+ * sine's. That puts the 9 s immersive profile at 100 mm for level 1 only;
+ * the gentle and standard profiles stay inside the cap at level 3.
  */
 export const FLOAT_LEVEL_CAP: Readonly<Record<FloatProfileId, number>> = {
   a: FLOAT_MAX_LEVEL,
@@ -91,18 +89,18 @@ export function floatAmplitudeForLevel(profile: FloatProfile, level: number): nu
  *
  * Both are pure arithmetic, no allocation, three sin() per frame.
  */
-const HARMONIC = 0.18;
-const WARP = 0.16;
+const HARMONIC = 0.22;
+const WARP = 0.2;
 const SWELL_PERIOD_S = 43;
-const SWELL_DEPTH = 0.12;
+const SWELL_DEPTH = 0.1;
 /**
  * A little high-frequency wobble on top of the slow heave. Adding oscillation
  * to the visual field is a known way to strengthen vection; kept at a few
  * millimetres so it reads as water, not vibration. The main curve is scaled
  * down by the same fraction so the total never leaves the envelope.
  */
-const JITTER_FRACTION = 0.06;
-const JITTER_HZ = 0.37;
+const JITTER_FRACTION = 0.03;
+const JITTER_HZ = 0.31;
 /**
  * Breathing layer: a slow rise and fall that rides on top of the heave. A body
  * held in water moves with its breath, and that coupling is a strong, very
@@ -110,7 +108,7 @@ const JITTER_HZ = 0.37;
  * "I am buoyant".
  */
 const BREATH_PERIOD_S = 7.5;
-const BREATH_FRACTION = 0.22;
+const BREATH_FRACTION = 0.16;
 
 /** Normalises the shaped curve so its crest is exactly 1 before scaling. */
 const CURVE_NORM = ((): number => {
@@ -137,7 +135,10 @@ export function floatOffsetAt(
     return 0;
   }
   const phase = (seconds * 2 * Math.PI) / profile.periodS;
-  const warped = phase + WARP * Math.sin(phase);
+  // The warp runs *against* the phase so the crest lasts longer than the
+  // trough: a body rising through water slows near the top and settles a
+  // little quicker. Measured: crest/trough dwell ≈ 1.06–1.11.
+  const warped = phase - WARP * Math.sin(phase);
   const shaped = (Math.sin(warped) + HARMONIC * Math.sin(2 * warped)) / CURVE_NORM;
   const swell = 1 - SWELL_DEPTH * 0.5 * (1 - Math.cos((seconds * 2 * Math.PI) / SWELL_PERIOD_S));
   const wobble = Math.sin(seconds * 2 * Math.PI * JITTER_HZ) * JITTER_FRACTION;
@@ -147,19 +148,6 @@ export function floatOffsetAt(
   const combined = shaped * (1 - JITTER_FRACTION - (breath ? BREATH_FRACTION : 0)) +
     wobble + breathWave * BREATH_FRACTION;
   return combined * amplitudeM * swell;
-}
-
-/**
- * Horizon sway in degrees at the same instant, in phase with the drift: the
- * horizon tilts while the world rises, which is what sells "nothing is holding
- * me down" rather than "someone is lifting the floor".
- */
-export function floatPitchAt(profile: FloatProfile, seconds: number, amplitudeM: number): number {
-  if (!(amplitudeM > 0) || profile.pitchSwayDeg === 0) {
-    return 0;
-  }
-  const scale = amplitudeM / profile.amplitudeM;
-  return Math.cos((seconds * 2 * Math.PI) / profile.periodS) * profile.pitchSwayDeg * scale;
 }
 
 /**

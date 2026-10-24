@@ -50,6 +50,15 @@ describe('remote command grammar', () => {
     expect(parseRemoteCommand('view:stop')).toEqual({ kind: 'viewStop' });
   });
 
+  it('takes cue intensity in the same grammar as the headset allowlist', () => {
+    expect(parseRemoteCommand('cue:intensity:0.5')).toEqual({ kind: 'cueIntensity', value: 0.5 });
+    expect(parseRemoteCommand('cue:intensity:1')?.kind).toBe('cueIntensity');
+    expect(parseRemoteCommand('cue:intensity:0')?.kind).toBe('cueIntensity');
+    for (const raw of ['cue:intensity:1.5', 'cue:intensity:-0.1', 'cue:intensity:5e-1']) {
+      expect(parseRemoteCommand(raw)?.kind).toBe('invalid');
+    }
+  });
+
   it('bounds the rise duration to what the ramp can do', () => {
     expect(parseRemoteCommand('anim:duration:6000')).toEqual({ kind: 'riseDuration', ms: 6000 });
     expect(parseRemoteCommand('anim:duration:3000')?.kind).toBe('invalid');
@@ -61,6 +70,11 @@ describe('remote command grammar', () => {
     expect(parseRemoteCommand('sus:answer:5')).toEqual({ kind: 'susAnswer', value: 5 });
     expect(parseRemoteCommand('sus:answer:6')?.kind).toBe('invalid');
     expect(parseRemoteCommand('sus:answer:0')?.kind).toBe('invalid');
+    // One digit, one question: padding and out-of-range indices are frames of
+    // the wrong shape, not values to coerce.
+    expect(parseRemoteCommand('sus:answer:01')?.kind).toBe('invalid');
+    expect(parseRemoteCommand('sus:show:0')?.kind).toBe('invalid');
+    expect(parseRemoteCommand('sus:show:11')?.kind).toBe('invalid');
     expect(parseRemoteCommand('sus:next')).toEqual({ kind: 'susMove', delta: 1 });
     expect(parseRemoteCommand('sus:prev')).toEqual({ kind: 'susMove', delta: -1 });
   });

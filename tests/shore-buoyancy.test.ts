@@ -17,7 +17,7 @@ describe('shore buoyancy distribution', () => {
   it('moves the near layers and leaves the dome still', () => {
     const handle = shoreScene.build({ registry: null as never });
     // Standing frame: the visual up is the lake's up.
-    handle.applyBuoyancy?.({ amountM: 0.05, swayDeg: 1, axis: { x: 0, y: 1, z: 0 } });
+    handle.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 1, z: 0 } });
 
     const dome = part(handle, 'shore-dome');
     const water = part(handle, 'shore-water');
@@ -29,7 +29,8 @@ describe('shore buoyancy distribution', () => {
     expect(water.position.y).toBeCloseTo(0.05, 6);
     expect(shore.position.y).toBeCloseTo(0.05, 6);
     expect(clouds.position.y).toBeCloseTo(0.02, 6);
-    expect(water.rotation.x).toBeCloseTo(Math.PI / 180, 6);
+    // The horizon never tilts: no rotation is written, on any layer.
+    expect(water.rotation.x).toBe(0);
     expect(dome.rotation.x).toBe(0);
 
     handle.dispose();
@@ -38,7 +39,7 @@ describe('shore buoyancy distribution', () => {
   it('follows the axis when the visual up is not the lake up', () => {
     const handle = shoreScene.build({ registry: null as never });
     // Supine frame: the patient's up runs along the scene's depth.
-    handle.applyBuoyancy?.({ amountM: 0.05, swayDeg: 0, axis: { x: 0, y: 0, z: 1 } });
+    handle.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 0, z: 1 } });
 
     expect(part(handle, 'shore-water').position.z).toBeCloseTo(0.05, 6);
     expect(part(handle, 'shore-water').position.y).toBeCloseTo(0, 6);
@@ -49,8 +50,8 @@ describe('shore buoyancy distribution', () => {
 
   it('returns everything to rest', () => {
     const handle = shoreScene.build({ registry: null as never });
-    handle.applyBuoyancy?.({ amountM: -0.04, swayDeg: -1.5, axis: { x: 0, y: 1, z: 0 } });
-    handle.applyBuoyancy?.({ amountM: 0, swayDeg: 0, axis: { x: 0, y: 1, z: 0 } });
+    handle.applyBuoyancy?.({ amountM: -0.04, axis: { x: 0, y: 1, z: 0 } });
+    handle.applyBuoyancy?.({ amountM: 0, axis: { x: 0, y: 1, z: 0 } });
 
     expect(part(handle, 'shore-water').position.y).toBe(0);
     expect(part(handle, 'shore-shoreline').position.y).toBe(0);

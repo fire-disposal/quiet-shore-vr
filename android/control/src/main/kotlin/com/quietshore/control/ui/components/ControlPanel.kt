@@ -92,7 +92,7 @@ fun ControlPanel(
                     text = if (state.sessionMode == SessionMode.POSTURE) {
                         "起身：切进来时从当前视角开始，由「回躺」缓慢下降"
                     } else {
-                        "漂浮：竖向缓慢漂移；会话中可直接切换模式"
+                        "漂浮：竖向缓慢漂移；模式只在会话开始前选"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
@@ -181,6 +181,61 @@ fun ControlPanel(
                 )
                 Text(
                     text = "起身到站立视角（面向立便器）；轨迹越长越温和",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+
+            Section("视角") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "俯仰修正",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "目标 ${state.viewPitchTarget}° · 已应用 ${state.control.viewPitch.roundToInt()}°",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+                // The page owns the easing (τ 0.25 s, ≤15°/s); the slider only
+                // names an absolute up-gaze and is debounced to one sample per
+                // 120 ms, so a drag cannot flood the link.
+                Slider(
+                    value = state.viewPitchTarget.toFloat(),
+                    onValueChange = { actions.onViewPitch(it.roundToInt()) },
+                    valueRange = -30f..30f,
+                    steps = 59,
+                    enabled = connected && running
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = { actions.onViewAnim("up") },
+                        enabled = connected && running,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("上仰") }
+                    FilledTonalButton(
+                        onClick = { actions.onViewAnim("down") },
+                        enabled = connected && running,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("下俯") }
+                    OutlinedButton(
+                        onClick = { actions.onViewAnim("recenter") },
+                        enabled = connected && running,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("回正") }
+                    OutlinedButton(
+                        onClick = { actions.onViewAnim("breathe") },
+                        enabled = connected && running,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("呼吸") }
+                }
+                Text(
+                    text = "只改患者看向世界的角度，不动相机与校准；回正把偏航一并归零",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
                 )
@@ -293,9 +348,9 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 private fun profileHint(id: String): String = when (id) {
-    "a" -> "温和：22 mm / 14 秒，无地平线摆动"
-    "c" -> "沉浸：45 mm / 9 秒，含 1.5° 地平线摆动"
-    else -> "标准：35 mm / 11 秒，无地平线摆动"
+    "a" -> "温和：55 mm / 16 秒，只有平移"
+    "c" -> "沉浸：100 mm / 9 秒（本档最高 1 级），只有平移"
+    else -> "标准：75 mm / 13 秒，只有平移"
 }
 
 /** mm:ss, capped at an hour so a stuck session cannot grow the string forever. */

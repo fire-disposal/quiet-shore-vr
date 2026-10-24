@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FLOAT_PROFILE,
+  FLOAT_LEVEL_CAP,
   FLOAT_MAX_LEVEL,
   FLOAT_PROFILES,
   easeAmplitude,
   floatAmplitudeForLevel,
   floatOffsetAt,
-  floatPitchAt,
   isFloatProfileId
 } from '../src/core/xr/float';
 
@@ -23,7 +23,8 @@ describe('float profiles', () => {
       expect(profile.amplitudeM).toBeGreaterThan(0);
       expect(profile.amplitudeM).toBeLessThanOrEqual(0.12);
       expect(profile.periodS).toBeGreaterThanOrEqual(6);
-      expect(profile.pitchSwayDeg).toBeLessThanOrEqual(2);
+      // The horizon never tilts: there is no sway channel to bound.
+      expect((profile as Record<string, unknown>).pitchSwayDeg).toBeUndefined();
     }
   });
 
@@ -90,36 +91,45 @@ describe('float profiles', () => {
   it('produces no motion when the level is off', () => {
     const profile = FLOAT_PROFILES.c;
     expect(floatOffsetAt(profile, 3, 0)).toBe(0);
-    expect(floatPitchAt(profile, 3, 0)).toBe(0);
   });
 
-  it('only the immersive profile sways the horizon, and stays within its limit', () => {
+  it('keeps every usable profile under the near-field speed cap', () => {
+    // Pure translation, measured at the near field (~1.1 m): 2.5 deg/s is
+    // 0.048 m/s of travel. The shaped curve's peak speed is what counts.
+    const CAP_MPS = ((2.5 * Math.PI) / 180) * 1.1;
     for (const profile of Object.values(FLOAT_PROFILES)) {
-      const amplitude = floatAmplitudeForLevel(profile, FLOAT_MAX_LEVEL);
-      for (let t = 0; t < profile.periodS; t += 0.25) {
-        const pitch = floatPitchAt(profile, t, amplitude);
-        expect(Math.abs(pitch)).toBeLessThanOrEqual(profile.pitchSwayDeg + 1e-9);
-        if (profile.pitchSwayDeg === 0) {
-          expect(pitch).toBe(0);
+      const usable = Math.min(FLOAT_MAX_LEVEL, FLOAT_LEVEL_CAP[profile.id]);
+      const amplitude = floatAmplitudeForLevel(profile, usable);
+      let peak = 0;
+      const step = 0.01;
+      for (let t = 0; t < profile.periodS * 2; t += step) {
+        const delta =
+          floatOffsetAt(profile, t + step, amplitude) - floatOffsetAt(profile, t, amplitude);
+        peak = Math.max(peak, Math.abs(delta) / step);
+      }
+      expect(peak).toBeLessThanOrEqual(CAP_MPS + 1e-4);
+    }
+  });
+
+  it('dwells at the crest longer than at the trough', () => {
+    // A buoyant body rises slowly and settles a little quicker; the shaped
+    // curve has to show that, or it reads as a metronome.
+    for (const profile of Object.values(FLOAT_PROFILES)) {
+      const usable = Math.min(FLOAT_MAX_LEVEL, FLOAT_LEVEL_CAP[profile.id]);
+      const amplitude = floatAmplitudeForLevel(profile, usable);
+      let above = 0;
+      let below = 0;
+      const step = 0.02;
+      for (let t = 0; t < profile.periodS; t += step) {
+        const value = floatOffsetAt(profile, t, amplitude);
+        if (value > amplitude * 0.5) {
+          above += step;
+        } else if (value < -amplitude * 0.5) {
+          below += step;
         }
       }
+      expect(above).toBeGreaterThan(below);
     }
-    expect(FLOAT_PROFILES.c.pitchSwayDeg).toBeGreaterThan(0);
-  });
-
-  it('scales the sway with the intensity, never beyond the profile', () => {
-    const profile = FLOAT_PROFILES.c;
-    const full = floatAmplitudeForLevel(profile, FLOAT_MAX_LEVEL);
-    const third = floatAmplitudeForLevel(profile, 1);
-    const peak = (amplitude: number): number => {
-      let max = 0;
-      for (let t = 0; t < profile.periodS; t += 0.1) {
-        max = Math.max(max, Math.abs(floatPitchAt(profile, t, amplitude)));
-      }
-      return max;
-    };
-    expect(peak(third)).toBeLessThan(peak(full));
-    expect(peak(full)).toBeCloseTo(profile.pitchSwayDeg, 3);
   });
 
   it('fades toward the target without overshooting', () => {
