@@ -1,6 +1,6 @@
 # quiet-shore-vr（静岸 · Quiet Shore VR）
 
-静岸是一套床边的沉浸式场景体验：戴好头显，进入一段安静的画面与声音；技术员在平板上控制节奏，随时可以停。
+静岸是一套床边的沉浸式场景体验：在躺卧的体位下，获得近似站立时的视野与感受。戴好头显即可开始，节奏由技术员掌握，随时可以停。
 
 **状态**：v0.9.23（三场景 `washroom` / `shore` / `lightwell`；状态帧 v11；无需按键的稳定窗口校准；27 句语音提示，手动播放；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 

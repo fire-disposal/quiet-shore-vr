@@ -5,16 +5,16 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 112035,
+      "totalMs": 114078,
       "files": [
         {
           "id": "v-about-1",
           "group": "说明",
           "file": "male/v-about-1.mp3",
-          "ms": 18935,
-          "bytes": 114140,
-          "sha256": "244006671d0e4056b9e79ea8635cc246ce4fa85f4ee64311a86de0eb13c7a9fb",
-          "textHash": "1e396484b7e236ae"
+          "ms": 18503,
+          "bytes": 111548,
+          "sha256": "ef14a8f702daf2855bac125b220a90152f78596b1c0a4340e7fa71fc31c9380e",
+          "textHash": "6f0252e26f21a6e9"
         },
         {
           "id": "v-wear-1",
@@ -56,10 +56,10 @@
           "id": "v-float-1",
           "group": "引导",
           "file": "male/v-float-1.mp3",
-          "ms": 3154,
-          "bytes": 19532,
-          "sha256": "d9a14c090fb215c54238a96b7a5e0231741df91da255a5132cbb00980d181944",
-          "textHash": "414451601949ce7d"
+          "ms": 5444,
+          "bytes": 33212,
+          "sha256": "607a261ac2d8fc4247728108eec29606e1cd410e217bb967bea991bde7fd442a",
+          "textHash": "4099c3e5d2493307"
         },
         {
           "id": "v-imagine-1",
@@ -128,10 +128,10 @@
           "id": "v-rise-1",
           "group": "引导",
           "file": "male/v-rise-1.mp3",
-          "ms": 4844,
-          "bytes": 29612,
-          "sha256": "6fef8231bbb5a0350f3ac3c20163460ead5a3c6fc9359fd192fa3f88c70101c9",
-          "textHash": "68a57e2180f980a1"
+          "ms": 5029,
+          "bytes": 30764,
+          "sha256": "67e36533fde4920daf4f5de6ca68f458ee48bda0a4b5f12e44f384cc2f44d9e9",
+          "textHash": "942e5e5af10aaa6a"
         },
         {
           "id": "v-safe-2",
@@ -255,16 +255,16 @@
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 125112,
+      "totalMs": 127877,
       "files": [
         {
           "id": "v-about-1",
           "group": "说明",
           "file": "female/v-about-1.mp3",
-          "ms": 21467,
-          "bytes": 129404,
-          "sha256": "7054e634add0f0049158213cf85b83d527d2e28dd9cb30d95790d09ea13b557d",
-          "textHash": "1e396484b7e236ae"
+          "ms": 21074,
+          "bytes": 127100,
+          "sha256": "902d1bf777f2e5d06b8e30aab42f0633742a3c2096502036c87f0f76ee443a56",
+          "textHash": "6f0252e26f21a6e9"
         },
         {
           "id": "v-wear-1",
@@ -306,10 +306,10 @@
           "id": "v-float-1",
           "group": "引导",
           "file": "female/v-float-1.mp3",
-          "ms": 3328,
-          "bytes": 20540,
-          "sha256": "fd9c3c2978e443b8e0e20911a5379dc0daea8a12078ee04b4f5abf1f453dd308",
-          "textHash": "414451601949ce7d"
+          "ms": 6290,
+          "bytes": 38396,
+          "sha256": "9a6b43d30bc11baff8bb7ce2238b824146f4c10e3743a02f83a6a338d1cf4fb7",
+          "textHash": "4099c3e5d2493307"
         },
         {
           "id": "v-imagine-1",
@@ -378,10 +378,10 @@
           "id": "v-rise-1",
           "group": "引导",
           "file": "female/v-rise-1.mp3",
-          "ms": 5267,
-          "bytes": 32204,
-          "sha256": "9b5230d3a1f9aa4e396ab3eb7d29df80d385337c8b797afd0989f43654d46369",
-          "textHash": "68a57e2180f980a1"
+          "ms": 5463,
+          "bytes": 33356,
+          "sha256": "7fbad961add90d8cf15b42cb450701dc8ab87a0da140e0b687940fee00413cf4",
+          "textHash": "942e5e5af10aaa6a"
         },
         {
           "id": "v-safe-2",
@@ -503,5 +503,5 @@
       ]
     }
   },
-  "generatedAt": "2026-10-24T11:22:06+08:00"
+  "generatedAt": "2026-10-24T11:29:48+08:00"
 }
