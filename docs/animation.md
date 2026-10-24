@@ -56,16 +56,28 @@ A5 的量化证据（复现栈 = comfort + world-shell + situp-path，头部为�
 
 即：校准帧本身就是"躺着的站立视野"，起身帧是"先仰卧、再起身"。
 
-## 4 代码归属（本轮）
+## 4 代码归属
 
-| 之前 | 现在 |
+| 层 | 模块 | 职责 |
+| --- | --- | --- |
+| 帧选择 | `core/xr/world-frame.ts` | `planFrame()`：由场景声明 × 会话模式算出 base 与偏移；`visualUpInContent()` |
+| 世界帧运行器 | `app/world-runtime.ts` | 校准帧、起身路径、偏移落地；唯一写 base 的地方 |
+| 漂浮 | `app/floating.ts` | 等级/档位/包络/位移/sway，沿视觉竖直写 content |
+| 命令语法 | `app/commands.ts` | 字符串 → 类型化命令或错误；无副作用 |
+| 编排 | `app/App.ts` | XR 会话、音频、UI、快照；不含帧与漂浮的状态 |
+
+重构前后（同一份行为，测试从 223 增到 265）：
+
+| 文件 | 行数 |
 | --- | --- |
-| `App` 持有 8 个漂浮字段 + 两个写函数 | `src/app/floating.ts`：`createFloating()` 拥有等级、档位、包络、位移、sway 与写入 |
-| `App` 里 13 处 `host.setFloorOffset(...)` | 全部经 `setBaseFloorOffset()` → `floating.setBaseOffset()` |
-| 帧闸门写死在 `updateFloat` 内 | `src/core/xr/buoyancy-frame.ts`：纯函数，可测 |
+| `App.ts` | 1799 → 1549 |
+| `floating.ts` | 新增 227 |
+| `world-runtime.ts` | 新增 226 |
+| `commands.ts` | 新增 197 |
+| `buoyancy-frame.ts` / `world-frame.ts` | 新增 69 / 110 |
 
-验证：`tests/floating.test.ts`（12 例：包络、渐出、闸门、等级/档位夹紧、偏移叠加、reset）
-与 `tests/animation-frame.test.ts`（10 例：闸门真值表、偏移合成、三种帧的地平线角度）。
+`App` 里漂浮与起身的 12 个字段、5 个写入点、13 处 `setFloorOffset`、330 行命令分支都已迁出；
+`resetWorldToRest()` 是"没有会话"的唯一形状，`enterStage()` 是"有画面"的唯一入口。
 
 ## 5 场景侧字段（已对齐）
 
