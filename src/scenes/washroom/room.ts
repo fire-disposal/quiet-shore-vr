@@ -539,6 +539,10 @@ export function createRoom(): RoomLayer {
     tint: (index) => bowlTints[index] ?? 0.94,
     uvScale: 1.4
   });
+  // The throat is where the profile turns back outward: without a lid there is
+  // a 26 mm hole straight through the bowl, and the patient (looking up from a
+  // supine position, close to it) sees daylight through the ceramic.
+  bowlShell.disc(0, BOWL_TROUGH_DEPTH * -1 + 0.002, 0, 0.028, 24, 'up', 0.62);
   const bowlGeometry = bowlShell.build();
   bowlGeometry.scale(1, bowlScaleY, 1.18);
   bowlGeometry.rotateX(bowlTilt);
