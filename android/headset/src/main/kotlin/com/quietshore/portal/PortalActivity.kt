@@ -683,6 +683,7 @@ class PortalActivity : Activity() {
         card.addView(label("您会看到一片缓慢移动的景物，身体会跟着轻轻起伏，还有水声。", 16f, TEXT, Typeface.NORMAL, 0.02f))
         card.addView(label("需要进入时，看向画面中间的圆，按下头显右侧的按钮。", 16f, TEXT, Typeface.NORMAL, 0.02f))
         card.addView(label("任何时刻觉得不舒服，直接说话；工作人员会立刻停下。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        card.addView(label("这是一个实验性项目，您的反馈会帮助我们改进。谢谢您帮忙。", 16f, MUTED, Typeface.NORMAL, 0.02f))
         page.addView(card)
         return page
     }
