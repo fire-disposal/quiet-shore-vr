@@ -680,7 +680,7 @@ class PortalActivity : Activity() {
         val page = pageColumn()
         val card = sectionCard()
         card.addView(label("尊敬的患者，您好", 18f, TEXT, Typeface.BOLD, 0f))
-        card.addView(label("我们正在进行一项 VR 场景体验的技术测试，想了解它在卧床时的使用情况。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        card.addView(label("我们在做一项 VR 场景体验的技术测试：躺卧时，借画面与声音给您近似站立的视野与感受。", 16f, TEXT, Typeface.NORMAL, 0.02f))
         card.addView(label("开始与结束都由工作人员操作，您随时可以提出停止。", 16f, TEXT, Typeface.NORMAL, 0.02f))
         card.addView(label("结束后想请您说几句真实感受，帮助我们改进。谢谢您。", 16f, MUTED, Typeface.NORMAL, 0.02f))
         page.addView(card)
