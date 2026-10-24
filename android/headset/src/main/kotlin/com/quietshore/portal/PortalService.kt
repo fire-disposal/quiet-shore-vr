@@ -132,6 +132,8 @@ class PortalService : Service() {
         const val CONTENT_TYPE_MP3 = "audio/mpeg"
         /** Two missed state frames: commands are refused instead of queued. */
         const val PAGE_OFFLINE_MS = 2000L
+        /** At most one automatic page relaunch per half minute. */
+        const val PAGE_RELAUNCH_COOLDOWN_MS = 30_000L
         const val NO_STORE = "no-store, no-cache, must-revalidate"
 
         /** Page command replayed once whenever the console loses its lease. */
@@ -864,7 +866,16 @@ class PortalService : Service() {
             return false
         }
         if (!isHostCommand(command) && !isPageOnline()) {
-            Log.w(TAG, "page offline, dropped: $command")
+            // The page is the only controller. Instead of queueing into the
+            // void, bring it back and tell the caller why this one was lost.
+            val now = System.currentTimeMillis()
+            if (now - lastPageRelaunchAt > PAGE_RELAUNCH_COOLDOWN_MS) {
+                lastPageRelaunchAt = now
+                Log.w(TAG, "page offline, relaunching for: $command")
+                PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())
+            } else {
+                Log.w(TAG, "page offline, dropped: $command")
+            }
             return false
         }
         val seq = controlSeq.incrementAndGet()
@@ -1042,6 +1053,8 @@ class PortalService : Service() {
     /** Same decode path the removed `POST /state` used, now fed by `ws.state`. */
     @Volatile
     private var lastPageFrameAt = 0L
+    @Volatile
+    private var lastPageRelaunchAt = 0L
 
     /** The page is the only real controller: no frames, no commands. */
     fun isPageOnline(): Boolean =

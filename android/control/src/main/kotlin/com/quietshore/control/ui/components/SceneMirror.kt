@@ -37,8 +37,18 @@ fun SceneMirror(
     val webView = remember { mutableStateOf<WebView?>(null) }
     val latest by rememberUpdatedState(state)
 
-    // Feed the page at 5 Hz: the mirror is an observation surface, and a faster
-    // feed costs battery for motion nobody can resolve on a small preview.
+    // Feed the page at 5 Hz while the link is live; with no link there is
+    // nothing to show, and a continuously rendering WebGL canvas is the most
+    // expensive thing on this tablet.
+    val live = state.phase == com.quietshore.control.ble.BlePhase.READY
+    LaunchedEffect(live) {
+        val view = webView.value ?: return@LaunchedEffect
+        view.evaluateJavascript(
+            "window.QuietShoreMirror && window.QuietShoreMirror.${if (live) "start" else "stop"}()",
+            null
+        )
+    }
+
     LaunchedEffect(Unit) {
         while (isActive) {
             webView.value?.let { view ->
