@@ -1,10 +1,10 @@
 # quiet-shore-vr（静岸 · Quiet Shore VR）
 
-面向站立排尿困难者的场景化 WebXR 系统：患者佩戴 PICO G2 4K，站在按真实尺度搭建的卫生间里，技术员使用 Android 平板通过蓝牙远程控制会话模式、强度与声音。
+静岸是一套床边的沉浸式放松体验：患者保持躺着或半躺，戴上头显，眼前是一片缓慢起伏的湖面、光井或病房立便间，耳边有水声与工作人员的声音。场景切换、起伏快慢、语音播报都由床边的平板完成，任何时刻可以停止；整套系统离线运行，画面与会话数据不离开这两台设备。
 
-**状态**：v0.9.6（三场景 `washroom` / `shore` / `lightwell`，控制端切换；状态帧 v11；手动触发的稳定窗口校准；中英双语语音提示 27 句，手动播放；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v0.9.23（三场景 `washroom` / `shore` / `lightwell`；状态帧 v11；无需按键的稳定窗口校准；27 句语音提示，手动播放；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
-**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.6.apk`、`artifacts/flash/quiet-shore-control-0.9.6.apk`，校验见同目录 `SHA256SUMS.txt`。
+**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.23.apk`、`artifacts/flash/quiet-shore-control-0.9.23.apk`，校验见同目录 `SHA256SUMS.txt`。
 
 ## 本质
 
@@ -67,6 +67,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state v10 编解码
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
 - [docs/ux-plan.md](docs/ux-plan.md) — UX/UI 现状评估、运动编排与四带控制台计划
+- [docs/introduction.md](docs/introduction.md) — 系统名、口号与三档总介绍（起草版）
 - [docs/copy-deck.md](docs/copy-deck.md) — 患者侧/技术员侧文案对照与术语决定
 - [docs/manual.md](docs/manual.md) — 操作手册：床边流程、观察要点、故障处置（交付物）
 - [docs/voice-script.md](docs/voice-script.md) — 引导语音脚本（40 句）、控制端触发与 TTS 生成规范
