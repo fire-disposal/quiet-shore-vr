@@ -275,11 +275,11 @@ describe('scene budgets', () => {
 
     const before = new THREE.Matrix4();
     fixtures.getMatrixAt(0, before);
-    // Fixtures hang on the wall: their anchor sits at the skin's radius, so the
-    // shelf touches it and reaches ~0.95 m inward (a floating shelf reads as a
-    // hoop fragment instead of architecture).
+    // Fixtures hang on a wall of the square shaft: the anchor sits on the
+    // 6 m section's skin (3 m from the axis), so the shelf touches the wall
+    // instead of floating out in the middle of the shaft.
     const anchor = new THREE.Vector3().setFromMatrixPosition(before);
-    expect(Math.hypot(anchor.x, anchor.z)).toBeCloseTo(8.96, 1);
+    expect(Math.max(Math.abs(anchor.x), Math.abs(anchor.z))).toBeCloseTo(3, 1);
     handle.update(0.5, 0.5);
     const still = new THREE.Matrix4();
     fixtures.getMatrixAt(0, still);

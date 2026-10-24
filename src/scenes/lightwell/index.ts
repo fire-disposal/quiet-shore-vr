@@ -21,7 +21,9 @@ import { createRandom, makeTexture } from '../shared/canvas';
  * the eye; the only edges in the picture are the wall fixtures.
  */
 
-const SHAFT_RADIUS = 9;
+/** Square shaft: 6 m across, so a wall is 3 m from the eye. */
+const SHAFT_SIDE = 6;
+const SHAFT_HALF = SHAFT_SIDE / 2;
 const SHAFT_HEIGHT = 240;
 const EYE_Y = 1.7;
 
@@ -33,9 +35,10 @@ const EYE_Y = 1.7;
  * whole view and then flips. That is the "spinning" the user saw, and no
  * amplitude tuning removes it — a circle around the viewer cannot pass by.
  *
- * A falling body does not see circles. It sees things attached to the wall
- * sweep upward: brackets, ledges, courses. So the sense of descent comes from
- * two layers that never cross the eye plane:
+ * A square section, not a round one: four flat walls 3 m from the eye give the
+ * brackets a human scale and the corners a hard vertical perspective, which is
+ * what makes the depth read. The sense of descent comes from two layers that
+ * never cross the eye plane:
  *
  *  - a tiling detail skin on the wall whose texture scrolls upward (seamless,
  *    no popping at all);
@@ -155,7 +158,7 @@ function detailSkinTexture(): THREE.CanvasTexture | null {
       ctx.fillStyle = `rgba(255, 250, 240, ${(0.04 + random() * 0.05).toFixed(3)})`;
       ctx.fillRect(x, y, 1.5, 1.5);
     }
-  }, { size: 256, repeat: [1, 6] });
+  }, { size: 256, repeat: [1, 12] });
 }
 
 export function createLightWell(): LightWellParts {
@@ -163,14 +166,7 @@ export function createLightWell(): LightWellParts {
   root.name = 'lightwell';
 
   const texture = shaftTexture();
-  const shaftGeometry = new THREE.CylinderGeometry(
-    SHAFT_RADIUS,
-    SHAFT_RADIUS,
-    SHAFT_HEIGHT,
-    12,
-    1,
-    true
-  );
+  const shaftGeometry = new THREE.BoxGeometry(SHAFT_SIDE, SHAFT_HEIGHT, SHAFT_SIDE);
   const shaftMaterial = new THREE.MeshBasicMaterial({
     ...(texture ? { map: texture } : {}),
     color: texture ? 0xffffff : 0x34383c,
@@ -186,7 +182,7 @@ export function createLightWell(): LightWellParts {
 
   // Caps copy the wall's end colours: 60 m away they read as "light above,
   // nothing below", not as a ceiling and a floor.
-  const topGeometry = new THREE.CircleGeometry(SHAFT_RADIUS, 32);
+  const topGeometry = new THREE.PlaneGeometry(SHAFT_SIDE, SHAFT_SIDE);
   topGeometry.rotateX(Math.PI / 2);
   const topMaterial = new THREE.MeshBasicMaterial({
     color: new THREE.Color(TOP_COLOR),
@@ -198,7 +194,7 @@ export function createLightWell(): LightWellParts {
   top.position.y = EYE_Y + SHAFT_HEIGHT / 2;
   root.add(top);
 
-  const bottomGeometry = new THREE.CircleGeometry(SHAFT_RADIUS, 32);
+  const bottomGeometry = new THREE.PlaneGeometry(SHAFT_SIDE, SHAFT_SIDE);
   bottomGeometry.rotateX(-Math.PI / 2);
   const bottomMaterial = new THREE.MeshBasicMaterial({
     color: new THREE.Color(BOTTOM_COLOR),
@@ -210,14 +206,66 @@ export function createLightWell(): LightWellParts {
   bottom.position.y = EYE_Y - SHAFT_HEIGHT / 2;
   root.add(bottom);
 
-  // Directional wall hardware, not hoops. A uniform ring tells the eye "tube";
-  // a bracket on one side tells it "shaft with a direction", and its lateral
-  // parallax as it sweeps past is what sells vertical travel. Two boxes per
-  // fixture: a radial shelf and the gusset under it.
-  const shelfGeometry = new THREE.BoxGeometry(0.95, 0.09, 0.8);
-  shelfGeometry.translate(-0.475, 0, 0);
-  const gussetGeometry = new THREE.BoxGeometry(0.14, 0.5, 0.5);
-  gussetGeometry.translate(-0.07, -0.27, 0);
+  // Everything structural is attached to the four walls: four corner posts
+  // (static — they are the shaft's own frame and give the eye a fixed edge to
+  // read the scroll against), one conduit run per wall, and the moving
+  // brackets. A uniform ring told the eye "tube"; flat walls with hardware on
+  // them tell it "shaft".
+  const postGeometry = new THREE.BoxGeometry(0.24, SHAFT_HEIGHT, 0.24);
+  const postMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color('#2B2F34'),
+    toneMapped: false,
+    fog: false
+  });
+  const posts = new THREE.InstancedMesh(postGeometry, postMaterial, 4);
+  posts.name = 'lightwell-posts';
+  posts.frustumCulled = false;
+  root.add(posts);
+  const postDummy = new THREE.Object3D();
+  for (let i = 0; i < 4; i += 1) {
+    const sx = i < 2 ? 1 : -1;
+    const sz = i % 2 === 0 ? 1 : -1;
+    postDummy.position.set(sx * (SHAFT_HALF - 0.12), EYE_Y, sz * (SHAFT_HALF - 0.12));
+    postDummy.updateMatrix();
+    posts.setMatrixAt(i, postDummy.matrix);
+  }
+  posts.instanceMatrix.needsUpdate = true;
+
+  const conduitGeometry = new THREE.BoxGeometry(0.1, SHAFT_HEIGHT, 0.1);
+  const conduits = new THREE.InstancedMesh(conduitGeometry, postMaterial, 4);
+  conduits.name = 'lightwell-conduits';
+  conduits.frustumCulled = false;
+  root.add(conduits);
+  const conduitDummy = new THREE.Object3D();
+  for (let i = 0; i < 4; i += 1) {
+    const along = (i % 2 === 0 ? 1 : -1) * (SHAFT_HALF * 0.55);
+    switch (i) {
+      case 0:
+        conduitDummy.position.set(along, EYE_Y, -SHAFT_HALF + 0.06);
+        break;
+      case 1:
+        conduitDummy.position.set(SHAFT_HALF - 0.06, EYE_Y, along * 0.5);
+        break;
+      case 2:
+        conduitDummy.position.set(along * 0.5, EYE_Y, SHAFT_HALF - 0.06);
+        break;
+      default:
+        conduitDummy.position.set(-SHAFT_HALF + 0.06, EYE_Y, along);
+        break;
+    }
+    conduitDummy.updateMatrix();
+    conduits.setMatrixAt(i, conduitDummy.matrix);
+  }
+  conduits.instanceMatrix.needsUpdate = true;
+
+  // The moving hardware: a 1.6 m wide shelf 0.7 m deep, braced underneath.
+  // At the old 9 m radius the same box subtended a fifth of the angle and read
+  // as a stick; 3 m from the eye it reads as a shelf.
+  const shelfGeometry = new THREE.BoxGeometry(1.6, 0.09, 0.7);
+  shelfGeometry.translate(0, 0, 0.35);
+  const gussetGeometry = new THREE.BoxGeometry(0.08, 0.8, 0.08);
+  gussetGeometry.rotateX(Math.PI / 4);
+  gussetGeometry.translate(0, -0.28, 0.24);
   const hardwareMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     toneMapped: false,
@@ -237,14 +285,7 @@ export function createLightWell(): LightWellParts {
   // Detail skin: the same shaft, one millimetre inside, carrying a tiling
   // course pattern. Additive so it only ever brightens the ramp above.
   const detailTexture = detailSkinTexture();
-  const detailGeometry = new THREE.CylinderGeometry(
-    SHAFT_RADIUS - 0.02,
-    SHAFT_RADIUS - 0.02,
-    SHAFT_HEIGHT,
-    24,
-    1,
-    true
-  );
+  const detailGeometry = new THREE.BoxGeometry(SHAFT_SIDE - 0.04, SHAFT_HEIGHT, SHAFT_SIDE - 0.04);
   const detailMaterial = new THREE.MeshBasicMaterial({
     ...(detailTexture ? { map: detailTexture } : {}),
     color: detailTexture ? 0xffffff : 0x000000,
@@ -262,38 +303,47 @@ export function createLightWell(): LightWellParts {
   detail.frustumCulled = false;
   root.add(detail);
 
-  // Centred band: fixtures live in [-FIXTURE_BAND/2, +FIXTURE_BAND/2], one
-  // azimuth each, spread by the golden angle so no two ever line up and the
-  // eye never finds a ladder pattern to lock onto.
+  // Centred band: fixtures live in [-FIXTURE_BAND/2, +FIXTURE_BAND/2]. Each one
+  // hangs on one of the four walls and alternating walls keep the eye from
+  // finding a ladder; the along-wall offsets do the same inside a wall.
   const fixtureY = new Float32Array(FIXTURE_COUNT);
-  const fixtureAzimuth = new Float32Array(FIXTURE_COUNT);
-  const GOLDEN_ANGLE = 2.399963229728653;
+  const fixtureWall = new Int8Array(FIXTURE_COUNT);
+  const fixtureAlong = new Float32Array(FIXTURE_COUNT);
+  /** Wall index → yaw that points the bracket's local +Z into the shaft. */
+  const WALL_YAW = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
   for (let i = 0; i < FIXTURE_COUNT; i += 1) {
     fixtureY[i] = -FIXTURE_BAND / 2 + i * (FIXTURE_BAND / FIXTURE_COUNT);
-    fixtureAzimuth[i] = (i * GOLDEN_ANGLE) % (Math.PI * 2);
+    fixtureWall[i] = (i * 2) % 4;
+    // Golden-ratio offsets inside the wall, so consecutive brackets never line up.
+    const u = ((i * 0.618034) % 1) * 2 - 1;
+    fixtureAlong[i] = u * (SHAFT_HALF - 0.9);
   }
   const dummy = new THREE.Object3D();
   const tint = new THREE.Color();
 
-  /** Wall radius a fixture hangs from; its shelf reaches 0.95 m inward. */
-  const WALL_R = SHAFT_RADIUS - 0.04;
-
   function writeFixtures(): void {
     for (let i = 0; i < FIXTURE_COUNT; i += 1) {
       const y = fixtureY[i] + EYE_Y;
-      const azimuth = fixtureAzimuth[i];
-      // Local +X points at the axis: rotate by (pi - a) so the box grows inward.
-      const rotationY = Math.PI - azimuth;
-
-      // The box is translated to span [-0.95, 0] on local X, so anchoring the
-      // instance on the wall makes the shelf touch it and grow inward.
-      dummy.position.set(Math.cos(azimuth) * WALL_R, y, Math.sin(azimuth) * WALL_R);
-      dummy.rotation.set(0, rotationY, 0);
+      const wall = fixtureWall[i];
+      const along = fixtureAlong[i];
+      // Anchor on the wall skin, local +Z pointing inward.
+      switch (wall) {
+        case 0:
+          dummy.position.set(along, y, -SHAFT_HALF + 0.02);
+          break;
+        case 1:
+          dummy.position.set(SHAFT_HALF - 0.02, y, along);
+          break;
+        case 2:
+          dummy.position.set(along, y, SHAFT_HALF - 0.02);
+          break;
+        default:
+          dummy.position.set(-SHAFT_HALF + 0.02, y, along);
+          break;
+      }
+      dummy.rotation.set(0, WALL_YAW[wall], 0);
       dummy.updateMatrix();
       shelves.setMatrixAt(i, dummy.matrix);
-
-      dummy.position.set(Math.cos(azimuth) * WALL_R, y - 0.045, Math.sin(azimuth) * WALL_R);
-      dummy.updateMatrix();
       gussets.setMatrixAt(i, dummy.matrix);
 
       // Fade into the wall at both ends of the band so the wrap is invisible:
@@ -301,7 +351,7 @@ export function createLightWell(): LightWellParts {
       // exists to remove.
       const u = Math.min(1, Math.max(0, (fixtureY[i] + FIXTURE_BAND / 2) / FIXTURE_BAND));
       const edge = Math.min(1, Math.min(u, 1 - u) * 6);
-      const level = Math.min(0.48, 0.16 + 0.3 * u) * edge;
+      const level = Math.min(0.52, 0.18 + 0.32 * u) * edge;
       tint.setRGB(level, level * 0.96, level * 0.9);
       shelves.setColorAt(i, tint);
       gussets.setColorAt(i, tint);
@@ -313,7 +363,7 @@ export function createLightWell(): LightWellParts {
   }
   writeFixtures();
 
-  // Motion state in metres per second, not in "flow units": the rings and the
+  // Motion state in metres per second, not in "flow units": the shelves and the
   // wall scroll share one speed, so the picture stays physically consistent.
   let speed = 0;
   let targetFlow = 0;
@@ -381,6 +431,9 @@ export function createLightWell(): LightWellParts {
       topMaterial.dispose();
       bottomGeometry.dispose();
       bottomMaterial.dispose();
+      postGeometry.dispose();
+      postMaterial.dispose();
+      conduitGeometry.dispose();
       shelfGeometry.dispose();
       gussetGeometry.dispose();
       hardwareMaterial.dispose();
@@ -404,7 +457,7 @@ export const lightwellScene = defineScene(
       en: 'Brackets on the wall sweep upward and carry the body down with them.'
     },
     description: {
-      zh: '约 18 米直径、240 米高的竖井：井壁顶部亮成天光，底部沉进暗灰里，两头都在一百二十米外，看不到“盖”。井壁上的托架与横档自下而上升起、到顶前淡出回收，像身体在下沉。所有运动都在井壁上，视点不动，也没有任何东西穿过眼前。',
+      zh: '6 米见方、240 米高的方井：井壁顶部亮成天光，底部沉进暗灰里，两头都在一百二十米外，看不到“盖”。四面墙上的托架轮流自下而上升起、到顶前淡出回收，像身体在下沉；四角的透视线给足纵深。所有运动都在井壁上，视点不动，也没有任何东西穿过眼前。',
       en: 'A shaft about 18 m across and 240 m tall: daylight above, dim grey below, both ends 120 metres away with no visible lid. Brackets and courses on the wall rise, fade before the top and recycle, so the body reads as descending. All motion is on the wall; nothing crosses the eye.'
     },
     // No ambience: water belongs to the shore and the washroom. This shaft is
@@ -414,7 +467,7 @@ export const lightwellScene = defineScene(
     // operator cannot take it past level 2 even with a standard profile.
     comfortLevel: 2
   },
-  // Supine inside the shaft: `EYE_Y` is where the rings centre, so it is also
+  // Supine inside the shaft: `EYE_Y` is where the band centres, so it is also
   // where the eye belongs.
   { eyeY: 1.7 },
   function () {
