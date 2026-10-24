@@ -39,6 +39,7 @@ import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.ControlPanel
 import com.quietshore.control.ui.components.LoadingDots
+import com.quietshore.control.ui.components.PitchSideGauge
 import com.quietshore.control.ui.components.SceneMirror
 import com.quietshore.control.ui.components.ScenePage
 import com.quietshore.control.ui.components.SignalBars
@@ -155,10 +156,8 @@ fun ControlScreen(
                         .width(railWidth)
                 )
                 PanelTab.SCENE -> ScenePage(
-                    selectedScene = state.control.scene,
-                    sessionRunning = state.control.session,
-                    enabled = state.phase == BlePhase.READY,
-                    onSelect = actions.onSceneSelect,
+                    state = state,
+                    actions = actions,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
@@ -182,14 +181,24 @@ fun ControlScreen(
                 )
             }
 
-            // Read-only heading readout: a corner badge, never a touch target.
-            AngleGauge(
-                pose = state.pose,
-                stale = state.poseStale,
+            // Read-only readouts: heading dial plus a side elevation of the
+            // head pitch. Never touch targets.
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 14.dp)
-            )
+                    .padding(start = 14.dp, bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                PitchSideGauge(
+                    pose = state.pose,
+                    stale = state.poseStale
+                )
+                AngleGauge(
+                    pose = state.pose,
+                    stale = state.poseStale
+                )
+            }
         }
     }
 }

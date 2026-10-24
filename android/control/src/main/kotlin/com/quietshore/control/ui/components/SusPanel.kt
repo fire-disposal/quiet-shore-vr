@@ -14,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -76,6 +77,26 @@ fun SusPanel(
                     modifier = Modifier.weight(1f)
                 ) { Text("关闭") }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("目视选择", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "患者注视选项 5 秒即可作答",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+                Switch(
+                    checked = state.gazeDwell,
+                    onCheckedChange = actions.onGazeDwellChange,
+                    enabled = connected
+                )
+            }
+
             if (intro != null) {
                 OutlinedButton(
                     onClick = { actions.onVoicePlay(intro.id) },

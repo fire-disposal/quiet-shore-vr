@@ -30,6 +30,8 @@ data class ControlActions(
     val onFloatLevel: (Int) -> Unit,
     /** Buoyancy character: "a" gentle, "b" standard, "c" immersive. */
     val onFloatProfile: (String) -> Unit,
+    /** Extra view-pitch correction in degrees; 0 leaves the frame alone. */
+    val onViewPitch: (Int) -> Unit,
     val onEmergencyStop: () -> Unit,
     /** Posture branch: only meaningful in posture mode. */
     val onPostureLower: () -> Unit,

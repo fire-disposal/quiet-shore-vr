@@ -43,6 +43,8 @@ data class ControlUiState(
     val animDurationMs: Int = 6000,
     /** Operator switch for gaze dwell; on by default. */
     val gazeDwell: Boolean = true,
+    /** Operator's extra pitch correction, kept for the slider thumb. */
+    val viewPitchTarget: Int = 0,
     /** True while the SUS scale is open in the headset. */
     val susOpen: Boolean = false,
     /** Milliseconds since the headset reported a running session. */

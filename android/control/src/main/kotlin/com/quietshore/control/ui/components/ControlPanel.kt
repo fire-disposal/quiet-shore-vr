@@ -26,11 +26,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.SessionMode
@@ -70,93 +72,6 @@ fun ControlPanel(
         ) {
             ConnectionRow(state = state, connected = connected)
 
-            Section("会话") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = when {
-                            running -> "训练中"
-                            calibrating -> "校准中"
-                            state.startPending -> "等待患者确认"
-                            else -> "待机"
-                        },
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        // The clock only runs once the patient is in: a
-                        // calibration phase is not session time.
-                        text = if (state.startPending || calibrating) "--:--" else clock(state.sessionElapsedMs),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = QuietPalette.TextSecondary
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = if (running) actions.onEnd else actions.onEnterTraining,
-                        // A pending launch is one tap only: the patient has not
-                        // confirmed yet, and a second `enter` would queue again.
-                        enabled = connected && (running || !state.startPending),
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (running) QuietPalette.Danger else QuietPalette.Primary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (running) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.size(6.dp))
-                        Text(
-                            when {
-                                running -> "结束"
-                                state.startPending -> "等待确认…"
-                                else -> "启动训练"
-                            }
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = actions.onRecalibrate,
-                        // Calibration is operator-started: the button also has
-                        // to work while the headset is waiting for the window.
-                        enabled = connected && (running || calibrating),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MyLocation,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.size(6.dp))
-                        Text(if (calibrating) "开始校准" else "朝向")
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = actions.onExitScene,
-                        enabled = connected,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("退出场景") }
-                    OutlinedButton(
-                        onClick = actions.onExitSystem,
-                        enabled = connected,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("退出系统") }
-                }
-                Text(
-                    text = when {
-                        running -> "会话由患者按头显确认键开始；这里只做结束与急停"
-                        calibrating -> "正在记录起始朝向：请患者看向前方，随后按此方向生成场景"
-                        state.startPending -> "已打开页面，等待患者按一次确认键进入"
-                        else -> "启动训练会在头显里打开页面，患者按一次确认键进入；退出场景回到头显控制台"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
 
             Section("模式") {
                 SegmentedChoice(
@@ -263,48 +178,6 @@ fun ControlPanel(
                 )
             }
 
-            Section("目视选择") {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (state.gazeDwell) {
-                        Button(
-                            onClick = { actions.onGazeDwellChange(true) },
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("开启") }
-                    } else {
-                        OutlinedButton(
-                            onClick = { actions.onGazeDwellChange(true) },
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("开启") }
-                    }
-                    if (!state.gazeDwell) {
-                        Button(
-                            onClick = { actions.onGazeDwellChange(false) },
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("关闭") }
-                    } else {
-                        OutlinedButton(
-                            onClick = { actions.onGazeDwellChange(false) },
-                            enabled = connected,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("关闭") }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FilledTonalButton(
-                        onClick = if (state.susOpen) actions.onSusClose else actions.onSusOpen,
-                        enabled = connected,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (state.susOpen) "关闭 SUS 量表" else "打开 SUS 量表") }
-                }
-                Text(
-                    text = "注视 5 秒即选中；关闭后只能由平板代答",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
 
 
             // Always last, always visible: never nested behind a tab or a menu.

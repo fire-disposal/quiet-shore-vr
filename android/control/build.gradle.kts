@@ -11,8 +11,8 @@ android {
         applicationId = "com.quietshore.control"
         minSdk = 26
         targetSdk = 33
-        versionCode = 44
-        versionName = "0.9.15"
+        versionCode = 45
+        versionName = "0.9.16"
     }
 
     buildFeatures {
