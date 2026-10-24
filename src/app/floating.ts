@@ -104,6 +104,12 @@ export function createFloating(
   let breath = deps.breath ?? true;
 
   let amplitudeM = 0;
+  /**
+   * The operator's requested amplitude, eased, **before** the scene gate. Flow
+   * scenes (the light well) scroll on this: gating the lake heave to the shore
+   * must not freeze a shaft that is driven by the same intent.
+   */
+  let flowAmplitudeM = 0;
   /** Seconds of continuous drift; kept while fading so the phase never jumps. */
   let seconds = 0;
   let offsetM = 0;
@@ -139,16 +145,17 @@ export function createFloating(
 
   function update(dt: number): void {
     const allowed = buoyancyAllowed(gate());
-    const target = allowed
-      ? floatAmplitudeForLevel(profile, level) * (deps.heaveScale?.() ?? 1)
-      : 0;
+    const levelAmplitude = allowed ? floatAmplitudeForLevel(profile, level) : 0;
+    const target = levelAmplitude * (deps.heaveScale?.() ?? 1);
     amplitudeM = easeAmplitude(amplitudeM, target, dt, FADE_TAU_S);
+    flowAmplitudeM = easeAmplitude(flowAmplitudeM, levelAmplitude, dt, FADE_TAU_S);
     // Breath rides even where the big heave is gated off, but only while the
     // operator has the switch on: a closed gate, level 0 or breath off means
     // settle exactly once, so an idle scene pays nothing per frame.
     const breathStandby = allowed && level > 0 && breath;
-    if (amplitudeM <= 0 && target === 0 && !breathStandby) {
+    if (amplitudeM <= 0 && target === 0 && flowAmplitudeM <= 0 && !breathStandby) {
       amplitudeM = 0;
+      flowAmplitudeM = 0;
       if (offsetM !== 0) {
         offsetM = 0;
         apply();
@@ -180,6 +187,7 @@ export function createFloating(
 
   function reset(): void {
     amplitudeM = 0;
+    flowAmplitudeM = 0;
     seconds = 0;
     offsetM = 0;
     apply();
@@ -196,7 +204,7 @@ export function createFloating(
     reset,
     getLevel: () => level,
     getProfile: () => profile,
-    getFlow: () => (amplitudeM > 0 ? Math.min(1, amplitudeM / profile.amplitudeM) : 0),
+    getFlow: () => (flowAmplitudeM > 0 ? Math.min(1, flowAmplitudeM / profile.amplitudeM) : 0),
     getState: (out) => {
       const state: FloatingState = out ?? {
         level: 0,

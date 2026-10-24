@@ -11,6 +11,7 @@ function harness(options: {
   split?: boolean;
   level?: number;
   profile?: 'a' | 'b' | 'c';
+  heaveScale?: number;
 } = {}) {
   const content = new THREE.Group();
   const floor = { y: 0 };
@@ -47,7 +48,8 @@ function harness(options: {
     axis: (out) => out.copy(options.axis ?? new THREE.Vector3(0, 1, 0)),
     level: options.level,
     profile: options.profile,
-    breath: true
+    breath: true,
+    heaveScale: () => options.heaveScale ?? 1
   });
   const run = (seconds: number, step = 1 / 60): void => {
     for (let t = 0; t < seconds; t += step) {
@@ -104,6 +106,18 @@ describe('buoyancy envelope', () => {
 });
 
 describe('perceptible heave', () => {
+  it('keeps flow-driving scenes scrolling where the heave is gated off', () => {
+    // The light well scrolls on getFlow(): gating the lake heave (heaveScale 0)
+    // must leave the intent amplitude — and therefore the flow — intact.
+    const h = harness({ level: 3, heaveScale: 0 });
+    h.run(2);
+    expect(h.floating.getState().amplitudeM).toBeCloseTo(0, 6);
+    expect(h.floating.getFlow()).toBeGreaterThan(0.9);
+    // The applied offset is only the small breath swell.
+    const peak = Math.max(...h.applied.map((entry) => Math.abs(entry.amountM)));
+    expect(peak).toBeLessThan(0.02);
+  });
+
   it('uses the whole envelope at level 3 and a third of it at level 1', () => {
     const full = harness({ level: 3 });
     full.run(20);

@@ -40,10 +40,12 @@ const EYE_Y = 1.7;
  *  - a tiling detail skin on the wall whose texture scrolls upward (seamless,
  *    no popping at all);
  *  - a handful of protruding shelves that ride up with it and recycle at the
- *    top of a 40 m band, faded into the wall tone before they wrap.
+ *    top of a 60 m band, faded into the wall tone before they wrap. The goal
+ *    is weightlessness, so these are *rare*: six dim shelves over 60 m means
+ *    one every ~33 s at terminal speed, never a ladder the body climbs.
  */
-const FIXTURE_COUNT = 16;
-const FIXTURE_BAND = 40;
+const FIXTURE_COUNT = 6;
+const FIXTURE_BAND = 60;
 /** One tie of the detail texture spans this many metres of wall. */
 const DETAIL_COURSE_M = 20;
 /**
@@ -54,8 +56,9 @@ const DETAIL_COURSE_M = 20;
  * EASE_RATE · speed (≈ 0.49 m/s², a gentle release) and decays as the speed
  * closes on target, so the fall both starts softly and lands smoothly.
  */
-/** 0.35 m/s at the 8.3 m ring radius is 2.4 °/s, inside the near-field budget. */
-const TERMINAL_SPEED = 0.35;
+/** 0.30 m/s at the 8.3 m shelf radius is 2.1 °/s, inside the near-field budget;
+ *  weightlessness reads slower than descent does. */
+const TERMINAL_SPEED = 0.3;
 /** 1/s: ~63% of terminal after one second, asymptotic after that. */
 const EASE_RATE = 1.4;
 /** Stop is a brake, not drag: this cue must die quickly. */
@@ -213,7 +216,7 @@ export function createLightWell(): LightWellParts {
   const ribGeometry = new THREE.CylinderGeometry(
     SHAFT_RADIUS - 0.72,
     SHAFT_RADIUS - 0.04,
-    0.45,
+    0.7,
     24,
     1,
     true
@@ -222,8 +225,8 @@ export function createLightWell(): LightWellParts {
     const position = ribGeometry.getAttribute('position') as THREE.BufferAttribute;
     const colors = new Float32Array(position.count * 3);
     for (let i = 0; i < position.count; i += 1) {
-      const t = (position.getY(i) + 0.225) / 0.45;
-      const shade = 0.18 + 0.42 * t;
+      const t = (position.getY(i) + 0.35) / 0.7;
+      const shade = 0.14 + 0.34 * t;
       colors[i * 3] = shade;
       colors[i * 3 + 1] = shade;
       colors[i * 3 + 2] = shade;
@@ -293,7 +296,7 @@ export function createLightWell(): LightWellParts {
       // exists to remove.
       const u = Math.min(1, Math.max(0, (fixtureY[i] + FIXTURE_BAND / 2) / FIXTURE_BAND));
       const edge = Math.min(1, Math.min(u, 1 - u) * 6);
-      const level = Math.min(0.62, 0.2 + 0.42 * u) * edge;
+      const level = Math.min(0.48, 0.16 + 0.3 * u) * edge;
       tint.setRGB(level, level * 0.96, level * 0.9);
       ribs.setColorAt(i, tint);
     }
