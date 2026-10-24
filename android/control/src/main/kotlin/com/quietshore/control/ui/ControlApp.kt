@@ -137,6 +137,7 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onAnimDuration = viewModel::setAnimDuration,
                 onGazeDwellChange = viewModel::setGazeDwell,
                 onSusVoiceChange = viewModel::setSusVoice,
+                onSubtitlesChange = viewModel::setSubtitles,
                 onSusOpen = viewModel::openSus,
                 onSusClose = viewModel::closeSus,
                 onEnterTraining = viewModel::enterTraining,

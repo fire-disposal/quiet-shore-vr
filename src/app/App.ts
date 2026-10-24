@@ -15,6 +15,7 @@ import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
 import { StartScreen } from '../ui/start-screen';
 import { SpatialHud } from '../ui/spatial-hud';
+import { SubtitleCard } from '../ui/subtitle-card';
 import { createSusPanel, type SusPanelApi } from '../ui/sus-panel';
 import { createCalibrationOverlay, type CalibrationOverlayApi } from '../ui/calibration-overlay';
 import { createCalibrationRun, type CalibrationStatus } from './calibration-run';
@@ -175,6 +176,14 @@ export class QuietShoreApp {
   private fps = 0;
   private fpsAt = 0;
   private hudAt = 0;
+  /** Subtitle card: the line the voice is speaking, below the centre. */
+  private subtitleCard: SubtitleCard | null = null;
+  /** Operator switch (tablet voice page). On by default. */
+  private subtitlesOn = true;
+  /** Line text by cue id, from `/voice/lines.json`. */
+  private readonly voiceTexts = new Map<string, string>();
+  /** Id last drawn on the card; `undefined` forces a redraw. */
+  private lastSubtitleId: string | null | undefined = undefined;
   private started = false;
   private enterPending = false;
   private patientStopped = false;
@@ -254,6 +263,8 @@ export class QuietShoreApp {
       this.strings.dwellHint
     );
     this.hud = new SpatialHud(this.scene, DEFAULT_SPATIAL_THEME);
+    this.subtitleCard = new SubtitleCard(this.scene, DEFAULT_SPATIAL_THEME);
+    void this.loadVoiceTexts();
     // One socket carries commands in and state/telemetry out; there is no
     // second transport to keep in sync.
     this.link = new PortalLink(
@@ -343,6 +354,8 @@ export class QuietShoreApp {
         this.susPanel?.update(dt, now, this.headPose);
         // The reticle doubles as the gaze cue while the SUS panel is open.
         this.input.setReticleAlways(this.susPanel?.isOpen() ?? false);
+        this.syncSubtitle();
+        this.subtitleCard?.update(this.headPose, dt, now);
         this.input.update(dt, now, this.headPose);
       }
     });
@@ -814,6 +827,11 @@ export class QuietShoreApp {
    */
   /** Voice cues: the tablet names a clip or a sequence; audio never crosses the wire. */
   private applyVoiceCommand(command: string): void {
+    if (command === 'voice:subtitle:on' || command === 'voice:subtitle:off') {
+      this.subtitlesOn = command.endsWith(':on');
+      this.lastSubtitleId = undefined;
+      return;
+    }
     if (command === 'voice:stop') {
       this.voice.stop();
       return;
@@ -1512,6 +1530,44 @@ export class QuietShoreApp {
           `dwell and easing scale with it`
       );
     }
+  }
+
+  /**
+   * Pull the cue texts once: the subtitle card needs the sentence, and the
+   * manifest only carries files, not words.
+   */
+  private async loadVoiceTexts(): Promise<void> {
+    try {
+      const response = await fetch('/voice/lines.json', { cache: 'no-store' });
+      if (!response.ok) {
+        return;
+      }
+      const payload = (await response.json()) as { lines?: { id?: string; text?: string }[] };
+      for (const line of payload.lines ?? []) {
+        if (line.id && line.text) {
+          this.voiceTexts.set(line.id, line.text);
+        }
+      }
+      // A cue may already be speaking before the file lands.
+      this.lastSubtitleId = undefined;
+    } catch {
+      // No texts means no subtitles; the voice itself is unaffected.
+    }
+  }
+
+  /** A subtitle follows the audio, so the audio owns when it disappears. */
+  private syncSubtitle(): void {
+    const card = this.subtitleCard;
+    if (!card) {
+      return;
+    }
+    const playing = this.voice.nowPlaying().id;
+    const id = this.subtitlesOn ? playing : null;
+    if (id === this.lastSubtitleId) {
+      return;
+    }
+    this.lastSubtitleId = id;
+    card.setLine(id ? this.voiceTexts.get(id) ?? null : null);
   }
 
   private updateHud(_now: number): void {

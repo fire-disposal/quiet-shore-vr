@@ -16,7 +16,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -85,6 +87,26 @@ fun VoicePanel(
                 enabled = connected,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("停止播放") }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("字幕", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "朗读时在患者视野下方显示台词，读完自动消失",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+                Switch(
+                    checked = state.subtitles,
+                    onCheckedChange = actions.onSubtitlesChange,
+                    enabled = connected
+                )
+            }
 
             // No sequence buttons: the operator reads down the script and taps
             // the sentence the patient should hear. Sequences still exist on the

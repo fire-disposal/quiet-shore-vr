@@ -485,6 +485,8 @@ object ControlProtocol {
             normalized == "sus:next" ||
             normalized == "sus:prev" ||
             parseSusAnswer(normalized) != null ||
+            normalized == "sus:voice:on" ||
+            normalized == "sus:voice:off" ||
             normalized == "settings:skipcalibration:on" ||
             normalized == "settings:skipcalibration:off" ||
             normalized == "settings:hud:on" ||
@@ -505,6 +507,7 @@ object ControlProtocol {
         val body = command.removePrefix(VOICE_PREFIX)
         return when {
             body == "stop" -> body
+            body == "subtitle:on" || body == "subtitle:off" -> body
             body.startsWith("play:") ->
                 body.removePrefix("play:").takeIf { VOICE_ID.matches(it) }
             body.startsWith("seq:") ->

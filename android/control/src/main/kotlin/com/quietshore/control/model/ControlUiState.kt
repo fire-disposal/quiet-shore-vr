@@ -45,6 +45,8 @@ data class ControlUiState(
     val gazeDwell: Boolean = true,
     /** Operator switch for reading the SUS statement aloud; on by default. */
     val susVoice: Boolean = true,
+    /** Operator switch for the headset subtitle card; on by default. */
+    val subtitles: Boolean = true,
     /** Operator's extra pitch correction, kept for the slider thumb. */
     val viewPitchTarget: Int = 0,
     /** True while the SUS scale is open in the headset. */

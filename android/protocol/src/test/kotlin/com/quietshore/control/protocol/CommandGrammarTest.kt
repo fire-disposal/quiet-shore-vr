@@ -78,6 +78,17 @@ class CommandGrammarTest {
     }
 
     @Test
+    fun `the allowlist covers the switches the tablet actually sends`() {
+        // Both of these were wired on the tablet but missing here, so the
+        // headset rejected them and the switch did nothing at all.
+        for (raw in listOf("sus:voice:on", "sus:voice:off", "voice:subtitle:on", "voice:subtitle:off")) {
+            assertTrue(ControlProtocol.isAllowedCommand(raw), raw)
+        }
+        for (raw in listOf("sus:voice:maybe", "voice:subtitle:2", "sus:voice:", "voice:subtitle")) {
+            assertFalse(ControlProtocol.isAllowedCommand(raw), raw)
+        }
+    }
+
     fun `the allowlist accepts what the tablet sends and rejects the rest`() {
         for (raw in listOf(
             "enter", "home", "allapps", "exit", "stop", "calibrate", "recalibrate", "preview", "status",

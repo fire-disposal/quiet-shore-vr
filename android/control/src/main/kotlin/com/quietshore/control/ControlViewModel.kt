@@ -398,6 +398,17 @@ class ControlViewModel(application: Application) :
 
     // ── SUS ────────────────────────────────────────────────────────────────
     /**
+     * Subtitle card in the headset: the spoken line, below the centre of the
+     * view, while the audio runs. Off hides it without stopping the audio.
+     */
+    fun setSubtitles(enabled: Boolean) {
+        _uiState.update { it.copy(subtitles = enabled) }
+        sendCommand(
+            ControlProtocol.VOICE_PREFIX + if (enabled) "subtitle:on" else "subtitle:off"
+        )
+    }
+
+    /**
      * The headset reads each statement as it appears; this is the operator's
      * switch for that. The default on both sides is on.
      */

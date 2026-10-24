@@ -19,6 +19,7 @@ data class ControlActions(
     /** Gaze dwell selection (SUS answers and spatial targets). Default on. */
     val onGazeDwellChange: (Boolean) -> Unit,
     val onSusVoiceChange: (Boolean) -> Unit,
+    val onSubtitlesChange: (Boolean) -> Unit,
     /** Opens the SUS scale in the headset; it is answered by gaze. */
     val onSusOpen: () -> Unit,
     val onSusClose: () -> Unit,
