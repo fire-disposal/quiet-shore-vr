@@ -75,6 +75,76 @@
 - 抽屉自上而下四块：播放条 / 自动 / 单句 / 混音。主控件 ≥48 dp，全部落在右手拇指弧内。
 - 不用滑动手势（床旁戴手套、手可能湿）；所有操作都是点按。
 
+```svg
+<svg viewBox="0 0 420 890" width="100%" role="img" aria-label="控制端语音抽屉">
+  <rect x="0.5" y="0.5" width="419" height="889" rx="16" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="20" y="40" font-size="19" fill="var(--fg)">语音</text>
+  <text x="400" y="40" font-size="14" text-anchor="end" fill="var(--muted)">关闭</text>
+
+  <rect x="16" y="58" width="388" height="128" rx="12" fill="var(--bg)" opacity="0.35" stroke="var(--border)"/>
+  <rect x="28" y="72" width="112" height="56" rx="10" fill="var(--accent)" opacity="0.16" stroke="var(--accent)"/>
+  <text x="84" y="106" font-size="16" text-anchor="middle" fill="var(--fg)">播放序列</text>
+  <rect x="152" y="72" width="112" height="56" rx="10" fill="none" stroke="var(--border)"/>
+  <text x="208" y="106" font-size="16" text-anchor="middle" fill="var(--fg)">停止</text>
+  <rect x="276" y="72" width="112" height="56" rx="10" fill="none" stroke="var(--border)"/>
+  <text x="332" y="106" font-size="16" text-anchor="middle" fill="var(--fg)">静音</text>
+  <text x="28" y="152" font-size="13" fill="var(--fg)">v-relax-2 · 放松 · 剩余 3 s</text>
+  <text x="28" y="172" font-size="12" fill="var(--muted)">来源：自动 · 队列：v-safe-2</text>
+
+  <rect x="16" y="198" width="388" height="128" rx="12" fill="none" stroke="var(--border)"/>
+  <text x="28" y="226" font-size="14" fill="var(--fg)">自动模式</text>
+  <rect x="330" y="212" width="62" height="26" rx="13" fill="var(--success)" opacity="0.18" stroke="var(--success)"/>
+  <circle cx="378" cy="225" r="9" fill="var(--success)"/>
+  <text x="28" y="254" font-size="12" fill="var(--muted)">下一句 v-imagine-3 · 00:12</text>
+  <rect x="28" y="268" width="104" height="44" rx="9" fill="none" stroke="var(--border)"/>
+  <text x="80" y="295" font-size="13" text-anchor="middle" fill="var(--fg)">跳过</text>
+  <rect x="142" y="268" width="124" height="44" rx="9" fill="none" stroke="var(--border)"/>
+  <text x="204" y="295" font-size="13" text-anchor="middle" fill="var(--fg)">延后 30 s</text>
+  <rect x="276" y="268" width="116" height="44" rx="9" fill="none" stroke="var(--border)"/>
+  <text x="334" y="295" font-size="13" text-anchor="middle" fill="var(--fg)">现在播</text>
+
+  <text x="20" y="356" font-size="12" letter-spacing="1" fill="var(--muted)">最近</text>
+  <rect x="16" y="366" width="122" height="44" rx="9" fill="none" stroke="var(--border)"/>
+  <text x="77" y="393" font-size="12" text-anchor="middle" fill="var(--fg)">v-safe-2</text>
+  <rect x="148" y="366" width="122" height="44" rx="9" fill="none" stroke="var(--border)"/>
+  <text x="209" y="393" font-size="12" text-anchor="middle" fill="var(--fg)">v-close-1</text>
+  <rect x="280" y="366" width="124" height="44" rx="9" fill="none" stroke="var(--border)"/>
+  <text x="342" y="393" font-size="12" text-anchor="middle" fill="var(--fg)">v-imagine-4</text>
+
+  <text x="20" y="440" font-size="12" letter-spacing="1" fill="var(--muted)">全部 32 句</text>
+  <text x="28" y="476" font-size="15" fill="var(--fg)">到场</text>
+  <text x="400" y="476" font-size="12" text-anchor="end" fill="var(--muted)">2 句 · 4.5 s</text>
+  <line x1="20" y1="492" x2="400" y2="492" stroke="var(--border)"/>
+  <text x="28" y="522" font-size="15" fill="var(--fg)">佩戴</text>
+  <text x="400" y="522" font-size="12" text-anchor="end" fill="var(--muted)">2 句</text>
+  <line x1="20" y1="538" x2="400" y2="538" stroke="var(--border)"/>
+  <text x="28" y="568" font-size="15" fill="var(--fg)">校准</text>
+  <text x="400" y="568" font-size="12" text-anchor="end" fill="var(--muted)">2 句</text>
+  <line x1="20" y1="584" x2="400" y2="584" stroke="var(--border)"/>
+  <text x="28" y="614" font-size="15" fill="var(--fg)">放松指导</text>
+  <text x="400" y="614" font-size="12" text-anchor="end" fill="var(--muted)">4 句</text>
+  <line x1="20" y1="630" x2="400" y2="630" stroke="var(--border)"/>
+  <text x="28" y="660" font-size="15" fill="var(--fg)">想象</text>
+  <text x="400" y="660" font-size="12" text-anchor="end" fill="var(--muted)">6 句</text>
+  <line x1="20" y1="676" x2="400" y2="676" stroke="var(--border)"/>
+  <text x="28" y="706" font-size="15" fill="var(--fg)">安全</text>
+  <text x="400" y="706" font-size="12" text-anchor="end" fill="var(--muted)">3 句</text>
+  <line x1="20" y1="722" x2="400" y2="722" stroke="var(--border)"/>
+
+  <text x="20" y="756" font-size="12" letter-spacing="1" fill="var(--muted)">混音</text>
+  <text x="28" y="788" font-size="13" fill="var(--fg)">语音音量</text>
+  <text x="400" y="788" font-size="13" text-anchor="end" fill="var(--fg)">70</text>
+  <line x1="28" y1="802" x2="400" y2="802" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/>
+  <line x1="28" y1="802" x2="288" y2="802" stroke="var(--accent)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="288" cy="802" r="11" fill="var(--accent)"/>
+  <text x="28" y="840" font-size="13" fill="var(--fg)">水声压低</text>
+  <text x="400" y="840" font-size="13" text-anchor="end" fill="var(--fg)">12 dB</text>
+  <line x1="28" y1="854" x2="400" y2="854" stroke="var(--border)" stroke-width="8" stroke-linecap="round"/>
+  <line x1="28" y1="854" x2="128" y2="854" stroke="var(--success)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="128" cy="854" r="11" fill="var(--success)"/>
+</svg>
+```
+
 ### 4.2 播放条
 
 - 三个大按钮：**播放**（最近一条序列）、**停止**（只停语音，200 ms 淡出）、**静音**。
