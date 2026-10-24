@@ -442,6 +442,7 @@ object ControlProtocol {
             normalized == "home" ||
             normalized == "allapps" ||
             normalized == "sus:open" ||
+            normalized.startsWith("sus:show:") ||
             normalized == "sus:close" ||
             normalized == "sus:next" ||
             normalized == "sus:prev" ||

@@ -1217,6 +1217,14 @@ export class QuietShoreApp {
       this.susPanel?.close();
       return;
     }
+    if (command.startsWith('sus:show:')) {
+      const index = Number(command.slice('sus:show:'.length));
+      if (Number.isInteger(index)) {
+        this.openSus();
+        this.susPanel?.show(index - 1);
+      }
+      return;
+    }
     if (command === 'sus:next' || command === 'sus:prev') {
       this.susPanel?.move(command === 'sus:next' ? 1 : -1);
       return;

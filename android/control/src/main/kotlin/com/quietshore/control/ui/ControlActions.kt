@@ -46,5 +46,9 @@ data class ControlActions(
     val onVoiceVolume: (Int) -> Unit,
     /** How far the scene bed is pulled down while a cue speaks, in dB. */
     val onVoiceDuck: (Int) -> Unit,
-    val onVoiceSet: (String) -> Unit
+    val onVoiceSet: (String) -> Unit,
+    /** SUS: show question [index] (1-based) on the headset. */
+    val onSusShow: (Int) -> Unit,
+    /** SUS: record the operator's answer for the current question. */
+    val onSusAnswer: (Int) -> Unit
 )

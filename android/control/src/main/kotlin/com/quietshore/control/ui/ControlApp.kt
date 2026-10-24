@@ -128,6 +128,8 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onVoiceVolume = viewModel::setVoiceVolume,
                 onVoiceDuck = viewModel::setVoiceDuck,
                 onVoiceSet = viewModel::setVoiceSet,
+                onSusShow = viewModel::susShow,
+                onSusAnswer = viewModel::susAnswer,
                 onDisconnect = viewModel::disconnect,
                 onReconnect = viewModel::reconnect,
                 onLeave = viewModel::leaveControl

@@ -335,6 +335,31 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.VOICE_PREFIX + "seq:" + name)
     }
 
+    // ── SUS ────────────────────────────────────────────────────────────────
+    fun susShow(index: Int) {
+        val n = index.coerceIn(1, 10)
+        _uiState.update { it.copy(susIndex = n) }
+        sendCommand("sus:show:$n")
+    }
+
+    fun susAnswer(value: Int) {
+        val v = value.coerceIn(1, 5)
+        val index = _uiState.value.susIndex
+        if (index < 1) {
+            return
+        }
+        _uiState.update { state ->
+            val answers = state.susAnswers.toMutableList()
+            answers[index - 1] = v
+            state.copy(susAnswers = answers)
+        }
+        sendCommand("sus:answer:$v")
+        // The page advances after each answer; mirror that here.
+        if (index < 10) {
+            _uiState.update { it.copy(susIndex = index + 1) }
+        }
+    }
+
     fun stopVoice() {
         sendCommand(ControlProtocol.VOICE_PREFIX + "stop")
     }

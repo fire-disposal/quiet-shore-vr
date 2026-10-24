@@ -55,6 +55,10 @@ data class ControlUiState(
     val duckDb: Int = 12,
     /** Index of the cue the headset reports as speaking, or -1. */
     val voiceId: Int = -1,
+    /** 1-based question currently shown on the headset, 0 = none. */
+    val susIndex: Int = 0,
+    /** Answers recorded from the tablet, 1..5, 0 = unanswered. */
+    val susAnswers: List<Int> = List(10) { 0 },
     val notice: String? = null,
     val error: String? = null,
     val scanAttempted: Boolean = false,

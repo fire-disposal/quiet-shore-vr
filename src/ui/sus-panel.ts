@@ -44,6 +44,8 @@ export interface SusPanelApi {
   isOpen(): boolean;
   /** Moves the page; the tablet's prev/next buttons drive this. */
   move(delta: number): void;
+  /** Jumps to a question (0-based); the tablet's "显示" button drives this. */
+  show(index: number): void;
   /** Records an answer (1..5) for the current item and advances. */
   answer(value: number): void;
   /** Rebuilds the registered targets with or without dwell. */
@@ -222,6 +224,18 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     },
     isOpen: () => open,
     move,
+    show(index: number): void {
+      if (index < 0 || index >= SUS_STATEMENTS.length) {
+        return;
+      }
+      page = index;
+      if (!open) {
+        open = true;
+        anchor.setVisible(true);
+        registerTargets();
+      }
+      render();
+    },
     answer: record,
     setDwellEnabled(enabled: boolean): void {
       dwellEnabled = enabled;

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -60,6 +61,21 @@ fun SusPanel(
                 color = QuietPalette.TextSecondary
             )
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = actions.onSusOpen,
+                    enabled = connected,
+                    modifier = Modifier.weight(1f)
+                ) { Text("在头显中打开") }
+                OutlinedButton(
+                    onClick = actions.onSusClose,
+                    enabled = connected,
+                    modifier = Modifier.weight(1f)
+                ) { Text("关闭") }
+            }
             if (intro != null) {
                 OutlinedButton(
                     onClick = { actions.onVoicePlay(intro.id) },
@@ -69,26 +85,59 @@ fun SusPanel(
             }
 
             for ((index, line) in questions.withIndex()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${index + 1}.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = QuietPalette.TextSecondary,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text(
-                        text = line.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedButton(
-                        onClick = { actions.onVoicePlay(line.id) },
-                        enabled = connected
-                    ) { Text("播放") }
+                val number = index + 1
+                val answer = state.susAnswers.getOrNull(index) ?: 0
+                val current = state.susIndex == number
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "$number.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (current) QuietPalette.Primary else QuietPalette.TextSecondary,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(
+                            onClick = { actions.onVoicePlay(line.id) },
+                            enabled = connected
+                        ) { Text("播放") }
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedButton(
+                            onClick = { actions.onSusShow(number) },
+                            enabled = connected
+                        ) { Text("显示") }
+                    }
+                    if (current) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (value in 1..5) {
+                                val chosen = answer == value
+                                if (chosen) {
+                                    Button(
+                                        onClick = { actions.onSusAnswer(value) },
+                                        enabled = connected
+                                    ) { Text("$value") }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { actions.onSusAnswer(value) },
+                                        enabled = connected
+                                    ) { Text("$value") }
+                                }
+                            }
+                        }
+                    } else if (answer != 0) {
+                        Text(
+                            text = "已记录：$answer",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.TextSecondary
+                        )
+                    }
                 }
             }
 
