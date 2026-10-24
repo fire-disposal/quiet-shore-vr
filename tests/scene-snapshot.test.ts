@@ -143,6 +143,9 @@ describe('scene snapshot', () => {
     input.floorOffset = -1.6;
     input.baseQuaternion = rotationQuaternion({ pitchDeg: 33, rollDeg: -4, yawDeg: 0 });
     input.confidence = 0.62;
+    input.floatMm = 31.5;
+    input.swayDeg = 1.2;
+    input.sessionSec = 96;
     snapshot.capture(input);
 
     const payload = stateFromSnapshot(snapshot);
@@ -159,6 +162,9 @@ describe('scene snapshot', () => {
     expect(payload.eyeHeight).toBe(1.7);
     expect(payload.postureProgress).toBe(0);
     expect(payload.calibrationConfidence).toBe(0.62);
+    expect(payload.floatMm).toBe(31.5);
+    expect(payload.swayDeg).toBe(1.2);
+    expect(payload.elapsedSec).toBe(96);
     expect(payload.sitUpActive).toBe(false);
     expect('viewX' in payload).toBe(false);
     expect('viewZ' in payload).toBe(false);
@@ -169,8 +175,10 @@ describe('scene snapshot', () => {
         'calibrating',
         'cueEnabled',
         'cueIntensity',
+        'elapsedSec',
         'eyeHeight',
         'floatLevel',
+        'floatMm',
         'floatProfile',
         'posturePitch',
         'postureProgress',
@@ -179,6 +187,7 @@ describe('scene snapshot', () => {
         'postureRoll',
         'scene',
         'session',
+        'swayDeg',
         'sitUpActive',
         'viewAnim',
         'viewPitch',
