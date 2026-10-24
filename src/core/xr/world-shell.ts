@@ -7,8 +7,6 @@ import {
   writeWorld,
   type WorldRotation
 } from './frame';
-import type { WorldTransform } from './situp-path';
-
 /**
  * Scene-agnostic transform composition for the patient world.
  *
@@ -27,8 +25,7 @@ import type { WorldTransform } from './situp-path';
  *
  * Each layer has exactly one writer:
  * - `group` here, from the rotation handed in by the view controller;
- * - `base` by `Comfort` while calibrated, and by `setBasePose` for the sit-up
- *   performance (the sit-up inverse replaces the calibration frame);
+ * - `base` by `Comfort` alone (the calibration frame and its correction mix);
  * - `content` by `SceneHost.setFloorOffset` only.
  *
  * The XR camera is never read or written. The rotation is about the patient's
@@ -46,14 +43,6 @@ export interface WorldShellApi {
    */
   setWorldRotation(rotation: WorldRotation): void;
   getWorldRotation(out: WorldRotation): WorldRotation;
-  /**
-   * Hand the base layer to the sit-up performance, or give it back to
-   * `Comfort` with `null`. `null` leaves the base transform untouched: the
-   * next comfort update owns it again.
-   */
-  setBasePose(world: WorldTransform | null): void;
-  /** True while the sit-up pose owns the base layer. */
-  isBasePosed(): boolean;
   /** Apply the stored rotation about `eye`. Allocation-free. */
   update(eye: THREE.Vector3): void;
   dispose(): void;
@@ -75,7 +64,6 @@ export function createWorldShell(options: WorldShellOptions): WorldShellApi {
 
   const rotation: WorldRotation = { pitchDeg: 0, rollDeg: 0, yawDeg: 0 };
   const quaternion = new THREE.Quaternion();
-  let basePosed = false;
   let disposed = false;
 
   function setWorldRotation(next: WorldRotation): void {
@@ -87,16 +75,6 @@ export function createWorldShell(options: WorldShellOptions): WorldShellApi {
       return;
     }
     copyWorldRotation(next, rotation);
-  }
-
-  function setBasePose(world: WorldTransform | null): void {
-    if (!world) {
-      basePosed = false;
-      return;
-    }
-    basePosed = true;
-    base.quaternion.copy(world.quaternion);
-    base.position.copy(world.position);
   }
 
   function update(eye: THREE.Vector3): void {
@@ -134,8 +112,6 @@ export function createWorldShell(options: WorldShellOptions): WorldShellApi {
     base,
     setWorldRotation,
     getWorldRotation: (out) => copyWorldRotation(rotation, out),
-    setBasePose,
-    isBasePosed: () => basePosed,
     update,
     dispose
   };

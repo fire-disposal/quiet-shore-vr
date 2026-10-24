@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SceneSnapshot, type SceneSnapshotInput } from '../src/core/scene/snapshot';
-import { SitUpPath } from '../src/core/xr/situp-path';
 import { POSTURE_LIMITS, type PostureState } from '../src/core/xr/comfort';
 import { worldQuaternion, type WorldRotation } from '../src/core/xr/frame';
 import { stateFromSnapshot } from '../src/app/portal-link';
@@ -25,10 +24,9 @@ function neutralInput(): SceneSnapshotInput {
     worldPitchDeg: 8,
     worldRollDeg: -3,
     confidence: 0.62,
-    sitUp: null,
-    sitUpT: 0,
-    sitUpTarget: 0,
-    sitUpMoving: false,
+    correctionMix: 0,
+    correctionTarget: 0,
+    correctionMoving: false,
     posture: null,
     baseQuaternion: IDENTITY.clone(),
     baseReferenceQuaternion: IDENTITY.clone(),
@@ -63,65 +61,61 @@ describe('scene snapshot', () => {
     const qCal = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, -0.8, 0.2, 'YXZ'));
     const qPosture = rotationQuaternion({ pitchDeg: 12, rollDeg: 0, yawDeg: 0 });
 
-    // The posture numbers are deliberately wrong: only the transform counts.
-    input.posture = posture({
-      phase: 'rising',
-      worldPitchDeg: 999,
-      worldRollDeg: -999,
-      riseM: 0.4,
-      progress: 0.3
-    });
+    // The mix numbers are deliberately loose: only the transform counts.
+    input.correctionMix = 0.3;
+    input.correctionTarget = 1;
+    input.correctionMoving = true;
     input.baseQuaternion = qPosture.clone().multiply(qCal);
     input.baseReferenceQuaternion = qCal;
     snapshot.capture(input);
 
     expect(snapshot.sceneId).toBe('washroom');
     expect(snapshot.loaded).toBe(true);
-    expect(snapshot.sitUpActive).toBe(false);
+    expect(snapshot.sitUpActive).toBe(true);
     expect(snapshot.posturePhase).toBe('rising');
     expect(snapshot.worldPitchDeg).toBeCloseTo(12, 6);
     expect(snapshot.worldRollDeg).toBeCloseTo(0, 6);
-    expect(snapshot.postureRiseM).toBe(0.4);
-    expect(snapshot.postureProgress).toBe(0.3);
+    // The eye keeps its height through the ramp: nothing is lowered.
+    expect(snapshot.postureRiseM).toBe(0);
+    expect(snapshot.postureProgress).toBeCloseTo(0.3, 6);
     expect(snapshot.floorOffset).toBe(-1.7);
   });
 
-  it('follows the sit-up base quaternion without re-deriving an angle', () => {
+  it('reports the correction mix and the measured world tilt', () => {
     const snapshot = new SceneSnapshot();
     const input = neutralInput();
-    const path = new SitUpPath({ standEyeHeight: 1.7 });
-    input.sitUp = path;
-    input.sitUpT = path.rotationPortion / 2;
-    input.sitUpTarget = 1;
-    input.sitUpMoving = true;
-    // A stale comfort posture must not leak into the sit-up numbers.
-    input.posture = posture({ phase: 'standing', worldPitchDeg: 5, riseM: 0.9, progress: 1 });
+    input.correctionMix = 0.5;
+    input.correctionTarget = 1;
+    input.correctionMoving = true;
     input.baseQuaternion = rotationQuaternion({ pitchDeg: 45, rollDeg: 0, yawDeg: 0 });
     input.baseReferenceQuaternion = IDENTITY.clone();
     snapshot.capture(input);
 
     expect(snapshot.sitUpActive).toBe(true);
     expect(snapshot.posturePhase).toBe('rising');
+    expect(snapshot.postureProgress).toBeCloseTo(0.5, 6);
     expect(snapshot.worldPitchDeg).toBeCloseTo(45, 6);
     expect(snapshot.worldRollDeg).toBeCloseTo(0, 6);
-    expect(snapshot.postureRiseM).toBeCloseTo(path.riseAt(path.rotationPortion / 2), 6);
-    expect(snapshot.postureRiseM).toBeLessThanOrEqual(POSTURE_LIMITS.maxRiseM);
-    expect(snapshot.postureProgress).toBeCloseTo(path.rotationPortion / 2, 6);
 
-    // The same progress with a different transform must report differently.
+    // The same mix with a different transform must report differently: the
+    // angles are measured from what was applied, never from the mix.
     input.baseQuaternion = rotationQuaternion({ pitchDeg: 70, rollDeg: 4, yawDeg: 0 });
     snapshot.capture(input);
     expect(snapshot.worldPitchDeg).toBeCloseTo(70, 6);
     expect(snapshot.worldRollDeg).toBeCloseTo(4, 6);
 
-    input.sitUpMoving = false;
-    input.sitUpT = 1;
+    input.correctionMoving = false;
+    input.correctionMix = 1;
+    input.correctionTarget = 1;
     snapshot.capture(input);
-    expect(snapshot.posturePhase).toBe('standing');
+    expect(snapshot.posturePhase).toBe('corrected');
+    expect(snapshot.postureProgress).toBe(1);
 
-    input.sitUpT = 0;
+    input.correctionMix = 0;
+    input.correctionTarget = 0;
     snapshot.capture(input);
     expect(snapshot.posturePhase).toBe('neutral');
+    expect(snapshot.sitUpActive).toBe(false);
   });
 
   it('stays allocation-free: capture returns the same instance', () => {

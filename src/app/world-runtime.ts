@@ -1,125 +1,109 @@
 import * as THREE from 'three';
-import { SitUpPath, type CameraPose } from '../core/xr/situp-path';
-import { createSitUpMotion, type SitUpMotionApi } from '../core/xr/situp-run';
+import { smootherstep } from '../core/xr/drivers/curve';
 import type { ComfortApi } from '../core/xr/comfort';
 import type { WorldShellApi } from '../core/xr/world-shell';
-import { planFrame, type FramePlan } from '../core/xr/world-frame';
 import type { PoseLike } from '../core/xr/types';
 
 /**
- * Owner of the world's base pose: the calibration frame, the sit-up path, and
- * the placement that goes with them.
+ * Owner of the world's base pose and of the **pitch-correction ramp**.
+ *
+ * The session starts in the state a lying body actually sees: the ceiling is
+ * the real ceiling, and the room only turns to the patient's heading (yaw).
+ * The rise animation is no longer a scripted 90° tumble — it is a ramp of the
+ * correction mix from 0 (uncorrected) to 1 (the patient's comfortable posture
+ * faces the front wall); lying back ramps it the other way. `comfort` owns the
+ * quaternion, this owns *how much* of it is applied and when.
  *
  * ```text
- * calibrate(pose)  comfort.calibrate  ->  q0
- *                  planFrame(mode, scene)  ->  base + offsetY
- * rise(1)          sit-up ramp  ->  worldFor(head, path.at(t))  ->  base
+ * mix 0   q = qYaw                       ceiling overhead, room on the heading
+ * mix 1   q = qYaw · qCorrection         facing the front wall, as if standing
+ * ramp    mix eased with smootherstep over the operator's duration
  * ```
- *
- * App used to hold this as six fields and five writers; a mode switch, a
- * calibration and an eye-height change could each re-derive the base and
- * disagree. Here there is one `apply()`, and every entry point goes through it.
  */
 
 export interface WorldRuntimeDeps {
-  shell(): WorldShellApi | null;
   comfort(): ComfortApi | null;
-  /** The operator's standing eye height setting. */
-  eyeHeight(): number;
   /** The frame's residual offset, owned by the buoyancy module. */
   setBaseOffset(y: number): void;
-  /** Session mode; fixed for the session. */
-  mode(): 'float' | 'posture';
 }
 
-/** What telemetry, the HUD and the cue need to read back. */
+/** What telemetry, the HUD and the cue read back. */
 export interface WorldRuntimeState {
-  posturePosesBase: boolean;
-  plan: FramePlan;
-  sitUpT: number;
-  sitUpTarget: number;
-  sitUpMoving: boolean;
-  sitUpReady: boolean;
-  path: SitUpPath | null;
-  base0: THREE.Quaternion;
+  /** Correction applied, 0 = real ceiling, 1 = facing the wall. */
+  mix: number;
+  target: number;
+  moving: boolean;
+  /** A calibration exists; the ramp and the rise command need one. */
+  ready: boolean;
+  /** Ramp length the operator set, in milliseconds. */
+  durationMs: number;
+  /** Content Y the frame places the art at (the buoyancy delta adds to it). */
+  offsetY: number;
 }
+
+/** Default ramp; the operator can ask for 4–14 s with `anim:duration`. */
+const DEFAULT_RAMP_MS = 6000;
 
 export interface WorldRuntimeApi {
   /** A new scene: its authored eye decides the placement from now on. */
   setScene(placement: { eyeY: number }): void;
   /**
-   * Adopt the orientation the patient is holding as the world frame, prepare
-   * the sit-up path, and hand the world to the frame the mode calls for.
+   * Adopt the orientation the patient is holding as the calibration frame, and
+   * start **uncorrected**: the ceiling stays the real ceiling until the rise
+   * animation is asked for.
    */
-  calibrate(orientation: { x: number; y: number; z: number; w: number }, position: THREE.Vector3): boolean;
-  /** Drop the sit-up pose; the next `calibrate` (or frame apply) owns the base. */
+  calibrate(
+    orientation: { x: number; y: number; z: number; w: number },
+    position: THREE.Vector3
+  ): boolean;
+  /** Drop the calibration and the mix; the world is unrotated again. */
   clearBase(): void;
-  /** Advance the sit-up ramp (or the comfort posture) and write the base. */
+  /** Advance the ramp (or the comfort posture) and re-apply the frame. */
   update(dt: number): void;
   /**
    * Freeze every world motion. The calibration card asks the patient to hold
-   * still, so nothing may move the world underneath it: not a posture
-   * transition, not the buoyancy settle, not a stale ramp.
+   * still, so nothing may move the world underneath it.
    */
   hold(frozen: boolean): void;
-  /** 1 = rise, 0 = lie back; refuses (false) when no path is prepared. */
+  /** 1 = correct (face the wall), 0 = uncorrected (real ceiling). */
   rise(target: 0 | 1): boolean;
   stopRise(): void;
   setDuration(ms: number): void;
-  /** Eye height changed: the path and the standing placement follow. */
-  setEyeHeight(m: number): void;
-  /** True while the sit-up ramp is moving; the cue and the cadence read this. */
+  /** True while the correction ramp is moving; the cue and the cadence read this. */
   isRising(): boolean;
-  /** Re-derive base and offset from the current mode and scene. */
+  /** Re-place the art from the current scene / eye height. */
   apply(): void;
   state(out?: WorldRuntimeState): WorldRuntimeState;
-  path(): SitUpPath | null;
 }
 
-const DEFAULT_HIP = 0.45;
-
 export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
-  const { shell, comfort, eyeHeight, setBaseOffset, mode } = deps;
+  const { comfort, setBaseOffset } = deps;
 
   let eyeY = 1.7;
-  let plan: FramePlan = { base: 'calibrated', offsetY: 0 };
+  let offsetY = 0;
 
-  /** Set by `setEyeHeight`; falls back to the app's setting until then. */
-  let standOverride = Number.NaN;
-  const standHeight = (): number => (Number.isFinite(standOverride) ? standOverride : eyeHeight());
-
-  let sitUpPath: SitUpPath | null = null;
-  let sitUpReference: CameraPose | null = null;
-  const sitUpBase0 = new THREE.Quaternion();
-  const motion: SitUpMotionApi = createSitUpMotion({ durationMs: 12000 });
-  /** True while the sit-up path poses the base (mirrors `plan.base`). */
-  let posed = false;
-  /** Set while the calibration card is up; `update` becomes a no-op. */
+  /** Correction applied, and where it is heading. */
+  let mix = 0;
+  let target = 0;
+  let from = 0;
+  let elapsedMs = 0;
+  let durationMs = DEFAULT_RAMP_MS;
+  let moving = false;
+  let ready = false;
   let held = false;
 
-  function applyTransform(): void {
-    const shellApi = shell();
-    if (!posed || !sitUpPath || !sitUpReference || !shellApi) {
-      return;
-    }
-    shellApi.setBasePose(sitUpPath.worldFor(sitUpReference, sitUpPath.at(motion.t)));
+  /**
+   * Scene art is authored with its eye at the content origin, so the frame
+   * lowers it by exactly that eye height. The buoyancy delta rides on top.
+   */
+  function apply(): void {
+    offsetY = Number.isFinite(eyeY) ? -eyeY : 0;
+    setBaseOffset(offsetY);
   }
 
-  function apply(): void {
-    plan = planFrame({
-      mode: mode(),
-      eyeY,
-      standEyeHeight: standHeight(),
-      lyingEyeHeight: sitUpPath?.hipHeight ?? DEFAULT_HIP
-    });
-    posed = plan.base === 'situp';
-    const shellApi = shell();
-    if (posed) {
-      applyTransform();
-    } else {
-      shellApi?.setBasePose(null);
-    }
-    setBaseOffset(plan.offsetY);
+  function pushMix(next: number): void {
+    mix = next;
+    comfort()?.setCorrectionMix(mix);
   }
 
   function calibrate(
@@ -144,94 +128,100 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (!comfortApi.calibrate(pose)) {
       return false;
     }
-    sitUpPath = new SitUpPath({ standEyeHeight: standHeight() });
-    sitUpReference = {
-      position: position.clone(),
-      quaternion: new THREE.Quaternion(orientation.x, orientation.y, orientation.z, orientation.w)
-    };
-    motion.reset();
-    sitUpBase0.copy(sitUpPath.worldFor(sitUpReference, sitUpPath.at(0)).quaternion);
+    // Enter the session the way the room actually looks: no pitch correction.
+    moving = false;
+    target = 0;
+    from = 0;
+    elapsedMs = 0;
+    pushMix(0);
+    ready = true;
     apply();
     return true;
   }
 
   function clearBase(): void {
-    posed = false;
-    sitUpPath = null;
-    sitUpReference = null;
-    motion.reset();
-    sitUpBase0.identity();
-    shell()?.setBasePose(null);
+    moving = false;
+    target = 0;
+    from = 0;
+    elapsedMs = 0;
+    mix = 0;
+    ready = false;
+    comfort()?.reset();
+    apply();
   }
 
   function update(dt: number): void {
     if (held) {
       return;
     }
-    if (posed) {
-      if (motion.update(dt)) {
-        applyTransform();
+    if (moving) {
+      elapsedMs += dt * 1000;
+      const t = durationMs > 0 ? Math.min(1, elapsedMs / durationMs) : 1;
+      pushMix(from + (target - from) * smootherstep(t));
+      if (t >= 1) {
+        pushMix(target);
+        moving = false;
       }
       return;
     }
-    comfort()?.updatePosture(dt);
   }
 
-  function rise(target: 0 | 1): boolean {
-    if (!sitUpPath || !sitUpReference) {
+  function rise(next: 0 | 1): boolean {
+    if (!ready) {
       return false;
     }
-    motion.setTarget(target);
+    if (next === mix) {
+      return true;
+    }
+    from = mix;
+    target = next;
+    elapsedMs = 0;
+    moving = true;
     return true;
   }
 
-  function setEyeHeight(next: number): void {
-    standOverride = Number.isFinite(next) && next > 0 ? next : Number.NaN;
-    if (sitUpPath && sitUpReference) {
-      sitUpPath = new SitUpPath({ standEyeHeight: next });
-      applyTransform();
+  function stopRise(): void {
+    if (!moving) {
+      return;
     }
-    apply();
+    target = mix;
+    moving = false;
+  }
+
+  function setDuration(ms: number): void {
+    if (Number.isFinite(ms) && ms > 0) {
+      durationMs = ms;
+    }
   }
 
   function state(out?: WorldRuntimeState): WorldRuntimeState {
-    const result: WorldRuntimeState = out ?? {
-      posturePosesBase: posed,
-      plan,
-      sitUpT: 0,
-      sitUpTarget: 0,
-      sitUpMoving: false,
-      sitUpReady: false,
-      path: null,
-      base0: sitUpBase0
-    };
-    result.posturePosesBase = posed;
-    result.plan = plan;
-    result.sitUpT = motion.t;
-    result.sitUpTarget = motion.target;
-    result.sitUpMoving = motion.moving;
-    result.sitUpReady = sitUpPath !== null;
-    result.path = sitUpPath;
+    const result =
+      out ?? { mix: 0, target: 0, moving: false, ready: false, durationMs: DEFAULT_RAMP_MS, offsetY: 0 };
+    result.mix = mix;
+    result.target = target;
+    result.moving = moving;
+    result.ready = ready;
+    result.durationMs = durationMs;
+    result.offsetY = offsetY;
     return result;
   }
 
   return {
     setScene: (placement) => {
       eyeY = placement.eyeY;
+      apply();
     },
     calibrate,
     clearBase,
     update,
-    rise,
-    stopRise: () => motion.stop(),
-    setDuration: (ms) => motion.setDuration(ms),
-    setEyeHeight,
     hold: (frozen) => {
       held = frozen;
     },
-    isRising: () => motion.moving,
+    rise,
+    stopRise,
+    setDuration,
+    isRising: () => moving,
     apply,
-    state,
-    path: () => sitUpPath
+    state
   };
 }

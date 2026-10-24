@@ -209,7 +209,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `calibrate` / `recalibrate` | 打开校准：保持不动 1.8 s + 3 s 取样取平均，9 s 强制落地；卡片期间世界冻结；训练中可用 |
 | `audio:on` / `audio:off` / `audio:toggle` | 环境声（水声）开关，**默认关**；只影响场景环境声，不静音语音。开启时两路交叉淡化播放，关闭时 0.4 s 渐出 |
 | `exit` / `stop` | 结束训练、退出会话 |
-| `posture:rise` / `posture:lower` / `posture:stop` | 只在 `mode:posture` 会话内生效（否则页面拒绝并提示先切模式）；患者确认键只做开始/停止，不触发起身 |
+| `posture:rise` / `posture:lower` / `posture:stop` | 俯仰修正斜坡：rise = 0→1（天花板 → 面向前方），lower = 1→0，stop = 冻结在当前 mix；两种模式下都可用，患者确认键仍只做开始/停止 |
 | `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场粒子层开关与强度（应用级；`flow` 由漂浮振幅或起身上升驱动） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
 | `view:orient:<yaw>,<pitch>` | 绝对朝向（度）：yaw ±180（+ = 左转）、pitch ±90（+ = 上仰），无 TTL；免回执 |

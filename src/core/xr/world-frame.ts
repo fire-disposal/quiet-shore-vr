@@ -25,43 +25,14 @@ import * as THREE from 'three';
  * for a 1.7 m standing eye", and one scene's constant does not place the rest.
  */
 
-export type FrameBase = 'calibrated' | 'situp';
-
 export interface FramePlanInput {
-  /** The session mode; fixed for the session. */
-  mode: 'float' | 'posture';
   /** Authored eye height in content space. */
   eyeY: number;
-  /** Operator's standing eye height setting. */
-  standEyeHeight: number;
-  /** Height of the supine eye in the sit-up path; the posture mode starts there. */
-  lyingEyeHeight: number;
 }
 
 export interface FramePlan {
-  base: FrameBase;
   /** Content Y for the art; the buoyancy delta is added on top of it. */
   offsetY: number;
-}
-
-/** `-0` and `+0` render differently in state readbacks; keep it canonical. */
-function clean(value: number): number {
-  return value === 0 ? 0 : value;
-}
-
-export function planFrame(input: FramePlanInput): FramePlan {
-  const eyeY = finiteOr(input.eyeY, 0);
-  const stand = finiteOr(input.standEyeHeight, eyeY);
-  if (input.mode === 'posture') {
-    // Rise performance: the path's standing eye must land on the authored one,
-    // so the art shifts by however far the setting moved it.
-    return { base: 'situp', offsetY: clean(stand - eyeY) };
-  }
-  return { base: 'calibrated', offsetY: clean(-eyeY) };
-}
-
-function finiteOr(value: number, fallback: number): number {
-  return Number.isFinite(value) ? value : fallback;
 }
 
 /** Scratch for the per-frame axis; the render loop is single-threaded. */

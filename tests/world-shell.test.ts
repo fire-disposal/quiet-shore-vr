@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import { createWorldShell, type WorldShellApi } from '../src/core/xr/world-shell';
 import { viewToWorld } from '../src/core/xr/view-motion';
 import { worldQuaternion, type WorldRotation } from '../src/core/xr/frame';
-import { SitUpPath } from '../src/core/xr/situp-path';
 
 const DEG = Math.PI / 180;
 
@@ -33,7 +32,7 @@ describe('world shell', () => {
     expect(base.parent).toBe(shell.group);
     expect(shell.base).toBe(base);
 
-    shell.setBasePose(null);
+
     base.position.set(1, 2, 3);
     shell.setWorldRotation(viewToWorld(0, 12));
     shell.update(new THREE.Vector3(0, 1.6, 0));
@@ -41,7 +40,7 @@ describe('world shell', () => {
     expect(base.position.x).toBeCloseTo(1);
     expect(base.position.y).toBeCloseTo(2);
     expect(base.position.z).toBeCloseTo(3);
-    expect(shell.isBasePosed()).toBe(false);
+
   });
 
   it('a positive up-gaze looks up: the point ahead drops, the eye stays put', () => {
@@ -86,39 +85,21 @@ describe('world shell', () => {
     expect(applyThrough(shell, eye).distanceTo(eye)).toBeLessThan(1e-9);
   });
 
-  it('composes with the sit-up base pose at every t without losing the head', () => {
+  it('rotates about the eye and never moves it', () => {
     const { base, shell } = buildShell();
-    const path = new SitUpPath({ standEyeHeight: 1.7 });
     const head = {
       position: new THREE.Vector3(0.15, 0.35, -0.4),
       quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.1, -0.2, 0.05))
     };
-
-    for (const t of [0, 0.15, 0.5, 0.7, 0.85, 1]) {
-      const camera = path.at(t);
-      const world = path.worldFor(head, camera);
-      shell.setBasePose(world);
-
-      expect(shell.isBasePosed()).toBe(true);
-      expect(base.position.distanceTo(world.position)).toBeLessThan(1e-9);
-      expect(base.quaternion.angleTo(world.quaternion)).toBeLessThan(1e-6);
-
-      shell.setWorldRotation(viewToWorld(0, 9));
+    for (const upGaze of [0, 12, -25]) {
+      shell.setWorldRotation(viewToWorld(0, upGaze));
       shell.update(head.position);
-
-      // The sit-up pose is not rewritten by the rotation layer.
-      expect(base.position.distanceTo(world.position)).toBeLessThan(1e-9);
-      expect(base.quaternion.angleTo(world.quaternion)).toBeLessThan(1e-6);
-
-      // The composed transform still maps the virtual camera onto the physical
-      // head: the rotation is about the eye, so the eye is a fixed point.
       shell.group.updateMatrixWorld(true);
-      const composed = new THREE.Matrix4().multiplyMatrices(
-        shell.group.matrixWorld,
-        base.matrix
-      );
-      const recovered = camera.position.clone().applyMatrix4(composed);
-      expect(recovered.distanceTo(head.position)).toBeLessThan(1e-6);
+      // The shell rotates the world about the eye, so the eye is a fixed point.
+      const eyeAfter = head.position.clone().applyMatrix4(shell.group.matrixWorld);
+      expect(eyeAfter.distanceTo(head.position)).toBeLessThan(1e-6);
+      // The base is comfort's group; the shell never writes it.
+      expect(base.quaternion.equals(new THREE.Quaternion())).toBe(true);
     }
   });
 

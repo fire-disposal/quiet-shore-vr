@@ -1,7 +1,4 @@
 import * as THREE from 'three';
-import type { PosturePhase, PostureState } from '../xr/comfort';
-import { POSTURE_LIMITS } from '../xr/comfort';
-import type { SitUpPath } from '../xr/situp-path';
 import { measureRelativeEuler, type EulerDeg } from '../xr/measure';
 import type { ViewAnimState, ViewPresetCode } from '../xr/view-motion';
 
@@ -32,16 +29,13 @@ export interface SceneSnapshotInput {
   worldPitchDeg: number;
   worldRollDeg: number;
   confidence: number;
-  /** Sit-up performance driving the world, or null when comfort owns it. */
-  sitUp: SitUpPath | null;
-  sitUpT: number;
-  sitUpTarget: number;
-  sitUpMoving: boolean;
   /**
-   * Comfort posture, or null when no comfort layer is bound. Only phase, rise
-   * and progress are read: the angles come from the base transform.
+   * How much of the pitch correction is applied (0 = real ceiling, 1 = facing
+   * the wall), plus whether it is currently animating.
    */
-  posture: PostureState | null;
+  correctionMix: number;
+  correctionTarget: number;
+  correctionMoving: boolean;
   /** Base layer as applied this frame (`shell.base.quaternion`). */
   baseQuaternion: THREE.Quaternion;
   /** Frame the posture / sit-up started from. */
@@ -70,6 +64,9 @@ export interface SceneSnapshotInput {
   voiceId: number;
 }
 
+/** Correction phase: what the world is doing right now. */
+export type FramePhase = 'neutral' | 'rising' | 'lowering' | 'corrected';
+
 export class SceneSnapshot {
   sceneId = '';
   loaded = false;
@@ -86,7 +83,7 @@ export class SceneSnapshot {
   postureMode = false;
   sitUpT = 0;
   sitUpMoving = false;
-  posturePhase: PosturePhase = 'neutral';
+  posturePhase: FramePhase = 'neutral';
   /** Measured world tilt of the base, relative to the motion's start frame. */
   worldPitchDeg = 0;
   worldRollDeg = 0;
@@ -150,23 +147,15 @@ export class SceneSnapshot {
     this.worldPitchDeg = measured.pitchDeg;
     this.worldRollDeg = measured.rollDeg;
 
-    const sitUp = input.sitUp;
-    if (sitUp) {
-      const t = clamp01(input.sitUpT);
-      this.sitUpActive = true;
-      this.sitUpT = t;
-      this.sitUpMoving = input.sitUpMoving;
-      this.posturePhase = sitUpPhase(input.sitUpMoving, input.sitUpTarget, t);
-      this.postureRiseM = Math.min(POSTURE_LIMITS.maxRiseM, sitUp.riseAt(t));
-      this.postureProgress = t;
-    } else {
-      this.sitUpActive = false;
-      this.sitUpT = 0;
-      this.sitUpMoving = false;
-      this.posturePhase = input.posture?.phase ?? 'neutral';
-      this.postureRiseM = input.posture?.riseM ?? 0;
-      this.postureProgress = input.posture?.progress ?? 0;
-    }
+    // The correction mix is the one posture-like number left: 0 = lying with a
+    // real ceiling overhead, 1 = fully corrected to face the wall.
+    const mix = clamp01(input.correctionMix);
+    this.sitUpActive = input.correctionMoving;
+    this.sitUpT = mix;
+    this.sitUpMoving = input.correctionMoving;
+    this.posturePhase = framePhase(input.correctionMoving, input.correctionTarget, mix);
+    this.postureRiseM = 0;
+    this.postureProgress = mix;
     return this;
   }
 }
@@ -178,13 +167,13 @@ function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
-/** Sit-up phase from intent + progress; the unit has no PostureState. */
-function sitUpPhase(moving: boolean, target: number, t: number): PosturePhase {
+/** Correction phase from intent + mix. */
+function framePhase(moving: boolean, target: number, t: number): FramePhase {
   if (moving) {
     return target > t ? 'rising' : 'lowering';
   }
   if (t <= 0) {
     return 'neutral';
   }
-  return 'standing';
+  return 'corrected';
 }

@@ -2,18 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createWorldRuntime } from '../src/app/world-runtime';
 import type { ComfortApi } from '../src/core/xr/comfort';
-import type { WorldShellApi } from '../src/core/xr/world-shell';
 
-function harness(options: { mode?: 'float' | 'posture'; eyeHeight?: number } = {}) {
-  const basePose = vi.fn();
-  const update = vi.fn();
-  const shell = {
-    setBasePose: basePose,
-    update,
-    group: new THREE.Group(),
-    base: new THREE.Group()
-  } as unknown as WorldShellApi;
-  const offsets: number[] = [];
+function harness() {
+
+  /** Records the correction mix the runtime asks for. */
+  const mixes: number[] = [];
   const comfort = {
     calibrate: vi.fn(() => true),
     reset: vi.fn(),
@@ -27,138 +20,143 @@ function harness(options: { mode?: 'float' | 'posture'; eyeHeight?: number } = {
       riseM: 0,
       progress: 0
     })),
-    getCalibrationQuaternion: vi.fn((out: THREE.Quaternion) => out)
+    getCalibrationQuaternion: vi.fn((out: THREE.Quaternion) => out),
+    setCorrectionMix: vi.fn((mix: number) => {
+      mixes.push(mix);
+    }),
+    getCorrectionMix: vi.fn(() => mixes.at(-1) ?? 0)
   } as unknown as ComfortApi;
 
-  let mode = options.mode ?? 'float';
+  const offsets: number[] = [];
   const runtime = createWorldRuntime({
-    shell: () => shell,
     comfort: () => comfort,
-    eyeHeight: () => options.eyeHeight ?? 1.7,
-    setBaseOffset: (y) => offsets.push(y),
-    mode: () => mode
+    setBaseOffset: (y) => offsets.push(y)
   });
+  const run = (seconds: number, step = 1 / 60): void => {
+    for (let t = 0; t < seconds; t += step) {
+      runtime.update(step);
+    }
+  };
   return {
     runtime,
-    shell,
     comfort,
-    basePose,
     offsets,
-    setMode: (next: 'float' | 'posture') => {
-      mode = next;
-    },
-    lastOffset: () => offsets.at(-1)
+    mixes,
+    lastMix: () => mixes.at(-1),
+    lastOffset: () => offsets.at(-1),
+    run
   };
 }
 
 const SUPINE = { x: 0, y: 0, z: 0.7071068, w: 0.7071068 };
 const POSITION = new THREE.Vector3(0.1, 0.62, -1.2);
 
-describe('world runtime placement', () => {
-  it('hands a standing scene to the calibrated frame with its eye at the origin', () => {
-    const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
-    h.runtime.calibrate(SUPINE, POSITION);
-
-    expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
-    expect(h.basePose).toHaveBeenLastCalledWith(null);
-    expect(h.runtime.state().posturePosesBase).toBe(false);
-  });
-
-  it('places the art by the scene eye and keeps the calibrated frame', () => {
+describe('world runtime', () => {
+  it('places the art by the scene eye and leaves the base to comfort', () => {
     const h = harness();
     h.runtime.setScene({ eyeY: 0.45 });
     h.runtime.calibrate(SUPINE, POSITION);
 
-    const state = h.runtime.state();
-    expect(state.posturePosesBase).toBe(false);
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
-    expect(h.basePose).toHaveBeenLastCalledWith(null);
   });
 
-  it('a standing scene in the posture mode starts lying and can rise', () => {
-    const h = harness({ mode: 'posture' });
+  it('starts uncorrected: the real ceiling is what the patient sees', () => {
+    const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
-    expect(h.runtime.state().posturePosesBase).toBe(true);
+
+    expect(h.lastMix()).toBe(0);
+    expect(h.runtime.state().mix).toBe(0);
+    expect(h.runtime.state().target).toBe(0);
+    expect(h.runtime.state().ready).toBe(true);
+  });
+
+  it('ramps the correction up and back down with smootherstep', () => {
+    const h = harness();
+    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
 
     expect(h.runtime.rise(1)).toBe(true);
     expect(h.runtime.isRising()).toBe(true);
-    h.runtime.update(0.5);
-    expect(h.runtime.state().sitUpT).toBeGreaterThan(0);
-    expect(h.basePose).toHaveBeenCalled();
+    h.run(2);
+    const halfway = h.runtime.state().mix;
+    // Smootherstep is symmetric: halfway through is exactly 0.5.
+    expect(halfway).toBeCloseTo(0.5, 1);
+    expect(halfway).toBeGreaterThan(0.1);
+    expect(halfway).toBeLessThan(0.9);
 
-    for (let i = 0; i < 200; i += 1) {
-      h.runtime.update(0.1);
-    }
-    expect(h.runtime.state().sitUpT).toBe(1);
+    h.run(3);
+    expect(h.runtime.state().mix).toBe(1);
     expect(h.runtime.isRising()).toBe(false);
+
+    h.runtime.rise(0);
+    h.run(5);
+    expect(h.runtime.state().mix).toBe(0);
   });
 
-  it('refuses a rise before a calibration prepared the path', () => {
-    const h = harness({ mode: 'posture' });
+  it('refuses a rise before a calibration exists', () => {
+    const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.apply();
     expect(h.runtime.rise(1)).toBe(false);
-    expect(h.runtime.state().sitUpReady).toBe(false);
+    expect(h.runtime.state().ready).toBe(false);
   });
 
-  it('moves the art when the eye height changes, and the path follows', () => {
-    const h = harness({ mode: 'posture', eyeHeight: 1.7 });
+  it('a stop freezes the mix where it is, and a new rise resumes', () => {
+    const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
+    h.runtime.rise(1);
+    h.run(1.2);
+    const frozen = h.runtime.state().mix;
+    h.runtime.stopRise();
+    h.run(1);
+    expect(h.runtime.state().mix).toBe(frozen);
+    expect(h.runtime.isRising()).toBe(false);
 
-    h.runtime.setEyeHeight(1.55);
-    // The path's standing eye is now 0.15 m below the art's authored one.
-    expect(h.lastOffset()).toBeCloseTo(-0.15, 6);
+    h.runtime.rise(1);
+    h.run(4);
+    expect(h.runtime.state().mix).toBe(1);
   });
 
-  it('freezes every motion while the calibration card is up', () => {
-    const h = harness({ mode: 'posture' });
+  it('holds every motion while the calibration card is up', () => {
+    const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
     h.runtime.rise(1);
     h.runtime.hold(true);
 
-    const frozenAt = h.runtime.state().sitUpT;
+    const frozenAt = h.runtime.state().mix;
     h.runtime.update(1);
-    expect(h.runtime.state().sitUpT).toBe(frozenAt);
-    expect(h.comfort.updatePosture).not.toHaveBeenCalled();
+    expect(h.runtime.state().mix).toBe(frozenAt);
 
     h.runtime.hold(false);
     h.runtime.update(1);
-    expect(h.runtime.state().sitUpT).toBeGreaterThan(frozenAt);
+    expect(h.runtime.state().mix).toBeGreaterThan(frozenAt);
   });
 
-  it('advances the comfort posture only while the sit-up does not pose the base', () => {
+  it('places the art from the scene eye only', () => {
     const h = harness();
     h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
-    h.runtime.update(1 / 60);
-    expect(h.comfort.updatePosture).toHaveBeenCalledTimes(1);
-
-    h.setMode('posture');
-    h.runtime.apply();
-    h.runtime.update(1 / 60);
-    expect(h.comfort.updatePosture).toHaveBeenCalledTimes(1);
+    expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
+    h.runtime.setScene({ eyeY: 0.45 });
+    expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
   });
 
-  it('clearing the base drops the pose and forgets the ramp', () => {
+  it('clearing the base drops the calibration and the mix', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 0.45 });
+    h.runtime.setScene({ eyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.rise(1);
+    h.run(1);
     h.runtime.clearBase();
 
-    expect(h.basePose).toHaveBeenLastCalledWith(null);
-    expect(h.runtime.state().sitUpReady).toBe(false);
-    expect(h.runtime.state().posturePosesBase).toBe(false);
-  });
-
-  it('reports the anchor rotation telemetry measures against', () => {
-    const h = harness();
-    h.runtime.setScene({ eyeY: 0.45 });
-    h.runtime.calibrate(SUPINE, POSITION);
-    const { base0 } = h.runtime.state();
-    expect(base0.length()).toBeCloseTo(1, 6);
+    expect(h.comfort.reset).toHaveBeenCalled();
+    expect(h.runtime.state().mix).toBe(0);
+    expect(h.runtime.state().ready).toBe(false);
   });
 });

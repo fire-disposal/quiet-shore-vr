@@ -4,7 +4,6 @@ import { createRenderer } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
 import {
   createComfort,
-  POSTURE_LIMITS,
   type ComfortApi
 } from '../core/xr/comfort';
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
@@ -32,7 +31,7 @@ import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice'
 import { createPostureCue } from '../core/xr/posture-cue';
 import type { PostureCueApi } from '../core/xr/posture-cue';
 import { FLOAT_MAX_LEVEL, isFloatProfileId } from '../core/xr/float';
-import { planFrame, visualUpInContent } from '../core/xr/world-frame';
+import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { parseRemoteCommand } from './commands';
@@ -225,11 +224,8 @@ export class QuietShoreApp {
     // The base pose owner sits on top of buoyancy: it decides which frame poses
     // the world and hands the frame's offset to the buoyancy module.
     this.world = createWorldRuntime({
-      shell: () => this.shell,
       comfort: () => this.comfort,
-      eyeHeight: () => this.eyeHeight,
-      setBaseOffset: (y) => this.floating.setBaseOffset(y),
-      mode: () => this.lifecycle.mode
+      setBaseOffset: (y) => this.floating.setBaseOffset(y)
     });
     this.input = new SpatialInput(
       this.camera,
@@ -373,8 +369,8 @@ export class QuietShoreApp {
         frame: () => ({
           mode: this.lifecycle.mode,
           phase: this.lifecycle.phase,
-          frame: this.world.state().posturePosesBase ? 'situp' : 'calibrated',
-          sitUpT: this.world.state().sitUpT,
+          correctionMix: this.world.state().mix,
+          correctionMoving: this.world.state().moving,
           baseFloorOffset: this.floating.getState().baseOffset,
           bobM: this.floating.getState().offsetM,
           swayDeg: 0, // retired channel: the world never tilts
@@ -673,7 +669,6 @@ export class QuietShoreApp {
       return;
     }
     this.viewMotion.stop();
-    this.comfort?.stopPosture();
     this.stopSitUp();
     this.voice.stop();
     // Any stop — including one during calibration — takes the overlay with it.
@@ -882,10 +877,6 @@ export class QuietShoreApp {
     this.world.hold(true);
     this.world.clearBase();
     this.viewMotion.reset();
-    this.comfort?.setPosture(
-      { worldPitchDeg: 0, worldRollDeg: 0, riseM: 0 },
-      POSTURE_LIMITS.minDurationMs
-    );
     this.input.setLayers(false, false);
 
     this.calibrationOverlay ??= createCalibrationOverlay({
@@ -1238,9 +1229,9 @@ export class QuietShoreApp {
     if (!this.xr.isPresenting) {
       this.camera.position.y = next;
     }
-    if (this.session) {
-      this.world.setEyeHeight(next);
-    }
+    // The frame is placed by the scene's authored eye (`eyeY`), so the
+    // operator's height setting no longer moves the world; it still drives the
+    // preview camera and the state readback.
     this.start.setStatus(`视点高度 ${next.toFixed(2)} m`, 'ok');
   }
 
@@ -1286,7 +1277,6 @@ export class QuietShoreApp {
       // where it is (no recenter: the pitch target is held), brake the comfort
       // posture and stop the sit-up performance at its current angle.
       this.viewMotion.stop();
-      this.comfort?.stopPosture();
       this.stopSitUp();
       if (this.session) {
         this.input.setLayers(true, true);
@@ -1298,15 +1288,12 @@ export class QuietShoreApp {
   }
 
   private setVirtualPosture(rising: boolean): void {
-    // The rise animates the sit-up frame, which is a different world frame from
-    // the calibrated one the floating mode runs in. Switching under the patient
-    // would snap the world; the mode selector is the sanctioned way across.
-    if (this.lifecycle.mode !== 'posture') {
-      this.start.setStatus('虚拟起身在起身模式中可用，请先切换模式', 'error');
-      return;
-    }
-    if (!this.session || !this.world.state().sitUpReady) {
-      this.start.setStatus('虚拟起身仅能在完成校准后的训练中使用', 'error');
+    // The rise is the pitch correction itself: 0 = the real ceiling overhead,
+    // 1 = the patient's forward is the front wall. It works in either session
+    // mode because it no longer swaps world frames, it ramps the one frame the
+    // calibration built.
+    if (!this.session || !this.world.state().ready) {
+      this.start.setStatus('起身仅能在完成校准后的训练中使用', 'error');
       return;
     }
     if (this.capturePending) {
@@ -1314,15 +1301,18 @@ export class QuietShoreApp {
       return;
     }
     this.world.rise(rising ? 1 : 0);
-    this.start.setStatus(rising ? '虚拟起身中，随时可停止' : '正在回到卧床视角', 'ok');
+    this.start.setStatus(
+      rising ? '正在修正到面向前方，随时可停' : '正在回到天花板视角，随时可停',
+      'ok'
+    );
   }
 
   private stopSitUp(): void {
-    if (!this.world.state().posturePosesBase) {
+    if (!this.world.state().moving) {
       return;
     }
     this.world.stopRise();
-    this.start.setStatus('已停止虚拟起身', 'ok');
+    this.start.setStatus('已停在当前修正角度', 'ok');
   }
 
   private applySceneBed(on: boolean): void {
@@ -1452,22 +1442,17 @@ export class QuietShoreApp {
     if (this.capturePending) {
       return 0;
     }
-    const posture = this.world.state();
-    if (posture.posturePosesBase && posture.sitUpMoving) {
-      // The rise owns the scene while it runs. Lowering (or a stopped ramp)
-      // freezes the motes: only rising reads as weightlessness.
-      if (posture.sitUpTarget <= posture.sitUpT) {
+    const frame = this.world.state();
+    if (frame.moving) {
+      // Only a rise (increasing correction) reads as weightlessness; lowering
+      // or a frozen ramp keeps the motes still.
+      if (frame.target <= frame.mix) {
         return 0;
       }
-      const rate = posture.path?.pitchRateAt(posture.sitUpT, SITUP_DURATION_MS) ?? 0;
-      return Math.max(CUE_IDLE_FLOW, Math.min(1, rate / CUE_FULL_DEG_PER_S));
-    }
-    // Everything else — both modes, both frames — is driven by the buoyancy.
-    // Gating this on "the sit-up does not pose the base" froze the light well's
-    // rings for a whole session, which read as a still image glued to the view.
-    const comfort = this.comfort;
-    if (comfort?.isPostureMoving()) {
-      return comfort.getPosturePhase() === 'rising' ? 1 : 0;
+      // The correction sweeps up to 90° over the ramp; a smootherstep's peak
+      // rate is 1.875x its mean.
+      const peakDegPerSec = (90 * 1.875) / Math.max(1, frame.durationMs / 1000);
+      return Math.max(CUE_IDLE_FLOW, Math.min(1, peakDegPerSec / CUE_FULL_DEG_PER_S));
     }
     return this.floating.getFlow();
   }
@@ -1483,7 +1468,6 @@ export class QuietShoreApp {
     const motion = this.floating.getState();
     const comfort = this.comfort;
     const shell = this.shell;
-    const comfortState = comfort?.getState();
     // The mirror must see the same world the patient sees: shell (view) times
     // base (comfort calibration or sit-up inverse), not just the head pose.
     if (shell) {
@@ -1506,18 +1490,14 @@ export class QuietShoreApp {
       worldYawDeg: THREE.MathUtils.radToDeg(this.worldEuler.y),
       worldPitchDeg: THREE.MathUtils.radToDeg(this.worldEuler.x),
       worldRollDeg: THREE.MathUtils.radToDeg(this.worldEuler.z),
-      confidence: comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0),
-      sitUp: world.posturePosesBase ? world.path : null,
-      sitUpT: world.sitUpT,
-      sitUpTarget: world.sitUpTarget,
-      sitUpMoving: world.sitUpMoving,
-      posture: comfort?.getPostureState() ?? null,
+      confidence: comfort?.isCalibrated() ? 1 : 0,
+      correctionMix: world.mix,
+      correctionTarget: world.target,
+      correctionMoving: world.moving,
       baseQuaternion: shell ? shell.base.quaternion : this.identityQuaternion,
-      baseReferenceQuaternion: world.posturePosesBase
-        ? world.base0
-        : comfort
-          ? comfort.getCalibrationQuaternion(this.calibrationFrame)
-          : this.identityQuaternion,
+      baseReferenceQuaternion: comfort
+        ? comfort.getCalibrationQuaternion(this.calibrationFrame)
+        : this.identityQuaternion,
       lookYawDeg: this.viewMotion.getLookYawDeg(),
       lookYawTargetDeg: this.viewMotion.getTargetLookYawDeg(),
       upGazeDeg: this.viewMotion.getUpGazeDeg(),

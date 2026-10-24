@@ -9,56 +9,48 @@
 flowchart TB
   eye["XR 相机（物理头姿态，只读）"]
   shell["world-shell.group：视角（view-motion）<br/>绕眼睛旋转"]
-  base["base 层：世界帧<br/>· 已校准帧 q0（漂浮）<br/>· 起身逆变换（起身）"]
-  content["content：场景宿主<br/>· 帧偏移 baseFloorOffset<br/>· 漂浮增量 bob"]
-  art["场景内容（水、云、穹顶、墙）"]
+  base["base = comfort.group：世界帧<br/>qYaw · slerp(I, qCorr, mix)"]
+  content["content：场景宿主<br/>· 帧偏移 −eyeY<br/>· 漂浮增量 bob"]
+  art["场景内容"]
   eye --> shell --> base --> content --> art
 ```
 
-| 系统 | 所有者 | 写入 | 不写 |
-| --- | --- | --- | --- |
-| 俯仰修正 | `view-motion`（视角）+ `comfort.calibrate`（校准帧） | shell 的旋转；base 的 q0 | 不改相机，不写 content |
-| 漂浮 | `src/app/floating.ts` | content 偏移（帧偏移 + 沿视觉竖直的 bob）、sway | 不写 base、不写 shell |
-| 起身 | `situp-run`（时间轴）+ `situp-path`（变换） | base 的位姿 | 不写 content、不写 shell |
+| 系统 | 所有者 | 写入 |
+| --- | --- | --- |
+| 视角 | `view-motion` | shell 的旋转（绕眼点） |
+| 世界帧 | `comfort` + `app/world-runtime` | base 的旋转：`qYaw · slerp(I, qCorrection, mix)` |
+| 漂浮 | `app/floating` | content 的位置（帧偏移 + bob） |
+| 起身 | `app/world-runtime` | **mix 的斜坡**，0↔1 |
 
-规则：**同一时刻只有一层写 base**。谁写 base 由会话模式决定，不由命令决定：
+`comfort` 只有一个通道：**修正量 mix**。
 
-| 会话模式 | base | content 帧偏移 | 漂浮 |
-| --- | --- | --- | --- |
-| 漂浮 `float` | 已校准帧 `q0` | `-eyeY`（场景声明） | 开 |
-| 起身 `posture` | 起身逆变换 | `视点高度 - eyeY` | 关 |
+| mix | 患者看到 | base |
+| --- | --- | --- |
+| 0 | **天花板就是真实的天花板**；房间只按头部朝向（yaw）转正 | `qYaw` |
+| 1 | 患者舒适体位**面向前方墙壁**（站立视野） | `q0 = qYaw · qCorrection` |
+| 中间 | 平滑过渡（slerp + smootherstep） | 部分修正 |
 
-漂浮模式对所有场景都用已校准帧：校准就是患者说"这是我的前方"，只有这一帧能让画面
-落在视线中央。早期的"按场景体位选帧"会用头部倾角旋转画面，对称的光井因此偏到一侧、
-看起来像贴在视线上。校准期间 `world.hold(true)` 冻结所有世界运动。
+会话**从 mix = 0 开始**：进入 XR 后不做俯仰修正。起身 = 把 mix 从 0 升到 1 的斜坡（时长由平板设定 4–14 s，默认 6 s，smootherstep，首末速为 0）；
+回躺 = 反向斜坡；停住 = 冻结在当前 mix。旧的「90° 翻滚 + 眼高位移」的 `SitUpPath` 已删除——起身不再改变眼高，只改变"前方"。
 
-## 2 关键约束：漂浮沿"视觉竖直"
+合成顺序 **shell ∘ base ∘ content**：任何"世界里的方向"都要先过这两层旋转。漂浮的起伏轴用
+`visualUpInContent(headUp, (shellQ × baseQ)⁻¹)`——只反解 base 会在操作员把视角抬到 30° 时把起伏斜推 28.6°（实测）。
 
-`docs/research-standing-sensation.md` §2.1 的结论是运动应沿体轴（患者视角的上下）。
-这条只在**已校准帧**下等于场景的 +Y：一旦 base 换成起身路径，场景 +Y 指向视线方向，
-同一段位移会变成朝患者推过来的逼近流，而不是上下起伏。所以：
-`buoyancyAllowed()` 只在 `mode=float` + 已校准帧 + 会话进行中 + 不在取帧窗口 时为真。
+帧的推进顺序（render 管线）：`view-motion` → `world-motion`，无相位滞后。
 
-## 3 本轮修掉的缺陷
+## 2 关键约束
 
-| # | 现象 | 根因 | 影响 | 修法 |
-| --- | --- | --- | --- | --- |
-| A1 | 会话一开始世界跳 1.7 m | 校准把 content 偏移设为 0，漂浮第一帧又按旧约定写 `-eyeHeight` | 场景整体位移一个眼高：卫生间的地面与立便器掉到脚下；湖面沿视线前移 | 偏移归帧所有：`baseFloorOffset` + `contentOffsetFor()`，漂浮只加 delta |
-| A2 | 起身一开始漂浮位移冻结，随后瞬跳归零 | `updateFloat` 在 `!lying` 时提前 return，残留位移不再重算；振幅衰减到 0 的瞬间才统一清零 | 起身首秒里世界停在半个浪的位置，然后突然落回 | 移除 `!lying` 分支；关闸后振幅衰减、位移逐帧跟随衰减，落地即停 |
-| A3 | 起身模式里"上下起伏"变成"朝脸推来" | 漂浮写在 content 空间，base 换成起身路径后 +Y 是视线方向 | 逼近流是晕动的强诱因 | 用帧闸门禁止漂浮在起身帧内运行 |
-| A4 | 校准期间世界在漂 | 闸门只排除了 `stopping`/`idle` | 卡片要求"保持不动"，画面却在小幅起伏 | 闸门改为 `isActive()` + `capturePending` |
-| A5 | 漂浮模式看不到校准帧 | 校准后无条件 `sitUpMode=true`，起身逆变换盖掉了 q0 | 平躺患者看到的是天花板（俯仰 −89°），"躺着有站立视野"没生效 | base 由会话模式决定；漂浮回到 q0 |
-| A6 | 漂浮模式下按"起身"会跨帧硬切 | 起身命令在任意模式可用 | 从校准帧瞬跳到平躺帧，再开始 6 s 上升 | 起身命令只在起身模式内可用，否则明确拒绝 |
+- **地平线永不倾斜**：没有摆动通道，世界只平移不旋转。
+- **起伏沿视觉竖直**：`floating` 只写沿轴的位移，轴由"头向上"经父链反解得到。
+- **校准期间冻结**：`world.hold(true)`，任何世界运动都不许动。
 
-A5 的量化证据（复现栈 = comfort + world-shell + situp-path，头部为仰卧姿态）：
+## 3 时序
 
-| 帧 | 地平线相对视线仰角 |
-| --- | --- |
-| 已校准帧（漂浮） | −0.9° |
-| 起身帧 t=0 | −89.0°（朝天） |
-| 起身帧 t=1 | +0.4°（站立） |
-
-即：校准帧本身就是"躺着的站立视野"，起身帧是"先仰卧、再起身"。
+```text
+进入 XR → 校准（保持 1.8 s + 3 s 取样）→ mix = 0（真实天花板）
+        → 平板「修正朝前」→ mix 0→1 → 面向前方
+        → 「回天花板」→ mix 1→0
+```
 
 ## 4 代码归属
 

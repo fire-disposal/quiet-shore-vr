@@ -90,9 +90,9 @@ fun ControlPanel(
                 )
                 Text(
                     text = if (state.sessionMode == SessionMode.POSTURE) {
-                        "起身：切进来时从当前视角开始，由「回躺」缓慢下降"
+                        "起身：无起伏，只做视角修正（适合只想调整看的方向时）"
                     } else {
-                        "漂浮：竖向缓慢漂移；模式只在会话开始前选"
+                        "漂浮：竖向缓慢起伏；模式只在会话开始前选"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
@@ -155,23 +155,25 @@ fun ControlPanel(
                 )
             }
 
-            Section("起身") {
+            Section("视角修正") {
+                // The rise is the pitch correction itself: 0 = the patient sees
+                // the real ceiling, 1 = their forward is the front wall.
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FilledTonalButton(
                         onClick = actions.onPostureRise,
                         enabled = connected && running,
                         modifier = Modifier.weight(1f)
-                    ) { Text("起身") }
+                    ) { Text("修正朝前") }
                     FilledTonalButton(
                         onClick = actions.onPostureLower,
                         enabled = connected && running,
                         modifier = Modifier.weight(1f)
-                    ) { Text("回躺") }
+                    ) { Text("回天花板") }
                     OutlinedButton(
                         onClick = actions.onPostureStop,
                         enabled = connected && running,
                         modifier = Modifier.weight(1f)
-                    ) { Text("保持") }
+                    ) { Text("停住") }
                 }
                 SegmentedChoice(
                     options = listOf("4000" to "4 秒", "6000" to "6 秒", "10000" to "10 秒", "14000" to "14 秒"),
@@ -180,7 +182,7 @@ fun ControlPanel(
                     onSelect = { wire -> actions.onAnimDuration(wire.toIntOrNull() ?: 6000) }
                 )
                 Text(
-                    text = "起身到站立视角（面向立便器）；轨迹越长越温和",
+                    text = "会话从「天花板就是天花板」开始；修正把它缓缓转到面向前方。轨迹越长越温和",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary
                 )
