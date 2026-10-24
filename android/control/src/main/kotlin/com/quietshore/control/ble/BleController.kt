@@ -44,6 +44,7 @@ class BleController(
         fun onDisconnected()
         fun onTelemetry(pose: TelemetryPose)
         fun onControlState(state: ControlState)
+        fun onSus(json: String)
         fun onSignal(rssi: Int)
         fun onStatus(raw: String)
         fun onError(message: String)
@@ -835,6 +836,14 @@ class BleController(
         override fun onTelemetry(pose: TelemetryPose) {
             if (isCurrent()) {
                 listener.onTelemetry(pose)
+            }
+        }
+
+        override fun onSus(json: String) {
+            mainHandler.post {
+                if (isCurrent()) {
+                    listener.onSus(json)
+                }
             }
         }
 

@@ -12,7 +12,10 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.SessionMode
 import com.quietshore.control.protocol.ControlProtocol
+import com.quietshore.control.data.SusStore
 import com.quietshore.control.protocol.ControlState
+import com.quietshore.control.protocol.SusResult
+import org.json.JSONObject
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.voice.VoiceCatalog
 import kotlinx.coroutines.delay
@@ -28,6 +31,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
 
+private const val TAG = "QuietShoreControl"
+
 class ControlViewModel(application: Application) :
     AndroidViewModel(application),
     BleController.Listener {
@@ -35,9 +40,12 @@ class ControlViewModel(application: Application) :
     private val preferences =
         application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
+    private val susStore = SusStore(application)
+
     private val _uiState = MutableStateFlow(
         ControlUiState(
-            lastDeviceAddress = preferences.getString(LAST_DEVICE_KEY, null)
+            lastDeviceAddress = preferences.getString(LAST_DEVICE_KEY, null),
+            susHistory = susStore.load()
         )
     )
     val uiState: StateFlow<ControlUiState> = _uiState.asStateFlow()
@@ -507,6 +515,50 @@ class ControlViewModel(application: Application) :
     override fun onTelemetry(pose: TelemetryPose) {
         lastPoseAt = SystemClock.elapsedRealtime()
         _uiState.update { it.copy(pose = pose, poseStale = false) }
+    }
+
+    /**
+     * One SUS sheet from the headset. The tablet is where it survives: append
+     * to the persisted history and mirror the answers into the live sheet so
+     * the operator sees what the patient just filed.
+     */
+    override fun onSus(json: String) {
+        val result = try {
+            decodeSus(json)
+        } catch (error: Exception) {
+            Log.w(TAG, "SUS payload rejected: ${error.message}")
+            null
+        } ?: return
+        val history = susStore.append(result)
+        _uiState.update { current ->
+            current.copy(
+                susHistory = history,
+                susAnswers = if (result.answers.size == 10) result.answers else current.susAnswers,
+                notice = if (result.score != null) {
+                    "SUS 已记录：${result.score} 分"
+                } else {
+                    "SUS 已记录 ${result.filled}/10"
+                }
+            )
+        }
+    }
+
+    private fun decodeSus(json: String): SusResult {
+        val root = JSONObject(json)
+        val answersArray = root.optJSONArray("answers")
+        val answers = buildList {
+            for (index in 0 until (answersArray?.length() ?: 0)) {
+                add(answersArray?.optInt(index, 0) ?: 0)
+            }
+        }
+        return SusResult(
+            answers = answers,
+            filled = root.optInt("filled", answers.count { it in 1..5 }),
+            complete = root.optBoolean("complete", false),
+            scene = root.optString("scene", ""),
+            sessionSec = root.optInt("sessionSec", 0),
+            completedAt = root.optLong("completedAt", System.currentTimeMillis())
+        )
     }
 
     override fun onControlState(state: ControlState) {

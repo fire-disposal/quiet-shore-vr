@@ -32,7 +32,7 @@ const SUS_STATEMENTS: readonly string[] = [
   '我需要先学习很多内容才能开始使用这个系统。'
 ];
 
-const OPTION_LABELS = ['非常不同意', '不同意', '一般', '同意', '非常同意'];
+const OPTION_LABELS = ['很不同意', '不同意', '一般', '同意', '很同意'];
 
 /** Answer slots; the operator can also fill them from the tablet. */
 export type SusAnswers = (number | null)[];
@@ -70,7 +70,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   // which makes a stationary 5 second dwell impossible to complete.
   const anchor = new SpatialAnchor({
     mode: 'summoned',
-    distance: 1.1,
+    distance: 1.2,
     dampingSeconds: 0,
     // A supine patient looks slightly up; keep the panel inside a readable band.
     minPitchDeg: -10,
@@ -80,13 +80,23 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   root.name = 'sus-panel';
   anchor.object.add(root);
 
+  // The card carries only the statement; the answer row sits below it. With a
+  // full-height card the buttons landed on top of the body text.
+  // One card holds everything: title, statement, the five-point row and the
+  // pager. The reserved bottom band is what keeps the statement off the
+  // controls instead of floating buttons outside the panel.
   const surface = new SpatialSurface({
-    width: 1.24,
-    height: 0.74,
+    width: 1.36,
+    height: 0.86,
     theme,
     title: 'SUS 1/10',
     body: SUS_STATEMENTS[0],
-    renderOrder: 1300
+    renderOrder: 1300,
+    reserveBottom: 0.32,
+    // A big statement, a small caption: the card is read at 1.2 m and the
+    // statement is the only thing the patient has to parse.
+    titlePx: 38,
+    bodyPx: 36
   });
   root.add(surface.object);
 
@@ -94,6 +104,12 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   let page = 0;
   let open = false;
   let dwellEnabled = true;
+  /**
+   * Summoned anchors never place themselves: `SpatialAnchor.update` returns
+   * early until something calls `summon(head)`. The panel has no head pose in
+   * `open()`, so it remembers to place on the first update after opening.
+   */
+  let needsPlacement = false;
 
   const optionButtons: SpatialButton[] = OPTION_LABELS.map((label, index) => {
     const button = new SpatialButton({
@@ -104,7 +120,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       renderOrder: 1310,
       dwellTime: 5
     });
-    button.object.position.set(-0.452 + index * 0.226, -0.12, 0.002);
+    button.object.position.set(-0.496 + index * 0.248, -0.22, 0.002);
     button.onSelect = () => record(index + 1);
     root.add(button.object);
     return button;
@@ -118,7 +134,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     renderOrder: 1310,
     dwellTime: 5
   });
-  prevButton.object.position.set(-0.22, -0.28, 0.002);
+  prevButton.object.position.set(-0.22, -0.36, 0.002);
   prevButton.onSelect = () => move(-1);
   root.add(prevButton.object);
 
@@ -130,7 +146,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     renderOrder: 1310,
     dwellTime: 5
   });
-  nextButton.object.position.set(0.22, -0.28, 0.002);
+  nextButton.object.position.set(0.22, -0.36, 0.002);
   nextButton.onSelect = () => move(1);
   root.add(nextButton.object);
 
@@ -209,7 +225,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
         return;
       }
       open = true;
-      anchor.setVisible(true);
+      needsPlacement = true;
       render();
       registerTargets();
     },
@@ -231,7 +247,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       page = index;
       if (!open) {
         open = true;
-        anchor.setVisible(true);
+        needsPlacement = true;
         registerTargets();
       }
       render();
@@ -247,8 +263,13 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       if (!open || !head) {
         return;
       }
-      // Summoned mode places the panel on the first update; visibility only
-      // sticks once placement has happened, so it is asserted after the update.
+      // Place in front of the patient on the first frame after opening (and
+      // again on every reopen, so a panel opened later is never behind them).
+      if (needsPlacement) {
+        needsPlacement = false;
+        anchor.summon(head);
+      }
+      // Visibility only sticks once placement has happened.
       anchor.update(head, dt, now);
       anchor.setVisible(true);
     },

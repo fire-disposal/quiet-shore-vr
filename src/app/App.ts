@@ -18,7 +18,7 @@ import { StartScreen } from '../ui/start-screen';
 import { SpatialHud } from '../ui/spatial-hud';
 import { createSusPanel, type SusPanelApi } from '../ui/sus-panel';
 import { createCalibrationOverlay, type CalibrationOverlayApi } from '../ui/calibration-overlay';
-import { createCalibrationSampler } from '../core/xr/calibration-sample';
+import { createCalibrationRun, type CalibrationStatus } from './calibration-run';
 import { getStrings, type Strings } from '../ui/strings';
 import {
   disposeAudio,
@@ -39,6 +39,7 @@ import { planFrame, visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { parseRemoteCommand } from './commands';
+import { buildSusPayload } from './sus';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { PortalLink, stateFromSnapshot } from './portal-link';
 import { createWorldShell, type WorldShellApi } from '../core/xr/world-shell';
@@ -102,43 +103,6 @@ export class QuietShoreApp {
   private readonly worldEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   private readonly viewMotion: ViewMotionControllerApi;
   private readonly snapshot = new SceneSnapshot();
-  private readonly snapshotInput: SceneSnapshotInput = {
-    sceneId: '',
-    loaded: false,
-    session: false,
-    calibrating: false,
-    calibrated: false,
-    postureMode: false,
-    audioMuted: false,
-    eyeHeight: 0,
-    worldYawDeg: 0,
-    worldPitchDeg: 0,
-    worldRollDeg: 0,
-    confidence: 0,
-    sitUp: null,
-    sitUpT: 0,
-    sitUpTarget: 0,
-    sitUpMoving: false,
-    posture: null,
-    baseQuaternion: new THREE.Quaternion(),
-    baseReferenceQuaternion: new THREE.Quaternion(),
-    lookYawDeg: 0,
-    lookYawTargetDeg: 0,
-    upGazeDeg: 0,
-    upGazeTargetDeg: 0,
-    viewAnim: 'idle',
-    viewPreset: 'none',
-    floorOffset: 0,
-    cueFlow: 0,
-    cueEnabled: false,
-    cueIntensity: 0,
-    floatLevel: 1,
-    floatProfile: 'b',
-    floatMm: 0,
-    swayDeg: 0,
-    sessionSec: 0,
-    voiceId: -1
-  };
   private controlMode = false;
 
   private eyeHeight: number;
@@ -150,19 +114,14 @@ export class QuietShoreApp {
   private comfort: ComfortApi | null = null;
   private shell: WorldShellApi | null = null;
   private capturePending = false;
-  private captureAttempts = 0;
-  /** Wall clock when the stable window started; drives the card's bar. */
-  private samplingStartedAt = 0;
-  private calibPhase: 'settling' | 'countdown' = 'settling';
-  private calibRef: THREE.Quaternion | null = null;
-  private calibStableMs = 0;
-  private calibCountdownAt = 0;
-  private calibShownAt = 0;
-  private lastCalibrationFrame = 0;
-  private readonly calibrationSampler = createCalibrationSampler({
-    durationMs: CALIBRATION_COUNTDOWN_MS,
+  /** The calibration window; App renders it, the module owns the policy. */
+  private readonly calibration = createCalibrationRun({
+    holdMs: CALIBRATION_HOLD_MS,
+    countdownMs: CALIBRATION_COUNTDOWN_MS,
+    deadlineMs: CALIBRATION_DEADLINE_MS,
     maxDeviationDeg: CALIBRATION_MAX_DEVIATION_DEG
   });
+  private calibStatus: CalibrationStatus = 'done';
   /** Buoyancy: level, profile, envelope and the content offset it rides on. */
   private readonly floating: FloatingApi;
   /** Base pose: calibration frame, sit-up path and the placement that goes with them. */
@@ -175,6 +134,8 @@ export class QuietShoreApp {
   private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
+  /** SUS answers live on the headset; the 20-byte state frame has no room. */
+  private readonly susAnswers: (number | null)[] = new Array(10).fill(null);
   private readonly calibrationFrame = new THREE.Quaternion();
   private readonly identityQuaternion = new THREE.Quaternion();
   private session: XRSession | null = null;
@@ -413,6 +374,43 @@ export class QuietShoreApp {
           contentY: this.host.content.position.y,
           upGazeDeg: this.viewMotion.getUpGazeDeg()
         }),
+        /** Desktop check: where the SUS panel actually is, if it is open. */
+        sus: () => {
+          const panel = this.susPanel;
+          const at = new THREE.Vector3();
+          panel?.object.getWorldPosition(at);
+          return {
+            open: panel?.isOpen() ?? false,
+            at: at.toArray().map((value) => Math.round(value * 100) / 100)
+          };
+        },
+        /**
+         * Desktop check: stand in for the headset pose. Spatial UI anchors and
+         * the gaze reticle read `headPose`, which the XR loop would otherwise
+         * be the only writer of.
+         */
+        pose: (next: { x?: number; y?: number; z?: number; yawDeg?: number; pitchDeg?: number } = {}) => {
+          const yaw = THREE.MathUtils.degToRad(next.yawDeg ?? 0);
+          const pitch = THREE.MathUtils.degToRad(next.pitchDeg ?? 0);
+          if (!this.xr.isPresenting) {
+            // The loop copies the preview camera into `headPose`, so aiming the
+            // camera is what aims the gaze.
+            this.camera.rotation.set(pitch, yaw, 0, 'YXZ');
+            if (next.y !== undefined) {
+              this.camera.position.y = next.y;
+            }
+          }
+          this.headEuler.set(pitch, yaw, 0, 'YXZ');
+          this.headPose.quaternion.setFromEuler(this.headEuler);
+          this.headPose.position.set(next.x ?? 0, next.y ?? 0, next.z ?? 0);
+          return [
+            this.headPose.position.x,
+            this.headPose.position.y,
+            this.headPose.position.z,
+            next.yawDeg ?? 0,
+            next.pitchDeg ?? 0
+          ];
+        },
         calibration: (visible: boolean) => {
           this.calibrationOverlay ??= createCalibrationOverlay({
             scene: this.scene,
@@ -715,11 +713,31 @@ export class QuietShoreApp {
         input: this.input,
         stringsDwellHint: this.strings.dwellHint,
         onAnswer: (index, value) => {
-          this.start.setStatus(`SUS ${index + 1} = ${value}`, 'ok');
+          this.susAnswers[index] = value;
+          this.report(`SUS ${index + 1} = ${value}`);
+          if (this.susAnswers.every((answer) => answer !== null)) {
+            this.report('SUS 已完成');
+            this.publishSus();
+          }
+        },
+        onClose: () => {
+          // Give the layers back to whatever the session mode dictates.
+          this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
+          const filled = this.susAnswers.filter((answer) => answer !== null).length;
+          // A half-finished sheet is still worth keeping: the tablet records it
+          // as incomplete rather than losing what the patient did answer.
+          if (filled > 0) {
+            this.publishSus();
+          }
+          this.start.setStatus(`SUS 已记录 ${filled}/${this.susAnswers.length}`, 'ok');
         }
       });
       this.susPanel.setDwellEnabled(this.gazeDwellEnabled);
     }
+    // The panel is the one spatial UI the patient may use by gaze, so it has
+    // to be focusable even while the tablet holds control: the UI layer used to
+    // be off for the whole session, which made dwell unreachable in practice.
+    this.input.setLayers(true, false);
     this.susPanel.open();
   }
 
@@ -815,8 +833,7 @@ export class QuietShoreApp {
     }
     // The two modes run in different world frames: switching mid-session would
     // snap the world by ~90°, so the mode stays a start parameter (core.md §4).
-    this.start.setStatus('模式只能在会话开始前选择', 'error');
-    this.link.sendStateNow();
+    this.report('模式只能在会话开始前选择', 'error');
   }
 
   /**
@@ -883,77 +900,28 @@ export class QuietShoreApp {
    * reaches a page in this browser's immersive mode.
    */
   private restartCalibration(): void {
-    this.calibPhase = 'settling';
-    this.calibRef = null;
-    this.calibStableMs = 0;
-    this.calibCountdownAt = 0;
-    this.lastCalibrationFrame = 0;
-    this.calibShownAt = performance.now();
+    this.calibStatus = 'settling';
     this.capturePending = true;
+    this.calibration.start(performance.now());
     this.calibrationOverlay?.setHint('保持不动…');
     this.calibrationOverlay?.setProgress(0);
-    this.calibrationSampler.reset();
     this.start.setStatus('正在记录起始朝向', 'ok');
   }
 
   /** Called every frame while the card is up. */
   private stepCalibration(nowMs: number): void {
-    const head = this.headPose.quaternion;
-    // An unread pose is 0,0,0,0: every comparison against it is meaningless.
-    const valid =
-      Number.isFinite(head.x) &&
-      Number.isFinite(head.y) &&
-      Number.isFinite(head.z) &&
-      Number.isFinite(head.w) &&
-      (head.x !== 0 || head.y !== 0 || head.z !== 0 || head.w !== 0);
-    // Hard deadline: whatever the pose does, the card cannot hold the session.
-    if (this.calibShownAt > 0 && nowMs - this.calibShownAt > CALIBRATION_DEADLINE_MS) {
-      this.finishCalibration(null);
-      return;
-    }
-    if (!valid && this.calibShownAt > 0 && nowMs - this.calibShownAt > 1500) {
-      // Pose never arrived: open the scene with no re-orientation.
-      this.finishCalibration(null);
-      return;
-    }
-    if (this.calibPhase === 'settling') {
-      if (!this.calibRef) {
-        this.calibRef = head.clone();
-      }
-      const dot = Math.abs(
-        this.calibRef.x * head.x +
-          this.calibRef.y * head.y +
-          this.calibRef.z * head.z +
-          this.calibRef.w * head.w
-      );
-      const deviation = (2 * Math.acos(Math.min(1, dot)) * 180) / Math.PI;
-      if (deviation > CALIBRATION_MAX_DEVIATION_DEG) {
-        // Moved: restart the window from the new pose instead of failing.
-        this.calibRef = head.clone();
-        this.calibStableMs = 0;
-      } else if (this.lastCalibrationFrame > 0) {
-        this.calibStableMs += nowMs - this.lastCalibrationFrame;
-      }
-      this.lastCalibrationFrame = nowMs;
-      this.calibrationOverlay?.setProgress(
-        Math.min(1, this.calibStableMs / CALIBRATION_HOLD_MS)
-      );
-      if (this.calibStableMs >= CALIBRATION_HOLD_MS) {
-        this.calibPhase = 'countdown';
-        this.calibCountdownAt = nowMs;
-        this.calibrationSampler.start(nowMs);
+    const step = this.calibration.update(this.headPose.quaternion, nowMs);
+    if (step.status !== this.calibStatus) {
+      this.calibStatus = step.status;
+      if (step.status === 'countdown') {
         this.calibrationOverlay?.setHint('即将记录…');
       }
+    }
+    if (step.status === 'done') {
+      this.finishCalibration(step.result ?? null);
       return;
     }
-
-    this.calibrationSampler.add(head, nowMs);
-    const elapsed = nowMs - this.calibCountdownAt;
-    this.calibrationOverlay?.setProgress(Math.min(1, elapsed / CALIBRATION_COUNTDOWN_MS));
-    if (elapsed >= CALIBRATION_COUNTDOWN_MS) {
-      const result = this.calibrationSampler.add(head, nowMs);
-      this.finishCalibration(result);
-    }
+    this.calibrationOverlay?.setProgress(step.progress);
   }
 
   private finishCalibration(result: {
@@ -1038,6 +1006,9 @@ export class QuietShoreApp {
    * view recentred, sit-up base dropped, comfort frame cleared, buoyancy off.
    */
   private resetWorldToRest(): void {
+    // A panel is session furniture: leaving the world at rest closes it, or a
+    // stopped session would keep a SUS card floating in front of the patient.
+    this.susPanel?.close();
     this.viewMotion.reset();
     this.world.clearBase();
     this.comfort?.reset();
@@ -1086,6 +1057,35 @@ export class QuietShoreApp {
       return;
     }
     this.beginCalibration();
+  }
+
+  /**
+   * Hand one SUS sheet to the tablet. The state frame is fixed at 20 bytes, so
+   * this rides the page's JSON socket and the headset app forwards it on its
+   * own characteristic; the tablet scores and persists it.
+   */
+  private publishSus(): void {
+    const payload = buildSusPayload(this.susAnswers, {
+      scene: this.sceneId,
+      sessionSec:
+        this.sessionStartedAt > 0
+          ? (performance.now() - this.sessionStartedAt) / 1000
+          : 0,
+      now: Date.now()
+    });
+    console.info(`[sus] ${JSON.stringify(payload.answers)}`);
+    this.link.sendSus(payload);
+  }
+
+  /**
+   * Operator-facing line on the headset page, and the state refresh that goes
+   * with it: every discrete command ends with both, so they are one call.
+   */
+  private report(text: string, kind: 'ok' | 'error' = 'ok', sync = true): void {
+    this.start.setStatus(text, kind);
+    if (sync) {
+      this.link.sendStateNow();
+    }
   }
 
   private handleRemoteCommand(raw: string): void {
@@ -1137,18 +1137,15 @@ export class QuietShoreApp {
       }
       case 'floatProfile':
         this.floating.setProfile(command.id);
-        this.start.setStatus(`漂浮档位：${this.floating.getProfile().label}`, 'ok');
-        this.link.sendStateNow();
+        this.report(`漂浮档位：${this.floating.getProfile().label}`);
         return;
       case 'floatBreath':
         this.floating.setBreath(command.on);
-        this.start.setStatus(command.on ? '呼吸层已开启' : '呼吸层已关闭', 'ok');
-        this.link.sendStateNow();
+        this.report(command.on ? '呼吸层已开启' : '呼吸层已关闭', 'ok');
         return;
       case 'riseDuration':
         this.world.setDuration(command.ms);
-        this.start.setStatus(`起身时长 ${(command.ms / 1000).toFixed(0)} 秒`, 'ok');
-        this.link.sendStateNow();
+        this.report(`起身时长 ${(command.ms / 1000).toFixed(0)} 秒`, 'ok');
         return;
       case 'cueIntensity':
         this.postureCueState?.setIntensity(command.value);
@@ -1156,8 +1153,7 @@ export class QuietShoreApp {
       case 'gazeDwell':
         this.gazeDwellEnabled = command.on;
         this.susPanel?.setDwellEnabled(command.on);
-        this.start.setStatus(command.on ? '目视选择已开启' : '目视选择已关闭', 'ok');
-        this.link.sendStateNow();
+        this.report(command.on ? '目视选择已开启' : '目视选择已关闭', 'ok');
         return;
       case 'susOpen':
         this.openSus();
@@ -1469,66 +1465,72 @@ export class QuietShoreApp {
   }
 
   /** Collect the facts telemetry, the HUD and command handlers all read. */
+  /**
+   * One collected view of the world for the state frame. Built as a literal —
+   * it is sent at ≤10 Hz, and a field-by-field mutation of a reused object was
+   * 40 lines of assignments whose only benefit was avoiding one allocation.
+   */
   private captureSnapshot(): SceneSnapshot {
-    const input = this.snapshotInput;
-    input.sceneId = this.sceneId;
-    input.loaded = this.handle !== null;
-    input.session = this.session !== null;
-    input.calibrating = this.lifecycle.phase === 'calibrating';
-    input.calibrated = this.comfort?.isCalibrated() ?? false;
-    input.postureMode = this.lifecycle.mode === 'posture';
-    input.audioMuted = this.audioMuted;
-    input.eyeHeight = this.eyeHeight;
+    const world = this.world.state();
+    const motion = this.floating.getState();
+    const comfort = this.comfort;
+    const shell = this.shell;
+    const comfortState = comfort?.getState();
     // The mirror must see the same world the patient sees: shell (view) times
     // base (comfort calibration or sit-up inverse), not just the head pose.
-    if (this.shell) {
-      this.worldQuat.copy(this.shell.group.quaternion).multiply(this.shell.base.quaternion);
+    if (shell) {
+      this.worldQuat.copy(shell.group.quaternion).multiply(shell.base.quaternion);
     } else {
       this.worldQuat.identity();
     }
     this.worldEuler.setFromQuaternion(this.worldQuat, 'XYZ');
-    input.worldYawDeg = THREE.MathUtils.radToDeg(this.worldEuler.y);
-    input.worldPitchDeg = THREE.MathUtils.radToDeg(this.worldEuler.x);
-    input.worldRollDeg = THREE.MathUtils.radToDeg(this.worldEuler.z);
-    const comfortState = this.comfort?.getState();
-    input.confidence = comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0);
-    // Applied motion, not the requested level: the mirror adds these verbatim.
-    const motion = this.floating.getState();
-    input.floatMm = motion.offsetM * 1000;
-    input.swayDeg = motion.swayDeg;
-    input.sessionSec = this.sessionStartedAt > 0
-      ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
-      : 0;
-    const playing = this.voice.nowPlaying().id;
-    input.voiceId = playing ? this.voice.indexOf(playing) : -1;
-    const world = this.world.state();
-    input.sitUp = world.posturePosesBase ? world.path : null;
-    input.sitUpT = world.sitUpT;
-    input.sitUpTarget = world.sitUpTarget;
-    input.sitUpMoving = world.sitUpMoving;
-    input.posture = this.comfort?.getPostureState() ?? null;
-    const comfort = this.comfort;
-    const shell = this.shell;
-    input.baseQuaternion = shell ? shell.base.quaternion : this.identityQuaternion;
-    input.baseReferenceQuaternion = world.posturePosesBase
-      ? world.base0
-      : comfort
-        ? comfort.getCalibrationQuaternion(this.calibrationFrame)
-        : this.identityQuaternion;
-    input.lookYawDeg = this.viewMotion.getLookYawDeg();
-    input.lookYawTargetDeg = this.viewMotion.getTargetLookYawDeg();
-    input.upGazeDeg = this.viewMotion.getUpGazeDeg();
-    input.upGazeTargetDeg = this.viewMotion.getTargetUpGazeDeg();
-    input.viewAnim = this.viewMotion.getStateName();
-    input.viewPreset = presetCode(this.viewMotion.getPresetId());
-    input.floorOffset = this.host.floor;
-    input.cueFlow = this.cueFlow;
     const cue = this.postureCueState?.getState();
-    input.cueEnabled = cue?.enabled ?? false;
-    input.cueIntensity = cue?.intensity ?? 0;
-    input.floatLevel = motion.level;
-    input.floatProfile = motion.profile;
-    return this.snapshot.capture(input);
+    const playing = this.voice.nowPlaying().id;
+    return this.snapshot.capture({
+      sceneId: this.sceneId,
+      loaded: this.handle !== null,
+      session: this.session !== null,
+      calibrating: this.lifecycle.phase === 'calibrating',
+      calibrated: comfort?.isCalibrated() ?? false,
+      postureMode: this.lifecycle.mode === 'posture',
+      audioMuted: this.audioMuted,
+      eyeHeight: this.eyeHeight,
+      worldYawDeg: THREE.MathUtils.radToDeg(this.worldEuler.y),
+      worldPitchDeg: THREE.MathUtils.radToDeg(this.worldEuler.x),
+      worldRollDeg: THREE.MathUtils.radToDeg(this.worldEuler.z),
+      confidence: comfortState?.remap?.confidence ?? (comfortState?.calibrated ? 1 : 0),
+      sitUp: world.posturePosesBase ? world.path : null,
+      sitUpT: world.sitUpT,
+      sitUpTarget: world.sitUpTarget,
+      sitUpMoving: world.sitUpMoving,
+      posture: comfort?.getPostureState() ?? null,
+      baseQuaternion: shell ? shell.base.quaternion : this.identityQuaternion,
+      baseReferenceQuaternion: world.posturePosesBase
+        ? world.base0
+        : comfort
+          ? comfort.getCalibrationQuaternion(this.calibrationFrame)
+          : this.identityQuaternion,
+      lookYawDeg: this.viewMotion.getLookYawDeg(),
+      lookYawTargetDeg: this.viewMotion.getTargetLookYawDeg(),
+      upGazeDeg: this.viewMotion.getUpGazeDeg(),
+      upGazeTargetDeg: this.viewMotion.getTargetUpGazeDeg(),
+      viewAnim: this.viewMotion.getStateName(),
+      viewPreset: presetCode(this.viewMotion.getPresetId()),
+      floorOffset: this.host.floor,
+      cueFlow: this.cueFlow,
+      cueEnabled: cue?.enabled ?? false,
+      cueIntensity: cue?.intensity ?? 0,
+      floatLevel: motion.level,
+      floatProfile: motion.profile,
+      // Applied motion, not the requested level: the mirror adds these verbatim.
+      floatMm: motion.offsetM * 1000,
+      swayDeg: motion.swayDeg,
+      sessionSec:
+        this.sessionStartedAt > 0
+          ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
+          : 0,
+      voiceId: playing ? this.voice.indexOf(playing) : -1
+    });
   }
 
   get postureCue(): PostureCueApi | null {

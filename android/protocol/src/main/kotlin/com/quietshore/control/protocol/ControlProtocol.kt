@@ -20,6 +20,13 @@ object ControlProtocol {
     val telemetryUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000004")
     val stateUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000005")
 
+    /**
+     * Completed SUS sheets, headset → tablet. A UTF-8 JSON object, notify-only,
+     * one notification per sheet. The 20/28-byte state frame is frozen by the
+     * wire contract, so this is the one channel that carries a record.
+     */
+    val susUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000006")
+
     const val deviceName: String = "QuietShore"
     const val telemetryBytes: Int = 20
     /** v11 frame size; needs an MTU of at least 31 to reach the tablet. */

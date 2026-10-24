@@ -97,6 +97,22 @@ describe('computeSummonedPose', () => {
 });
 
 describe('SpatialAnchor', () => {
+  it('a summoned anchor stays invisible until something summons it', () => {
+    // `update` deliberately does not place a summoned anchor, so a panel that
+    // never calls `summon(head)` is invisible no matter how long it is open.
+    const anchor = new SpatialAnchor({ mode: 'summoned', distance: 1.1 });
+    anchor.setVisible(true);
+    anchor.update(makeHead(), 1 / 60, 0);
+    expect(anchor.isPlaced).toBe(false);
+    expect(anchor.object.visible).toBe(false);
+
+    anchor.summon(makeHead());
+    expect(anchor.isPlaced).toBe(true);
+    anchor.update(makeHead(), 1 / 60, 0);
+    anchor.setVisible(true);
+    expect(anchor.object.visible).toBe(true);
+  });
+
   it('freezes a summoned pose in the world after the head moves', () => {
     const anchor = new SpatialAnchor({ mode: 'summoned', distance: 1.2 });
     const first = makeHead();

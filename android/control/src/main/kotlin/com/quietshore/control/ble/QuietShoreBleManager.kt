@@ -33,6 +33,8 @@ class QuietShoreBleManager(
         fun onStatus(raw: String)
         fun onTelemetry(pose: TelemetryPose)
         fun onControlState(state: ControlState)
+        /** One SUS sheet as UTF-8 JSON, straight from the headset. */
+        fun onSus(json: String)
         fun onSignal(rssi: Int)
         fun onFailure(message: String)
     }
@@ -41,6 +43,7 @@ class QuietShoreBleManager(
     private var statusCharacteristic: BluetoothGattCharacteristic? = null
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
+    private var susCharacteristic: BluetoothGattCharacteristic? = null
 
     /** Set once per connection so `CONNECTION_PRIORITY_HIGH` is not re-sent. */
     private var highPriorityRequested = false
@@ -54,6 +57,9 @@ class QuietShoreBleManager(
             statusCharacteristic = service.getCharacteristic(ControlProtocol.statusUuid)
             telemetryCharacteristic = service.getCharacteristic(ControlProtocol.telemetryUuid)
             stateCharacteristic = service.getCharacteristic(ControlProtocol.stateUuid)
+            susCharacteristic = service.getCharacteristic(ControlProtocol.susUuid)
+            // SUS is optional: a headset that predates the characteristic keeps
+            // working, it simply never reports a sheet.
             return commandCharacteristic != null &&
                 statusCharacteristic != null &&
                 telemetryCharacteristic != null &&
@@ -86,11 +92,22 @@ class QuietShoreBleManager(
                     ControlProtocol.decodeState(bytes)?.let(events::onControlState)
                 }
             }
+            susCharacteristic?.let { characteristic ->
+                setNotificationCallback(characteristic).with { _, data ->
+                    data.value?.let { bytes ->
+                        if (bytes.isNotEmpty()) {
+                            events.onSus(String(bytes, StandardCharsets.UTF_8).trim())
+                        }
+                    }
+                }
+            }
 
-            beginAtomicRequestQueue()
+            val queue = beginAtomicRequestQueue()
                 .add(enableNotifications(status))
                 .add(enableNotifications(telemetry))
                 .add(enableNotifications(state))
+            susCharacteristic?.let { queue.add(enableNotifications(it)) }
+            queue
                 .done {
                     // Once per connection, after notifications are live: the
                     // shortest connection interval the headset accepts keeps
@@ -107,6 +124,7 @@ class QuietShoreBleManager(
             statusCharacteristic = null
             telemetryCharacteristic = null
             stateCharacteristic = null
+            susCharacteristic = null
             highPriorityRequested = false
         }
     }

@@ -32,6 +32,15 @@ import com.quietshore.control.voice.VoiceCatalog
  * own play button: the operator advances at the patient's pace and never has to
  * hunt through a flat list. Wording is the instrument's, verbatim.
  */
+/** Wall-clock stamp for an archived sheet; the tablet is the record keeper. */
+private fun stamp(epochMs: Long): String {
+    if (epochMs <= 0L) {
+        return "—"
+    }
+    return java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+        .format(java.util.Date(epochMs))
+}
+
 @Composable
 fun SusPanel(
     state: ControlUiState,
@@ -159,6 +168,24 @@ fun SusPanel(
                             color = QuietPalette.TextSecondary
                         )
                     }
+                }
+            }
+
+            // Filed sheets: the headset sends one per completion and the tablet
+            // keeps them, so a session's usability record survives the session.
+            if (state.susHistory.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "已归档 ${state.susHistory.size} 份",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                for (record in state.susHistory.takeLast(3).reversed()) {
+                    val score = record.score?.let { "$it 分" } ?: "${record.filled}/10"
+                    Text(
+                        text = "$score · ${record.scene} · ${stamp(record.completedAt)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
                 }
             }
 

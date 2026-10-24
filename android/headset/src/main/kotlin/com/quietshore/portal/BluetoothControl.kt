@@ -133,6 +133,7 @@ internal class BluetoothControl(
     private var statusCharacteristic: BluetoothGattCharacteristic? = null
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
+    private var susCharacteristic: BluetoothGattCharacteristic? = null
     /** Negotiated ATT MTU; 23 is the default and only fits the legacy frame. */
     private var mtu = 23
     private var stateSeq = 0
@@ -143,6 +144,8 @@ internal class BluetoothControl(
 
     @Volatile
     private var lastState: ControlState = ControlState()
+    /** Last SUS sheet, so a tablet that reconnects can be handed the record. */
+    private var lastSus: String = ""
 
     private var started = false
 
@@ -276,16 +279,22 @@ internal class BluetoothControl(
                 ControlProtocol.stateUuid,
                 encodeStateFrame(lastState)
             )
+            // Completed SUS sheets: UTF-8 JSON, notify-only, one per sheet. The
+            // state frame is fixed by the wire contract, so a record needs its
+            // own characteristic rather than a wider state payload.
+            val sus = notifyCharacteristic(ControlProtocol.susUuid, ByteArray(0))
 
             commandCharacteristic = command
             statusCharacteristic = status
             telemetryCharacteristic = telemetry
             stateCharacteristic = state
+            susCharacteristic = sus
 
             service.addCharacteristic(command)
             service.addCharacteristic(status)
             service.addCharacteristic(telemetry)
             service.addCharacteristic(state)
+            service.addCharacteristic(sus)
             if (!server.addService(service)) {
                 teardownGatt()
                 setState("gatt-add-service-failed")
@@ -398,6 +407,7 @@ internal class BluetoothControl(
         statusCharacteristic = null
         telemetryCharacteristic = null
         stateCharacteristic = null
+        susCharacteristic = null
         connected.clear()
         releaseControl(null)
     }
@@ -435,6 +445,12 @@ internal class BluetoothControl(
 
     fun publishTelemetry(pose: TelemetryPose) {
         notifyValue(telemetryCharacteristic, ControlProtocol.encodeTelemetry(pose))
+    }
+
+    /** Forwards one SUS sheet (UTF-8 JSON) to the controlling tablet. */
+    fun publishSus(json: String) {
+        lastSus = json
+        notifyValue(susCharacteristic, json.toByteArray(StandardCharsets.UTF_8))
     }
 
     fun publishState(state: ControlState) {
@@ -882,6 +898,20 @@ internal class BluetoothControl(
             descriptor.value = value
             if (responseNeeded) {
                 sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+            }
+            // A tablet that just subscribed gets the sheet it missed while it
+            // was away; the CCCD write is the only "ready" signal we get.
+            val subscribed = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            if (
+                subscribed &&
+                descriptor.characteristic.uuid == ControlProtocol.susUuid &&
+                lastSus.isNotEmpty()
+            ) {
+                notifyValueTo(
+                    device,
+                    susCharacteristic,
+                    lastSus.toByteArray(StandardCharsets.UTF_8)
+                )
             }
         }
     }

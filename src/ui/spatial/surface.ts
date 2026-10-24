@@ -12,6 +12,15 @@ export interface SpatialSurfaceOptions {
   theme?: SpatialTheme;
   title?: string;
   body?: string;
+  /**
+   * Vertical room (metres) to keep free at the bottom of the card, for rows the
+   * caller places itself (a five-option answer strip, a pager). Without it the
+   * body text is fitted to the full card and lands under those controls.
+   */
+  reserveBottom?: number;
+  /** Per-card type scale; the theme's sizes are the default. */
+  titlePx?: number;
+  bodyPx?: number;
   renderOrder?: number;
 }
 
@@ -76,8 +85,10 @@ export class SpatialSurface {
   readonly object = new THREE.Group();
   readonly buttons: SpatialButton[] = [];
 
-  private readonly options: Required<Pick<SpatialSurfaceOptions, 'width' | 'height' | 'theme' | 'renderOrder'>> &
-    Pick<SpatialSurfaceOptions, 'title' | 'body'>;
+  private readonly options: Required<
+    Pick<SpatialSurfaceOptions, 'width' | 'height' | 'theme' | 'renderOrder' | 'reserveBottom'>
+  > &
+    Pick<SpatialSurfaceOptions, 'title' | 'body' | 'titlePx' | 'bodyPx'>;
   private readonly panelTexture: THREE.CanvasTexture;
   private readonly panelGeometry: THREE.PlaneGeometry;
   private readonly panelMaterial: THREE.MeshBasicMaterial;
@@ -95,8 +106,11 @@ export class SpatialSurface {
       height: options.height,
       theme: options.theme ?? DEFAULT_SPATIAL_THEME,
       renderOrder: options.renderOrder ?? 1000,
+      reserveBottom: Math.max(0, options.reserveBottom ?? 0),
       title: options.title,
-      body: options.body
+      body: options.body,
+      titlePx: options.titlePx,
+      bodyPx: options.bodyPx
     };
     this.object.name = 'spatial-surface';
 
@@ -126,8 +140,8 @@ export class SpatialSurface {
     if (!this.title) {
       this.title = new TextTexture({
         theme: this.options.theme,
-        sizePx: this.options.theme.titlePx,
-        heightPx: Math.round(this.options.theme.titlePx * 1.35),
+        sizePx: this.options.titlePx ?? this.options.theme.titlePx,
+        heightPx: Math.round((this.options.titlePx ?? this.options.theme.titlePx) * 1.35),
         weight: 650,
         align: 'left'
       });
@@ -144,7 +158,7 @@ export class SpatialSurface {
         theme: this.options.theme,
         widthPx: 512,
         heightPx: 256,
-        sizePx: this.options.theme.bodyPx,
+        sizePx: this.options.bodyPx ?? this.options.theme.bodyPx,
         weight: 400,
         color: this.options.theme.muted,
         align: 'left'
@@ -197,7 +211,10 @@ export class SpatialSurface {
       // aspect and shrink whichever dimension runs out first. A fixed
       // width-only fit made long copy spill below the card.
       const availWidth = width - padding * 2;
-      const availHeight = Math.max(0.04, cursor + height / 2 - padding - 0.022);
+      const availHeight = Math.max(
+        0.04,
+        cursor + height / 2 - padding - 0.022 - this.options.reserveBottom
+      );
       const aspect = this.body.aspect;
       let bodyWidth = availWidth;
       let bodyHeight = bodyWidth * aspect;

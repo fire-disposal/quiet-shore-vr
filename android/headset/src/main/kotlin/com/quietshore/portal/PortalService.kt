@@ -645,6 +645,11 @@ class PortalService : Service() {
             "state" -> json.optJSONObject("data")?.let(::applyState)
             "telemetry" -> json.optJSONObject("data")?.let(::applyTelemetry)
             "ack" -> json.optInt("seq", -1).takeIf { it >= 0 }?.let(::ackCommands)
+            // Completed SUS sheets ride their own characteristic: the state
+            // frame is a fixed size and has no room for a record.
+            "sus" -> json.optJSONObject("data")?.let { data ->
+                bluetooth?.publishSus(data.toString())
+            }
             // Unknown message types are ignored: forward compatibility beats a
             // disconnect when a newer page talks to an older service.
             else -> Unit

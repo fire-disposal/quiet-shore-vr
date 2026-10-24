@@ -61,6 +61,8 @@ data class ControlUiState(
     val susIndex: Int = 0,
     /** Answers recorded from the tablet, 1..5, 0 = unanswered. */
     val susAnswers: List<Int> = List(10) { 0 },
+    /** Every sheet the headset has filed, newest last. Persisted on the tablet. */
+    val susHistory: List<com.quietshore.control.protocol.SusResult> = emptyList(),
     val notice: String? = null,
     val error: String? = null,
     val scanAttempted: Boolean = false,

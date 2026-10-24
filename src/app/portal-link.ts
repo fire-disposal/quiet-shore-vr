@@ -259,6 +259,15 @@ export class PortalLink {
   }
 
   /** Immediate readback after an accepted discrete command. */
+  /**
+   * One-off payload towards the tablet, through the headset app's BLE bridge.
+   * The 20-byte state frame is frozen by the wire contract, so anything that is
+   * not live telemetry travels on its own channel (`sus` today).
+   */
+  sendSus(data: unknown): void {
+    this.send({ type: 'sus', data });
+  }
+
   sendStateNow(): void {
     const moving = this.sendState();
     if (this.stateTimer == null) {

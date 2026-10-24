@@ -29,6 +29,7 @@
 | 状态 `status` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000003` | Read / Notify |
 | 遥测 `telemetry` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000004` | Read / Notify |
 | 状态快照 `state` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000005` | Read / Notify |
+| SUS 记录 `sus` | `7a1e0001-6f3c-4f9a-9d2b-2f6a1c000006` | Read / Notify |
 
 平板广泛扫描，在回调里按服务 UUID 或设备名 `QuietShore` 匹配（部分协议栈的扫描记录不带 128-bit UUID）；匹配到第一台就自动连接——没有设备列表、没有选择步骤，也没有“上次设备”快捷卡。BLE 外设创建失败时，通知会显示 `蓝牙不可用` / `蓝牙未开启`，不会进入“等待平板连接”。
 
@@ -49,6 +50,29 @@ UTF-8 字符串，去掉首尾空白后解释：
 命令白名单由 `ControlProtocol.isAllowedCommand` 与 `CAPABILITIES` 共同维护，可通过 `GET /capabilities` 读取。
 
 头显对每次写入回复 `status` 通知；需要响应时同时通过 GATT write response 返回同样的字符串。
+
+### 2.1a sus（SUS 记录）
+
+UTF-8 JSON，每次完成（或关闭时已有作答）发送一帧，只发给当前控制者；控制者订阅时会补发最后一帧。
+
+```json
+{"answers":[3,0,5,4,2,1,5,3,4,2],"filled":9,"complete":false,
+ "scene":"shore","sessionSec":612,"completedAt":1761300000000}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `answers` | 10 个整型槽位，按条目顺序；`0` = 未作答 |
+| `filled` | 已作答条目数 |
+| `complete` | 10 条全部作答 |
+| `scene` | 记录时的场景 id |
+| `sessionSec` | 会话已运行秒数，非会话中为 0 |
+| `completedAt` | 头显侧 epoch 毫秒 |
+
+计分（`susScore()`，协议模块）用标准 SUS 变换：奇数条目 `a−1`、偶数条目 `5−a`，
+求和后 ×2.5，得 0–100；未答满不计分。平板把每份记录按完成时间追加到本地历史（保留最近 50 份），
+并在 SUS 页显示条数、最近三份的分值与时间。页→头显走 JSON socket 的 `{"type":"sus"}`，
+头显只做转发，不做解析。
 
 ### 2.2 status
 

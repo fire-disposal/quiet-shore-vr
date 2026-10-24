@@ -57,7 +57,11 @@ function drawButton(
   ctx.stroke();
 
   ctx.fillStyle = !enabled ? theme.muted : focused ? theme.accentText : theme.text;
-  ctx.font = `600 ${theme.buttonPx}px ${theme.fontFamily}`;
+  // Type follows the button's own height, not a fixed pixel size: a 0.13 m
+  // button on a 512x128 canvas drew its label at a third of the height, which
+  // read as a tiny caption inside a large card.
+  const fontPx = Math.round(Math.max(18, height * 0.4));
+  ctx.font = `600 ${fontPx}px ${theme.fontFamily}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, width / 2, height / 2 + 1, width - 48);
@@ -95,7 +99,11 @@ export class SpatialButton {
     this.height = options.height;
     this.canvas = document.createElement('canvas');
     this.canvas.width = 512;
-    this.canvas.height = 128;
+    // Match the metre aspect so the label is not stretched across a 4:1 canvas.
+    this.canvas.height = Math.max(
+      64,
+      Math.round((512 * options.height) / Math.max(0.01, options.width))
+    );
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
       throw new Error('2D canvas context unavailable');
