@@ -414,9 +414,9 @@ export class QuietShoreApp {
          * vertical motion can be measured on a desk. Never reachable outside
          * `?debug=1`; it writes the same lifecycle the field path writes.
          */
-        session: (on: boolean) => {
+        session: (on: boolean, mode: 'float' | 'posture' = 'float') => {
           this.lifecycle = on
-            ? { phase: 'floating', mode: 'float', stopReason: null }
+            ? { phase: mode === 'posture' ? 'posture' : 'floating', mode, stopReason: null }
             : INITIAL_SESSION;
           return { phase: this.lifecycle.phase, mode: this.lifecycle.mode };
         },
