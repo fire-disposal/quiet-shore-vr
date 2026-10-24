@@ -391,6 +391,19 @@ export class QuietShoreApp {
     // the entry screen says so instead of failing silently.
     if (typeof location !== 'undefined' && location.search.includes('debug')) {
       const debug = {
+        /** Desktop check: feed a remote command through the real router. */
+        command: (cmd: string) => {
+          this.handleRemoteCommand(cmd);
+          return cmd;
+        },
+        /** Desktop check: load a scene in the 2D preview. */
+        scene: (id: string) => {
+          if (!this.previewing && !this.xr.isPresenting) {
+            this.startPreview();
+          }
+          this.applySceneCommand(id);
+          return this.sceneId;
+        },
         calibration: (visible: boolean) => {
           this.calibrationOverlay ??= createCalibrationOverlay({
             scene: this.scene,
