@@ -5,7 +5,7 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 111788,
+      "totalMs": 112035,
       "files": [
         {
           "id": "v-about-1",
@@ -101,10 +101,10 @@
           "id": "v-close-1",
           "group": "引导",
           "file": "male/v-close-1.mp3",
-          "ms": 2912,
-          "bytes": 18092,
-          "sha256": "500a258921ed2ceb4d7345b2caaa2c36d110f1b57da77826f9147e7ca796a8da",
-          "textHash": "a1e210cc7c25f7c9"
+          "ms": 3159,
+          "bytes": 19532,
+          "sha256": "89e80798254ed49c6f747aee010daeabd003f4f8e2f8896bd1b7656c97aa716a",
+          "textHash": "b628956657e54eb1"
         },
         {
           "id": "v-close-2",
@@ -255,7 +255,7 @@
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 124687,
+      "totalMs": 125112,
       "files": [
         {
           "id": "v-about-1",
@@ -351,10 +351,10 @@
           "id": "v-close-1",
           "group": "引导",
           "file": "female/v-close-1.mp3",
-          "ms": 2920,
-          "bytes": 18092,
-          "sha256": "a2ac5c30d86195d5df49a62b33dc25a655abbfca768ebe04b37b79dacffbf17c",
-          "textHash": "a1e210cc7c25f7c9"
+          "ms": 3345,
+          "bytes": 20684,
+          "sha256": "4a1b4ccf244225a5f83b8d6998dad863ebc9abbc9c761f17b5ab5082e0fcf6db",
+          "textHash": "b628956657e54eb1"
         },
         {
           "id": "v-close-2",
@@ -503,5 +503,5 @@
       ]
     }
   },
-  "generatedAt": "2026-10-24T10:08:24+08:00"
+  "generatedAt": "2026-10-24T11:22:06+08:00"
 }

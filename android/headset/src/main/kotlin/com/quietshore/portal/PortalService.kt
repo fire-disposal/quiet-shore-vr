@@ -889,6 +889,7 @@ class PortalService : Service() {
         var broadcastStatus = true
         when {
             command == "home" -> PortalActions.home(this)
+            command == "console:about" -> PortalActions.showAbout(this)
             command == "allapps" -> PortalActions.allApps(this)
             // SUS lives in the page now: only the WebXR surface can offer gaze
             // selection, so these commands are forwarded instead of handled here.

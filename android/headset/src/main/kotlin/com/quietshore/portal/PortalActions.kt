@@ -233,6 +233,11 @@ internal object PortalActions {
         launch(applicationContext(context), intent, "无法打开头显页面")
     }
 
+    /** Brings the console forward on the patient-facing explanation page. */
+    fun showAbout(context: Context) {
+        showPortalPage(context, "about")
+    }
+
     fun allApps(context: Context) {
         val intent = Intent().apply {
             setClassName(ALL_APPS_PACKAGE, ALL_APPS_ACTIVITY)

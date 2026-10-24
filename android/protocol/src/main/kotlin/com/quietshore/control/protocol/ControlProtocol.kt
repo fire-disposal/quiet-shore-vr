@@ -440,6 +440,7 @@ object ControlProtocol {
             normalized == "cue:off" ||
             (normalized.startsWith("cue:intensity:") && normalized.length > "cue:intensity:".length) ||
             normalized == "home" ||
+            normalized == "console:about" ||
             normalized == "allapps" ||
             normalized == "sus:open" ||
             normalized.startsWith("sus:show:") ||

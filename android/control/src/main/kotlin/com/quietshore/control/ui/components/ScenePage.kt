@@ -112,8 +112,14 @@ fun ScenePage(
                     onClick = actions.onRecalibrate,
                     enabled = enabled && (sessionRunning || state.control.calibrating),
                     modifier = Modifier.weight(1f)
-                ) { Text("朝向") }
+                ) { Text("校准") }
             }
+            OutlinedButton(
+                onClick = actions.onShowAbout,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("给患者看说明") }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = actions.onExitScene,

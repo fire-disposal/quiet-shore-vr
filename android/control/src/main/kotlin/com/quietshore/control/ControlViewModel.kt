@@ -381,6 +381,11 @@ class ControlViewModel(application: Application) :
         }
     }
 
+    /** Brings the headset console forward on the explanation page. */
+    fun showAbout() {
+        sendCommand("console:about")
+    }
+
     fun stopVoice() {
         sendCommand(ControlProtocol.VOICE_PREFIX + "stop")
     }

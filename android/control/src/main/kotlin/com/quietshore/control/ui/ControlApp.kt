@@ -108,6 +108,7 @@ fun ControlApp(viewModel: ControlViewModel) {
     if (state.showControls) {
         ControlScreen(
             state = state,
+            onOpenInfo = { showInfo = true },
             actions = ControlActions(
                 onStartTraining = viewModel::enterTraining,
                 onExitScene = viewModel::exitScene,
@@ -126,6 +127,7 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onSessionMode = viewModel::setSessionMode,
                 onFloatLevel = viewModel::setFloatLevel,
                 onViewPitch = viewModel::setViewPitch,
+                onShowAbout = viewModel::showAbout,
                 onFloatProfile = viewModel::setFloatProfile,
                 onEmergencyStop = viewModel::emergencyStop,
                 onPostureLower = viewModel::postureLower,

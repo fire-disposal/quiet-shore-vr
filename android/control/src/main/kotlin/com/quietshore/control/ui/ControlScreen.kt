@@ -51,7 +51,8 @@ import com.quietshore.control.ui.theme.QuietPalette
 @Composable
 fun ControlScreen(
     state: ControlUiState,
-    actions: ControlActions
+    actions: ControlActions,
+    onOpenInfo: () -> Unit = {}
 ) {
     val offline = state.phase == BlePhase.DISCONNECTED ||
         state.phase == BlePhase.ERROR ||
@@ -105,6 +106,7 @@ fun ControlScreen(
                 tab = tab,
                 onSelectTab = { tab = it },
                 onToggleInfo = { infoOpen = !infoOpen },
+                onOpenInfo = onOpenInfo,
                 onDisconnect = actions.onDisconnect
             )
 
@@ -224,6 +226,7 @@ private fun ControlTopBar(
     tab: PanelTab,
     onSelectTab: (PanelTab) -> Unit,
     onToggleInfo: () -> Unit,
+    onOpenInfo: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     Surface(
@@ -281,6 +284,9 @@ private fun ControlTopBar(
             Spacer(Modifier.weight(1f))
             // Tabs, not toggles: exactly one right-hand panel is visible and
             // the selected one is never ambiguous.
+            TextButton(onClick = onOpenInfo) {
+                Text("说明", color = QuietPalette.TextSecondary)
+            }
             TabButton("控制", tab == PanelTab.MOTION) { onSelectTab(PanelTab.MOTION) }
             TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
             TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }

@@ -36,9 +36,10 @@ import com.quietshore.control.protocol.ControlProtocol
  */
 class PortalActivity : Activity() {
     private enum class Page(val label: String, val description: String) {
-        HOME("静岸", "请舒适躺好，等待操作员提示"),
+        HOME("静岸", "请保持舒适，等待工作人员"),
         SETTINGS("设置", "启动偏好与连接"),
         HELP("帮助", "使用方式与控制权"),
+        ABOUT("开始前说明", "给患者看的说明"),
         SUS("SUS 量表", "系统可用性评分")
     }
 
@@ -176,6 +177,7 @@ class PortalActivity : Activity() {
         "sus" -> Page.SUS
         "settings" -> Page.SETTINGS
         "home" -> Page.HOME
+        "about" -> Page.ABOUT
         else -> null
     }
 
@@ -349,6 +351,7 @@ class PortalActivity : Activity() {
             Page.HOME -> buildHomePage()
             Page.SETTINGS -> buildSettingsPage()
             Page.HELP -> buildHelpPage()
+            Page.ABOUT -> buildAboutPage()
             Page.SUS -> buildSusPage()
         }
         content.removeAllViews()
@@ -667,6 +670,21 @@ class PortalActivity : Activity() {
             susScoreText?.text = "已答 ${susAnswers.count { it > 0 }} / ${SUS_STATEMENTS.size}"
             susScoreText?.setTextColor(MUTED)
         }
+    }
+
+    /**
+     * The one page meant to be read by the patient before the headset goes on.
+     * Large type, four lines, nothing to operate.
+     */
+    private fun buildAboutPage(): View {
+        val page = pageColumn()
+        val card = sectionCard()
+        card.addView(label("接下来会发生什么", 18f, TEXT, Typeface.BOLD, 0f))
+        card.addView(label("您会看到一片缓慢移动的景物，身体会跟着轻轻起伏，还有水声。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        card.addView(label("需要进入时，看向画面中间的圆，按下头显右侧的按钮。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        card.addView(label("任何时刻觉得不舒服，直接说话；工作人员会立刻停下。", 16f, TEXT, Typeface.NORMAL, 0.02f))
+        page.addView(card)
+        return page
     }
 
     private fun buildHelpPage(): View {
