@@ -1,5 +1,6 @@
 package com.quietshore.control.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.MirrorMode
+import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
 import com.quietshore.control.ui.components.LoadingDots
@@ -52,6 +54,8 @@ import com.quietshore.control.ui.theme.QuietPalette
 fun ControlScreen(
     state: ControlUiState,
     actions: ControlActions,
+    /** Latest one-shot operator message; shown briefly under the top bar. */
+    event: UiEvent? = null,
     onOpenInfo: () -> Unit = {}
 ) {
     val offline = state.phase == BlePhase.DISCONNECTED ||
@@ -105,8 +109,18 @@ fun ControlScreen(
                 onSelectTab = { tab = it },
                 onMirrorModeChange = actions.onMirrorModeChange,
                 onOpenInfo = onOpenInfo,
-                onDisconnect = actions.onDisconnect
+                onDisconnect = actions.onDisconnect,
+                onEmergencyStop = actions.onEmergencyStop
             )
+
+            if (event != null) {
+                NoticeBar(
+                    event = event,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (compact) 78.dp else 82.dp, end = railOverlayInset)
+                )
+            }
 
             if (reconnecting) {
                 ReconnectingBanner(
@@ -211,7 +225,8 @@ private fun ControlTopBar(
     onSelectTab: (PanelTab) -> Unit,
     onMirrorModeChange: (MirrorMode) -> Unit,
     onOpenInfo: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onEmergencyStop: () -> Unit
 ) {
     Surface(
         modifier = Modifier
@@ -260,11 +275,24 @@ private fun ControlTopBar(
                 // operator is looking at, not about which panel is open, so it
                 // is separated from the tab row by the flexible gap below.
                 Spacer(Modifier.width(if (compact) 8.dp else 14.dp))
-                for (option in MirrorMode.entries) {
-                    TabButton(
-                        option.label,
-                        state.mirrorMode == option
-                    ) { onMirrorModeChange(option) }
+                if (compact) {
+                    // One cycling button on a narrow bar: two toggles plus five
+                    // tabs and the stop overflow the row on a 10" tablet.
+                    TextButton(onClick = {
+                        val next = MirrorMode.entries[
+                            (MirrorMode.entries.indexOf(state.mirrorMode) + 1) % MirrorMode.entries.size
+                        ]
+                        onMirrorModeChange(next)
+                    }) {
+                        Text(state.mirrorMode.label, color = QuietPalette.TextSecondary)
+                    }
+                } else {
+                    for (option in MirrorMode.entries) {
+                        TabButton(
+                            option.label,
+                            state.mirrorMode == option
+                        ) { onMirrorModeChange(option) }
+                    }
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -277,6 +305,16 @@ private fun ControlTopBar(
             TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
             TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }
             TabButton("SUS", tab == PanelTab.SUS) { onSelectTab(PanelTab.SUS) }
+            // The stop lives in the bar, not in a panel: it has to be one tap
+            // away from every tab, including the scene and SUS pages.
+            TextButton(
+                onClick = onEmergencyStop,
+                enabled = state.control.session,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = QuietPalette.Danger,
+                    disabledContentColor = QuietPalette.Outline
+                )
+            ) { Text("急停") }
             TextButton(
                 onClick = onDisconnect,
                 enabled = state.phase.isConnected,
@@ -416,6 +454,39 @@ private fun PoseFreshness(
                 text = if (stale) "姿态未更新" else "实时",
                 style = MaterialTheme.typography.labelLarge
             )
+        }
+    }
+}
+
+/**
+ * One-shot operator feedback, visible for a few seconds.
+ *
+ * The notices already existed in the view model but lost their surface when the
+ * diagnostics panel was removed: "命令已发送" and every rejection went nowhere.
+ */
+@Composable
+private fun NoticeBar(event: UiEvent, modifier: Modifier = Modifier) {
+    val error = event is UiEvent.Error
+    val accent = if (error) QuietPalette.Danger else QuietPalette.Accent
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = QuietPalette.Surface.copy(alpha = 0.92f),
+        contentColor = if (error) QuietPalette.Danger else QuietPalette.TextPrimary,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(text = event.text, style = MaterialTheme.typography.labelLarge)
         }
     }
 }

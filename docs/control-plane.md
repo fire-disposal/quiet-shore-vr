@@ -189,25 +189,24 @@ PING / RELEASE / CLAIM   # 存活与租约
 
 | 命令 | 页面行为 |
 | --- | --- |
-| `enter` | 头显服务直接拉起 Firefox Reality 训练页（仍需患者按一次确认键进入 WebXR） |
+| `enter` | 头显服务拉起到训练页（患者仍需按一次头显按钮进入） |
+| `exit` / `stop` | 结束训练并关闭页面 |
+| `calibrate` | 打开校准：保持不动 1.8 s + 3 s 取样取平均；训练中可用 |
+| `scene:<id>` | 切到场景；空闲时重建世界，训练中拒绝 |
+| `anim:duration:4000-20000` | 起身/躺下斜坡时长，ms，4–20 s |
+| `posture:rise` / `posture:lower` / `posture:stop` | 站立比率：rise = 0→1（躺 → 起身），lower = 1→0，stop 冻结在当前值；患者按钮只做开始/停止 |
+| `float:level:0-3` | 起伏幅度；0 为停用，按 tau 0.25 s 渐出。场景可低于此上限（立便间 2 级） |
+| `view:anim:up\|down\|recenter` | 相对俯仰斜坡：up/down ±10°，3 s；recenter 回 0°，2.4 s |
+| `view:stop` | 停止斜坡并保持当前俯仰，不回正 |
+| `audio:on` / `audio:off` / `audio:toggle` | 环境声开关，默认关；只影响环境声，不静音语音 |
+| `voice:play:<id>` / `voice:stop` | 播放单句 / 停止 |
+| `voice:seq:start\|imagine\|relax\|close` | 播放四条序列之一 |
+| `voice:volume:0-100` / `voice:mix:duck:0-18` | 语音音量 / 水声压低 dB |
+| `voice:set:male\|female` / `voice:subtitle:on\|off` | 语音组 / 字幕开关 |
 | `sus:open` / `sus:close` | 打开/关闭头显端 SUS 量表页 |
-| `sus:next` / `sus:prev` | 控制端覆写 SUS 当前题页 |
-| `sus:answer:<1-5>` | 操作员对头显当前 SUS 题代答；SUS 页未打开时自动打开 |
+| `sus:show:1-10` / `sus:answer:1-5` | 跳到第 n 题 / 操作员代答；SUS 页未打开时自动打开 |
+| `sus:voice:on\|off` | 题干自动朗读 |
 | `home` | 头显回到系统桌面 |
-| `allapps` | 打开系统全部应用页 |
-| `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |
-| `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
-| `float:level:0-3` | 漂浮强度；0 为停用，停止时按 tau 0.25 s 渐出 |
-| `float:profile:a\|b\|c` | 漂浮档位：a 温和（55 mm / 16 s）、b 标准（75 mm / 13 s）、c 沉浸（100 mm / 9 s，最高 1 级）。**无地平线摆动**：世界只沿视觉竖直平移，从不旋转 |
-| `preview` | 进入 2D 预览（不请求 WebXR） |
-| `calibrate` / `recalibrate` | 打开校准：保持不动 1.8 s + 3 s 取样取平均，9 s 强制落地；卡片期间世界冻结；训练中可用 |
-| `audio:on` / `audio:off` / `audio:toggle` | 环境声（水声）开关，**默认关**；只影响场景环境声，不静音语音。开启时两路交叉淡化播放，关闭时 0.4 s 渐出 |
-| `exit` / `stop` | 结束训练、退出会话 |
-| `posture:rise` / `posture:lower` / `posture:stop` | 俯仰修正斜坡：rise = 0→1（天花板 → 面向前方），lower = 1→0，stop = 冻结在当前 mix；两种模式下都可用，患者确认键仍只做开始/停止 |
-| `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
-| `view:stop` | 停止动画并**保持**当前朝向，不回正 |
-| `view:anim:up\|down\|recenter\|breathe` | 播放页面的固定预设：up/down 相对当前角度 ±10°，recenter 回 0°，breathe 为 6 s 回到起点的曲线；无参数，作为一次性离散命令回 `ACK <seq> OK`，不跨重连重放 |
-| `status` | 协议允许，当前平板 UI 不发送 |
 
 `enter`、`home`、`sus:*` 由头显服务执行；其余命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。
 

@@ -126,6 +126,7 @@ fun ControlApp(viewModel: ControlViewModel) {
     if (state.showControls) {
         ControlScreen(
             state = state,
+            event = latestEvent,
             onOpenInfo = { showInfo = true },
             actions = ControlActions(
                 onStartTraining = viewModel::enterTraining,

@@ -7,17 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,8 +21,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -154,12 +148,6 @@ fun SessionPanel(
                         modifier = Modifier.weight(1f)
                     ) { Text("停止") }
                 }
-                // Angle and rise are the mix and the eye height above; the
-                // panel shows the two sources, not copies of them.
-                LabeledValue(
-                    "修正角度",
-                    String.format(Locale.US, "%.0f°", mix * 90f)
-                )
                 DurationRow(
                     selected = state.animDurationMs,
                     enabled = connected && running,
@@ -189,7 +177,12 @@ fun SessionPanel(
                 }
                 LabeledValue(
                     "已应用",
-                    String.format(Locale.US, "±%.0f mm", abs(control.floatMm))
+                    String.format(
+                        Locale.US,
+                        "±%.0f mm · %d 级",
+                        abs(control.floatMm),
+                        control.floatLevel
+                    )
                 )
                 Text(
                     text = "开 = 湖面飘浮（约 150 mm，13 s 一个来回）；其他场景 = 轻缓呼吸；关 = 世界静止",
@@ -217,6 +210,14 @@ fun SessionPanel(
                     "相对俯仰",
                     String.format(Locale.US, "%+.0f°", control.viewPitch)
                 )
+                LabeledValue(
+                    "播放",
+                    when (control.viewAnim) {
+                        com.quietshore.control.protocol.ViewAnim.PLAYING -> "播放中"
+                        com.quietshore.control.protocol.ViewAnim.HELD -> "已保持"
+                        com.quietshore.control.protocol.ViewAnim.IDLE -> "待机"
+                    }
+                )
                 Text(
                     text = "视线是叠加在体位上的微调，不改变起身高度",
                     style = MaterialTheme.typography.bodySmall,
@@ -224,27 +225,6 @@ fun SessionPanel(
                 )
             }
 
-            Spacer(Modifier.height(4.dp))
-            // Pinned: never nested behind a scroll, a tab or a menu.
-            Button(
-                onClick = actions.onEmergencyStop,
-                enabled = connected && running,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = QuietPalette.Danger,
-                    disabledContainerColor = QuietPalette.Danger.copy(alpha = 0.35f)
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Stop,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.size(8.dp))
-                Text("急停", style = MaterialTheme.typography.titleMedium)
-            }
         }
     }
 }
