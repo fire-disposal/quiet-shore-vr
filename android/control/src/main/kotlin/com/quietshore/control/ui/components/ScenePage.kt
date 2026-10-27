@@ -51,6 +51,11 @@ fun ScenePage(
     val selectedScene = state.control.scene
     val sessionRunning = state.control.session
     val enabled = state.phase == com.quietshore.control.ble.BlePhase.READY
+    // A scene switch rebuilds the world, and the page refuses one while an
+    // immersive session is up — calibration included. The cards follow the
+    // page's rule, not just the training flag, so the operator does not get a
+    // rejection for a card they were allowed to tap.
+    val switchable = !sessionRunning && !state.control.calibrating
     val onSelect = actions.onSceneSelect
     Surface(
         modifier = modifier,
@@ -152,10 +157,10 @@ fun ScenePage(
 
             Text("场景", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = if (sessionRunning) {
-                    "训练中不可切换场景"
-                } else {
-                    "选好场景后再启动训练"
+                text = when {
+                    sessionRunning -> "训练中不可切换场景"
+                    state.control.calibrating -> "校准中不可切换场景"
+                    else -> "选好场景后再启动训练"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.TextSecondary
@@ -164,7 +169,7 @@ fun ScenePage(
                 val id = scene.id
                 val label = scene.name
                 val selected = id == selectedScene
-                val selectable = enabled && !sessionRunning
+                val selectable = enabled && switchable
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()

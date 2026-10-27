@@ -1,11 +1,15 @@
 package com.quietshore.control.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -14,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -115,7 +118,7 @@ fun SessionPanel(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "眼高",
+                            text = "视高",
                             style = MaterialTheme.typography.bodySmall,
                             color = QuietPalette.TextSecondary
                         )
@@ -125,12 +128,21 @@ fun SessionPanel(
                         )
                     }
                 }
-                LinearProgressIndicator(
-                    progress = { mix },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = QuietPalette.Accent,
-                    trackColor = QuietPalette.Outline.copy(alpha = 0.35f)
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(QuietPalette.Outline.copy(alpha = 0.35f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(mix.coerceIn(0f, 1f))
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(QuietPalette.Accent)
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FilledTonalButton(
                         onClick = actions.onPostureRise,
@@ -172,17 +184,28 @@ fun SessionPanel(
                     Switch(
                         checked = control.floatLevel > 0,
                         onCheckedChange = { on -> actions.onFloatLevel(if (on) 3 else 0) },
-                        enabled = connected && caps.float
+                        enabled = connected && caps.float,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = QuietPalette.Accent,
+                            checkedThumbColor = QuietPalette.Surface,
+                            checkedBorderColor = QuietPalette.Accent,
+                            uncheckedTrackColor = QuietPalette.Outline.copy(alpha = 0.4f),
+                            uncheckedThumbColor = QuietPalette.Surface
+                        )
                     )
                 }
                 LabeledValue(
                     "已应用",
-                    String.format(
-                        Locale.US,
-                        "±%.0f mm · %d 级",
-                        abs(control.floatMm),
-                        control.floatLevel
-                    )
+                    if (!running) {
+                        "未进入训练"
+                    } else {
+                        String.format(
+                            Locale.US,
+                            "±%.0f mm · %d 级",
+                            abs(control.floatMm),
+                            control.floatLevel
+                        )
+                    }
                 )
                 Text(
                     text = "开 = 湖面飘浮（约 150 mm，13 s 一个来回）；其他场景 = 轻缓呼吸；关 = 世界静止",

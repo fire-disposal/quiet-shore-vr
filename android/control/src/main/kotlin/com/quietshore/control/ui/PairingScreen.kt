@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
@@ -63,6 +65,9 @@ fun PairingScreen(
     ) {
         val wide = maxWidth >= 560.dp
         val compact = maxHeight < 520.dp
+        // Captured here: inside the Row the two implicit receivers make the
+        // scope's height awkward to reach.
+        val cardMaxHeight = maxHeight - 48.dp
         if (wide) {
             Row(
                 modifier = Modifier
@@ -75,9 +80,7 @@ fun PairingScreen(
                 PairingIntro(
                     compact = compact,
                     onOpenInfo = onOpenInfo,
-                    modifier = Modifier
-                        .weight(2f)
-                        .fillMaxHeight()
+                    modifier = Modifier.weight(2f)
                 )
                 PairingCard(
                     state = state,
@@ -91,9 +94,8 @@ fun PairingScreen(
                     onEnableBluetooth = onEnableBluetooth,
                     onOpenSettings = onOpenSettings,
                     scrollable = true,
-                    modifier = Modifier
-                        .weight(3f)
-                        .fillMaxHeight()
+                    maxHeight = cardMaxHeight,
+                    modifier = Modifier.weight(3f)
                 )
             }
         } else {
@@ -165,7 +167,7 @@ private fun PairingIntro(
             "3" to "平板接管控制",
             "4" to "协助患者戴好头显",
             "5" to "「场景」页选场景并进入",
-            "6" to "「控制」页调世界修正与视角",
+            "6" to "「控制」页调体位与起伏、微调视线",
             "7" to "结束后在「SUS」页施测",
             "8" to "摘下头显，记录反馈"
         )
@@ -216,10 +218,16 @@ private fun PairingCard(
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit,
     scrollable: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The card wraps its content but never grows past the screen. */
+    maxHeight: Dp = Dp.Unspecified
 ) {
     Surface(
-        modifier = modifier,
+        modifier = if (maxHeight == Dp.Unspecified) {
+            modifier
+        } else {
+            modifier.heightIn(max = maxHeight)
+        },
         shape = RoundedCornerShape(28.dp),
         color = QuietPalette.Surface
     ) {
