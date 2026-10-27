@@ -63,7 +63,7 @@ data class ControlUiState(
     /** Milliseconds since the headset reported a running session. */
     val sessionElapsedMs: Long = 0L,
     /** Voice set the operator picked: "male" or "female". */
-    val voiceSet: String = "male",
+    val voiceSet: String = "female",
     /** Cue volume 0–100, independent of the scene bed. */
     val voiceVolume: Int = 90,
     /** Scene ducking depth while a cue speaks, 0–18 dB. */

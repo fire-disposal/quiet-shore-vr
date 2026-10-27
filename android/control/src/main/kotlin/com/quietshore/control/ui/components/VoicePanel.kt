@@ -137,6 +137,33 @@ fun VoicePanel(
                 )
             }
 
+            // The set was reachable only by command: `onVoiceSet` was wired to
+            // the view model and no control ever called it.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("音色", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "换音色会清空已解码的音频，会话中切换会停顿一下",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((label, id) in listOf("女声" to "female", "男声" to "male")) {
+                        ToneChoice(
+                            label = label,
+                            selected = state.voiceSet == id,
+                            enabled = connected,
+                            onClick = { actions.onVoiceSet(id) }
+                        )
+                    }
+                }
+            }
+
             Seed("混音") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

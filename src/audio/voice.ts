@@ -151,7 +151,9 @@ export function createVoicePlayer(): VoicePlayerApi {
   let loading: Promise<boolean> | null = null;
   /** Last failure, shown on the entry screen so silence is never a mystery. */
   let lastError = '';
-  let set: VoiceSet = 'male';
+  /** Female is the default: softer on the small headset speaker, and the set
+   *  the operators have been using; the tablet can still switch to male. */
+  let set: VoiceSet = 'female';
   let volume = 0.9;
 
   const decoded = new Map<string, AudioBuffer>();

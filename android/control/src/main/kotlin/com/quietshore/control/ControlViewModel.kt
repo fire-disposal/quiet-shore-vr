@@ -466,7 +466,9 @@ class ControlViewModel(application: Application) :
     }
 
     fun setVoiceSet(set: String) {
-        val value = if (set == "female") "female" else "male"
+        // Female is the default; anything that is not an explicit male request
+        // keeps it.
+        val value = if (set == "male") "male" else "female"
         _uiState.update { it.copy(voiceSet = value) }
         sendCommand(ControlProtocol.VOICE_PREFIX + "set:" + value)
     }

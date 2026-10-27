@@ -28,7 +28,17 @@ const MANIFEST = {
         { id: 'v-close-2', group: '收束', file: 'male/v-close-2.mp3', ms: 2000, bytes: 1, sha256: '', textHash: '' }
       ]
     },
-    female: { speaker: 'x', label: 'x', totalMs: 0, files: [] }
+    // The default set is female; the fixture carries the same two cues there so
+    // the sequence test does not depend on which set is the default.
+    female: {
+      speaker: 'x',
+      label: 'x',
+      totalMs: 0,
+      files: [
+        { id: 'v-close-1', group: '收束', file: 'female/v-close-1.mp3', ms: 3000, bytes: 1, sha256: '', textHash: '' },
+        { id: 'v-close-2', group: '收束', file: 'female/v-close-2.mp3', ms: 2000, bytes: 1, sha256: '', textHash: '' }
+      ]
+    }
   }
 };
 
@@ -120,6 +130,11 @@ afterEach(() => {
 });
 
 describe('voice sequences', () => {
+  it('starts on the female set', () => {
+    const player = createVoicePlayer();
+    expect(player.getSet()).toBe('female');
+  });
+
   it('duck once at the start and release once at the end', async () => {
     vi.useFakeTimers();
     const player = createVoicePlayer();
