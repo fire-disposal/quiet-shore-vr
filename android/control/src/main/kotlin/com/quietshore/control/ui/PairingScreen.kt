@@ -75,7 +75,9 @@ fun PairingScreen(
                     .widthIn(max = 1100.dp)
                     .fillMaxHeight(),
                 horizontalArrangement = Arrangement.spacedBy(40.dp),
-                verticalAlignment = Alignment.Top
+                // The card wraps now, so a top-aligned row left it stranded at
+                // the top of a tall empty screen.
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 PairingIntro(
                     compact = compact,

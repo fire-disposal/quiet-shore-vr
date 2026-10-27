@@ -24,7 +24,10 @@ fun mergeRemoteFrame(
 ): ControlUiState {
     val running = frame.session
     val elapsedMs = when {
-        running && frame.elapsedSec > 0 -> frame.elapsedSec * 1000L
+        // No running session, no clock: the caller clears `sessionStartedAt` on
+        // the falling edge, but the merge must not depend on that ordering.
+        !running -> 0L
+        frame.elapsedSec > 0 -> frame.elapsedSec * 1000L
         sessionStartedAt == 0L -> 0L
         else -> (nowMs - sessionStartedAt).coerceAtLeast(0L)
     }

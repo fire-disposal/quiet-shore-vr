@@ -81,13 +81,41 @@ fun VoicePanel(
                 )
             }
 
-            // One transport action. The four sequence buttons below are the
-            // play controls; a duplicate "开始提示" only made the panel longer.
-            OutlinedButton(
-                onClick = actions.onVoiceStop,
-                enabled = connected,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("停止播放") }
+            // The session is a walk down one list, so the dominant action is
+            // "next". It also had to exist: the catalogue is 27 full-text
+            // buttons, and finding the following line meant scrolling to it
+            // while the patient waited.
+            val cursor = guidance.indexOfFirst { it.id == state.voiceLine?.id }
+            val previousLine = if (cursor > 0) guidance[cursor - 1] else null
+            val nextLine = when {
+                cursor < 0 -> guidance.firstOrNull()
+                cursor < guidance.lastIndex -> guidance[cursor + 1]
+                else -> null
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = actions.onVoiceStop,
+                    enabled = connected,
+                    modifier = Modifier.weight(1f)
+                ) { Text("停止") }
+                OutlinedButton(
+                    onClick = { previousLine?.let { actions.onVoicePlay(it.id) } },
+                    enabled = connected && previousLine != null,
+                    modifier = Modifier.weight(1f)
+                ) { Text("上一句") }
+                Button(
+                    onClick = { nextLine?.let { actions.onVoicePlay(it.id) } },
+                    enabled = connected && nextLine != null,
+                    modifier = Modifier.weight(1f)
+                ) { Text("下一句") }
+            }
+            if (state.voiceLine != null || nextLine != null) {
+                Text(
+                    text = nextLine?.let { "下一句 · ${it.group}：${it.text}" } ?: "已是最后一句",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

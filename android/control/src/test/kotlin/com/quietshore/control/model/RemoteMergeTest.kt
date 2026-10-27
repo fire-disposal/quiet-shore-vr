@@ -1,72 +1,59 @@
 package com.quietshore.control.model
 
 import com.quietshore.control.protocol.ControlState
+import com.quietshore.control.protocol.ViewAnim
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * The tablet's ownership contract: mirror fields follow the headset, intent
- * fields stay on the tablet, and a finished session drops the local view
- * correction.
+ * The tablet's ownership contract, one test per clause of [mergeRemoteFrame]:
+ * the mirror follows the headset, the operator's pending launch is theirs, and
+ * a frame without seconds falls back to the local stopwatch.
  */
 class RemoteMergeTest {
 
     private fun frame(
         session: Boolean = false,
-        postureMode: Boolean = false,
-        floatLevel: Int = 2,
+        floatLevel: Int = 1,
+        voiceId: Int = -1,
+        scene: String = "shore",
+        viewAnim: ViewAnim = ViewAnim.IDLE,
         elapsedSec: Int = 0
     ) = ControlState(
         session = session,
-        postureMode = postureMode,
         floatLevel = floatLevel,
+        voiceId = voiceId,
+        scene = scene,
+        viewAnim = viewAnim,
         elapsedSec = elapsedSec
     )
 
     @Test
-    fun `before a session the operator's choices survive a frame`() {
-        val intent = ControlUiState(
-            sessionMode = SessionMode.POSTURE,
-            viewPitchTarget = 12,
-            startPending = true
-        )
-        val merged = mergeRemoteFrame(intent, frame(session = false), sessionStartedAt = 0L, nowMs = 1_000L)
-
-        // Mode and the pending launch are the operator's; the view correction
-        // is session-only, so it falls back to zero with no session running.
-        assertEquals(SessionMode.POSTURE, merged.sessionMode)
-        assertEquals(0, merged.viewPitchTarget)
-        assertTrue(merged.startPending)
-    }
-
-    @Test
-    fun `during a session the headset owns the mode and buoyancy`() {
-        val intent = ControlUiState(
-            sessionMode = SessionMode.FLOAT,
-            viewPitchTarget = 12,
-            startPending = true
-        )
+    fun `the panel follows the headset's scene, buoyancy, voice and player`() {
         val merged = mergeRemoteFrame(
-            intent,
-            frame(session = true, postureMode = true, floatLevel = 3),
+            ControlUiState(),
+            frame(floatLevel = 3, voiceId = 7, scene = "ward", viewAnim = ViewAnim.PLAYING),
             sessionStartedAt = 0L,
-            nowMs = 5_000L
+            nowMs = 1_000L
         )
 
-        assertEquals(SessionMode.POSTURE, merged.sessionMode)
+        assertEquals("ward", merged.control.scene)
         assertEquals(3, merged.floatLevel)
-        // A running session keeps the correction: it is what the patient sees.
-        assertEquals(12, merged.viewPitchTarget)
-        assertFalse(merged.startPending)
+        assertEquals(7, merged.voiceId)
+        assertEquals(ViewAnim.PLAYING, merged.control.viewAnim)
     }
 
     @Test
-    fun `leaving a session drops the local correction`() {
-        val running = ControlUiState(viewPitchTarget = 20)
-        val merged = mergeRemoteFrame(running, frame(session = false), 0L, 9_000L)
-        assertEquals(0, merged.viewPitchTarget)
+    fun `a pending launch survives a frame until the session starts`() {
+        val pending = ControlUiState(startPending = true)
+
+        val before = mergeRemoteFrame(pending, frame(session = false), 0L, 1_000L)
+        assertTrue(before.startPending)
+
+        val running = mergeRemoteFrame(pending, frame(session = true), 0L, 2_000L)
+        assertFalse(running.startPending)
     }
 
     @Test
@@ -81,7 +68,7 @@ class RemoteMergeTest {
     }
 
     @Test
-    fun `the local stopwatch only covers a frame that has no seconds yet`() {
+    fun `the local stopwatch only covers a frame with no seconds yet`() {
         val merged = mergeRemoteFrame(
             ControlUiState(),
             frame(session = true, elapsedSec = 0),
@@ -92,8 +79,8 @@ class RemoteMergeTest {
     }
 
     @Test
-    fun `no session means no elapsed time`() {
-        val merged = mergeRemoteFrame(ControlUiState(), frame(session = false), 0L, 90_000L)
+    fun `no running session means no elapsed time`() {
+        val merged = mergeRemoteFrame(ControlUiState(), frame(session = false), 1_000L, 90_000L)
         assertEquals(0L, merged.sessionElapsedMs)
     }
 }

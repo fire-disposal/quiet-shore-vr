@@ -69,6 +69,13 @@ fun PitchSideGauge(
                     strokeWidth = 1.5f
                 )
 
+                // No pose, no body: a flat line on the level reference reads as
+                // a slider at one end, which is worse than an empty dial.
+                if (pose == null) {
+                    drawCircle(color = QuietPalette.Outline, radius = 4f, center = hip)
+                    return@Canvas
+                }
+
                 // Body line + head, rotated by the head pitch (positive = up).
                 rotate(degrees = -pitchDeg.toFloat(), pivot = hip) {
                     drawLine(

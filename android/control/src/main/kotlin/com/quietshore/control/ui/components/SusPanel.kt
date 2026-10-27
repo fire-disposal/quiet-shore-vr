@@ -64,8 +64,16 @@ fun SusPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("SUS 量表", style = MaterialTheme.typography.titleMedium)
+            val answered = state.susAnswers.count { it != 0 }
+            val current = state.susIndex
             Text(
-                text = "逐题播放，作答后自动进入下一题。",
+                text = buildString {
+                    append("逐题播放，作答后自动进入下一题。")
+                    append("已答 $answered/${questions.size}")
+                    if (current in 1..questions.size) {
+                        append(" · 当前第 $current 题")
+                    }
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = QuietPalette.TextSecondary
             )
