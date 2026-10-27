@@ -160,6 +160,12 @@ export function createVoicePlayer(): VoicePlayerApi {
   let element: HTMLAudioElement | null = null;
   let activeId: string | null = null;
   let activeSequence: SequenceName | null = null;
+  /**
+   * Sequence generation. `stopToken` cannot serve here: `play()` bumps it to
+   * cancel the previous clip, so a sequence that captured it saw a stale value
+   * after its very first line and aborted — every sequence played one sentence.
+   */
+  let sequenceGeneration = 0;
   let sequenceTimer: number | null = null;
   let stopToken = 0;
 
@@ -175,7 +181,7 @@ export function createVoicePlayer(): VoicePlayerApi {
     return bucket ? bucket.files.find((entry) => entry.id === id) ?? null : null;
   }
 
-  async function bufferFor(id: string): Promise<AudioBuffer | null> {
+  async function bufferFor(id: string, quiet = false): Promise<AudioBuffer | null> {
     const ctx = getAudioContext();
     if (!ctx) {
       return null;
@@ -187,13 +193,17 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
     const file = fileById(id);
     if (!file) {
-      lastError = manifest ? `缺少 ${id}` : '清单未加载';
+      if (!quiet) {
+        lastError = manifest ? `缺少 ${id}` : '清单未加载';
+      }
       return null;
     }
     try {
       const response = await fetch(urlFor(file));
       if (!response.ok) {
-        lastError = `音频 ${response.status}`;
+        if (!quiet) {
+          lastError = `音频 ${response.status}`;
+        }
         return null;
       }
       const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
@@ -204,8 +214,53 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
   }
 
+  /**
+   * The bed is held down for as long as *anything* is speaking, so a sequence
+   * does not let it swell back up during its 4–20 s gaps. The counter is what
+   * makes that possible without the sequence and the clip fighting over one
+   * boolean; a duck only moves on the 0 -> 1 and 1 -> 0 edges.
+   */
+  let duckHolds = 0;
+
+  function holdDuck(): void {
+    duckHolds += 1;
+    if (duckHolds === 1) {
+      duckScene(true);
+    }
+  }
+
+  /**
+   * Decode what the operator is about to ask for.
+   *
+   * The tablet walks the catalogue in order, so the two ids after this one are
+   * the ones a "next sentence" tap will need; without this each first play
+   * paid a fetch and a decode before the patient heard anything.
+   */
+  function prefetchAfter(id: string): void {
+    if (!manifest) {
+      return;
+    }
+    const files = manifest.voices[set]?.files ?? [];
+    const index = files.findIndex((entry) => entry.id === id);
+    if (index < 0) {
+      return;
+    }
+    for (const step of [1, 2]) {
+      const next = files[index + step];
+      if (next) {
+        void bufferFor(next.id, true).catch(() => undefined);
+      }
+    }
+  }
+
   function releaseDuck(): void {
-    duckScene(false);
+    if (duckHolds === 0) {
+      return;
+    }
+    duckHolds -= 1;
+    if (duckHolds === 0) {
+      duckScene(false);
+    }
   }
 
   function stopSource(): void {
@@ -265,7 +320,7 @@ export function createVoicePlayer(): VoicePlayerApi {
     next.buffer = buffer;
     next.connect(gain);
     gain.connect(bus);
-    duckScene(true);
+    holdDuck();
     next.onended = () => {
       if (source === next) {
         source = null;
@@ -276,6 +331,7 @@ export function createVoicePlayer(): VoicePlayerApi {
     source = next;
     activeId = id;
     next.start();
+    prefetchAfter(id);
     return true;
   }
 
@@ -302,7 +358,7 @@ export function createVoicePlayer(): VoicePlayerApi {
         }
         element = audio;
         activeId = id;
-        duckScene(true);
+        holdDuck();
       },
       () => {
         lastError = '播放被拒绝';
@@ -326,27 +382,42 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
     stop();
     activeSequence = name;
-    const token = stopToken;
+    const generation = ++sequenceGeneration;
+    const alive = (): boolean => generation === sequenceGeneration;
     let index = 0;
+    // Covers the gaps as well as the clips: the comment below always claimed
+    // the bed stayed down between lines, but each clip's own release lifted it.
+    holdDuck();
+    let sequenceReleased = false;
+    const releaseSequence = (): void => {
+      if (!sequenceReleased) {
+        sequenceReleased = true;
+        releaseDuck();
+      }
+    };
 
     const step = (): void => {
       const currentManifest = manifest;
-      if (token !== stopToken || !currentManifest) {
+      if (!alive() || !currentManifest) {
         return;
       }
       const current = steps[index];
       if (!current) {
         activeSequence = null;
+        releaseSequence();
         return;
       }
       void play(current.id).then((played) => {
-        if (!played || token !== stopToken) {
+        if (!played || !alive()) {
           activeSequence = null;
+          releaseSequence();
           return;
         }
         index += 1;
         if (index >= steps.length) {
           activeSequence = null;
+          // The last clip's own hold is still up; drop the sequence's now.
+          releaseSequence();
           return;
         }
         const duration = currentManifest.voices[set]?.files.find((f) => f.id === current.id)?.ms ?? 3000;
@@ -360,10 +431,13 @@ export function createVoicePlayer(): VoicePlayerApi {
 
   function stop(): void {
     stopToken += 1;
+    sequenceGeneration += 1;
     clearSequenceTimer();
     stopSource();
     activeSequence = null;
-    releaseDuck();
+    // A stopped clip and a stopped sequence can both be holding the bed.
+    duckHolds = 0;
+    duckScene(false);
   }
 
   async function load(): Promise<boolean> {
