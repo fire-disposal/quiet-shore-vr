@@ -5,16 +5,16 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 93920,
+      "totalMs": 92005,
       "files": [
         {
           "id": "v-wear-1",
           "group": "引导",
           "file": "male/v-wear-1.mp3",
-          "ms": 6931,
-          "bytes": 42140,
-          "sha256": "b3979ac5df3b9b7ea03d67a3075b7af2ed59a56aac1e8bac04566d033eb077b3",
-          "textHash": "a48ebc92b64dbbd0"
+          "ms": 5016,
+          "bytes": 30620,
+          "sha256": "62f76ee964dc9ad9382626b1b45169e31f509a528d823abb7754dab82bf91ea7",
+          "textHash": "a796f74e18ef59c3"
         },
         {
           "id": "v-safe-1",
@@ -237,16 +237,16 @@
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 104937,
+      "totalMs": 103000,
       "files": [
         {
           "id": "v-wear-1",
           "group": "引导",
           "file": "female/v-wear-1.mp3",
-          "ms": 8238,
-          "bytes": 50060,
-          "sha256": "07df53f4927a000828caec726dbc65fefa617315589d1bf8965cf76d1b848c50",
-          "textHash": "a48ebc92b64dbbd0"
+          "ms": 6301,
+          "bytes": 38396,
+          "sha256": "c36df0566d859d8dbd595be81af6e7179d4043596767cc136d5be970d068ea11",
+          "textHash": "a796f74e18ef59c3"
         },
         {
           "id": "v-safe-1",
@@ -467,5 +467,5 @@
       ]
     }
   },
-  "generatedAt": "2026-10-24T16:01:02+08:00"
+  "generatedAt": "2026-10-27T16:02:35+08:00"
 }

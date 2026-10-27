@@ -11,7 +11,7 @@ object VoiceCatalog {
     val SEQUENCES: List<String> = listOf("start", "imagine", "relax", "close")
 
     val LINES: List<Line> = listOf(
-        Line("v-wear-1", "引导", "戴上头显，保持现在的姿势。画面中间有一个圆，看向它，按下头显右侧的按钮就能进入。"),
+        Line("v-wear-1", "引导", "戴上头显，保持现在的姿势。按一下头显右侧的按钮，就能进入画面。"),
         Line("v-safe-1", "引导", "如果头晕、恶心或不舒服，按头显右侧的按钮，画面会立刻停下。"),
         Line("v-cal-1", "引导", "现在记录起始方向。保持现在的姿势，看向前方；场景会以这个方向为基准。"),
         Line("v-cal-2", "引导", "已记录，场景即将出现。"),
