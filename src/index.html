@@ -21,12 +21,15 @@
       <button id="enter" class="enter-target" type="button" disabled>
         <span id="enter-label" class="target-label">按一下头显右侧的按钮</span>
         <span class="target-sub">准备好就开始，请保持舒适姿势</span>
-        <span id="controller-guide" class="controller-guide" aria-hidden="true">
-          <span class="controller-outline">
-            <span class="controller-round controller-top"></span>
-            <span class="controller-pill"><i></i></span>
-            <span class="controller-round controller-bottom"></span>
-          </span>
+        <span id="controller-guide" class="headset-guide" aria-hidden="true">
+          <!-- Side view of the headset, button on its right edge: the drawing and
+               the sentence have to name the same object. -->
+          <svg viewBox="0 0 168 104" role="presentation">
+            <path class="guide-strap" d="M40 34 C52 12 104 12 116 34" />
+            <rect class="guide-body" x="16" y="30" width="118" height="44" rx="16" />
+            <circle class="guide-button" cx="140" cy="52" r="7.5" />
+            <circle class="guide-ring" cx="140" cy="52" r="16" />
+          </svg>
         </span>
       </button>
       <p id="status" class="status" role="status" data-tone="neutral">
