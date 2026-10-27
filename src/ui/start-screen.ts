@@ -133,7 +133,7 @@ export class StartScreen {
     this.stageElement.hidden = true;
     this.setEnded(true);
     if (this.hint) {
-      this.hint.textContent = '训练已结束。请保持现在的姿势，等待技术员。';
+      this.hint.textContent = '训练已结束。请保持现在的姿势，等待工作人员。';
     }
   }
 

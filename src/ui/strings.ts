@@ -1,17 +1,13 @@
 export interface Strings {
   appName: string;
   appNameEn: string;
-  enter: string;
   entering: string;
-  preview: string;
   checking: string;
   xrReady: string;
   noXR: string;
   xrUnsupported: string;
   xrFailed: string;
   sceneTitle: string;
-  sceneHint: string;
-  operator: string;
   debug: string;
 
   recalibrate: string;
@@ -28,7 +24,6 @@ export interface Strings {
   modeXR: string;
   hudCalibration: string;
   hudFps: string;
-  hudSelect: string;
   dwellHint: string;
   hudQuality: string;
   hudAudio: string;
@@ -44,17 +39,13 @@ export interface Strings {
 export const ZH: Strings = {
   appName: '静岸',
   appNameEn: 'Quiet Shore VR',
-  enter: '开始训练',
   entering: '正在进入 VR',
-  preview: '2D 预览',
   checking: '正在检测设备…',
   xrReady: '设备已就绪，戴上头显开始',
   noXR: '请用 Firefox Reality 打开本页',
   xrUnsupported: '当前浏览器不支持沉浸模式，请用 Firefox Reality',
   xrFailed: '设备检测失败，请重试',
   sceneTitle: '场景',
-  sceneHint: '可稍后切换',
-  operator: '操作员',
   debug: '显示诊断信息',
 
   recalibrate: '重新校准',
@@ -71,8 +62,7 @@ export const ZH: Strings = {
   modeXR: 'WebXR',
   hudCalibration: '校准',
   hudFps: 'FPS',
-  hudSelect: '注视选择',
-  dwellHint: '保持注视 8 秒以选择',
+  dwellHint: '保持注视 3 秒以选择',
   hudQuality: '画质',
   hudAudio: '声音',
   hudTriangles: '三角面',
@@ -87,17 +77,13 @@ export const ZH: Strings = {
 export const EN: Strings = {
   appName: 'Quiet Shore',
   appNameEn: 'Quiet Shore VR',
-  enter: 'Start training',
   entering: 'Entering VR',
-  preview: '2D preview',
   checking: 'Checking device…',
   xrReady: 'Ready, put on the headset and start',
   noXR: 'Open this page in Firefox Reality',
   xrUnsupported: 'Immersive mode is not available in this browser. Use Firefox Reality.',
   xrFailed: 'Device check failed. Try again.',
   sceneTitle: 'Scenes',
-  sceneHint: 'Can switch later',
-  operator: 'Operator',
   debug: 'Show diagnostics',
 
   recalibrate: 'Recalibrate',
@@ -114,8 +100,7 @@ export const EN: Strings = {
   modeXR: 'WebXR',
   hudCalibration: 'Calibration',
   hudFps: 'FPS',
-  hudSelect: 'Selections',
-  dwellHint: 'Keep looking for 8 s to select',
+  dwellHint: 'Keep looking for 3 s to select',
   hudQuality: 'Quality',
   hudAudio: 'Sound',
   hudTriangles: 'Triangles',
