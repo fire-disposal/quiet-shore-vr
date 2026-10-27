@@ -129,17 +129,19 @@ html, body {
 .status[data-tone="ok"] { color: var(--ok); border-color: rgba(136, 211, 193, .34); }
 .status[data-tone="error"] { color: var(--danger); border-color: rgba(224, 143, 134, .34); }
 
-/* The button picture is always on screen: it is the instruction's object, not
-   a reward for aiming at something. Static, per the copy deck — no pulse. */
-.headset-guide {
+/* The two entry gestures are always on screen: they are the instruction's
+   object, not a reward for aiming at something. Static, per the copy deck. */
+.entry-pictures {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3vw, 40px);
   margin-top: clamp(6px, 1.4vh, 14px);
   pointer-events: none;
 }
+.headset-guide { display: flex; }
 .headset-guide svg {
-  width: clamp(140px, 23vh, 210px);
+  width: clamp(136px, 21vh, 188px);
   height: auto;
   overflow: visible;
 }
@@ -162,12 +164,54 @@ html, body {
   stroke-width: 1.5;
 }
 
+/* The controller, sized from its own font-size: one number scales it. */
+.controller-guide { display: flex; }
+.controller-outline {
+  position: relative;
+  font-size: 9px;
+  width: 8em;
+  height: 14.6154em;
+  border: 1px solid var(--line-strong);
+  border-radius: 2.6154em;
+  background: rgba(238, 244, 240, .02);
+  overflow: hidden;
+}
+.controller-round {
+  position: absolute;
+  left: 50%;
+  width: 2em;
+  height: 2em;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.controller-top { top: 1.3846em; }
+.controller-bottom { bottom: 1.6923em; }
+.controller-pill {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2.1538em;
+  height: 4.9231em;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(224, 187, 120, .12);
+}
+.controller-pill i {
+  position: absolute;
+  inset: .8462em .4615em;
+  border-left: 1px dashed var(--accent);
+  opacity: .5;
+}
+
 @media (max-width: 520px) {
   .start { padding: 18px 16px 26px; }
   .entry-head { top: 16px; }
   .entry-core { padding: 0; }
   .target-label { font-size: clamp(26px, 7.4vw, 36px); max-width: 9em; }
   .headset-guide svg { width: clamp(120px, 19vh, 170px); }
+  .controller-outline { font-size: 7px; }
 }
 
 /* Short window (resized browser, landscape phone): sentence and picture
@@ -176,9 +220,11 @@ html, body {
   .target-label { font-size: clamp(24px, 6.2vh, 40px); }
   .target-sub { font-size: clamp(14px, 2.8vh, 18px); }
   .headset-guide svg { width: clamp(112px, 16vh, 150px); }
+  .controller-outline { font-size: 6px; }
 }
 @media (max-height: 400px) {
   .headset-guide svg { width: clamp(96px, 13vh, 120px); }
+  .controller-outline { font-size: 5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
