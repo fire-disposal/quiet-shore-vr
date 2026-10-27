@@ -27,12 +27,26 @@ const FOG_COLOR = 0xe7d7bd;
 const CLOUD_GAIN = 0.4;
 /** Independent vertical heave against the posts: ±2 cm over 22 s, a 4 cm
  *  peak-to-peak that stays inside the comfort envelope the scene test pins. */
-const SWELL_M = 0.02;
+export const SWELL_M = 0.02;
 const SWELL_PERIOD_S = 22;
 const SWELL_TILT_RAD = 0.0004;
 const SWELL_PITCH_PERIOD_S = 13;
 const SWELL_ROLL_RAD = 0.0003;
 const SWELL_ROLL_PERIOD_S = 23;
+
+/**
+ * How far the lake sits below the frame's floor line.
+ *
+ * The art is authored with the water at content y = 0 and the lying eye 0.08 m
+ * above it — physically right for a body floating, but the buoyancy heave moves
+ * the water 150 mm along the patient's visual up and the swell adds 20 mm, so
+ * at the top of a level-3 cycle the surface crosses the eye and a single-sided
+ * plane shows nothing behind it: the patient sees the void for a beat.
+ *
+ * The whole art drops, not just the plane, so the posts stay in the water. The
+ * clearance this buys is pinned by `tests/scenes.test.ts`.
+ */
+export const SHORE_DROP_M = 0.26;
 
 const FOG_NEAR = 48;
 const FOG_FAR = 135;
@@ -57,6 +71,7 @@ export const shoreScene = defineScene(
   function () {
     const root = new THREE.Group();
     root.name = 'shore';
+    root.position.y = -SHORE_DROP_M;
 
     const dome = createDome();
     const water = createWater();

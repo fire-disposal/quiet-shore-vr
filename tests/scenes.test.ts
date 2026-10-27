@@ -4,7 +4,9 @@ import { SCENE, SCENES, getSceneDefinition } from '../src/scenes/registry';
 import { advanceCloudOffset } from '../src/scenes/shore/clouds';
 import { advanceEcgOffset } from '../src/scenes/ward/room';
 import { measureObject } from '../src/core/geometry/budget';
-import { MATTRESS_TOP_M, lyingEyeY } from '../src/core/anatomy';
+import { MATTRESS_TOP_M, WATER_EYE_M, lyingEyeY } from '../src/core/anatomy';
+import { FLOAT_AMPLITUDE_M } from '../src/core/xr/float';
+import { SHORE_DROP_M, SWELL_M } from '../src/scenes/shore';
 
 function build(id: string) {
   const definition = getSceneDefinition(id);
@@ -461,5 +463,22 @@ describe('scene budgets', () => {
       handle.dispose();
     }).not.toThrow();
     expect(handle.root.children).toHaveLength(0);
+  });
+});
+
+describe('the shore lake', () => {
+  it('keeps the water below the lying eye through the largest heave', () => {
+    // Level-3 buoyancy moves the lake 150 mm along the patient's visual up and
+    // the swell adds 20 mm; with the art's authored 80 mm the surface crossed
+    // the eye and the single-sided plane showed the void.
+    const clearance =
+      WATER_EYE_M + SHORE_DROP_M - (FLOAT_AMPLITUDE_M + SWELL_M);
+    expect(clearance).toBeGreaterThan(0.05);
+  });
+
+  it('applies that drop to the built root', () => {
+    const { handle } = build('shore');
+    expect(handle.root.position.y).toBeCloseTo(-SHORE_DROP_M, 5);
+    handle.dispose();
   });
 });
