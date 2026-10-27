@@ -352,6 +352,18 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
     }
 
+    /**
+     * Play one of the four scripted sequences. The page walks the steps itself
+     * (gaps measured from each clip's end) and holds the bed down until the
+     * last line — the tablet only starts it.
+     */
+    fun playVoiceSequence(name: String) {
+        if (name !in VOICE_SEQUENCE_NAMES) {
+            return
+        }
+        sendCommand(ControlProtocol.VOICE_PREFIX + "seq:" + name)
+    }
+
 
     // ── SUS ────────────────────────────────────────────────────────────────
     /**
@@ -722,6 +734,8 @@ class ControlViewModel(application: Application) :
         const val ENTER_PENDING_MS = 20_000L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
+        /** The four scripted sequences the page knows by name. */
+        val VOICE_SEQUENCE_NAMES = setOf("start", "imagine", "relax", "close")
         /** Two missed 1 Hz frames: the link is no longer trustworthy. */
         const val STATE_STALE_MS = 2500L
 

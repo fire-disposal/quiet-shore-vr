@@ -41,6 +41,8 @@ data class ControlActions(
     val onLeave: () -> Unit,
     /** Plays one guidance cue; SUS statements are scheduled by the panel. */
     val onVoicePlay: (String) -> Unit,
+    /** start | imagine | relax | close */
+    val onVoiceSequence: (String) -> Unit,
     /** Plays a whole sequence: start / imagine / relax / close. */
     val onVoiceStop: () -> Unit,
     val onVoiceVolume: (Int) -> Unit,

@@ -70,7 +70,9 @@ fun ControlScreen(
 
     // Panel selection lives above the layout so a constraint change (rotation,
     // window resize) cannot reset or drop the visible panel.
-    var tab by rememberSaveable { mutableStateOf(PanelTab.MOTION) }
+    // The first action of every session is 场景 (pick, then 启动); opening on
+    // 控制 showed a panel whose every control is disabled with "未开始会话".
+    var tab by rememberSaveable { mutableStateOf(PanelTab.SCENE) }
 
     BoxWithConstraints(
         modifier = Modifier

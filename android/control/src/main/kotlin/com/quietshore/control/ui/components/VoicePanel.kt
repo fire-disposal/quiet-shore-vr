@@ -137,6 +137,27 @@ fun VoicePanel(
                 )
             }
 
+            // Four scripted sequences. The page owns the pacing (gaps measured
+            // from each clip's end) and keeps the bed ducked until the last
+            // line, so one tap runs the whole arc.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                for ((label, name) in listOf(
+                    "开始" to "start",
+                    "想象" to "imagine",
+                    "放松" to "relax",
+                    "收束" to "close"
+                )) {
+                    OutlinedButton(
+                        onClick = { actions.onVoiceSequence(name) },
+                        enabled = connected,
+                        modifier = Modifier.weight(1f)
+                    ) { Text(label) }
+                }
+            }
+
             // The set was reachable only by command: `onVoiceSet` was wired to
             // the view model and no control ever called it.
             Row(
