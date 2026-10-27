@@ -175,10 +175,10 @@ html, body {
 @media (max-height: 520px) {
   .target-label { font-size: clamp(24px, 6.2vh, 40px); }
   .target-sub { font-size: clamp(14px, 2.8vh, 18px); }
-  .controller-outline { font-size: 9px; }
+  .headset-guide svg { width: clamp(112px, 16vh, 150px); }
 }
 @media (max-height: 400px) {
-  .controller-outline { font-size: 7.5px; }
+  .headset-guide svg { width: clamp(96px, 13vh, 120px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
