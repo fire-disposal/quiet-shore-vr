@@ -235,11 +235,12 @@ describe('the ward', () => {
       expect(duvet).toBeDefined();
       expect(shell).toBeDefined();
 
-      // The duvet is bedding, not a wall: it sits on the mattress, inside a
-      // 0.3 m band above it, and its far end may rise above eye level over the
-      // feet — that is what a blanket over bent knees looks like from the pillow.
+      // The duvet is bedding, not a wall: its body sits on the mattress inside
+      // a 0.3 m band above it, and its sides hang over the frame — so the
+      // lowest point may go below the mattress, but never to the floor.
       const bedding = new THREE.Box3().setFromObject(duvet);
-      expect(bedding.min.y).toBeGreaterThan(MATTRESS_TOP_M - 0.2);
+      expect(bedding.min.y).toBeGreaterThan(MATTRESS_TOP_M - 0.35);
+      expect(bedding.max.y).toBeGreaterThan(MATTRESS_TOP_M + 0.02);
       expect(bedding.max.y).toBeLessThan(MATTRESS_TOP_M + 0.3);
       // The ceiling clears even the standing eye, or the room would read as a box.
       const room = new THREE.Box3().setFromObject(shell);

@@ -391,6 +391,33 @@ export function createRoom(): RoomLayer {
       WALL_UV
     );
   }
+  // Recess edges: a ring of darker ceiling around each panel, 1 cm higher.
+  // A bare emissive quad on the plaster read as a sheet of paper stuck up there.
+  for (const [x, z] of [
+    [0.16, 1.05],
+    [-0.62, -0.1]
+  ] as const) {
+    shell.quad(
+      [x - 0.52, ROOM_H - 0.004, z + 0.23],
+      [x - 0.52, ROOM_H - 0.004, z - 0.23],
+      [x + 0.52, ROOM_H - 0.004, z - 0.23],
+      [x + 0.52, ROOM_H - 0.004, z + 0.23],
+      0.6
+    );
+  }
+
+  // Panel joints: 4 cm darker strips on the band edges. They cost four quads
+  // and give the supine view something to measure the ceiling against.
+  for (let i = 1; i < ceilingBands; i += 1) {
+    const z = Z_WINDOW + i * (ROOM_D / ceilingBands);
+    shell.quad(
+      [-HALF_W, ROOM_H, z + 0.02],
+      [-HALF_W, ROOM_H, z - 0.02],
+      [HALF_W, ROOM_H, z - 0.02],
+      [HALF_W, ROOM_H, z + 0.02],
+      0.74
+    );
+  }
   addMesh(shell, shellMaterial, 'ward-shell');
 
   // ── Floor: three bands, brighter towards the window ─────────────────────
@@ -601,26 +628,33 @@ export function createRoom(): RoomLayer {
     [-0.2, 0.15, 0.9],
     [-0.42, -0.2, 0.95]
   ];
+  // The whole profile sits below the lying eye (0.71 m): a duvet whose crown
+  // crosses that line reads as a blanket held over the patient's face.
   for (const [z0, z1, tint] of duvetSegments) {
-    duvet.box(0, 0.63, (z0 + z1) / 2, 1.02, 0.12, z1 - z0, tint);
+    duvet.box(0, 0.55, (z0 + z1) / 2, 1.02, 0.1, z1 - z0, tint);
   }
   // A crowned cross-section, not creases painted on: a body under a duvet lifts
   // the middle and lets the sides fall away. The four-centimetre step between
   // crown and shoulder is what the eye reads as a fold, and it costs no
   // texture and no extra draw.
-  duvet.box(0, 0.71, 0.06, 0.4, 0.04, 0.94, 0.95);
+  duvet.box(0, 0.615, 0.06, 0.4, 0.035, 0.94, 0.95);
   for (const side of [-1, 1]) {
-    duvet.box(side * 0.35, 0.7, 0.06, 0.3, 0.02, 0.94, 0.9);
+    duvet.box(side * 0.35, 0.61, 0.06, 0.3, 0.02, 0.94, 0.9);
   }
   // The rolled edge where the duvet is turned back.
-  duvet.box(0, 0.7, 0.57, 1.04, 0.055, 0.12, 0.84);
+  duvet.box(0, 0.612, 0.57, 1.04, 0.05, 0.12, 0.84);
   // A folded blanket at the foot, sitting on the crown rather than in it.
-  duvet.box(0.08, 0.75, -0.24, 0.6, 0.05, 0.4, 0.94);
+  duvet.box(0.08, 0.635, -0.36, 0.6, 0.04, 0.3, 0.94);
+  // Two soft fold bands across the body: the same mesh and draw, a few
+  // triangles, and the cover stops reading as a painted table.
+  for (const [z, tint] of [[-0.02, 0.8], [-0.2, 0.84]] as const) {
+    duvet.box(0, 0.604, z, 0.94, 0.006, 0.035, tint);
+  }
   // The duvet hangs over the frame on both sides and over the foot.
   for (const side of [-1, 1]) {
-    duvet.box(side * 0.52, 0.55, 0.06, 0.02, 0.26, 1.0, 0.8);
+    duvet.box(side * 0.52, 0.47, 0.06, 0.02, 0.24, 1.0, 0.8);
   }
-  duvet.box(0, 0.55, -0.43, 1.04, 0.28, 0.02, 0.84);
+  duvet.box(0, 0.47, -0.43, 1.04, 0.24, 0.02, 0.84);
   addMesh(duvet, duvetMaterial, 'ward-duvet');
 
   // ── Curtains: two pleated panels either side of the window ──────────────
@@ -671,9 +705,13 @@ export function createRoom(): RoomLayer {
     }
   }
   // Recessed ceiling panels: the two the patient can actually see.
+  // One panel sits over the pillow: a supine patient looks up, and the panels
+  // used to be entirely forward, so the ceiling read as an empty striped plane.
+  // Bed coordinates: the eye sits at z = EYE_Z (1.12), so "overhead" is
+  // z ≈ 1.05, not 0 — the panels used to be entirely forward of the pillow.
   for (const [x, z, tint] of [
-    [0.3, -0.95, 1],
-    [-0.62, -2, 0.96]
+    [0.16, 1.05, 1],
+    [-0.62, -0.1, 0.96]
   ] as const) {
     glow.quad(
       [x - 0.44, 2.667, z + 0.15],

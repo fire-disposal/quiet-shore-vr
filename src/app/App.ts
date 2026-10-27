@@ -56,6 +56,11 @@ const MAX_DT = 0.25;
 const AUTO_RISE_CUE_MS = 6000;
 /** The cue ends → the world starts turning. */
 const AUTO_RISE_GAP_MS = 2000;
+/**
+ * A supine head looks up: the preview's resting aim, radians. The camera's
+ * +X rotation tilts the view up (its forward is -Z), so this is positive.
+ */
+const SUPINE_GAZE_RAD = 1.35;
 /** Time from a stop to the fade-complete state; motion is frozen at once. */
 const STOP_FADE_MS = 1000;
 /** Planned session length used by the voice auto plan until the wire carries it. */
@@ -610,6 +615,14 @@ export class QuietShoreApp {
     });
     this.world.apply();
     this.floating.reset();
+    // The preview starts where the patient starts: lying on their back, looking
+    // up. A level preview shows the *room's* underside (a urinal bowl from
+    // below, a dark shaft wall) and reads as a broken scene; aimed up it shows
+    // exactly what the headset shows at mix = 0. The operator can drag from
+    // here, and `?debug` can aim it precisely.
+    if (!this.xr.isPresenting) {
+      this.camera.rotation.set(SUPINE_GAZE_RAD, 0, 0, 'YXZ');
+    }
     preloadSceneAudio(definition.audio);
     this.start.setScene(definition.name[this.config.lang]);
   }

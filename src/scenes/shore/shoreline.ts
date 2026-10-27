@@ -138,12 +138,16 @@ export function createShoreline(): ShorelineLayer {
   });
   const posts = new THREE.InstancedMesh(postGeometry, postMaterial, POST_COUNT);
   posts.name = 'shore-posts';
+  // Authored for the *lying* eye (0.08 m above the water), not for the 0.45 m
+  // of the old path: a post whose head cleared the eye by 1.1 m filled the
+  // whole upper view at 2 m. These tops sit 0.4–0.9 m above the surface, which
+  // reads as a mooring post a few metres away.
   const postSpecs = [
-    { x: -1.15, z: -2.1, height: 1.55, tilt: 0.05 },
-    { x: 0.85, z: -2.6, height: 1.15, tilt: -0.08 },
-    { x: 2.3, z: -5.4, height: 1.35, tilt: 0.03 },
-    { x: -3.6, z: -6.4, height: 1.65, tilt: -0.04 },
-    { x: 3.2, z: -10.2, height: 1.25, tilt: 0.06 }
+    { x: -1.35, z: -2.6, height: 0.62, tilt: 0.05 },
+    { x: 0.95, z: -3.1, height: 0.48, tilt: -0.08 },
+    { x: 2.3, z: -5.4, height: 0.78, tilt: 0.03 },
+    { x: -3.6, z: -6.4, height: 0.9, tilt: -0.04 },
+    { x: 3.2, z: -10.2, height: 0.72, tilt: 0.06 }
   ];
   const dummy = new THREE.Object3D();
   for (let i = 0; i < postSpecs.length; i += 1) {
@@ -158,7 +162,9 @@ export function createShoreline(): ShorelineLayer {
   posts.frustumCulled = false;
   root.add(posts);
 
-  const reedGeometry = crossQuads(0.55, 1.15);
+  // Reeds stand in the shallows: 0.7 m quads, so the clump tops out just under
+  // the post heads instead of towering over the eye.
+  const reedGeometry = crossQuads(0.4, 0.72);
   const reedTextureMap = reedTexture();
   const reedMaterial = new THREE.MeshBasicMaterial({
     ...(reedTextureMap ? { map: reedTextureMap } : {}),
@@ -183,7 +189,7 @@ export function createShoreline(): ShorelineLayer {
       const scale = 0.7 + random() * 0.55;
       dummy.position.set(
         clump.x + (random() - 0.5) * 0.9,
-        0.52 * scale,
+        0.34 * scale,
         clump.z + (random() - 0.5) * 0.5
       );
       dummy.rotation.set(0, random() * Math.PI, 0);

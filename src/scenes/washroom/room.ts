@@ -578,19 +578,28 @@ export function createRoom(): RoomLayer {
   root.add(darkMesh);
   disposables.push(darkMesh.geometry);
 
+  // Housing for the ceiling light and a vent beside it: a bare glowing
+  // rectangle floating on the plaster read as a bug, not a fixture.
+  dark.box(-0.12, ROOM_HEIGHT - 0.018, 0.15, 0.46, 0.02, 0.46, 0.24);
+  dark.box(0.95, ROOM_HEIGHT - 0.014, BACK_Z + 0.45, 0.42, 0.014, 0.42, 0.34);
+  dark.box(0.95, ROOM_HEIGHT - 0.02, BACK_Z + 0.45, 0.34, 0.012, 0.34, 0.2);
+
   // Recessed light above the bowl: an emissive-looking plane.
-  const lightGeometry = new THREE.PlaneGeometry(0.26, 0.9);
-  lightGeometry.rotateX(Math.PI / 2);
+  // The ceiling's one fixture is square and sits over the pillow. A long strip
+  // light was removed: seen from directly below at 77°, it projects as a
+  // vertical column and reads as a wall, not as a lamp.
+  const downGeometry = new THREE.PlaneGeometry(0.34, 0.34);
+  downGeometry.rotateX(Math.PI / 2);
   const lightMaterial = new THREE.MeshBasicMaterial({
     color: 0xfff4e4,
     toneMapped: false,
     side: THREE.DoubleSide
   });
-  const light = new THREE.Mesh(lightGeometry, lightMaterial);
-  light.name = 'washroom-light';
-  light.position.set(0, ROOM_HEIGHT - 0.012, BACK_Z + 0.45);
-  root.add(light);
-  disposables.push(lightGeometry, lightMaterial);
+  const down = new THREE.Mesh(downGeometry, lightMaterial);
+  down.name = 'washroom-downlight';
+  down.position.set(-0.12, ROOM_HEIGHT - 0.012, 0.15);
+  root.add(down);
+  disposables.push(downGeometry, lightMaterial);
 
   // Two lights, no shadows: a soft sky/ground mix plus a warm key from above
   // and behind the viewer.

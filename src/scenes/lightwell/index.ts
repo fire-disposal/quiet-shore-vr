@@ -51,6 +51,12 @@ const EYE_Y = 1.7;
 const FIXTURE_COUNT = 6;
 const FIXTURE_BAND = 60;
 /**
+ * The band is centred on the eye a lying patient actually has (0.66 m), not on
+ * the art's standing height: with the old 1.7 m centre the nearest bracket was
+ * still metres away and the "falling" read collapsed into a distant speck.
+ */
+const BAND_CENTRE_Y = 0.66;
+/**
  * A fall, not a slide: accelerate along an S-curve, then hold terminal speed.
  *
  * An exponential ease is fastest the instant it starts and then decays — the
@@ -91,9 +97,9 @@ function shaftTexture(): THREE.CanvasTexture | null {
     ramp.addColorStop(0.0, TOP_COLOR);
     ramp.addColorStop(0.05, '#C9BCA4');
     ramp.addColorStop(0.16, '#6A6C6C');
-    ramp.addColorStop(0.3, '#3C4044');
-    ramp.addColorStop(0.45, '#26292E');
-    ramp.addColorStop(0.7, '#1C1F23');
+    ramp.addColorStop(0.3, '#5A6065');
+    ramp.addColorStop(0.45, '#43484D');
+    ramp.addColorStop(0.7, '#2A2E33');
     ramp.addColorStop(1.0, BOTTOM_COLOR);
     ctx.fillStyle = ramp;
     ctx.fillRect(0, 0, width, height);
@@ -252,7 +258,7 @@ export function createLightWell(): LightWellParts {
 
   function writeFixtures(): void {
     for (let i = 0; i < FIXTURE_COUNT; i += 1) {
-      const y = fixtureY[i] + EYE_Y;
+      const y = fixtureY[i] + BAND_CENTRE_Y;
       const wall = fixtureWall[i];
       const along = fixtureAlong[i];
       // Anchor on the wall skin, local +Z pointing inward.
@@ -280,7 +286,7 @@ export function createLightWell(): LightWellParts {
       // exists to remove.
       const u = Math.min(1, Math.max(0, (fixtureY[i] + FIXTURE_BAND / 2) / FIXTURE_BAND));
       const edge = Math.min(1, Math.min(u, 1 - u) * 6);
-      const level = Math.min(0.52, 0.18 + 0.32 * u) * edge;
+      const level = Math.min(0.72, 0.3 + 0.4 * u) * edge;
       tint.setRGB(level, level * 0.96, level * 0.9);
       shelves.setColorAt(i, tint);
       gussets.setColorAt(i, tint);
