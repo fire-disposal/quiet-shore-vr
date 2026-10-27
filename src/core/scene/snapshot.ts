@@ -1,82 +1,50 @@
-import * as THREE from 'three';
-import { measureRelativeEuler, type EulerDeg } from '../xr/measure';
-import type { ViewAnimState, ViewPresetCode } from '../xr/view-motion';
+import type { ViewAnimState } from '../xr/view-motion';
 import type { MotionCapabilities } from '../../app/motion-plan';
+import { mix01, type Degrees, type Metres, type Mix01, type Quat, type Vec3 } from '../units';
 
 /**
- * One collected view of the patient world, filled in place every time the
- * telemetry upload, the HUD or a command handler needs the facts.
+ * One collected view of the patient world, filled in place whenever the link,
+ * the HUD or a command handler needs the facts.
  *
- * Angles are **measured from the transforms that were applied**: the reported
- * world tilt is the base layer's rotation relative to the frame the posture or
- * sit-up started from. Nothing here re-derives an angle from progress, so a
- * sign error has exactly one place to live.
+ * v13 rule: **nothing is measured back out of a transform.** The posture is the
+ * `mix` scalar that poses it, the eye is the height that scalar produced, and
+ * the world transform is the quaternion + translation actually written. Units
+ * are branded (`Metres`, `Degrees`, `Mix01`) so a centimetre/degree slip is a
+ * compile error at the boundary rather than a 100× offset in the panel.
  *
- * Progress, phase and rise are business facts, not angles, and still come from
- * their drivers. The snapshot allocates nothing (`capture` writes into `this`);
- * the input object is reused by the app so a per-frame call would still be free.
+ * `capture` writes into `this`: one object, no allocation per frame.
  */
 export interface SceneSnapshotInput {
-  sceneId: string;
-  loaded: boolean;
-  session: boolean;
-  calibrating: boolean;
-  calibrated: boolean;
-  postureMode: boolean;
-  audioMuted: boolean;
-  eyeHeight: number;
-  /** Applied world rotation (shell x base), Euler XYZ degrees. */
-  worldYawDeg: number;
-  worldPitchDeg: number;
-  worldRollDeg: number;
-  /**
-   * Applied world translation (shell x base), metres in the device frame.
-   * The rotation is taken about the calibration eye, not the origin, so the
-   * mirror cannot reconstruct the patient view from the quaternion alone.
-   */
-  worldXM: number;
-  worldYM: number;
-  worldZM: number;
-  confidence: number;
-  /**
-   * How much of the pitch correction is applied (0 = real ceiling, 1 = facing
-   * the wall), plus whether it is currently animating.
-   */
-  correctionMix: number;
-  correctionTarget: number;
-  correctionMoving: boolean;
-  /** Base layer as applied this frame (`shell.base.quaternion`). */
-  baseQuaternion: THREE.Quaternion;
-  /** Frame the posture / sit-up started from. */
-  baseReferenceQuaternion: THREE.Quaternion;
-  lookYawDeg: number;
-  lookYawTargetDeg: number;
-  upGazeDeg: number;
-  upGazeTargetDeg: number;
-  viewAnim: ViewAnimState;
-  /** Active preset id, or `none` for idle / slider-driven. */
-  viewPreset: ViewPresetCode;
-  floorOffset: number;
-  cueFlow: number;
-  cueEnabled: boolean;
-  cueIntensity: number;
-  /** Buoyancy actually applied, so the tablet never has to guess. */
-  floatLevel: number;
-  floatProfile: string;
-  /** Applied buoyancy offset in millimetres (mirror adds it to the floor). */
-  floatMm: number;
-  /** Applied horizon pitch in degrees. */
-  swayDeg: number;
-  /** Seconds since the session started; 0 while idle. */
-  sessionSec: number;
-  /** Manifest index of the cue currently speaking, -1 when silent. */
-  voiceId: number;
-  /** What the operator may ask for, from the motion plan. */
-  caps: MotionCapabilities;
+  readonly sceneId: string;
+  readonly loaded: boolean;
+  readonly session: boolean;
+  readonly calibrating: boolean;
+  readonly calibrated: boolean;
+  readonly audioMuted: boolean;
+  /** Applied eye height: lying..standing, the same height the page renders. */
+  readonly eyeHeight: Metres;
+  /** Applied world rotation (shell × base). */
+  readonly worldQuat: Quat;
+  /** Applied world translation (shell × base), device frame. */
+  readonly worldT: Vec3<Metres>;
+  readonly confidence: number;
+  /** The one posture scalar: 0 lying, 1 standing. */
+  readonly correctionMix: number;
+  readonly correctionTarget: number;
+  readonly correctionMoving: boolean;
+  readonly lookYawDeg: Degrees;
+  readonly lookYawTargetDeg: Degrees;
+  readonly upGazeDeg: Degrees;
+  readonly upGazeTargetDeg: Degrees;
+  readonly viewAnim: ViewAnimState;
+  readonly floorOffset: Metres;
+  readonly floatLevel: number;
+  /** Applied buoyancy offset, millimetres (signed). */
+  readonly floatMm: number;
+  readonly sessionSec: number;
+  readonly voiceId: number;
+  readonly caps: MotionCapabilities;
 }
-
-/** Correction phase: what the world is doing right now. */
-export type FramePhase = 'neutral' | 'rising' | 'lowering' | 'corrected';
 
 export class SceneSnapshot {
   sceneId = '';
@@ -85,43 +53,30 @@ export class SceneSnapshot {
   calibrating = false;
   calibrated = false;
   audioMuted = false;
-  eyeHeight = 0;
-  /** Total world rotation as applied to scene content, Euler XYZ degrees. */
-  appliedWorldYawDeg = 0;
-  appliedWorldPitchDeg = 0;
-  appliedWorldRollDeg = 0;
-  /** Total world translation as applied to scene content, metres, device frame. */
-  appliedWorldXM = 0;
-  appliedWorldYM = 0;
-  appliedWorldZM = 0;
-  sitUpActive = false;
-  postureMode = false;
-  sitUpT = 0;
-  sitUpMoving = false;
-  posturePhase: FramePhase = 'neutral';
-  /** Measured world tilt of the base, relative to the motion's start frame. */
-  worldPitchDeg = 0;
-  worldRollDeg = 0;
-  postureRiseM = 0;
-  postureProgress = 0;
-  lookYawDeg = 0;
-  lookYawTargetDeg = 0;
-  upGazeDeg = 0;
-  upGazeTargetDeg = 0;
+  eyeHeight: Metres = 0 as Metres;
+  /** Applied world rotation; the mirror inverts exactly this. */
+  readonly worldQuat: { x: number; y: number; z: number; w: number } = {
+    x: 0,
+    y: 0,
+    z: 0,
+    w: 1
+  };
+  /** Applied world translation, metres, device frame. */
+  readonly worldT: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
+  mix: Mix01 = 0 as Mix01;
+  correctionTarget = 0;
+  correctionMoving = false;
+  lookYawDeg: Degrees = 0 as Degrees;
+  lookYawTargetDeg: Degrees = 0 as Degrees;
+  upGazeDeg: Degrees = 0 as Degrees;
+  upGazeTargetDeg: Degrees = 0 as Degrees;
   viewAnim: ViewAnimState = 'idle';
-  viewPreset: ViewPresetCode = 'none';
-  floorOffset = 0;
-  cueFlow = 0;
-  cueEnabled = false;
-  cueIntensity = 0;
+  floorOffset: Metres = 0 as Metres;
   floatLevel = 1;
-  floatProfile = 'b';
   floatMm = 0;
-  swayDeg = 0;
   sessionSec = 0;
   voiceId = -1;
   calibrationConfidence = 0;
-  /** Capability snapshot; the tablet enables controls from this alone. */
   caps: MotionCapabilities = {
     rise: false,
     lie: false,
@@ -131,77 +86,36 @@ export class SceneSnapshot {
     blocked: '未开始会话'
   };
 
-  private readonly euler: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
-
   capture(input: SceneSnapshotInput): this {
     this.sceneId = input.sceneId;
     this.loaded = input.loaded;
     this.session = input.session;
     this.calibrating = input.calibrating;
     this.calibrated = input.calibrated;
-    this.postureMode = input.postureMode;
     this.audioMuted = input.audioMuted;
     this.eyeHeight = input.eyeHeight;
-    this.appliedWorldYawDeg = input.worldYawDeg;
-    this.appliedWorldPitchDeg = input.worldPitchDeg;
-    this.appliedWorldRollDeg = input.worldRollDeg;
-    this.appliedWorldXM = input.worldXM;
-    this.appliedWorldYM = input.worldYM;
-    this.appliedWorldZM = input.worldZM;
+    this.worldQuat.x = input.worldQuat.x;
+    this.worldQuat.y = input.worldQuat.y;
+    this.worldQuat.z = input.worldQuat.z;
+    this.worldQuat.w = input.worldQuat.w;
+    this.worldT.x = input.worldT.x;
+    this.worldT.y = input.worldT.y;
+    this.worldT.z = input.worldT.z;
+    this.mix = mix01(input.correctionMix);
+    this.correctionTarget = mix01(input.correctionTarget);
+    this.correctionMoving = input.correctionMoving;
     this.lookYawDeg = input.lookYawDeg;
     this.lookYawTargetDeg = input.lookYawTargetDeg;
     this.upGazeDeg = input.upGazeDeg;
     this.upGazeTargetDeg = input.upGazeTargetDeg;
     this.viewAnim = input.viewAnim;
-    this.viewPreset = input.viewPreset;
     this.floorOffset = input.floorOffset;
-    this.cueFlow = input.cueFlow;
-    this.cueEnabled = input.cueEnabled;
-    this.cueIntensity = input.cueIntensity;
     this.floatLevel = input.floatLevel;
-    this.floatProfile = input.floatProfile;
     this.floatMm = input.floatMm;
-    this.swayDeg = input.swayDeg;
     this.sessionSec = input.sessionSec;
     this.voiceId = input.voiceId;
     this.calibrationConfidence = input.confidence;
     this.caps = input.caps;
-
-    const measured = measureRelativeEuler(
-      input.baseQuaternion,
-      input.baseReferenceQuaternion,
-      this.euler
-    );
-    this.worldPitchDeg = measured.pitchDeg;
-    this.worldRollDeg = measured.rollDeg;
-
-    // The correction mix is the one posture-like number left: 0 = lying with a
-    // real ceiling overhead, 1 = fully corrected to face the wall.
-    const mix = clamp01(input.correctionMix);
-    this.sitUpActive = input.correctionMoving;
-    this.sitUpT = mix;
-    this.sitUpMoving = input.correctionMoving;
-    this.posturePhase = framePhase(input.correctionMoving, input.correctionTarget, mix);
-    this.postureRiseM = 0;
-    this.postureProgress = mix;
     return this;
   }
-}
-
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return value < 0 ? 0 : value > 1 ? 1 : value;
-}
-
-/** Correction phase from intent + mix. */
-function framePhase(moving: boolean, target: number, t: number): FramePhase {
-  if (moving) {
-    return target > t ? 'rising' : 'lowering';
-  }
-  if (t <= 0) {
-    return 'neutral';
-  }
-  return 'corrected';
 }

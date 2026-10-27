@@ -1,5 +1,6 @@
 import type { SceneSnapshot } from '../core/scene/snapshot';
-import type { ViewAnimState, ViewPresetCode } from '../core/xr/view-motion';
+import type { ViewAnimState } from '../core/xr/view-motion';
+import type { Degrees, Metres, Mix01, QuatXyz, Vec3 } from '../core/units';
 
 export type RemoteCommandHandler = (command: string) => void;
 export type ControlModeHandler = (active: boolean) => void;
@@ -16,62 +17,52 @@ export interface PoseSnapshot {
 }
 
 /**
- * `/state` payload: the documented wire fields only, built from the collected
- * scene snapshot. `viewPitch` is the CURRENT applied up-gaze in signed degrees
- * (positive = 上仰), `posturePitch`/`postureRoll` are the measured world tilt
- * of the base layer, and `viewAnim` is the playback state. The wire keys are
- * frozen; the removed translation fields (`viewX`/`viewZ`) must never reappear.
+ * `/state` payload (v13): the documented wire fields only, built from the
+ * collected scene snapshot. Units are branded, so a centimetre/degree slip is
+ * a compile error. `mix` is the one posture scalar (rotation and eye height),
+ * `worldQ`/`worldT` are the applied world transform the mirror inverts, and the
+ * retired fields (`posturePitch`, `postureRise`, `postureProgress`, `swayDeg`,
+ * `viewPreset`, `worldYaw/Pitch/Roll`) must never reappear.
  */
 export interface StateSnapshot {
-  scene: string;
-  session: boolean;
-  calibrating: boolean;
-  sitUpActive: boolean;
-  postureMode: boolean;
-  audio: boolean;
-  eyeHeight: number;
-  /** Applied world rotation, Euler XYZ degrees; the mirror's inverse offset. */
-  worldYaw: number;
-  worldPitch: number;
-  worldRoll: number;
-  /** Applied world translation, metres, device frame: the pivot the mirror
-   *  must subtract before undoing the rotation. */
-  worldXM: number;
-  worldYM: number;
-  worldZM: number;
-  posturePitch: number;
-  postureRoll: number;
-  postureRise: number;
-  postureProgress: number;
-  viewPitch: number;
-  viewYaw: number;
-  viewAnim: ViewAnimState;
-  viewPreset: ViewPresetCode;
-  cueEnabled: boolean;
-  cueIntensity: number;
-  floatLevel: number;
-  floatProfile: string;
-  floatMm: number;
-  swayDeg: number;
-  elapsedSec: number;
-  voiceId: number;
-  calibrationConfidence: number;
+  readonly scene: string;
+  readonly session: boolean;
+  readonly calibrating: boolean;
+  readonly audio: boolean;
+  /** A posture ramp or a view animation is running right now. */
+  readonly moving: boolean;
+  /** Applied eye height, metres (lying..standing by mix). */
+  readonly eyeHeight: Metres;
+  /** The one posture scalar: 0 lying, 1 standing. */
+  readonly mix: Mix01;
+  readonly floatLevel: number;
+  /** Applied buoyancy offset, millimetres. */
+  readonly floatMm: number;
+  /** Currently applied view angles, degrees. */
+  readonly viewPitch: Degrees;
+  readonly viewYaw: Degrees;
+  readonly viewAnim: ViewAnimState;
+  readonly voiceId: number;
+  readonly elapsedSec: number;
+  readonly calibrationConfidence: number;
+  /** Applied world rotation, xyz only: `w` is derived by the reader. */
+  readonly worldQ: QuatXyz;
+  /** Applied world translation, metres, device frame. */
+  readonly worldT: Vec3<Metres>;
   /** Motion-plan capabilities: the tablet enables controls from these. */
-  caps: {
+  readonly caps: Readonly<{
     rise: boolean;
     lie: boolean;
     stop: boolean;
     float: boolean;
     view: boolean;
     blocked: string;
-  };
+  }>;
 }
 
-/** One page command as delivered on the control socket. */
 export interface PortalCommand {
   seq: number;
   command: string;
-  continuous?: boolean;
   /** Explicitly marked by the server as replayed history. */
   replay?: boolean;
 }
@@ -79,22 +70,17 @@ export interface PortalCommand {
 export interface PlannedCommand {
   seq: number;
   command: string;
-  /** Discrete commands are acked; continuous samples are not. */
-  discrete: boolean;
+  /** Replayed history: `view:anim:*` is one-shot and is skipped. */
+  replay?: boolean;
 }
 
 export interface DispatchPlan {
   /** Highest seq consumed; feed this back as `since` on the next connect. */
   nextSeq: number;
-  /** Commands to deliver, in order, already deduped and coalesced. */
+  /** Commands to deliver, in order, already deduped. */
   commands: PlannedCommand[];
 }
 
-/**
- * Same-origin derived URL: the headset serves the page and the socket from
- * 127.0.0.1:8130, while the dev server (8125) can host a mock socket without a
- * separate hard-coded port. Never cross origins.
- */
 function wsUrl(): string {
   const location = window.location;
   if (!location || !location.host) {
@@ -104,12 +90,12 @@ function wsUrl(): string {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${location.host}/ws`;
 }
-const VIEW_ORIENT_PREFIX = 'view:orient:';
+
 const VIEW_ANIM_PREFIX = 'view:anim:';
 
 const POSE_MS = 200;
 const STATE_MS = 1000;
-/** Denser readback while a view animation or a sit-up transition is moving. */
+/** Denser readback while a posture ramp or a view animation is moving. */
 const STATE_MOVING_MS = 200;
 const RECONNECT_BASE_MS = 300;
 /** After this long without a socket the page reloads itself once. */
@@ -122,33 +108,25 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     scene: snapshot.sceneId,
     session: snapshot.session,
     calibrating: snapshot.calibrating,
-    sitUpActive: snapshot.sitUpActive,
-    postureMode: snapshot.postureMode,
     audio: snapshot.audioMuted,
+    moving: snapshot.correctionMoving || snapshot.viewAnim !== 'idle',
     eyeHeight: snapshot.eyeHeight,
-    worldYaw: snapshot.appliedWorldYawDeg,
-    worldPitch: snapshot.appliedWorldPitchDeg,
-    worldRoll: snapshot.appliedWorldRollDeg,
-    worldXM: snapshot.appliedWorldXM,
-    worldYM: snapshot.appliedWorldYM,
-    worldZM: snapshot.appliedWorldZM,
-    posturePitch: snapshot.worldPitchDeg,
-    postureRoll: snapshot.worldRollDeg,
-    postureRise: snapshot.postureRiseM,
-    postureProgress: snapshot.postureProgress,
+    mix: snapshot.mix,
+    floatLevel: snapshot.floatLevel,
+    floatMm: snapshot.floatMm,
     viewPitch: snapshot.upGazeDeg,
     viewYaw: snapshot.lookYawDeg,
     viewAnim: snapshot.viewAnim,
-    viewPreset: snapshot.viewPreset,
-    cueEnabled: snapshot.cueEnabled,
-    cueIntensity: snapshot.cueIntensity,
-    floatLevel: snapshot.floatLevel,
-    floatProfile: snapshot.floatProfile,
-    floatMm: snapshot.floatMm,
-    swayDeg: snapshot.swayDeg,
-    elapsedSec: snapshot.sessionSec,
     voiceId: snapshot.voiceId,
+    elapsedSec: snapshot.sessionSec,
     calibrationConfidence: snapshot.calibrationConfidence,
+    worldQ: {
+      x: snapshot.worldQuat.x,
+      y: snapshot.worldQuat.y,
+      z: snapshot.worldQuat.z
+    },
+    worldT: snapshot.worldT as Vec3<Metres>,
+    // `satisfies` keeps the payload shape and the plan's type in lockstep.
     caps: {
       rise: snapshot.caps.rise,
       lie: snapshot.caps.lie,
@@ -156,21 +134,21 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
       float: snapshot.caps.float,
       view: snapshot.caps.view,
       blocked: snapshot.caps.blocked
-    }
+    } satisfies StateSnapshot['caps']
   };
 }
 
 /**
  * Pure dispatch planning for one batch of socket commands: drops everything at
- * or below `lastSeq`, never replays a history `view:anim:*` (one-shot presets),
- * and coalesces every continuous `view:orient` in the batch to its latest sample
- * while the discrete commands keep their arrival order.
+ * or below `lastSeq`, never replays a history `view:anim:*` (a one-shot preset),
+ * and keeps the arrival order. There is no continuous lane any more — every
+ * command the tablet sends is discrete.
  */
 export function planControlDispatch(
   batch: readonly PortalCommand[],
   lastSeq: number
 ): DispatchPlan {
-  const frames: (PlannedCommand & { replay: boolean })[] = [];
+  const frames: PlannedCommand[] = [];
   for (const entry of batch) {
     if (!entry || typeof entry !== 'object') {
       continue;
@@ -182,24 +160,11 @@ export function planControlDispatch(
     if (typeof command !== 'string' || command.length === 0) {
       continue;
     }
-    frames.push({
-      seq,
-      command,
-      // A `view:orient` sample is continuous even if the flag is missing.
-      discrete: entry.continuous !== true && !command.startsWith(VIEW_ORIENT_PREFIX),
-      replay: entry.replay === true
-    });
+    frames.push({ seq, command, replay: entry.replay === true });
   }
   // Commands arrive ordered; sorting keeps a reordered batch from stranding a
   // lower seq behind `lastSeq` forever.
   frames.sort((a, b) => a.seq - b.seq);
-
-  let latestMoveSeq = Number.NaN;
-  for (const frame of frames) {
-    if (frame.seq > lastSeq && !frame.discrete) {
-      latestMoveSeq = frame.seq;
-    }
-  }
 
   const commands: PlannedCommand[] = [];
   let nextSeq = lastSeq;
@@ -211,10 +176,7 @@ export function planControlDispatch(
     if (frame.replay && frame.command.startsWith(VIEW_ANIM_PREFIX)) {
       continue;
     }
-    if (!frame.discrete && frame.seq !== latestMoveSeq) {
-      continue;
-    }
-    commands.push({ seq: frame.seq, command: frame.command, discrete: frame.discrete });
+    commands.push(frame);
   }
   return { nextSeq, commands };
 }
@@ -223,9 +185,9 @@ export function planControlDispatch(
  * Single control link to the portal: one WebSocket carries commands down and
  * state/telemetry up.
  *
- * Commands arrive as ordered `cmd` messages; each batch is deduped by seq and
- * coalesced before dispatch, a discrete command is acked and followed by an
- * immediate state frame, and continuous `view:orient` samples are never acked.
+ * Commands arrive as ordered `cmd` messages; each batch is deduped by seq
+ * before dispatch, every command is acked and followed by an immediate state
+ * frame, and a replayed `view:anim:*` is skipped (it is one-shot).
  * The socket reconnects with exponential backoff using `since=lastSeq`, so a
  * drop resumes the stream without replaying what this page already ran. There
  * is no fallback transport: a closed socket halts operator motion until the
@@ -419,7 +381,6 @@ export class PortalLink {
       this.pending.push({
         seq,
         command,
-        continuous: 'continuous' in message && message.continuous === true,
         replay: 'replay' in message && message.replay === true
       });
       this.scheduleFlush();
@@ -454,16 +415,11 @@ export class PortalLink {
     }
     const plan = planControlDispatch(batch, this.lastSeq);
     this.lastSeq = plan.nextSeq;
-    let discrete = false;
     for (const item of plan.commands) {
       this.onCommand(item.command);
-      if (!item.discrete) {
-        continue;
-      }
-      discrete = true;
       this.send({ type: 'ack', seq: item.seq });
     }
-    if (discrete) {
+    if (plan.commands.length > 0) {
       this.sendStateNow();
     }
   };

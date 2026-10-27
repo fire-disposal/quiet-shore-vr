@@ -48,43 +48,41 @@ class FakeSocket {
 }
 
 describe('planControlDispatch', () => {
-  it('coalesces interspersed view:orient samples without reordering discrete commands', () => {
+  it('delivers a batch in seq order, dropping what was already consumed', () => {
     const plan = planControlDispatch(
       [
-        { seq: 40, command: 'view:orient:0,0.1', continuous: true },
         { seq: 41, command: 'scene:ward' },
-        { seq: 42, command: 'view:orient:0,0.35', continuous: true }
+        { seq: 42, command: 'posture:rise' }
       ],
       -1
     );
     expect(plan.commands).toEqual([
-      { seq: 41, command: 'scene:ward', discrete: true },
-      { seq: 42, command: 'view:orient:0,0.35', discrete: false }
+      { seq: 41, command: 'scene:ward', replay: false },
+      { seq: 42, command: 'posture:rise', replay: false }
     ]);
     expect(plan.nextSeq).toBe(42);
+
+    const again = planControlDispatch(
+      [
+        { seq: 41, command: 'scene:ward' },
+        { seq: 42, command: 'posture:rise' }
+      ],
+      plan.nextSeq
+    );
+    expect(again.commands).toEqual([]);
+    expect(again.nextSeq).toBe(42);
   });
 
-  it('delivers a discrete command behind a stream exactly once', () => {
-    const first = planControlDispatch(
-      [{ seq: 7, command: 'view:orient:0,0.2', continuous: true }],
-      -1
-    );
-    expect(first.commands.map((item) => item.command)).toEqual(['view:orient:0,0.2']);
-
-    const second = planControlDispatch([{ seq: 8, command: 'posture:rise' }], first.nextSeq);
-    expect(second.commands).toEqual([{ seq: 8, command: 'posture:rise', discrete: true }]);
-    expect(second.nextSeq).toBe(8);
-
-    // A redelivered/replayed batch is a no-op.
-    const replay = planControlDispatch(
+  it('sorts a reordered batch so no seq is stranded behind the cursor', () => {
+    const plan = planControlDispatch(
       [
-        { seq: 7, command: 'view:orient:0,0.2', continuous: true },
-        { seq: 8, command: 'posture:rise' }
+        { seq: 9, command: 'posture:stop' },
+        { seq: 7, command: 'scene:shore' }
       ],
-      second.nextSeq
+      5
     );
-    expect(replay.commands).toEqual([]);
-    expect(replay.nextSeq).toBe(8);
+    expect(plan.commands.map((item) => item.seq)).toEqual([7, 9]);
+    expect(plan.nextSeq).toBe(9);
   });
 
   it('never replays a view:anim marked as history but accepts a live one', () => {
@@ -100,15 +98,10 @@ describe('planControlDispatch', () => {
     expect(history.nextSeq).toBe(12);
 
     const live = planControlDispatch([{ seq: 13, command: 'view:anim:up' }], history.nextSeq);
-    expect(live.commands).toEqual([{ seq: 13, command: 'view:anim:up', discrete: true }]);
+    expect(live.commands).toEqual([{ seq: 13, command: 'view:anim:up', replay: false }]);
   });
 
-  it('classifies movement as continuous even without the flag', () => {
-    const plan = planControlDispatch([{ seq: 2, command: 'view:orient:0,0.5' }], -1);
-    expect(plan.commands[0].discrete).toBe(false);
-  });
-
-  it('keeps view:stop discrete and ignores malformed entries', () => {
+  it('ignores malformed entries', () => {
     const plan = planControlDispatch(
       [
         // @ts-expect-error malformed wire data must not crash the link
@@ -119,7 +112,7 @@ describe('planControlDispatch', () => {
       ],
       -1
     );
-    expect(plan.commands).toEqual([{ seq: 4, command: 'view:stop', discrete: true }]);
+    expect(plan.commands).toEqual([{ seq: 4, command: 'view:stop', replay: false }]);
     expect(plan.nextSeq).toBe(4);
   });
 });
@@ -212,38 +205,34 @@ describe('PortalLink', () => {
     expect(socket.sent).toEqual([{ type: 'telemetry', data: POSE }]);
   });
 
-  it('acks a discrete command, refreshes state and never acks movement', async () => {
+  it('acks every command and refreshes state after each batch', async () => {
     harness = createLink();
     harness.link.start();
     const socket = harness.socket();
     socket.emitOpen();
     socket.sent.length = 0;
 
-    socket.deliver({ type: 'cmd', seq: 4, command: 'view:orient:0,0.3', continuous: true });
+    socket.deliver({ type: 'cmd', seq: 4, command: 'view:anim:up' });
+    socket.deliver({ type: 'cmd', seq: 5, command: 'posture:rise' });
     await harness.flush();
-    expect(harness.commands).toEqual(['view:orient:0,0.3']);
-    expect(socket.sent).toEqual([]);
-
-    socket.deliver({ type: 'cmd', seq: 5, command: 'posture:rise', continuous: false });
-    await harness.flush();
-    expect(harness.commands).toEqual(['view:orient:0,0.3', 'posture:rise']);
-    expect(socket.sent.map((message) => message.type)).toEqual(['ack', 'state']);
-    expect(socket.sent[0]).toEqual({ type: 'ack', seq: 5 });
+    expect(harness.commands).toEqual(['view:anim:up', 'posture:rise']);
+    expect(socket.sent.map((message) => message.type)).toEqual(['ack', 'ack', 'state']);
+    expect(socket.sent[0]).toEqual({ type: 'ack', seq: 4 });
+    expect(socket.sent[1]).toEqual({ type: 'ack', seq: 5 });
   });
 
-  it('dispatches a burst in order with one coalesced movement sample', async () => {
+  it('dispatches a burst in arrival order', async () => {
     harness = createLink();
     harness.link.start();
     const socket = harness.socket();
     socket.emitOpen();
 
-    socket.deliver({ type: 'cmd', seq: 1, command: 'view:orient:0,0.1', continuous: true });
-    socket.deliver({ type: 'cmd', seq: 2, command: 'scene:beach', continuous: false });
-    socket.deliver({ type: 'cmd', seq: 3, command: 'view:orient:0,0.4', continuous: true });
-    socket.deliver({ type: 'cmd', seq: 4, command: 'view:orient:0,0.6', continuous: true });
+    socket.deliver({ type: 'cmd', seq: 1, command: 'view:anim:up' });
+    socket.deliver({ type: 'cmd', seq: 2, command: 'scene:shore' });
+    socket.deliver({ type: 'cmd', seq: 3, command: 'posture:stop' });
     await harness.flush();
 
-    expect(harness.commands).toEqual(['scene:beach', 'view:orient:0,0.6']);
+    expect(harness.commands).toEqual(['view:anim:up', 'scene:shore', 'posture:stop']);
   });
 
   it('resumes after a drop without replaying consumed commands', async () => {
@@ -251,9 +240,9 @@ describe('PortalLink', () => {
     harness.link.start();
     const first = harness.socket();
     first.emitOpen();
-    first.deliver({ type: 'cmd', seq: 9, command: 'view:orient:0,0.2', continuous: true });
+    first.deliver({ type: 'cmd', seq: 9, command: 'view:anim:recenter' });
     await harness.flush();
-    first.deliver({ type: 'cmd', seq: 10, command: 'scene:ward', continuous: false });
+    first.deliver({ type: 'cmd', seq: 10, command: 'scene:ward' });
     await harness.flush();
 
     first.emitClose();
@@ -266,11 +255,11 @@ describe('PortalLink', () => {
     second.emitOpen();
 
     // Redelivered history is dropped; the gap is filled from `since`.
-    second.deliver({ type: 'cmd', seq: 10, command: 'scene:ward', continuous: false });
-    second.deliver({ type: 'cmd', seq: 11, command: 'posture:lower', continuous: false });
+    second.deliver({ type: 'cmd', seq: 10, command: 'scene:ward' });
+    second.deliver({ type: 'cmd', seq: 11, command: 'posture:lower' });
     await harness.flush();
 
-    expect(harness.commands).toEqual(['view:orient:0,0.2', 'scene:ward', 'posture:lower']);
+    expect(harness.commands).toEqual(['view:anim:recenter', 'scene:ward', 'posture:lower']);
     expect(second.sent.filter((message) => message.type === 'ack')).toEqual([
       { type: 'ack', seq: 11 }
     ]);
@@ -340,9 +329,9 @@ describe('PortalLink', () => {
     harness = createLink();
     harness.link.start();
     const socket = harness.socket();
-    socket.deliver({ type: 'cmd', seq: 1, command: 'cue:on', continuous: false });
+    socket.deliver({ type: 'cmd', seq: 1, command: 'home', continuous: false });
     await harness.flush();
-    expect(harness.commands).toEqual(['cue:on']);
+    expect(harness.commands).toEqual(['home']);
     expect(socket.sent).toEqual([]);
   });
 });

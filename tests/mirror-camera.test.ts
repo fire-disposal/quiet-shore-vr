@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { mirrorCameraTransform, type MirrorWorldDeg } from '../src/mirror/camera';
+import { mirrorCameraTransform, type MirrorWorld } from '../src/mirror/camera';
 
 const DEG = Math.PI / 180;
 
@@ -19,8 +19,14 @@ function mirrorDirection(camera: { quaternion: THREE.Quaternion }): THREE.Vector
   return new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion.clone().invert());
 }
 
-function worldDeg(yaw: number, pitch: number, roll: number, xM = 0, yM = 0, zM = 0): MirrorWorldDeg {
-  return { yaw, pitch, roll, xM, yM, zM };
+/** The wire shape: the page sends the composed quaternion xyz plus metres. */
+function worldQ(yaw: number, pitch: number, roll: number, xM = 0, yM = 0, zM = 0): MirrorWorld {
+  return {
+    q: new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(pitch * DEG, yaw * DEG, roll * DEG, 'XYZ')
+    ).normalize(),
+    t: new THREE.Vector3(xM, yM, zM)
+  };
 }
 
 describe('mirror camera', () => {
@@ -29,7 +35,7 @@ describe('mirror camera', () => {
 
   it('shows the same direction the patient sees', () => {
     const camera = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
-    mirrorCameraTransform(camera, worldDeg(world[1], world[0], world[2]), {
+    mirrorCameraTransform(camera, worldQ(world[1], world[0], world[2]), {
       yaw: head[1],
       pitch: head[0],
       roll: head[2]
@@ -40,10 +46,27 @@ describe('mirror camera', () => {
     expect(actual.distanceTo(expected)).toBeLessThan(1e-6);
   });
 
+  it('points the centre ray level once the rise is complete', () => {
+    // The end of a rise: the world has turned 90° and the patient is lying
+    // with the head tilted back the same 90°. The panel's centre must look at
+    // the far wall, i.e. the gaze line is horizontal in the room.
+    const camera = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+    mirrorCameraTransform(
+      camera,
+      worldQ(0, 90, 0),
+      { yaw: 0, pitch: Math.PI / 2, roll: 0 },
+      { x: 0, y: 0, z: 0 }
+    );
+    const centre = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    // Forward in content space is -Z; the elevation of the centre ray is ~0.
+    expect(Math.abs(centre.y)).toBeLessThan(1e-6);
+    expect(centre.z).toBeLessThan(-0.99);
+  });
+
   it('keeps the eye at the head pose rotated into content space', () => {
     const camera = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
     const pose = { x: 0.1, y: 1.7, z: 0 };
-    mirrorCameraTransform(camera, worldDeg(0, -25, 0), { yaw: 0, pitch: 0, roll: 0 }, pose);
+    mirrorCameraTransform(camera, worldQ(0, -25, 0), { yaw: 0, pitch: 0, roll: 0 }, pose);
     const expected = new THREE.Vector3(pose.x, pose.y, pose.z).applyQuaternion(
       new THREE.Quaternion().setFromEuler(new THREE.Euler(-25 * DEG, 0, 0, 'XYZ')).invert()
     );
@@ -62,7 +85,7 @@ describe('mirror camera', () => {
     const translation = pivot.clone().sub(pivot.clone().applyQuaternion(rotation));
     mirrorCameraTransform(
       camera,
-      worldDeg(0, -90, 0, translation.x, translation.y, translation.z),
+      worldQ(0, -90, 0, translation.x, translation.y, translation.z),
       { yaw: 0, pitch: 0, roll: 0 },
       pose
     );
@@ -71,9 +94,9 @@ describe('mirror camera', () => {
 
   it('treats the head pose as radians, so a 40° turn aims 40° further', () => {
     const camera = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
-    mirrorCameraTransform(camera, worldDeg(0, 0, 0), { yaw: 0, pitch: 0, roll: 0 }, { x: 0, y: 1.7, z: 0 });
+    mirrorCameraTransform(camera, worldQ(0, 0, 0), { yaw: 0, pitch: 0, roll: 0 }, { x: 0, y: 1.7, z: 0 });
     const straight = mirrorDirection(camera);
-    mirrorCameraTransform(camera, worldDeg(0, 0, 0), { yaw: 40 * DEG, pitch: 0, roll: 0 }, { x: 0, y: 1.7, z: 0 });
+    mirrorCameraTransform(camera, worldQ(0, 0, 0), { yaw: 40 * DEG, pitch: 0, roll: 0 }, { x: 0, y: 1.7, z: 0 });
     const turned = mirrorDirection(camera);
     expect(THREE.MathUtils.radToDeg(straight.angleTo(turned))).toBeCloseTo(40, 3);
   });

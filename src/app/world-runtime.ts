@@ -39,6 +39,8 @@ export interface WorldRuntimeState {
   durationMs: number;
   /** Content Y the frame places the art at (the buoyancy delta adds to it). */
   offsetY: number;
+  /** Applied eye height (lying..standing by mix); what the mirror places by. */
+  eyeY: number;
 }
 
 /** Manual ramp (the operator's rise / lie-back); settable 4–14 s. */
@@ -46,8 +48,12 @@ const DEFAULT_RAMP_MS = 6000;
 
 
 export interface WorldRuntimeApi {
-  /** A new scene: its authored eye decides the placement from now on. */
-  setScene(placement: { eyeY: number }): void;
+  /**
+   * A new scene: both eye heights come from its `posture` — the lying one is
+   * derived by `core/anatomy.ts`, the standing one is the art's authoring
+   * height. The placement follows from them and the current mix.
+   */
+  setScene(eyes: { lyingEyeY: number; standingEyeY: number }): void;
   /**
    * Adopt the orientation the patient is holding as the calibration frame, and
    * start **uncorrected**: the ceiling stays the real ceiling until the rise
@@ -80,7 +86,11 @@ export interface WorldRuntimeApi {
 export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   const { comfort, setBaseOffset } = deps;
 
-  let eyeY = 1.7;
+  /** Eye heights for the current scene; the lying one comes from anatomy. */
+  let lyingEyeY = 0;
+  let standingEyeY = 0;
+  /** Applied eye height: the lying height with `mix` of the rise folded in. */
+  let eyeY = 0;
   let offsetY = 0;
 
   /** Correction applied, and where it is heading. */
@@ -96,10 +106,16 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   let held = false;
 
   /**
-   * Scene art is authored with its eye at the content origin, so the frame
-   * lowers it by exactly that eye height. The buoyancy delta rides on top.
+   * The eye rises with the correction. At mix 0 the patient's eye is where
+   * their head really is (lying on the bed, or on the water); at mix 1 it is
+   * where the art was authored from (standing). Content is lowered by that
+   * height, so the art's eye line meets the patient's eye at every point of the
+   * ramp — the rise is the same scalar as the rotation, not a second animation.
+   * The buoyancy delta rides on top of the result.
    */
   function apply(): void {
+    const t = Number.isFinite(mix) ? Math.min(1, Math.max(0, mix)) : 0;
+    eyeY = lyingEyeY + (standingEyeY - lyingEyeY) * t;
     offsetY = Number.isFinite(eyeY) ? -eyeY : 0;
     setBaseOffset(offsetY);
   }
@@ -107,6 +123,7 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   function pushMix(next: number): void {
     mix = next;
     comfort()?.setCorrectionMix(mix);
+    apply();
   }
 
   function calibrate(
@@ -206,19 +223,29 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
 
   function state(out?: WorldRuntimeState): WorldRuntimeState {
     const result =
-      out ?? { mix: 0, target: 0, moving: false, ready: false, durationMs: DEFAULT_RAMP_MS, offsetY: 0 };
+      out ?? {
+        mix: 0,
+        target: 0,
+        moving: false,
+        ready: false,
+        durationMs: DEFAULT_RAMP_MS,
+        offsetY: 0,
+        eyeY: 0
+      };
     result.mix = mix;
     result.target = target;
     result.moving = moving;
     result.ready = ready;
     result.durationMs = durationMs;
     result.offsetY = offsetY;
+    result.eyeY = eyeY;
     return result;
   }
 
   return {
-    setScene: (placement) => {
-      eyeY = placement.eyeY;
+    setScene: (eyes) => {
+      lyingEyeY = Number.isFinite(eyes.lyingEyeY) ? eyes.lyingEyeY : 0;
+      standingEyeY = Number.isFinite(eyes.standingEyeY) ? eyes.standingEyeY : lyingEyeY;
       apply();
     },
     calibrate,

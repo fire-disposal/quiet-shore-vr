@@ -39,7 +39,6 @@ class PortalActivity : Activity() {
         HOME("静岸", "请保持舒适，等待工作人员"),
         SETTINGS("设置", "启动偏好与连接"),
         HELP("帮助", "使用方式与控制权"),
-        ABOUT("开始前说明", "给患者看的说明"),
         SUS("SUS 量表", "系统可用性评分")
     }
 
@@ -173,7 +172,6 @@ class PortalActivity : Activity() {
         "sus" -> Page.SUS
         "settings" -> Page.SETTINGS
         "home" -> Page.HOME
-        "about" -> Page.ABOUT
         else -> null
     }
 
@@ -347,7 +345,6 @@ class PortalActivity : Activity() {
             Page.HOME -> buildHomePage()
             Page.SETTINGS -> buildSettingsPage()
             Page.HELP -> buildHelpPage()
-            Page.ABOUT -> buildAboutPage()
             Page.SUS -> buildSusPage()
         }
         content.removeAllViews()
@@ -672,17 +669,6 @@ class PortalActivity : Activity() {
      * The one page meant to be read by the patient before the headset goes on.
      * Large type, four lines, nothing to operate.
      */
-    private fun buildAboutPage(): View {
-        val page = pageColumn()
-        val card = sectionCard()
-        card.addView(label("尊敬的患者，您好", 18f, TEXT, Typeface.BOLD, 0f))
-        card.addView(label("我们在做一项 VR 场景体验的技术测试：躺卧时，借画面与声音给您近似站立的视野与感受。", 16f, TEXT, Typeface.NORMAL, 0.02f))
-        card.addView(label("开始与结束都由工作人员操作，您随时可以提出停止。", 16f, TEXT, Typeface.NORMAL, 0.02f))
-        card.addView(label("结束后想请您说几句真实感受，帮助我们改进。谢谢您。", 16f, MUTED, Typeface.NORMAL, 0.02f))
-        page.addView(card)
-        return page
-    }
-
     private fun buildHelpPage(): View {
         val page = pageColumn()
         val steps = sectionCard()

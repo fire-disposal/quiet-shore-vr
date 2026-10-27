@@ -44,8 +44,18 @@ export class FramePipeline {
   private readonly pendingAdds: TaskSlot[] = [];
   private readonly pendingRemoves: TaskSlot[] = [];
 
-  constructor(phases: readonly FramePhase[] = FRAME_PHASES) {
+  private readonly onError: ((id: string, error: unknown) => void) | null;
+
+  constructor(
+    options: {
+      phases?: readonly FramePhase[];
+      /** Told once per throwing task; the frame keeps running regardless. */
+      onError?: (id: string, error: unknown) => void;
+    } = {}
+  ) {
+    const phases = options.phases ?? FRAME_PHASES;
     this.buckets = phases.map(() => []);
+    this.onError = options.onError ?? null;
   }
 
   get size(): number {
@@ -102,7 +112,13 @@ export class FramePipeline {
         for (let i = 0; i < list.length; i++) {
           const slot = list[i];
           if (slot.cancelled) continue;
-          slot.task.run(dt, now);
+          // One bad task must not freeze the picture: the rest of the frame
+          // still runs, and the failure is reported once by id.
+          try {
+            slot.task.run(dt, now);
+          } catch (error) {
+            this.onError?.(slot.task.id, error);
+          }
         }
       }
     } finally {

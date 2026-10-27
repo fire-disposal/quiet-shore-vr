@@ -34,22 +34,25 @@ export interface MotionPlanInput {
   presenting: boolean;
   /** A calibration capture owns the world. */
   capturing: boolean;
-  /** Applied correction, in degrees, and whether a ramp is running. */
-  correctionDeg: number;
+  /**
+   * Applied correction, 0..1 — the same scalar that rotates the world and
+   * lifts the eye. Never a measurement derived from a transform: the number
+   * the tablet shows and the number that gates its buttons are this one.
+   */
+  correctionMix: number;
   correctionMoving: boolean;
 }
 
 export interface MotionPlan {
   capabilities: MotionCapabilities;
-  /** Applied correction as a 0..1 fraction of a full 90° turn. */
+  /** Applied correction as a 0..1 fraction (the mix, clamped). */
   correctionFraction: number;
   /** Bumped whenever the plan's inputs change; consumers can skip work. */
   revision: number;
 }
 
-const FULL_CORRECTION_DEG = 90;
-/** Below this the world is a settled ceiling; above it a settled forward view. */
-const CORRECTION_EPSILON_DEG = 1;
+/** Settled states: the corresponding button has nothing left to do. */
+const CORRECTION_EPSILON_MIX = 0.01;
 
 /**
  * Pure: the same inputs always yield the same plan. A full 90° is the ceiling
@@ -57,9 +60,7 @@ const CORRECTION_EPSILON_DEG = 1;
  * settled states where the corresponding button has nothing left to do.
  */
 export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
-  const angle = Number.isFinite(input.correctionDeg)
-    ? Math.abs(input.correctionDeg)
-    : 0;
+  const mix = clamp01(input.correctionMix);
   const live = input.session && input.presenting && !input.capturing;
   const blocked = !input.session
     ? '未开始会话'
@@ -72,8 +73,8 @@ export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
     return { rise: false, lie: false, stop: false, float: false, view: false, blocked };
   }
   return {
-    rise: angle < FULL_CORRECTION_DEG - CORRECTION_EPSILON_DEG,
-    lie: angle > CORRECTION_EPSILON_DEG,
+    rise: mix < 1 - CORRECTION_EPSILON_MIX,
+    lie: mix > CORRECTION_EPSILON_MIX,
     stop: input.correctionMoving,
     float: true,
     view: true,
@@ -84,10 +85,7 @@ export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
 /** Compose the plan; `revision` grows when any input that matters changed. */
 export function planMotion(input: MotionPlanInput, previous?: MotionPlan): MotionPlan {
   const capabilities = planCapabilities(input);
-  const fraction = Math.min(
-    1,
-    Math.max(0, (Number.isFinite(input.correctionDeg) ? Math.abs(input.correctionDeg) : 0) / FULL_CORRECTION_DEG)
-  );
+  const fraction = clamp01(input.correctionMix);
   const changed =
     !previous ||
     previous.correctionFraction !== fraction ||
@@ -102,4 +100,11 @@ export function planMotion(input: MotionPlanInput, previous?: MotionPlan): Motio
     correctionFraction: fraction,
     revision: changed ? (previous?.revision ?? 0) + 1 : (previous?.revision ?? 0)
   };
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return value < 0 ? 0 : value > 1 ? 1 : value;
 }

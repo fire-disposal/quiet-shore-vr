@@ -10,12 +10,9 @@ import com.quietshore.control.protocol.ControlState
  * here because they are the tablet's **ownership contract**, and contracts
  * deserve a name and a test:
  *
- * - the mirror fields (`control`, `floatLevel`, `floatProfile`, `voiceId`,
- *   elapsed time) always follow the headset;
- * - intent fields (`sessionMode` before a session, `viewPitchTarget`,
- *   `startPending`) stay on the tablet until the headset has something to say;
- * - leaving a session drops the local view correction, because the page
- *   recentres and a stale slider would lie about what the patient sees.
+ * - the mirror fields (`control`, `floatLevel`, `voiceId`, elapsed time) always
+ *   follow the headset;
+ * - `startPending` stays on the tablet until the headset reports a session.
  */
 fun mergeRemoteFrame(
     current: ControlUiState,
@@ -36,19 +33,10 @@ fun mergeRemoteFrame(
         // While a session runs the headset is authoritative for the mode too,
         // so a rejected command cannot leave the panel showing something that
         // is not happening. Before a session the operator's choice stands.
-        sessionMode = when {
-            running && frame.postureMode -> SessionMode.POSTURE
-            running -> SessionMode.FLOAT
-            else -> current.sessionMode
-        },
         floatLevel = frame.floatLevel,
-        floatProfile = frame.floatProfile,
         // Voice is authoritative on the headset: the tablet only echoes.
         voiceId = frame.voiceId,
         startPending = if (running) false else current.startPending,
-        // The page recentres on session end; a slider left at a correction the
-        // patient is no longer looking through would be a lie.
-        viewPitchTarget = if (running) current.viewPitchTarget else 0,
         sessionElapsedMs = elapsedMs
     )
 }

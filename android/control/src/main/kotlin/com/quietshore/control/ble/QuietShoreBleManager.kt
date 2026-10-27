@@ -217,29 +217,17 @@ class QuietShoreBleManager(
             onComplete(false)
             return
         }
-        // Continuous pitch targets are fire-and-forget: waiting for an ATT
-        // response at 10 Hz would queue samples behind the link interval. Every
-        // discrete command keeps the response so it cannot be silently lost.
-        val continuous = command.startsWith(ControlProtocol.VIEW_ORIENT)
+        // Every command is discrete now, so every write keeps its ATT response
+        // and cannot be silently lost.
         val request = writeCharacteristic(
             characteristic,
             ControlProtocol.commandPayload(command),
-            if (continuous) {
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            } else {
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            }
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         ).timeout(WRITE_TIMEOUT_MS)
         request.done { onComplete(true) }
-        if (continuous) {
-            // A dropped movement sample is harmless (the next one supersedes
-            // it), so it never raises an operator-visible error.
-            request.fail { _, _ -> onComplete(false) }
-        } else {
-            request.fail { _, code ->
-                events.onFailure("发送命令失败，错误码 $code")
-                onComplete(false)
-            }
+        request.fail { _, code ->
+            events.onFailure("发送命令失败，错误码 $code")
+            onComplete(false)
         }
         request.enqueue()
     }

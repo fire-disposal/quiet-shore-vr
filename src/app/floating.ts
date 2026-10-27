@@ -1,16 +1,11 @@
 import * as THREE from 'three';
 import {
-  FLOAT_LEVEL_CAP,
   FLOAT_MAX_LEVEL,
-  FLOAT_PROFILES,
-  breathOffsetAt,
   easeAmplitude,
   floatAmplitudeForLevel,
-  floatOffsetAt,
-  type FloatProfile,
-  type FloatProfileId
+  floatOffsetAt
 } from '../core/xr/float';
-import { buoyancyAllowed, contentOffsetFor, type BuoyancyGate } from '../core/xr/buoyancy-frame';
+import { buoyancyAllowed, type BuoyancyGate } from '../core/xr/buoyancy-frame';
 import type { SceneHandle } from '../core/scene/contract';
 
 /**
@@ -41,24 +36,17 @@ export interface FloatingDeps {
     setFloorOffset(y: number): void;
     /** Content-space offset for the whole art, used when the scene has no split. */
     setContentPosition(x: number, y: number, z: number): void;
-    /** The art group; the fallback path writes its position. */
-    content: THREE.Object3D;
   };
   handle(): SceneHandle | null;
   gate(): BuoyancyGate;
   /** Visual up in content space; the heave runs along it, whatever the frame. */
   axis(out: THREE.Vector3): THREE.Vector3;
-  /**
-   * 1 when the loaded scene takes the big heave (the shore), 0 elsewhere —
-   * those scenes keep only the breath swell so the world never reads frozen.
-   */
+  /** 1 when the loaded scene takes the heave (the shore), 0 elsewhere. */
   heaveScale?(): number;
 }
 
 export interface FloatingState {
   level: number;
-  profile: FloatProfileId;
-  breath: boolean;
   /** Eased amplitude in metres; 0 when settled. */
   amplitudeM: number;
   /** Applied heave, in metres. */
@@ -70,58 +58,36 @@ export interface FloatingState {
 export interface FloatingApi {
   /** Advance one frame; the only writer of the heave. */
   update(dt: number): void;
-  /**
-   * Clamped to the level range, the profile's near-field cap and the scene's
-   * own comfort ceiling (the light well cannot be pushed to full amplitude).
-   */
+  /** Clamped to the level range and the scene's own comfort ceiling. */
   setLevel(level: number, sceneCap?: number): number;
-  /** Switching profile pulls the level down to its cap; returns the new level. */
-  setProfile(id: FloatProfileId): number;
-  setBreath(on: boolean): void;
   /** The active frame moves the world; buoyancy keeps its own delta. */
   setBaseOffset(y: number): void;
   /** Zero the envelope and the applied motion (scene switch, session end). */
   reset(): void;
   getState(out?: FloatingState): FloatingState;
   getLevel(): number;
-  getProfile(): FloatProfile;
-  /** Amplitude over the envelope, 0..1: what the motes and the swell track. */
-  getFlow(): number;
 }
 
 export function createFloating(
-  deps: FloatingDeps & {
-    level?: number;
-    profile?: FloatProfileId;
-    breath?: boolean;
-  }
+  deps: FloatingDeps & { level?: number }
 ): FloatingApi {
   const { host, handle, gate, axis } = deps;
   const up = new THREE.Vector3(0, 1, 0);
 
-  let profile = FLOAT_PROFILES[deps.profile ?? 'b'] ?? FLOAT_PROFILES.b;
-  let level = clampLevel(deps.level ?? 1, FLOAT_LEVEL_CAP[profile.id]);
-  let breath = deps.breath ?? true;
+  let level = clampLevel(deps.level ?? 1);
 
   let amplitudeM = 0;
-  /**
-   * The operator's requested amplitude, eased, **before** the scene gate. Flow
-   * scenes (the light well) scroll on this: gating the lake heave to the shore
-   * must not freeze a shaft that is driven by the same intent.
-   */
-  let flowAmplitudeM = 0;
   /** Seconds of continuous drift; kept while fading so the phase never jumps. */
   let seconds = 0;
   let offsetM = 0;
   let baseOffset = 0;
 
-  function clampLevel(value: number, cap: number): number {
+  function clampLevel(value: number): number {
     if (!Number.isFinite(value)) {
       return 0;
     }
     const rounded = Math.round(value);
-    const bounded = Math.min(FLOAT_MAX_LEVEL, Math.max(0, rounded));
-    return Math.min(bounded, cap);
+    return Math.min(FLOAT_MAX_LEVEL, Math.max(0, rounded));
   }
 
   function apply(): void {
@@ -129,33 +95,30 @@ export function createFloating(
     const splits = typeof scene?.applyBuoyancy === 'function';
     axis(up);
     if (splits && scene?.applyBuoyancy) {
-      host.setFloorOffset(contentOffsetFor(baseOffset, offsetM, true));
+      host.setFloorOffset(baseOffset);
       scene.applyBuoyancy({ amountM: offsetM, axis: { x: up.x, y: up.y, z: up.z } });
       return;
     }
-    // The frame owns Y; the heave is a vector along the visual up, so a supine
-    // frame lifts the world in view instead of pushing it along the gaze.
+    // The frame owns the base Y; the heave is one vector along the visual up,
+    // so a supine frame lifts the world in view instead of pushing it along the
+    // gaze. The Y component must be scaled by the axis too — adding the full
+    // offset to Y and the rest to X/Z made a tilted frame heave 19% too far.
     host.setContentPosition(
       up.x * offsetM,
-      contentOffsetFor(baseOffset, offsetM, false),
+      baseOffset + up.y * offsetM,
       up.z * offsetM
     );
-    host.content.rotation.x = 0;
   }
 
   function update(dt: number): void {
     const allowed = buoyancyAllowed(gate());
-    const levelAmplitude = allowed ? floatAmplitudeForLevel(profile, level) : 0;
+    const levelAmplitude = allowed ? floatAmplitudeForLevel(level) : 0;
     const target = levelAmplitude * (deps.heaveScale?.() ?? 1);
     amplitudeM = easeAmplitude(amplitudeM, target, dt, FADE_TAU_S);
-    flowAmplitudeM = easeAmplitude(flowAmplitudeM, levelAmplitude, dt, FADE_TAU_S);
-    // Breath rides even where the big heave is gated off, but only while the
-    // operator has the switch on: a closed gate, level 0 or breath off means
-    // settle exactly once, so an idle scene pays nothing per frame.
-    const breathStandby = allowed && level > 0 && breath;
-    if (amplitudeM <= 0 && target === 0 && flowAmplitudeM <= 0 && !breathStandby) {
+    // A closed gate or level 0 settles exactly once, so an idle scene pays
+    // nothing per frame.
+    if (amplitudeM <= 0 && target === 0) {
       amplitudeM = 0;
-      flowAmplitudeM = 0;
       if (offsetM !== 0) {
         offsetM = 0;
         apply();
@@ -163,20 +126,17 @@ export function createFloating(
       return;
     }
     seconds += dt;
-    offsetM = amplitudeM > 0
-      ? floatOffsetAt(profile, seconds, amplitudeM, breath)
-      : breathOffsetAt(seconds);
-    apply();
+    offsetM = amplitudeM > 0 ? floatOffsetAt(seconds, amplitudeM) : 0;
+    if (offsetM !== 0) {
+      apply();
+    }
   }
 
   function setLevel(next: number, sceneCap = FLOAT_MAX_LEVEL): number {
-    level = clampLevel(next, Math.min(FLOAT_LEVEL_CAP[profile.id], sceneCap));
-    return level;
-  }
-
-  function setProfile(id: FloatProfileId): number {
-    profile = FLOAT_PROFILES[id];
-    level = Math.min(level, FLOAT_LEVEL_CAP[id]);
+    level = clampLevel(next);
+    if (level > sceneCap) {
+      level = sceneCap;
+    }
     return level;
   }
 
@@ -187,7 +147,6 @@ export function createFloating(
 
   function reset(): void {
     amplitudeM = 0;
-    flowAmplitudeM = 0;
     seconds = 0;
     offsetM = 0;
     apply();
@@ -196,27 +155,17 @@ export function createFloating(
   return {
     update,
     setLevel,
-    setProfile,
-    setBreath: (on) => {
-      breath = on;
-    },
     setBaseOffset,
     reset,
     getLevel: () => level,
-    getProfile: () => profile,
-    getFlow: () => (flowAmplitudeM > 0 ? Math.min(1, flowAmplitudeM / profile.amplitudeM) : 0),
     getState: (out) => {
       const state: FloatingState = out ?? {
         level: 0,
-        profile: 'b',
-        breath: true,
         amplitudeM: 0,
         offsetM: 0,
         baseOffset: 0
       };
       state.level = level;
-      state.profile = profile.id;
-      state.breath = breath;
       state.amplitudeM = amplitudeM;
       state.offsetM = offsetM;
       state.baseOffset = baseOffset;

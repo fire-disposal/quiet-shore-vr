@@ -29,9 +29,9 @@ import {
   unlockAudio
 } from '../audio/audio';
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
-import { createPostureCue } from '../core/xr/posture-cue';
-import type { PostureCueApi } from '../core/xr/posture-cue';
-import { FLOAT_MAX_LEVEL, isFloatProfileId } from '../core/xr/float';
+import { FLOAT_MAX_LEVEL } from '../core/xr/float';
+import { lyingEyeY } from '../core/anatomy';
+import { degrees, metres } from '../core/units';
 import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
@@ -49,7 +49,6 @@ import {
   type ViewMotionControllerApi
 } from '../core/xr/view-motion';
 import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
-import { parseViewAnim, parseViewOrient } from './view-command';
 import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent, type SessionState } from './session';
 
 const MAX_DT = 0.25;
@@ -57,14 +56,6 @@ const MAX_DT = 0.25;
 const AUTO_RISE_CUE_MS = 6000;
 /** The cue ends → the world starts turning. */
 const AUTO_RISE_GAP_MS = 2000;
-// Sit-up performance: the confirm key toggles between the supine frame and
-// the standing frame. 6 s keeps the turn decisive; the flow cue carries the
-// perceived rise, the rotation only sets which way is up.
-const SITUP_DURATION_MS = 6000;
-/** Rotation rate that maps to full cue flow while rising. */
-const CUE_FULL_DEG_PER_S = 40;
-/** Floor of the cue flow during a rising transition, so motion starts at once. */
-const CUE_IDLE_FLOW = 0.25;
 /** Time from a stop to the fade-complete state; motion is frozen at once. */
 const STOP_FADE_MS = 1000;
 /** Planned session length used by the voice auto plan until the wire carries it. */
@@ -90,7 +81,9 @@ export class QuietShoreApp {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly xr: XRManagerLike;
   private readonly scene = new THREE.Scene();
-  private readonly pipeline = new FramePipeline();
+  private readonly pipeline = new FramePipeline({
+    onError: (id, error) => this.reportFrameError(id, error)
+  });
   private readonly host: SceneHost;
   private readonly input: SpatialInput;
   private readonly hud: SpatialHud;
@@ -101,6 +94,10 @@ export class QuietShoreApp {
   /** Wall clock at motion onset; 0 while idle. Drives the reported session clock. */
   private sessionStartedAt = 0;
   private readonly voiceTimers: number[] = [];
+  /** Timers owned by the current session (the scheduled rise). */
+  private readonly timers = new Set<number>();
+  /** Id of the frame task that last threw, so a broken task reports once. */
+  private frameErrorId = '';
   private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private readonly worldQuat = new THREE.Quaternion();
   private readonly worldPos = new THREE.Vector3();
@@ -114,10 +111,9 @@ export class QuietShoreApp {
   private controlMode = false;
 
   private eyeHeight: number;
-  private cueFlow = 0;
+  /** Lying eye of the loaded scene; the rise is measured from it. */
+  private sceneLyingEyeY = 0;
 
-  /** Mode the next session starts in; set before a session, never during one. */
-  private pendingMode: 'float' | 'posture' = 'float';
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
   private shell: WorldShellApi | null = null;
@@ -140,8 +136,6 @@ export class QuietShoreApp {
   private readonly visualUp = new THREE.Vector3();
   /** Scratch for the composed parent rotation (shell x base) of the content. */
   private readonly parentQuaternion = new THREE.Quaternion();
-  /** Sit-up ramp length; the operator can slow it down for comfort. */
-  private postureCueState: PostureCueApi | null = null;
   private susPanel: SusPanelApi | null = null;
   /** SUS statements are read aloud unless the operator turns it off. */
   private susVoice = true;
@@ -233,13 +227,12 @@ export class QuietShoreApp {
     this.xr = this.renderer.xr as unknown as XRManagerLike;
 
     this.host = new SceneHost(this.scene);
-    // Buoyancy reads the session through `gate()`: the mode and the frame that
-    // currently poses the world decide whether the heave may run at all.
+    // Buoyancy reads the session through `gate()`: a running session that is
+    // not capturing or rising may heave.
     this.floating = createFloating({
       host: this.host,
       handle: () => this.handle,
       gate: () => ({
-        mode: this.lifecycle.mode,
         active: isActive(this.lifecycle),
         capturePending: this.capturePending,
         rising: this.world.isRising()
@@ -257,8 +250,6 @@ export class QuietShoreApp {
         return visualUpInContent(this.headPose.quaternion, this.parentQuaternion, out);
       },
       level: this.config.floatLevel,
-      profile: isFloatProfileId(this.config.floatProfile) ? this.config.floatProfile : undefined,
-      breath: true,
       // The big heave is the lake's 飘浮; the other scenes keep the breath
       // swell only, so a tiled room or the shaft never sways like water.
       heaveScale: () => (this.sceneId === 'shore' ? 1 : 0)
@@ -339,7 +330,8 @@ export class QuietShoreApp {
         // Driven by the capture flag, not by the card's visibility: a hidden
         // card must never be able to keep `capturePending` latched forever.
         if (this.capturePending && this.xr.isPresenting) {
-          this.stepCalibration(performance.now());
+          // Same `now` as dt was measured from: one clock per frame.
+          this.stepCalibration(now);
         }
       }
     });
@@ -361,9 +353,7 @@ export class QuietShoreApp {
         // One owner: the runtime advances the sit-up ramp or the comfort
         // posture, and never both.
         this.world.update(dt);
-        this.cueFlow = this.computeCueFlow();
-        this.handle?.setFlow?.(this.cueFlow);
-        this.postureCueState?.update(dt, this.headPose.position, this.cueFlow);
+        this.handle?.setMotion?.(this.computeSceneMotion());
         this.updateFloat(dt);
         this.susPanel?.update(dt, now, this.headPose);
         // The reticle doubles as the gaze cue while the SUS panel is open.
@@ -419,7 +409,6 @@ export class QuietShoreApp {
          * operator's up-gaze.
          */
         frame: () => ({
-          mode: this.lifecycle.mode,
           phase: this.lifecycle.phase,
           correctionMix: this.world.state().mix,
           correctionMoving: this.world.state().moving,
@@ -443,11 +432,9 @@ export class QuietShoreApp {
          * vertical motion can be measured on a desk. Never reachable outside
          * `?debug=1`; it writes the same lifecycle the field path writes.
          */
-        session: (on: boolean, mode: 'float' | 'posture' = 'float') => {
-          this.lifecycle = on
-            ? { phase: mode === 'posture' ? 'posture' : 'floating', mode, stopReason: null }
-            : INITIAL_SESSION;
-          return { phase: this.lifecycle.phase, mode: this.lifecycle.mode };
+        session: (on: boolean) => {
+          this.lifecycle = on ? { phase: 'running', stopReason: null } : INITIAL_SESSION;
+          return this.lifecycle.phase;
         },
         /**
          * Desktop check: frame clock against the wall clock. Anything but 1.00
@@ -610,31 +597,24 @@ export class QuietShoreApp {
     this.shell.setWorldRotation(
       viewToWorld(this.viewMotion.getLookYawDeg(), this.viewMotion.getUpGazeDeg())
     );
-    this.disposePostureCue();
-    // The cue lives in world space and follows the head, so it is independent
-    // of the scene art and of every world rotation. The well is the exception:
-    // its motion is wall-based, and floating motes there read as fluff over the
-    // picture rather than as a cue.
-    if (definition.id !== 'lightwell') {
-      this.postureCueState = createPostureCue({ scene: this.scene });
-    }
     this.world.clearBase();
-    // The floor comes from the scene's authored eye, never from the operator's
-    // height setting: a 0.85 m bed and a 1.7 m room are both correct, and the
-    // second number would sink the ward by a metre.
+    // Placement comes from the scene's `posture`: the lying height is derived
+    // by `core/anatomy.ts`, the standing height is the operator's setting (the
+    // art's own number is the fallback), and `world.apply()` — driven by mix —
+    // interpolates between them.
+    this.sceneComfortLevel = definition.comfortLevel ?? FLOAT_MAX_LEVEL;
+    this.sceneLyingEyeY = lyingEyeY(definition.posture);
+    this.world.setScene({
+      lyingEyeY: this.sceneLyingEyeY,
+      standingEyeY: this.eyeHeight
+    });
     this.world.apply();
     this.floating.reset();
     preloadSceneAudio(definition.audio);
     this.start.setScene(definition.name[this.config.lang]);
   }
 
-  private disposePostureCue(): void {
-    this.postureCueState?.dispose();
-    this.postureCueState = null;
-  }
-
   private disposeScene(): void {
-    this.disposePostureCue();
     if (this.comfort) {
       // Unwrap the shell first: it re-hangs the base group on the scene.
       this.shell?.dispose();
@@ -690,7 +670,7 @@ export class QuietShoreApp {
         optionalFeatures: ['local-floor', 'bounded-floor']
       });
       this.session = next;
-      this.dispatch({ type: 'start', mode: this.pendingMode });
+      this.dispatch({ type: 'start' });
       await this.xr.setSession(next);
       this.lastFrame = 0;
       this.renderer.setAnimationLoop(this.onFrame);
@@ -934,25 +914,6 @@ export class QuietShoreApp {
     this.updateHud(performance.now());
   }
 
-  private applyModeCommand(value: string): void {
-    if (value !== 'float' && value !== 'posture') {
-      this.start.setStatus('未知模式', 'error');
-      return;
-    }
-    if (!isActive(this.lifecycle)) {
-      this.pendingMode = value;
-      this.start.setStatus(value === 'posture' ? '模式：起身' : '模式：漂浮', 'ok');
-      this.link.sendStateNow();
-      return;
-    }
-    if (this.lifecycle.mode === value) {
-      return;
-    }
-    // The two modes run in different world frames: switching mid-session would
-    // snap the world by ~90°, so the mode stays a start parameter (core.md §4).
-    this.report('模式只能在会话开始前选择', 'error');
-  }
-
   /**
    * Hand the world to the frame the session mode and the scene's authored eye
    * call for. The runtime owns the decision; this is the name App uses.
@@ -1001,7 +962,7 @@ export class QuietShoreApp {
     if (this.lifecycle.phase !== 'calibrating') {
       this.lifecycle = reduceSession(
         { ...this.lifecycle, phase: 'idle' },
-        { type: 'start', mode: this.pendingMode }
+        { type: 'start' }
       );
     }
     this.calibrationOverlay.show();
@@ -1124,27 +1085,58 @@ export class QuietShoreApp {
     const token = ++this.autoRiseToken;
     const cancelled = (): boolean => token !== this.autoRiseToken || !this.session;
 
-    window.setTimeout(() => {
+    this.after(AUTO_RISE_CUE_MS, () => {
       if (cancelled()) {
         return;
       }
       const clipMs = this.voice.clipMs('v-rise-1') || 3500;
       void this.voice.play('v-rise-1');
-      window.setTimeout(() => {
+      this.after(clipMs + AUTO_RISE_GAP_MS, () => {
         if (cancelled() || !this.world.state().ready) {
           return;
         }
-        this.world.setDuration(this.world.state().durationMs);
         if (this.world.rise(1)) {
           this.start.setStatus('正在起身：世界缓缓转向站立视角', 'ok');
         }
-      }, clipMs + AUTO_RISE_GAP_MS);
-    }, AUTO_RISE_CUE_MS);
+      });
+    });
+  }
+
+  /**
+   * One timer registry for the page: a scheduled rise belongs to the session
+   * that scheduled it, so leaving that session must cancel it — a token alone
+   * let an old timer fire into the next session and lift the world unasked.
+   */
+  private after(ms: number, run: () => void): void {
+    const handle = window.setTimeout(() => {
+      this.timers.delete(handle);
+      run();
+    }, ms);
+    this.timers.add(handle);
+  }
+
+  private clearTimers(): void {
+    for (const handle of this.timers) {
+      window.clearTimeout(handle);
+    }
+    this.timers.clear();
   }
 
   /** Any operator intent cancels the scheduled rise; it never fights a button. */
   private cancelAutoRise(): void {
     this.autoRiseToken += 1;
+    this.clearTimers();
+  }
+
+  /** First frame failure is surfaced; the loop keeps rendering. */
+  private reportFrameError(id: string, error: unknown): void {
+    if (this.frameErrorId === id) {
+      return;
+    }
+    this.frameErrorId = id;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[frame:${id}] ${message}`);
+    this.start.setStatus(`画面任务出错：${message}`, 'error');
   }
 
   /** Bring the 3D stage up: audio, input layers, render loop. */
@@ -1164,6 +1156,7 @@ export class QuietShoreApp {
   private resetWorldToRest(): void {
     // A stop during calibration must release every flag it set, or the next
     // session starts with the float gated off and the view commands refused.
+    this.cancelAutoRise();
     this.capturePending = false;
     this.world.hold(false);
     // A panel is session furniture: leaving the world at rest closes it, or a
@@ -1176,7 +1169,6 @@ export class QuietShoreApp {
     this.floating.reset();
     this.calibrationOverlay?.hide();
     this.shell?.update(this.headPose.position);
-    this.postureCueState?.update(0, this.headPose.position, 0);
   }
 
   private startPreview(): void {
@@ -1257,12 +1249,6 @@ export class QuietShoreApp {
       case 'eyeHeight':
         this.applyEyeHeight(command.meters);
         return;
-      case 'viewOrient':
-        if (!this.viewCommandsAllowed()) {
-          return;
-        }
-        this.viewMotion.setTarget(command.lookYawDeg, command.upGazeDeg);
-        return;
       case 'viewAnim':
         if (!this.viewCommandsAllowed()) {
           this.start.setStatus('当前无法播放视角动画', 'error');
@@ -1277,9 +1263,6 @@ export class QuietShoreApp {
         return;
       case 'scene':
         this.applySceneCommand(command.id);
-        return;
-      case 'mode':
-        this.applyModeCommand(command.mode);
         return;
       case 'voice':
         this.applyVoiceCommand(command.command);
@@ -1297,20 +1280,9 @@ export class QuietShoreApp {
         this.link.sendStateNow();
         return;
       }
-      case 'floatProfile':
-        this.floating.setProfile(command.id);
-        this.report(`漂浮档位：${this.floating.getProfile().label}`);
-        return;
-      case 'floatBreath':
-        this.floating.setBreath(command.on);
-        this.report(command.on ? '呼吸层已开启' : '呼吸层已关闭', 'ok');
-        return;
       case 'riseDuration':
         this.world.setDuration(command.ms);
         this.report(`起身时长 ${(command.ms / 1000).toFixed(0)} 秒`, 'ok');
-        return;
-      case 'cueIntensity':
-        this.postureCueState?.setIntensity(command.value);
         return;
       case 'susVoice':
         // Default on: the statement is read as it appears. Turning it off is
@@ -1365,9 +1337,6 @@ export class QuietShoreApp {
         }
         this.setVirtualPosture(command.target === 'rise');
         return;
-      case 'cue':
-        this.postureCueState?.setEnabled(command.on);
-        return;
       case 'status':
         // The link refreshes the readback after every discrete command, so a
         // newly claiming controller is never left with a stale snapshot.
@@ -1384,22 +1353,23 @@ export class QuietShoreApp {
     }
   }
 
-  /** `settings:eyeheight:<m>`: the parser already rejected bad payloads. */
+  /**
+   * `settings:eyeheight:<m>`: this is the patient's **standing eye height** —
+   * the far end of the rise and the height the art is placed for at mix = 1.
+   * It is a session parameter, not a world offset: changing it re-places the
+   * art through the same `posture` formula the rise uses.
+   */
   private applyEyeHeight(next: number): void {
     if (this.capturePending) {
-      this.start.setStatus('校准中无法调整视点高度', 'error');
+      this.start.setStatus('校准中无法调整站立足高', 'error');
       return;
     }
     this.eyeHeight = next;
-    // In XR the headset owns camera height; moving the content floor keeps the
-    // world under the patient's physical floor without rebuilding the scene.
-    if (!this.xr.isPresenting) {
-      this.camera.position.y = next;
-    }
-    // The frame is placed by the scene's authored eye (`eyeY`), so the
-    // operator's height setting no longer moves the world; it still drives the
-    // preview camera and the state readback.
-    this.start.setStatus(`视点高度 ${next.toFixed(2)} m`, 'ok');
+    this.world.setScene({
+      lyingEyeY: this.sceneLyingEyeY,
+      standingEyeY: next
+    });
+    this.start.setStatus(`站立足高 ${next.toFixed(2)} m`, 'ok');
   }
 
   /** Rejected during calibration and whenever the patient is not in XR. */
@@ -1409,14 +1379,20 @@ export class QuietShoreApp {
    */
   private updateMotionPlan(): void {
     const world = this.world.state();
+    // The 2D preview shows the patient's own eye: with no headset presenting,
+    // the camera is the only thing that can stand in for it, and the eye now
+    // moves with the rise. (The operator's height setting only seeds it.)
+    if (!this.xr.isPresenting) {
+      this.camera.position.y = world.eyeY;
+    }
     this.plan = planMotion(
       {
         session: this.session !== null,
         presenting: this.xr.isPresenting,
         capturing: this.capturePending,
-        // The applied correction, measured from the transforms rather than
-        // inferred from progress: the same number the tablet shows.
-        correctionDeg: this.snapshot.worldPitchDeg,
+        // The scalar that poses the world: the tablet's buttons and its
+        // progress bar both derive from it, so they cannot disagree.
+        correctionMix: world.mix,
         correctionMoving: world.moving
       },
       this.plan ?? undefined
@@ -1702,30 +1678,19 @@ export class QuietShoreApp {
   }
 
   /**
-   * Flow gate for the near-field cue: +1 only while a rising transition is
-   * actually moving. Lowering, braking, stop, calibration and lease loss all
-   * report 0, which freezes the motes and fades them with the cue's own τ.
+   * Whether the loaded scene may move on its own this frame (the light well's
+   * fall). It is a session fact, not a posture one: a running session or the
+   * 2D preview may move the world, a stop, a calibration capture or an idle
+   * page may not. Allocation-free, per frame.
    */
-  private computeCueFlow(): number {
+  private computeSceneMotion(): number {
     if (this.previewFlow !== null) {
       return this.previewFlow;
     }
     if (this.capturePending) {
       return 0;
     }
-    const frame = this.world.state();
-    if (frame.moving) {
-      // Only a rise (increasing correction) reads as weightlessness; lowering
-      // or a frozen ramp keeps the motes still.
-      if (frame.target <= frame.mix) {
-        return 0;
-      }
-      // The correction sweeps up to 90° over the ramp; a smootherstep's peak
-      // rate is 1.875x its mean.
-      const peakDegPerSec = (90 * 1.875) / Math.max(1, frame.durationMs / 1000);
-      return Math.max(CUE_IDLE_FLOW, Math.min(1, peakDegPerSec / CUE_FULL_DEG_PER_S));
-    }
-    return this.floating.getFlow();
+    return this.previewing || isActive(this.lifecycle) ? 1 : 0;
   }
 
   /** Collect the facts telemetry, the HUD and command handlers all read. */
@@ -1754,8 +1719,6 @@ export class QuietShoreApp {
       this.worldQuat.identity();
       this.worldPos.set(0, 0, 0);
     }
-    this.worldEuler.setFromQuaternion(this.worldQuat, 'XYZ');
-    const cue = this.postureCueState?.getState();
     const playing = this.voice.nowPlaying().id;
     return this.snapshot.capture({
       sceneId: this.sceneId,
@@ -1763,39 +1726,29 @@ export class QuietShoreApp {
       session: this.session !== null,
       calibrating: this.lifecycle.phase === 'calibrating',
       calibrated: comfort?.isCalibrated() ?? false,
-      postureMode: this.lifecycle.mode === 'posture',
       audioMuted: !this.sceneBedOn,
-      eyeHeight: this.eyeHeight,
-      worldYawDeg: THREE.MathUtils.radToDeg(this.worldEuler.y),
-      worldPitchDeg: THREE.MathUtils.radToDeg(this.worldEuler.x),
-      worldRollDeg: THREE.MathUtils.radToDeg(this.worldEuler.z),
-      worldXM: this.worldPos.x,
-      worldYM: this.worldPos.y,
-      worldZM: this.worldPos.z,
+      // The applied eye, not the operator's setting: it rises with the mix, so
+      // the tablet and the mirror show where the patient's eye actually is.
+      eyeHeight: metres(world.eyeY),
+      worldQuat: this.worldQuat,
+      worldT: {
+        x: metres(this.worldPos.x),
+        y: metres(this.worldPos.y),
+        z: metres(this.worldPos.z)
+      },
       confidence: comfort?.isCalibrated() ? 1 : 0,
       correctionMix: world.mix,
       correctionTarget: world.target,
       correctionMoving: world.moving,
-      baseQuaternion: shell ? shell.base.quaternion : this.identityQuaternion,
-      baseReferenceQuaternion: comfort
-        ? comfort.getCalibrationQuaternion(this.calibrationFrame)
-        : this.identityQuaternion,
-      lookYawDeg: this.viewMotion.getLookYawDeg(),
-      lookYawTargetDeg: this.viewMotion.getTargetLookYawDeg(),
-      upGazeDeg: this.viewMotion.getUpGazeDeg(),
-      upGazeTargetDeg: this.viewMotion.getTargetUpGazeDeg(),
+      lookYawDeg: degrees(this.viewMotion.getLookYawDeg()),
+      lookYawTargetDeg: degrees(this.viewMotion.getTargetLookYawDeg()),
+      upGazeDeg: degrees(this.viewMotion.getUpGazeDeg()),
+      upGazeTargetDeg: degrees(this.viewMotion.getTargetUpGazeDeg()),
       viewAnim: this.viewMotion.getStateName(),
-      viewPreset: presetCode(this.viewMotion.getPresetId()),
-      floorOffset: this.host.floor,
-      cueFlow: this.cueFlow,
-      cueEnabled: cue?.enabled ?? false,
-      cueIntensity: cue?.intensity ?? 0,
+      floorOffset: metres(this.host.floor),
       floatLevel: motion.level,
-      floatProfile: motion.profile,
       // Applied motion, not the requested level: the mirror adds these verbatim.
       floatMm: motion.offsetM * 1000,
-      // Retired: the horizon never tilts. The byte stays for frame compatibility.
-      swayDeg: 0,
       sessionSec:
         this.sessionStartedAt > 0
           ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
@@ -1812,11 +1765,8 @@ export class QuietShoreApp {
     });
   }
 
-  get postureCue(): PostureCueApi | null {
-    return this.postureCueState;
-  }
-
   dispose(): void {
+    this.clearTimers();
     this.link.stop();
     this.stopSceneAudio();
     disposeAudio();

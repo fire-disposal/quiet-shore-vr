@@ -13,7 +13,6 @@ import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.MirrorMode
-import com.quietshore.control.model.SessionMode
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.data.SusStore
 import com.quietshore.control.protocol.ControlState
@@ -242,39 +241,11 @@ class ControlViewModel(application: Application) :
         sendCommand("stop")
     }
 
-    /** Chosen before a session; the headset refuses it while one is running. */
-    fun setSessionMode(mode: SessionMode) {
-        _uiState.update { it.copy(sessionMode = mode) }
-        sendCommand(ControlProtocol.MODE + mode.wire)
-    }
-
     /** Buoyancy intensity 0..3; the page scales amplitude linearly. */
     fun setFloatLevel(level: Int) {
         val clamped = level.coerceIn(0, 3)
         _uiState.update { it.copy(floatLevel = clamped) }
         sendCommand(ControlProtocol.FLOAT_LEVEL + clamped)
-    }
-
-    /** Buoyancy character: a gentle, b standard, c immersive. */
-    /**
-     * Extra view pitch. Yaw is echoed from the last reported state so a pitch
-     * correction never also turns the patient's view.
-     */
-    private var pitchJob: Job? = null
-
-    /**
-     * Extra view pitch. The slider fires per pixel; only the last value in a
-     * 120 ms window reaches the link, so a drag cannot flood the BLE queue.
-     */
-    fun setViewPitch(degrees: Int) {
-        val pitch = degrees.coerceIn(-30, 30)
-        _uiState.update { it.copy(viewPitchTarget = pitch) }
-        pitchJob?.cancel()
-        pitchJob = viewModelScope.launch {
-            delay(120)
-            val yaw = Math.round(_uiState.value.control.viewYaw).coerceIn(-180, 180)
-            sendCommand("view:orient:$yaw,$pitch")
-        }
     }
 
     /**
@@ -287,25 +258,6 @@ class ControlViewModel(application: Application) :
             return
         }
         sendCommand(ControlProtocol.VIEW_ANIM + name)
-        val delta = when (name) {
-            "up" -> 10
-            "down" -> -10
-            "recenter" -> null
-            else -> return
-        }
-        _uiState.update { current ->
-            val target = if (delta == null) 0 else (current.viewPitchTarget + delta)
-            current.copy(viewPitchTarget = target.coerceIn(-30, 30))
-        }
-    }
-
-    fun setFloatProfile(id: String) {
-        val profile = id.lowercase(Locale.US)
-        if (profile !in ControlProtocol.FLOAT_PROFILE_NAMES) {
-            return
-        }
-        _uiState.update { it.copy(floatProfile = profile) }
-        sendCommand(ControlProtocol.FLOAT_PROFILE + profile)
     }
 
     /**
@@ -345,12 +297,6 @@ class ControlViewModel(application: Application) :
     fun setGazeDwell(enabled: Boolean) {
         _uiState.update { it.copy(gazeDwell = enabled) }
         sendCommand(ControlProtocol.GAZE_DWELL + if (enabled) "on" else "off")
-    }
-
-    /** Breathing layer on the heave: the cheapest strong buoyancy cue. */
-    fun setBreathEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(breathEnabled = enabled) }
-        sendCommand(ControlProtocol.FLOAT_BREATH + if (enabled) "on" else "off")
     }
 
     /** Sit-up ramp length; slower reads as gentler for a frail patient. */
@@ -503,11 +449,6 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    /** Brings the headset console forward on the explanation page. */
-    fun showAbout() {
-        sendCommand("console:about")
-    }
-
     fun stopVoice() {
         sendCommand(ControlProtocol.VOICE_PREFIX + "stop")
     }
@@ -530,10 +471,6 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.VOICE_PREFIX + "set:" + value)
     }
 
-    fun preview() {
-        sendCommand("preview")
-    }
-
     fun toggleAudio() {
         sendCommand("audio:toggle")
     }
@@ -549,11 +486,7 @@ class ControlViewModel(application: Application) :
             return
         }
         ble.sendCommand(normalized)
-        // The view channel streams at ≤10 Hz; announcing every sample would
-        // flood the banner, so only discrete commands report.
-        if (!normalized.startsWith(ControlProtocol.VIEW_ORIENT)) {
-            notice("命令已发送")
-        }
+        notice("命令已发送")
     }
 
     fun reportError(message: String) {
@@ -668,11 +601,9 @@ class ControlViewModel(application: Application) :
                     scene = json.optString("scene", current.control.scene),
                     session = json.optBoolean("session", current.control.session),
                     calibrating = json.optBoolean("calibrating", current.control.calibrating),
-                    postureMode = json.optBoolean("postureMode", current.control.postureMode),
-                    sitUpActive = json.optBoolean("sitUpActive", current.control.sitUpActive),
+                    moving = json.optBoolean("moving", current.control.moving),
                     hold = json.optBoolean("hold", current.control.hold),
-                    voiceAuto = json.optBoolean("voiceAuto", current.control.voiceAuto),
-                    cueEnabled = json.optBoolean("cueEnabled", current.control.cueEnabled)
+                    voiceAuto = json.optBoolean("voiceAuto", current.control.voiceAuto)
                 )
             )
         }

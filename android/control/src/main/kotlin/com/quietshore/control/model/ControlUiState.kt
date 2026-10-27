@@ -28,11 +28,6 @@ enum class MirrorMode(val label: String) {
     OVERVIEW("全局视角")
 }
 
-enum class SessionMode(val wire: String, val label: String) {
-    FLOAT("float", "漂浮"),
-    POSTURE("posture", "起身")
-}
-
 /**
  * Everything the screens render. High frequency telemetry lands here too, but
  * only the small pose readouts watch it, so recomposition stays cheap.
@@ -51,14 +46,8 @@ data class ControlUiState(
     val reconnectAttempt: Int = 0,
     val reconnectMax: Int = 0,
     val rssi: Int? = null,
-    /** Session mode the next session starts in; fixed once the session begins. */
-    val sessionMode: SessionMode = SessionMode.FLOAT,
     /** Buoyancy intensity 0..3, mirrored from the operator's choice. */
     val floatLevel: Int = 1,
-    /** Buoyancy profile the headset reports: "a" gentle, "b" standard, "c" immersive. */
-    val floatProfile: String = "b",
-    /** Breathing layer on the buoyancy; on by default. */
-    val breathEnabled: Boolean = true,
     /** Sit-up ramp length in milliseconds. */
     val animDurationMs: Int = 6000,
     /** Operator switch for gaze dwell; on by default. */
@@ -69,8 +58,6 @@ data class ControlUiState(
     val subtitles: Boolean = true,
     /** Mirror camera: the patient's view (default) or the room overview. */
     val mirrorMode: MirrorMode = MirrorMode.PATIENT,
-    /** Operator's extra pitch correction, kept for the slider thumb. */
-    val viewPitchTarget: Int = 0,
     /** True while the SUS scale is open in the headset. */
     val susOpen: Boolean = false,
     /** Milliseconds since the headset reported a running session. */

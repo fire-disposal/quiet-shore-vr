@@ -410,15 +410,10 @@ class BleController(
             return
         }
         val current = manager
-        val continuous = command.startsWith(ControlProtocol.VIEW_ORIENT)
         if (current == null || !current.isReady || phase != BlePhase.READY) {
-            // Movement samples are disposable; only an operator action deserves
-            // an error message while the link is still settling.
-            if (!continuous) {
-                listener.onError(
-                    if (current == null) "头显未连接" else "正在与头显握手，请稍候"
-                )
-            }
+            listener.onError(
+                if (current == null) "头显未连接" else "正在与头显握手，请稍候"
+            )
             return
         }
         val capability = ControlProtocol.capabilityFor(command)

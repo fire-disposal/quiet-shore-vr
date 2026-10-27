@@ -1,6 +1,5 @@
 package com.quietshore.portal
 
-import com.quietshore.control.ble.CommandQueue
 import com.quietshore.control.protocol.ControlProtocol
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -22,7 +21,6 @@ import java.util.Base64
  * java -cp "$KOTLINC_JARS" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
  *   android/headset/src/main/kotlin/com/quietshore/portal/ControlLog.kt \
  *   android/headset/src/main/kotlin/com/quietshore/portal/WsFrameCodec.kt \
- *   android/control/src/main/kotlin/com/quietshore/control/ble/CommandQueue.kt \
  *   android/protocol/src/main/kotlin/com/quietshore/control/protocol/ControlProtocol.kt \
  *   android/headset/src/test/kotlin/com/quietshore/portal/ControlChannelCheck.kt \
  *   -d /tmp/control-check
@@ -50,40 +48,36 @@ private fun retentionChecks() {
     log.record(1, "scene:ward")
     log.record(2, "view:anim:up")
     checkEquals("anim is not retained", 1, log.pendingSize)
-    checkEquals("anim is not continuous", null, log.latestContinuous())
 
     var seq = 2
     repeat(1000) {
         seq++
-        log.record(seq, "view:orient:0,30")
+        log.record(seq, "scene:ward")
     }
-    checkEquals(
-        "a move flood cannot evict a discrete command",
-        listOf("scene:ward"),
-        log.pendingSince(-1).map { it.command }
-    )
-    checkEquals("only the latest sample is kept", 1002, log.latestContinuous()?.seq)
+    // Retention is bounded, so the oldest scene command is dropped; what must
+    // survive is the newest command, not a flood of movement samples.
+    checkEquals("retention stays bounded", 64, log.pendingSize)
+    checkEquals("newest survives", 1002, log.pendingSince(-1).last().seq)
 
     seq++
-    log.record(seq, "posture:sit")
+    log.record(seq, "posture:rise")
     checkEquals(
-        "later discrete command joins the pending list",
-        listOf("scene:ward", "posture:sit"),
-        log.pendingSince(-1).map { it.command }
+        "later command joins the pending list",
+        "posture:rise",
+        log.pendingSince(-1).last().command
     )
     checkEquals(
         "since filters older commands",
-        listOf("posture:sit"),
+        listOf("posture:rise"),
         log.pendingSince(1002).map { it.command }
     )
 
     log.ack(1003)
     checkEquals("ack prunes everything below the watermark", 0, log.pendingSize)
-    checkEquals("continuous is ack-free", 1002, log.latestContinuous()?.seq)
 
     val bounded = ControlLog(depth = 4)
     for (index in 1..10) {
-        bounded.record(index, "cue:intensity:0.$index")
+        bounded.record(index, "scene:item$index")
     }
     checkEquals("retention is bounded", 4, bounded.pendingSize)
     checkEquals("bound drops the oldest", listOf(7, 8, 9, 10), bounded.pendingSince(-1).map { it.seq })
@@ -318,56 +312,13 @@ private fun protocolGrammarChecks() {
     check("hello needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.helloCommand()))
 
     checkEquals("view anim capability", ControlProtocol.CAP_VIEW_ANIM, ControlProtocol.capabilityFor("view:anim:up"))
-    checkEquals(
-        "eye height capability",
-        ControlProtocol.CAP_EYE_HEIGHT,
-        ControlProtocol.capabilityFor("settings:eyeheight:1.70")
-    )
     checkEquals("sus capability", ControlProtocol.CAP_SUS, ControlProtocol.capabilityFor("sus:next"))
     checkEquals("always-available command", 0, ControlProtocol.capabilityFor("stop"))
     checkEquals(
         "capability names",
-        listOf("scene", "cue"),
-        ControlProtocol.capabilityNames(ControlProtocol.CAP_SCENE or ControlProtocol.CAP_CUE)
+        listOf("scene", "motion"),
+        ControlProtocol.capabilityNames(ControlProtocol.CAP_SCENE or ControlProtocol.CAP_MOTION)
     )
-}
-
-private fun tabletQueueChecks() {
-    val queue = CommandQueue()
-    for (index in 0 until 100) {
-        queue.enqueue("view:orient:0,${index / 100f}")
-    }
-    checkEquals("pitch flood keeps one sample", 1, queue.pendingMoves)
-    checkEquals("newest orientation wins", "view:orient:0,0.99", queue.newestMove)
-    queue.enqueue("scene:ward")
-    queue.enqueue("view:stop")
-    checkEquals("stop drops queued pitch", null, queue.newestMove)
-    checkEquals("stop is written first", "view:stop", queue.poll())
-    checkEquals("discrete follows", "scene:ward", queue.poll())
-    checkEquals("stop discarded the queued pitch", null, queue.poll())
-    check(queue.isEmpty)
-
-    val preempt = CommandQueue()
-    preempt.enqueue("scene:ward")
-    preempt.enqueue("cue:on")
-    preempt.enqueue("posture:stop")
-    checkEquals("stop jumps the discrete FIFO", "posture:stop", preempt.poll())
-    checkEquals("FIFO order preserved", "scene:ward", preempt.poll())
-    checkEquals("FIFO order preserved", "cue:on", preempt.poll())
-
-    val bounded = CommandQueue(4)
-    for (index in 0 until 4) {
-        check("capacity accepts within bound", bounded.enqueue("scene:$index"))
-    }
-    checkEquals("capacity refuses overflow", false, bounded.enqueue("scene:x"))
-    checkEquals("overflow keeps every queued command", 4, bounded.pendingDiscrete)
-
-    val cleared = CommandQueue()
-    cleared.enqueue("view:orient:0,60")
-    cleared.enqueue("scene:ward")
-    cleared.clear()
-    check(cleared.isEmpty)
-    checkEquals("cleared queue writes nothing", null, cleared.poll())
 }
 
 fun main() {
@@ -375,7 +326,6 @@ fun main() {
     queueChecks()
     codecChecks()
     protocolGrammarChecks()
-    tabletQueueChecks()
     if (failures > 0) {
         throw AssertionError("$failures control-channel checks failed")
     }

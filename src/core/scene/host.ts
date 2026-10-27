@@ -1,13 +1,6 @@
 import * as THREE from 'three';
-import type { SceneBuildContext, SceneDefinition, SceneHandle } from './contract';
-import { ResourceRegistry } from '../geometry/registry';
+import type { SceneDefinition, SceneHandle } from './contract';
 
-export interface SceneHostOptions {
-  /** Shared resource registry; created when omitted. */
-  registry?: ResourceRegistry;
-}
-
-const NO_SELECTABLES: THREE.Object3D[] = [];
 
 /**
  * Owns the single live THREE.Scene and swaps scene definitions in and out.
@@ -21,7 +14,6 @@ const NO_SELECTABLES: THREE.Object3D[] = [];
  */
 export class SceneHost {
   readonly scene: THREE.Scene;
-  readonly registry: ResourceRegistry;
   readonly content: THREE.Group;
 
   private current: SceneHandle | null = null;
@@ -31,9 +23,8 @@ export class SceneHost {
   private floorOffset = 0;
   private elapsed = 0;
 
-  constructor(scene: THREE.Scene = new THREE.Scene(), options: SceneHostOptions = {}) {
+  constructor(scene: THREE.Scene = new THREE.Scene()) {
     this.scene = scene;
-    this.registry = options.registry ?? new ResourceRegistry();
     this.content = new THREE.Group();
     this.content.name = 'scene-content';
     this.scene.add(this.content);
@@ -49,10 +40,6 @@ export class SceneHost {
     return this.current;
   }
 
-  get selectables(): THREE.Object3D[] {
-    return this.current ? this.current.selectables : NO_SELECTABLES;
-  }
-
   get floor(): number {
     return this.floorOffset;
   }
@@ -66,7 +53,7 @@ export class SceneHost {
    * height from the caller.
    */
   load(def: SceneDefinition): SceneHandle {
-    const handle = def.build({ registry: this.registry });
+    const handle = def.build();
 
     const previous = this.current;
     if (previous) previous.root.removeFromParent();
@@ -126,7 +113,6 @@ export class SceneHost {
 
   dispose(): void {
     this.unload();
-    this.registry.disposeAll();
     this.scene.remove(this.content);
     this.scene.background = this.baselineBackground;
     this.scene.fog = this.baselineFog;

@@ -62,7 +62,7 @@ makeXRCompatible on the WebGLRenderingContext or WebGL2RenderingContext.
 
 ### 3.3 参考空间与地面
 
-使用 `local` reference space；会话开始时原点约在头部高度。画面偏移由 `SceneHost.setContentPosition()` 统一应用：漂浮模式为 `-eyeY`（场景声明），起身模式为 `视点高度 - eyeY`，预览为 `0`。场景模块自身不位移。
+使用 `local` reference space；会话开始时原点约在头部高度。画面偏移由 `world-runtime` 统一算：`offsetY = -eyeY(mix)`，`eyeY` 从躺姿（解剖推导）随修正升到站姿（美术视点）；预览同式，`mix=0` 即躺姿。场景模块自身不位移。
 
 ### 3.4 退出耗时
 

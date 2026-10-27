@@ -36,16 +36,14 @@ import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.MirrorMode
-import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.AngleGauge
 import com.quietshore.control.ui.components.ConnectionChip
-import com.quietshore.control.ui.components.ControlPanel
 import com.quietshore.control.ui.components.LoadingDots
 import com.quietshore.control.ui.components.PitchSideGauge
 import com.quietshore.control.ui.components.SceneMirror
 import com.quietshore.control.ui.components.ScenePage
+import com.quietshore.control.ui.components.SessionPanel
 import com.quietshore.control.ui.components.SignalBars
-import com.quietshore.control.ui.components.StatusPanel
 import com.quietshore.control.ui.components.SusPanel
 import com.quietshore.control.ui.components.VoicePanel
 import com.quietshore.control.ui.theme.QuietPalette
@@ -54,8 +52,6 @@ import com.quietshore.control.ui.theme.QuietPalette
 fun ControlScreen(
     state: ControlUiState,
     actions: ControlActions,
-    /** Latest one-shot operator message, shown in the status panel. */
-    event: UiEvent? = null,
     onOpenInfo: () -> Unit = {}
 ) {
     val offline = state.phase == BlePhase.DISCONNECTED ||
@@ -71,7 +67,6 @@ fun ControlScreen(
     // Panel selection lives above the layout so a constraint change (rotation,
     // window resize) cannot reset or drop the visible panel.
     var tab by rememberSaveable { mutableStateOf(PanelTab.MOTION) }
-    var infoOpen by rememberSaveable { mutableStateOf(false) }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -106,28 +101,12 @@ fun ControlScreen(
             ControlTopBar(
                 state = state,
                 compact = compact,
-                infoOpen = infoOpen,
                 tab = tab,
                 onSelectTab = { tab = it },
                 onMirrorModeChange = actions.onMirrorModeChange,
-                onToggleInfo = { infoOpen = !infoOpen },
                 onOpenInfo = onOpenInfo,
                 onDisconnect = actions.onDisconnect
             )
-
-            if (infoOpen) {
-                StatusPanel(
-                    state = state,
-                    event = event,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(
-                            start = if (compact) 10.dp else 16.dp,
-                            top = if (compact) 78.dp else 82.dp
-                        )
-                        .width(if (compact) 300.dp else 360.dp)
-                )
-            }
 
             if (reconnecting) {
                 ReconnectingBanner(
@@ -155,7 +134,7 @@ fun ControlScreen(
             }
 
             when (tab) {
-                PanelTab.MOTION -> ControlPanel(
+                PanelTab.MOTION -> SessionPanel(
                     state = state,
                     actions = actions,
                     modifier = Modifier
@@ -228,11 +207,9 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun ControlTopBar(
     state: ControlUiState,
     compact: Boolean,
-    infoOpen: Boolean,
     tab: PanelTab,
     onSelectTab: (PanelTab) -> Unit,
     onMirrorModeChange: (MirrorMode) -> Unit,
-    onToggleInfo: () -> Unit,
     onOpenInfo: () -> Unit,
     onDisconnect: () -> Unit
 ) {
@@ -251,9 +228,7 @@ private fun ControlTopBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                modifier = Modifier
-                    .clickable { onToggleInfo() }
-                    .padding(vertical = 4.dp),
+                modifier = Modifier.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -291,12 +266,6 @@ private fun ControlTopBar(
                         state.mirrorMode == option
                     ) { onMirrorModeChange(option) }
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (infoOpen) "▾" else "▸",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
             }
             Spacer(Modifier.weight(1f))
             // Tabs, not toggles: exactly one right-hand panel is visible and

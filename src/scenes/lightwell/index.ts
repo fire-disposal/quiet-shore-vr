@@ -62,11 +62,6 @@ const FIXTURE_BAND = 60;
 const TERMINAL_SPEED = 0.3;
 /** Time to reach terminal speed; longer reads as drift, shorter as a snap. */
 const ACCEL_SECONDS = 2.2;
-/**
- * Low flow must be *much* slower than high flow, or the well always looks like
- * it falls at one speed. The flow scale is convex for that reason.
- */
-const FLOW_EXPONENT = 1.6;
 /** Stop is a brake, not drag: this cue must die quickly. */
 const BRAKE = 2.6;
 
@@ -77,7 +72,8 @@ const BOTTOM_COLOR = '#181B1F';
 
 export interface LightWellParts {
   root: THREE.Group;
-  setFlow(flow: number): void;
+  /** Session motion permission, 0..1: the well falls while a session runs. */
+  setMotion(scale: number): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -296,22 +292,23 @@ export function createLightWell(): LightWellParts {
   }
   writeFixtures();
 
-  // Motion state in metres per second, not in "flow units": the shelves and the
-  // wall scroll share one speed, so the picture stays physically consistent.
+  // Motion state in metres per second: the shelves and the wall scroll share
+  // one speed, so the picture stays physically consistent.
+  // The well's fall is its own effect: a session that is running lets it fall,
+  // a stop / capture / idle page does not. Posture and buoyancy never enter.
   let speed = 0;
   /** Seconds spent accelerating on the current fall. */
   let accelSeconds = 0;
-  let targetFlow = 0;
+  let motionScale = 0;
   let swayTime = 0;
 
   return {
     root,
-    setFlow(next: number): void {
-      targetFlow = Number.isFinite(next) ? Math.min(1, Math.max(0, next)) : 0;
+    setMotion(scale: number): void {
+      motionScale = Number.isFinite(scale) ? Math.min(1, Math.max(0, scale)) : 0;
     },
     update(dt: number): void {
-      const targetSpeed =
-        TERMINAL_SPEED * Math.pow(Math.min(1, Math.max(0, targetFlow)), FLOW_EXPONENT);
+      const targetSpeed = TERMINAL_SPEED * motionScale;
       if (targetSpeed > 0 && speed < targetSpeed) {
         // S-curve up to terminal: slow release, quickening middle, settle.
         accelSeconds = Math.min(ACCEL_SECONDS, accelSeconds + dt);
@@ -393,9 +390,8 @@ export const lightwellScene = defineScene(
     // operator cannot take it past level 2 even with a standard profile.
     comfortLevel: 2
   },
-  // Supine inside the shaft: `EYE_Y` is where the band centres, so it is also
-  // where the eye belongs.
-  { eyeY: 1.7 },
+  // The band centres on 1.70 m: that is where the eye belongs once standing.
+  { standingEyeY: 1.7, supine: 'mattress' },
   function () {
     const parts = createLightWell();
     const settings: SceneSettings = {
@@ -408,8 +404,8 @@ export const lightwellScene = defineScene(
       update: function (dt: number): void {
         parts.update(dt);
       },
-      setFlow: function (value: number): void {
-        parts.setFlow(value);
+      setMotion: function (scale: number): void {
+        parts.setMotion(scale);
       },
       dispose: function (): void {
         parts.dispose();

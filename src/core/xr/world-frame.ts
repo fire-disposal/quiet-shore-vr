@@ -1,39 +1,16 @@
 import * as THREE from 'three';
+
 /**
- * Where the art sits, given which world frame the session is running in.
+ * The patient's visual up, in content space.
  *
- * The frame is data, not a code path: a scene says which eye its art was
- * authored for (`posture`, `eyeY`), the session says which mode it is in, and
- * this planner returns the two things the render loop needs — which transform
- * writes the base layer, and how far the art has to move for that frame's eye
- * to land on the authored one.
+ * This is the only function left from the old frame planner: the frame itself
+ * is one formula in `app/world-runtime` (`eyeY(mix)` → `content.y = -eyeY`),
+ * and the mode/two-frame selection it used to describe is gone.
  *
- * ```text
- * float mode     base = q0 (pitch-corrected), eye at the content origin
- *                offset = -eyeY
- * posture mode   base = inverse of the sit-up camera path, eye at the path's
- *                camera position
- *                offset = standEyeHeight - eyeY
- * ```
- *
- * The float mode is always the calibrated frame, for every scene: calibration
- * is the patient saying "this is my forward", and only that frame keeps the
- * art centred on the gaze. An earlier per-scene "supine" frame rotated the art
- * by the head's tilt instead, which put a symmetric shaft off to one side.
- *
- * No global `-eyeHeight`: that number only ever meant "the washroom is drawn
- * for a 1.7 m standing eye", and one scene's constant does not place the rest.
+ * A heave written along the scene's +Y only reads as up and down while that
+ * frame poses the world; undoing the parent rotation once gives the same head
+ * direction in every frame.
  */
-
-export interface FramePlanInput {
-  /** Authored eye height in content space. */
-  eyeY: number;
-}
-
-export interface FramePlan {
-  /** Content Y for the art; the buoyancy delta is added on top of it. */
-  offsetY: number;
-}
 
 /** Scratch for the per-frame axis; the render loop is single-threaded. */
 const AXIS_QUATERNION = new THREE.Quaternion();

@@ -41,7 +41,6 @@ export interface AppConfig {
   eyeHeight: number;
   lang: 'zh' | 'en';
   /** Buoyancy profile from `?float=a|b|c`; the in-room choice overrides it. */
-  floatProfile: string | null;
   /**
    * Buoyancy level 0..3 from `?level=N`.
    *
@@ -69,7 +68,6 @@ export function readConfig(search: string): AppConfig {
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     eyeHeight: readEyeHeight(bootstrap.eyeHeight),
     lang,
-    floatProfile: params.get('float'),
     floatLevel: readFloatLevel(params.get('level'))
   };
 }

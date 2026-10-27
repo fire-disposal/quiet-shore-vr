@@ -51,9 +51,9 @@ export const shoreScene = defineScene(
     },
     audio: { track: 'lake', volume: 0.4, fadeMs: 1200, loop: true, width: 0.8 }
   },
-  // Drawn for a body on its back on the water: the eye rides 0.45 m above the
-  // surface, which is the sit-up path's lying eye height.
-  { eyeY: 0.45 },
+  // Drawn for a body on its back on the water: the surface is content y=0 and
+  // the eye that sees the dawn sits at 1.70 m once the body stands up out of it.
+  { standingEyeY: 1.7, supine: 'water' },
   function () {
     const root = new THREE.Group();
     root.name = 'shore';

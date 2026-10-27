@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import * as THREE from 'three';
 import { SceneSnapshot, type SceneSnapshotInput } from '../src/core/scene/snapshot';
-import { POSTURE_LIMITS, type PostureState } from '../src/core/xr/comfort';
-import { worldQuaternion, type WorldRotation } from '../src/core/xr/frame';
 import { stateFromSnapshot } from '../src/app/portal-link';
-
-const IDENTITY = new THREE.Quaternion();
-
-function rotationQuaternion(r: WorldRotation): THREE.Quaternion {
-  return worldQuaternion(new THREE.Quaternion(), r);
-}
+import { degrees, metres } from '../src/core/units';
 
 function neutralInput(): SceneSnapshotInput {
   return {
@@ -19,30 +11,23 @@ function neutralInput(): SceneSnapshotInput {
     calibrating: false,
     calibrated: true,
     audioMuted: false,
-    eyeHeight: 1.7,
-    worldYawDeg: -12,
-    worldPitchDeg: 8,
-    worldRollDeg: -3,
-    worldXM: 0.1,
-    worldYM: -0.2,
-    worldZM: 0.3,
+    eyeHeight: metres(0.66),
+    worldQuat: { x: 0, y: 0.183, z: 0, w: 0.983 },
+    worldT: { x: metres(0.1), y: metres(-0.2), z: metres(0.3) },
     confidence: 0.62,
     correctionMix: 0,
     correctionTarget: 0,
     correctionMoving: false,
-    posture: null,
-    baseQuaternion: IDENTITY.clone(),
-    baseReferenceQuaternion: IDENTITY.clone(),
-    lookYawDeg: 0,
-    lookYawTargetDeg: 0,
-    upGazeDeg: 0,
-    upGazeTargetDeg: 0,
+    lookYawDeg: degrees(0),
+    lookYawTargetDeg: degrees(0),
+    upGazeDeg: degrees(0),
+    upGazeTargetDeg: degrees(0),
     viewAnim: 'idle',
-    viewPreset: 'none',
-    floorOffset: -1.7,
-    cueFlow: 0,
-    cueEnabled: true,
-    cueIntensity: 1,
+    floorOffset: metres(-0.66),
+    floatLevel: 1,
+    floatMm: 0,
+    sessionSec: 0,
+    voiceId: -1,
     caps: {
       rise: true,
       lie: false,
@@ -54,79 +39,37 @@ function neutralInput(): SceneSnapshotInput {
   };
 }
 
-function posture(overrides: Partial<PostureState> = {}): PostureState {
-  return {
-    phase: 'neutral',
-    worldPitchDeg: 0,
-    worldRollDeg: 0,
-    riseM: 0,
-    progress: 0,
-    ...overrides
-  };
-}
-
 describe('scene snapshot', () => {
-  it('measures the applied base against the calibration frame', () => {
+  it('carries the posture scalar, not an angle measured from a transform', () => {
     const snapshot = new SceneSnapshot();
-    const input = neutralInput();
-    const qCal = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, -0.8, 0.2, 'YXZ'));
-    const qPosture = rotationQuaternion({ pitchDeg: 12, rollDeg: 0, yawDeg: 0 });
-
-    // The mix numbers are deliberately loose: only the transform counts.
-    input.correctionMix = 0.3;
-    input.correctionTarget = 1;
-    input.correctionMoving = true;
-    input.baseQuaternion = qPosture.clone().multiply(qCal);
-    input.baseReferenceQuaternion = qCal;
-    snapshot.capture(input);
+    snapshot.capture({
+      ...neutralInput(),
+      correctionMix: 0.3,
+      correctionTarget: 1,
+      correctionMoving: true,
+      eyeHeight: metres(0.98)
+    });
 
     expect(snapshot.sceneId).toBe('washroom');
-    expect(snapshot.loaded).toBe(true);
-    expect(snapshot.sitUpActive).toBe(true);
-    expect(snapshot.posturePhase).toBe('rising');
-    expect(snapshot.worldPitchDeg).toBeCloseTo(12, 6);
-    expect(snapshot.worldRollDeg).toBeCloseTo(0, 6);
-    // The eye keeps its height through the ramp: nothing is lowered.
-    expect(snapshot.postureRiseM).toBe(0);
-    expect(snapshot.postureProgress).toBeCloseTo(0.3, 6);
-    expect(snapshot.floorOffset).toBe(-1.7);
+    expect(snapshot.session).toBe(true);
+    expect(snapshot.correctionMoving).toBe(true);
+    expect(snapshot.mix).toBeCloseTo(0.3, 6);
+    expect(snapshot.correctionTarget).toBeCloseTo(1, 6);
+    // The eye is the height the page actually applied.
+    expect(snapshot.eyeHeight).toBeCloseTo(0.98, 6);
+    // The world transform is the applied one, verbatim.
+    expect(snapshot.worldQuat.x).toBeCloseTo(0, 6);
+    expect(snapshot.worldQuat.y).toBeCloseTo(0.183, 6);
+    expect(snapshot.worldT.y).toBeCloseTo(-0.2, 6);
   });
 
-  it('reports the correction mix and the measured world tilt', () => {
+  it('clamps a bad mix instead of reporting it', () => {
     const snapshot = new SceneSnapshot();
-    const input = neutralInput();
-    input.correctionMix = 0.5;
-    input.correctionTarget = 1;
-    input.correctionMoving = true;
-    input.baseQuaternion = rotationQuaternion({ pitchDeg: 45, rollDeg: 0, yawDeg: 0 });
-    input.baseReferenceQuaternion = IDENTITY.clone();
-    snapshot.capture(input);
+    snapshot.capture({ ...neutralInput(), correctionMix: 7 });
+    expect(snapshot.mix).toBe(1);
 
-    expect(snapshot.sitUpActive).toBe(true);
-    expect(snapshot.posturePhase).toBe('rising');
-    expect(snapshot.postureProgress).toBeCloseTo(0.5, 6);
-    expect(snapshot.worldPitchDeg).toBeCloseTo(45, 6);
-    expect(snapshot.worldRollDeg).toBeCloseTo(0, 6);
-
-    // The same mix with a different transform must report differently: the
-    // angles are measured from what was applied, never from the mix.
-    input.baseQuaternion = rotationQuaternion({ pitchDeg: 70, rollDeg: 4, yawDeg: 0 });
-    snapshot.capture(input);
-    expect(snapshot.worldPitchDeg).toBeCloseTo(70, 6);
-    expect(snapshot.worldRollDeg).toBeCloseTo(4, 6);
-
-    input.correctionMoving = false;
-    input.correctionMix = 1;
-    input.correctionTarget = 1;
-    snapshot.capture(input);
-    expect(snapshot.posturePhase).toBe('corrected');
-    expect(snapshot.postureProgress).toBe(1);
-
-    input.correctionMix = 0;
-    input.correctionTarget = 0;
-    snapshot.capture(input);
-    expect(snapshot.posturePhase).toBe('neutral');
-    expect(snapshot.sitUpActive).toBe(false);
+    snapshot.capture({ ...neutralInput(), correctionMix: Number.NaN });
+    expect(snapshot.mix).toBe(0);
   });
 
   it('stays allocation-free: capture returns the same instance', () => {
@@ -136,83 +79,56 @@ describe('scene snapshot', () => {
     expect(snapshot.capture(input)).toBe(snapshot);
   });
 
-  it('emits the frozen wire keys from the measured values', () => {
+  it('emits exactly the v13 wire keys', () => {
     const snapshot = new SceneSnapshot();
-    const input = neutralInput();
-    input.upGazeDeg = 7.5;
-    input.upGazeTargetDeg = 10;
-    input.lookYawDeg = -42;
-    input.lookYawTargetDeg = -45;
-    input.viewAnim = 'playing';
-    input.viewPreset = 'breathe';
-    input.floorOffset = -1.6;
-    input.baseQuaternion = rotationQuaternion({ pitchDeg: 33, rollDeg: -4, yawDeg: 0 });
-    input.confidence = 0.62;
-    input.floatMm = 31.5;
-    input.swayDeg = 1.2;
-    input.sessionSec = 96;
-    input.voiceId = 7;
-    snapshot.capture(input);
+    snapshot.capture({
+      ...neutralInput(),
+      correctionMix: 0.6,
+      eyeHeight: metres(1.28),
+      upGazeDeg: degrees(7.5),
+      lookYawDeg: degrees(-42),
+      viewAnim: 'playing',
+      floatLevel: 3,
+      floatMm: 31.5,
+      confidence: 0.62,
+      sessionSec: 96,
+      voiceId: 7
+    });
 
     const payload = stateFromSnapshot(snapshot);
+    expect(payload.mix).toBeCloseTo(0.6, 6);
+    expect(payload.eyeHeight).toBeCloseTo(1.28, 6);
     expect(payload.viewPitch).toBe(7.5);
     expect(payload.viewYaw).toBe(-42);
-    // The wire carries the measurement, not a clamp: 33° is a real reading.
-    expect(payload.posturePitch).toBe(33);
-    expect(payload.postureRoll).toBeCloseTo(-4, 6);
-    expect(payload.worldYaw).toBe(-12);
-    expect(payload.worldPitch).toBe(8);
-    expect(payload.worldRoll).toBe(-3);
+    expect(payload.viewAnim).toBe('playing');
+    expect(payload.moving).toBe(true);
+    expect(payload.worldQ).toEqual({ x: 0, y: 0.183, z: 0 });
+    expect(payload.worldT).toEqual({ x: 0.1, y: -0.2, z: 0.3 });
     expect(payload.caps.rise).toBe(true);
     expect(payload.caps.lie).toBe(false);
-    expect(payload.worldXM).toBe(0.1);
-    expect(payload.worldYM).toBe(-0.2);
-    expect(payload.worldZM).toBe(0.3);
-    expect(payload.viewAnim).toBe('playing');
-    expect(payload.viewPreset).toBe('breathe');
-    expect(payload.eyeHeight).toBe(1.7);
-    expect(payload.postureProgress).toBe(0);
-    expect(payload.calibrationConfidence).toBe(0.62);
-    expect(payload.floatMm).toBe(31.5);
-    expect(payload.swayDeg).toBe(1.2);
     expect(payload.elapsedSec).toBe(96);
     expect(payload.voiceId).toBe(7);
-    expect(payload.sitUpActive).toBe(false);
-    expect('viewX' in payload).toBe(false);
-    expect('viewZ' in payload).toBe(false);
+
     expect(Object.keys(payload).sort()).toEqual(
       [
-        'audio',
         'calibrationConfidence',
         'calibrating',
-        'cueEnabled',
-        'cueIntensity',
+        'audio',
+        'caps',
         'elapsedSec',
         'eyeHeight',
         'floatLevel',
         'floatMm',
-        'floatProfile',
-        'posturePitch',
-        'postureProgress',
-        'postureRise',
-        'postureMode',
-        'postureRoll',
+        'mix',
+        'moving',
         'scene',
         'session',
-        'swayDeg',
-        'voiceId',
-        'sitUpActive',
         'viewAnim',
         'viewPitch',
-        'viewPreset',
         'viewYaw',
-        'worldYaw',
-        'worldPitch',
-        'worldRoll',
-        'worldXM',
-        'worldYM',
-        'worldZM',
-        'caps'
+        'voiceId',
+        'worldQ',
+        'worldT'
       ].sort()
     );
   });

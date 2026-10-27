@@ -1,16 +1,21 @@
 import * as THREE from 'three';
 import { Disposer } from '../shared/disposer';
+import {
+  MATTRESS_TOP_M,
+  PILLOW_LIFT_M,
+  SUPINE_EYE_ABOVE_SUPPORT_M
+} from '../../core/anatomy';
 import { ecgTexture, fabricTexture, floorTexture, screenTexture, wallTexture } from './textures';
 
 /**
  * A training ward seen from the bed.
  *
  * The patient is supine, so the art is authored around an eye that is *in* the
- * bed rather than standing in front of it: 0.85 m above the floor — the
- * 0.55 m mattress plus the head raised on the pillow. The frame lowers the
- * content by that number, which puts the eye at the content origin and the floor
- * 0.85 m below it; the room's own ceiling (2.7 m) is then 1.85 m above the
- * pillow, exactly where a real ward ceiling sits.
+ * bed rather than standing in front of it: 0.55 m mattress + 0.11 m of head +
+ * 0.05 m pillow = 0.71 m above the floor, from `core/anatomy.ts`. The frame
+ * lowers the content by that number, which puts the eye at the content origin
+ * and the floor 0.71 m below it; the room's own ceiling (2.7 m) is then ~2 m
+ * above the pillow, exactly where a real ward ceiling sits.
  *
  * Facing −Z the patient sees, in order of depth: the flat sheet and their own
  * bedding in the lower field, the footboard at 1.6 m, the window with its
@@ -29,8 +34,13 @@ import { ecgTexture, fabricTexture, floorTexture, screenTexture, wallTexture } f
  * white linen, a blue-grey duvet and sage curtains.
  */
 
-/** Supine eye: mattress 0.55 m + a head raised on the pillow. */
-export const EYE_Y = 0.85;
+/**
+ * Supine eye: mattress top plus the head resting on it, plus the pillow lift.
+ * Derived, not written: a hand-typed 0.85 here is what put the patient 14 cm
+ * above the bed the art draws.
+ */
+export const EYE_Y =
+  MATTRESS_TOP_M + SUPINE_EYE_ABOVE_SUPPORT_M + PILLOW_LIFT_M;
 /**
  * Where the eye sits *inside the art*, in bed coordinates: the bed head is at
  * +1.62, so the pillow's front edge is 1.12. `MeshBuilder.build()` subtracts

@@ -3,17 +3,16 @@ import * as THREE from 'three';
 import { SCENE, SCENES, getSceneDefinition } from '../src/scenes/registry';
 import { advanceCloudOffset } from '../src/scenes/shore/clouds';
 import { advanceEcgOffset } from '../src/scenes/ward/room';
-import { ResourceRegistry } from '../src/core/geometry/registry';
 import { measureObject } from '../src/core/geometry/budget';
+import { MATTRESS_TOP_M, lyingEyeY } from '../src/core/anatomy';
 
 function build(id: string) {
   const definition = getSceneDefinition(id);
   if (!definition) {
     throw new Error(`scene ${id} must be registered`);
   }
-  const registry = new ResourceRegistry();
-  const handle = definition.build({ registry });
-  return { definition, handle, registry };
+  const handle = definition.build();
+  return { definition, handle };
 }
 
 function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
@@ -32,13 +31,24 @@ function transparentMeshes(root: THREE.Object3D): THREE.Mesh[] {
 }
 
 describe('scene registry', () => {
-  it('declares the eye its art was authored for', () => {
-    const placement = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.eyeY]));
-    expect(placement).toEqual({ washroom: 1.7, shore: 0.45, lightwell: 1.7, ward: 0.85 });
-    for (const scene of SCENES) {
-      expect(Number.isFinite(scene.eyeY)).toBe(true);
-      expect(scene.eyeY).toBeGreaterThan(0);
-    }
+  it('declares a posture the anatomy table resolves', () => {
+    // Scenes state the height their art was drawn from and what the body rests
+    // on; the lying height is derived, so no scene can hand-type a bed again.
+    const eyes = Object.fromEntries(
+      SCENES.map((scene) => [
+        scene.id,
+        {
+          standing: scene.posture.standingEyeY,
+          lying: Number(lyingEyeY(scene.posture).toFixed(2))
+        }
+      ])
+    );
+    expect(eyes).toEqual({
+      washroom: { standing: 1.7, lying: 0.66 },
+      shore: { standing: 1.7, lying: 0.08 },
+      lightwell: { standing: 1.7, lying: 0.66 },
+      ward: { standing: 1.7, lying: 0.71 }
+    });
   });
 
   it('ships the operator-selectable scenes in wire order', () => {
@@ -88,14 +98,16 @@ describe('scene registry', () => {
 });
 
 describe('scene capabilities', () => {
-  it('declares one eye height per scene, sane for the headset', () => {
-    for (const id of ['washroom', 'shore', 'lightwell', 'ward']) {
-      const scene = getSceneDefinition(id)!;
-      // 0.45 m = lying on water, 0.85 m = the eye in the bed, 1.70 m = standing.
-      // Outside this band the art would either sink through the floor or float
-      // above the room.
-      expect(scene.eyeY).toBeGreaterThanOrEqual(0.3);
-      expect(scene.eyeY).toBeLessThanOrEqual(2.0);
+  it('declares eye heights sane for the headset', () => {
+    for (const scene of SCENES) {
+      const lying = lyingEyeY(scene.posture);
+      // Lying on water is the lowest (0.08); the art is never drawn from below
+      // 1.2 m or above 2 m, or the room would read as a miniature or a hall.
+      expect(lying).toBeGreaterThanOrEqual(0.05);
+      expect(lying).toBeLessThan(1.2);
+      expect(scene.posture.standingEyeY).toBeGreaterThanOrEqual(1.2);
+      expect(scene.posture.standingEyeY).toBeLessThanOrEqual(2.0);
+      expect(lying).toBeLessThan(scene.posture.standingEyeY);
     }
   });
 
@@ -114,12 +126,12 @@ describe('scene capabilities', () => {
     try {
       // The room is static: no per-frame work beyond the patient's own motion.
       expect(washroom.applyBuoyancy).toBeUndefined();
-      expect(washroom.setFlow).toBeUndefined();
+      expect(washroom.setMotion).toBeUndefined();
       // The lake carries the buoyancy itself so the horizon stays level.
       expect(typeof shore.applyBuoyancy).toBe('function');
-      expect(shore.setFlow).toBeUndefined();
-      // The well manufactures the flow; the app only feeds it a 0..1 value.
-      expect(typeof lightwell.setFlow).toBe('function');
+      expect(shore.setMotion).toBeUndefined();
+      // The well owns its own fall; the app only grants or withholds motion.
+      expect(typeof lightwell.setMotion).toBe('function');
       expect(lightwell.applyBuoyancy).toBeUndefined();
     } finally {
       washroom.dispose();
@@ -200,7 +212,6 @@ describe('scene capabilities', () => {
       try {
         // Selection in a scene would be a second interaction model; the only
         // gaze targets in the app belong to the SUS panel.
-        expect(handle.selectables).toHaveLength(0);
         expect(handle.root.getObjectByProperty('isCamera', true)).toBeUndefined();
       } finally {
         handle.dispose();
@@ -212,9 +223,9 @@ describe('scene capabilities', () => {
 describe('the ward', () => {
   it('draws the room from the pillow', () => {
     const scene = getSceneDefinition('ward')!;
-    // The author's number, not a constant the frame has to guess: 0.55 m of
-    // mattress plus the head raised on the pillow.
-    expect(scene.eyeY).toBe(0.85);
+    // Derived, not typed: 0.55 m mattress + 0.11 m of head + 0.05 m pillow.
+    const eye = lyingEyeY(scene.posture);
+    expect(eye).toBeCloseTo(0.71, 5);
     expect(scene.audio).toEqual({ track: 'rain', volume: 0.4, fadeMs: 1200, loop: true });
 
     const { handle } = build('ward');
@@ -224,12 +235,15 @@ describe('the ward', () => {
       expect(duvet).toBeDefined();
       expect(shell).toBeDefined();
 
-      // The bedding is below the eye and the ceiling above it: if either were
-      // on the wrong side, the patient would be looking at the wrong room.
+      // The duvet is bedding, not a wall: it sits on the mattress, inside a
+      // 0.3 m band above it, and its far end may rise above eye level over the
+      // feet — that is what a blanket over bent knees looks like from the pillow.
       const bedding = new THREE.Box3().setFromObject(duvet);
-      expect(bedding.max.y).toBeLessThan(scene.eyeY);
+      expect(bedding.min.y).toBeGreaterThan(MATTRESS_TOP_M - 0.2);
+      expect(bedding.max.y).toBeLessThan(MATTRESS_TOP_M + 0.3);
+      // The ceiling clears even the standing eye, or the room would read as a box.
       const room = new THREE.Box3().setFromObject(shell);
-      expect(room.max.y).toBeGreaterThan(scene.eyeY + 1.5);
+      expect(room.max.y).toBeGreaterThan(scene.posture.standingEyeY + 0.8);
 
       // The monitor stands ahead of the pillow — the content origin is the eye's
       // own X/Z — and to the right, with its face turned back. A screen behind
@@ -238,7 +252,7 @@ describe('the ward', () => {
       const face = new THREE.Box3().setFromObject(screen);
       expect(face.min.x).toBeGreaterThan(0);
       expect(face.max.z).toBeLessThan(-0.8);
-      expect(face.min.y).toBeGreaterThan(scene.eyeY);
+      expect(face.min.y).toBeGreaterThan(eye);
     } finally {
       handle.dispose();
     }
@@ -336,7 +350,6 @@ describe('scene budgets', () => {
         expect(handle.budget!.check(stats)).toEqual([]);
       } finally {
         handle.dispose();
-        registry.disposeAll();
       }
     }
   });
@@ -389,7 +402,7 @@ describe('scene budgets', () => {
     handle.dispose();
   });
 
-  it('moves the wall fixtures upward only through the flow hook', () => {
+  it('moves the wall fixtures upward only while the session grants motion', () => {
     const { handle } = build('lightwell');
     const fixtures = handle.root.getObjectByName('lightwell-shelves') as THREE.InstancedMesh;
     expect(fixtures).toBeDefined();
@@ -412,7 +425,7 @@ describe('scene budgets', () => {
     fixtures.getMatrixAt(0, still);
     expect(still.equals(before)).toBe(true);
 
-    handle.setFlow?.(1);
+    handle.setMotion?.(1);
     let previousY = new THREE.Vector3().setFromMatrixPosition(before).y;
     const offsets: number[] = [];
     for (let i = 0; i < 60; i += 1) {
@@ -426,6 +439,18 @@ describe('scene budgets', () => {
     }
     // The brackets are the only moving part now; the shaft itself is static.
     expect(offsets[offsets.length - 1]).toBeGreaterThan(offsets[0]);
+
+    // Withdrawing the session permission brakes the fall to a full stop: the
+    // well must not keep drifting after the session it belongs to has ended.
+    handle.setMotion?.(0);
+    for (let i = 0; i < 60; i += 1) {
+      handle.update(1 / 30, 0.5 + 2 + i / 30);
+    }
+    const braked = new THREE.Matrix4();
+    fixtures.getMatrixAt(0, braked);
+    handle.update(1 / 30, 3.6);
+    fixtures.getMatrixAt(0, still);
+    expect(still.equals(braked)).toBe(true);
     handle.dispose();
   });
   it('disposes idempotently', () => {

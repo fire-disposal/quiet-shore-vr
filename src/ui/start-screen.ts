@@ -1,9 +1,11 @@
 import type { Strings } from './strings';
-import { createGazeGuide } from './gaze-guide';
 
 export interface StartScreenHandlers {
   onEnter: () => void;
 }
+
+/** Restored whenever the page is inviting again; the picture says where. */
+const ENTER_LABEL = '按一下头显右侧的按钮';
 
 function element<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -19,7 +21,8 @@ function optional<T extends HTMLElement>(id: string): T | null {
 
 /**
  * Pre-session gate only. Scene choice belongs to the headset console or the
- * tablet; this surface confirms it and starts WebXR with one gaze target.
+ * tablet; this surface confirms it, names the one button, and starts WebXR
+ * from a single press.
  */
 export class StartScreen {
   readonly stageElement = element<HTMLElement>('stage');
@@ -32,43 +35,55 @@ export class StartScreen {
   private readonly scene = element<HTMLElement>('launch-scene');
   private readonly hint = optional<HTMLElement>('enter-hint');
   private readonly core = this.enter.closest('.entry-core');
-  private readonly controllerGuide = optional<HTMLElement>('controller-guide');
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
   private enterBusy = false;
   private enterAvailable = false;
-  private seen = false;
 
   constructor(strings: Strings, handlers: StartScreenHandlers) {
     this.strings = strings;
     this.handlers = handlers;
-    this.enter.addEventListener('click', handlers.onEnter);
-    // The right-side confirm arrives as a normal click at gaze. Empty space
-    // around the target is the same one-time gesture, so a patient does not
-    // have to aim at a small button.
+    this.enter.addEventListener('click', () => this.press());
+    // The right-side confirm arrives as a normal click at the pointer. The
+    // target is a cue, not a hit test: empty space around it is the same
+    // one-time gesture, so a patient does not have to aim.
     this.start.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       if (target && target.closest('button, a, input, label')) {
         return;
       }
-      handlers.onEnter();
+      this.press();
     });
-    const guide = optional<HTMLCanvasElement>('gaze-guide');
-    const visual = this.enter.querySelector('.target-visual');
-    if (guide) {
-      createGazeGuide(guide, (visual as HTMLElement | null) ?? this.enter);
+    // Where the press lands is still up to the runtime, which has delivered
+    // the same button as a bare pointerdown and as Enter/Space in some builds.
+    // Only the click used to be wired, so a build that sends a key could not
+    // enter at all; every channel now lands in the same gated handler.
+    document.addEventListener('pointerdown', () => this.press(), { capture: true });
+    document.addEventListener('keydown', (event) => {
+      if (
+        event.key === 'Enter' ||
+        event.key === ' ' ||
+        event.code === 'Enter' ||
+        event.code === 'Space' ||
+        event.keyCode === 13
+      ) {
+        this.press();
+      }
+    }, { capture: true });
+  }
+
+  /**
+   * The one gesture the browser will not let us skip: `requestSession` needs a
+   * transient user activation, and a patient press is the only source of one.
+   * The target's `disabled` flag already marks every phase where entry is
+   * unwanted — still detecting, entering, in a session, ended — so it is the
+   * whole gate.
+   */
+  private press(): void {
+    if (this.enter.disabled) {
+      return;
     }
-    this.enter.addEventListener('pointerenter', () => this.setSeen(true));
-    this.enter.addEventListener('pointerleave', () => this.setSeen(false));
-    this.enter.addEventListener('focus', () => this.setSeen(true));
-    this.enter.addEventListener('blur', () => this.setSeen(false));
-    window.addEventListener('pointermove', (event) => {
-      if (this.enterBusy) return;
-      const box = this.enter.getBoundingClientRect();
-      const inside = event.clientX >= box.left && event.clientX <= box.right
-        && event.clientY >= box.top && event.clientY <= box.bottom;
-      this.setSeen(inside);
-    }, { passive: true });
+    this.handlers.onEnter();
   }
 
   setStatus(text: string, tone: 'neutral' | 'ok' | 'error' = 'neutral'): void {
@@ -93,10 +108,7 @@ export class StartScreen {
   setEnterBusy(busy: boolean): void {
     this.enterBusy = busy;
     this.enter.disabled = !this.enterAvailable || busy;
-    if (busy) {
-      this.setSeen(false);
-    }
-    this.setEnterLabel(busy ? this.strings.entering : '准备好就开始');
+    this.setEnterLabel(busy ? this.strings.entering : ENTER_LABEL);
     this.enter.classList.toggle('is-busy', busy);
     this.start.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
@@ -128,28 +140,13 @@ export class StartScreen {
   private setEnded(ended: boolean): void {
     this.enter.disabled = ended || !this.enterAvailable;
     this.core?.classList.toggle('is-ended', ended);
-    if (ended) {
-      this.setEnterLabel('训练已结束');
-    }
+    this.setEnterLabel(ended ? '训练已结束' : ENTER_LABEL);
   }
 
   setHint(text: string): void {
     if (this.hint) {
       this.hint.textContent = text;
     }
-  }
-
-  private setSeen(seen: boolean): void {
-    if (this.enterBusy || this.seen === seen) {
-      return;
-    }
-    this.seen = seen;
-    this.enter.classList.toggle('is-seen', seen);
-    this.core?.classList.toggle('is-seen', seen);
-    if (this.controllerGuide) {
-      this.controllerGuide.setAttribute('aria-hidden', seen ? 'false' : 'true');
-    }
-    this.setEnterLabel(seen ? '按下头显右侧的按钮' : '准备好就开始');
   }
 
   private setEnterLabel(text: string): void {

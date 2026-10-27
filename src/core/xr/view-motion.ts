@@ -32,7 +32,7 @@ import type { WorldRotation } from './frame';
 export type ViewAnimState = 'idle' | 'playing' | 'held';
 
 /** Playable presets; `none` is the state encoding for "no preset". */
-export type ViewPresetId = 'up' | 'down' | 'recenter' | 'breathe';
+export type ViewPresetId = 'up' | 'down' | 'recenter';
 export type ViewPresetCode = 'none' | ViewPresetId;
 
 /** Absolute envelopes in degrees; identical to the wire contract. */
@@ -70,8 +70,6 @@ export interface ViewPreset {
  * - `up` / `down` are relative so pressing them at the clamp is a no-op rather
  *   than a contradictory "move up while already above the target".
  * - `recenter` is absolute: it is the only command that returns to level.
- * - `breathe` is a single out-and-back cycle that ends where it started; it is
- *   the only preset that changes direction inside one playback.
  */
 export const VIEW_PRESETS: Readonly<Record<ViewPresetId, ViewPreset>> = {
   up: {
@@ -101,15 +99,6 @@ export const VIEW_PRESETS: Readonly<Record<ViewPresetId, ViewPreset>> = {
     excursionDeg: 0,
     curveLabel: 'smootherstep，零初末速；偏航同时归零'
   },
-  breathe: {
-    id: 'breathe',
-    label: { zh: '呼吸', en: 'Breathe' },
-    durationMs: 6000,
-    curve: 'cycle',
-    motion: 'round-trip',
-    excursionDeg: 6,
-    curveLabel: 'smootherstep 去、镜像 smootherstep 回，单周期，末态=初态'
-  }
 };
 
 /**
@@ -120,8 +109,7 @@ export const VIEW_PRESET_CODES: Readonly<Record<ViewPresetCode, number>> = {
   none: 0,
   up: 1,
   down: 2,
-  recenter: 3,
-  breathe: 4
+  recenter: 3
 };
 
 /**

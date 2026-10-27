@@ -121,18 +121,26 @@ private fun mirrorPayload(state: ControlUiState): String {
         put("scene", control.scene)
         put("session", control.session)
         put("eyeHeight", control.eyeHeight.toDouble())
-        put("worldYaw", control.worldYaw.toDouble())
-        put("worldPitch", control.worldPitch.toDouble())
-        put("worldRoll", control.worldRoll.toDouble())
-        // The correction pivot: the mirror subtracts it before undoing the
-        // rotation, else the sit-up slides the patient view off the eye.
-        put("worldXM", control.worldXM.toDouble())
-        put("worldYM", control.worldYM.toDouble())
-        put("worldZM", control.worldZM.toDouble())
+        // The applied world transform as a quaternion + translation: the mirror
+        // inverts it to reproduce the patient's view, so nothing is re-derived.
+        put(
+            "worldQ",
+            JSONObject().apply {
+                put("x", control.worldQX.toDouble())
+                put("y", control.worldQY.toDouble())
+                put("z", control.worldQZ.toDouble())
+            }
+        )
+        put(
+            "worldT",
+            JSONObject().apply {
+                put("x", control.worldX.toDouble())
+                put("y", control.worldY.toDouble())
+                put("z", control.worldZ.toDouble())
+            }
+        )
         // Applied motion the page already computed; the mirror only adds it.
         put("floatMm", control.floatMm.toDouble())
-        put("swayDeg", control.swayDeg.toDouble())
-        put("postureRise", control.postureRise.toDouble())
         if (pose == null) {
             put("pose", JSONObject.NULL)
         } else {

@@ -7,7 +7,7 @@ flowchart LR
   T["平板<br/>ControlViewModel"] -->|"BLE 命令字符串"| H["头显服务<br/>ControlProtocol.isAllowedCommand"]
   H -->|"WebSocket #seq"| P["页面<br/>commands.ts 解析"]
   P -->|"state JSON"| H2["头显服务<br/>PortalService.applyState"]
-  H2 -->|"state v12 帧"| T2["平板<br/>ControlProtocol.decodeState"]
+  H2 -->|"state v13 帧"| T2["平板<br/>ControlProtocol.decodeState"]
   P2["页面<br/>STATUS / SUS"] -->|"sus JSON"| H3["sus 特征"] --> T3["平板归档"]
 ```
 
@@ -18,7 +18,6 @@ flowchart LR
 
 | 命令 | 平板发送 | 头显允许（Kotlin） | 页面解释（TypeScript） | 口径 |
 | --- | --- | --- | --- | --- |
-| `view:orient:<yaw>,<pitch>` | `%d,%d`，≤10 Hz | 两段十进制，\|yaw\|≤180、\|pitch\|≤90 | 同 | 一 |
 | `view:anim:<name>` | `up/down/recenter/breathe` | 名字白名单，无参数 | 同 | 一 |
 | `view:stop` | 冻结 | 允许 | `stop()` 保持 | 一 |
 | `mode:<float\|posture>` | 会话前 | `MODE_NAMES` | `float/posture` | 一 |
@@ -26,21 +25,21 @@ flowchart LR
 | `float:level:<0-3>` | 0–3 | 0–3 | 0–3，再按档位/场景夹紧 | 一 |
 | `float:profile:<a\|b\|c>` | 三选 | 白名单 | 同 | 一 |
 | `anim:duration:<ms>` | 4000–20000 | 4000–20000 | 同 | 一 |
-| `cue:intensity:<0..1>` | — | **本轮收紧**：十进制且 0–1 | **本轮收紧**：同一正则 | 一 |
 | `sus:show:<1-10>` | 1–10 | **本轮收紧**：整数 1–10 | **本轮收紧**：整数 1–10 | 一 |
 | `sus:answer:<1-5>` | 1–5 | 单个数字 | **本轮收紧**：单字符 `[1-5]` | 一 |
-| `settings:eyeheight:<m>` | `%.2f` | **本轮收紧**：`1\.\d{1,3}` 且 1.2–1.9 | `^1\.\d{1,3}$` 且 1.2–1.9 | 一 |
+| `settings:eyeheight:<m>` | `%.2f` | **本轮收紧**：`1\.\d{1,3}` 且 1.2–1.9 | `^1\.\d{1,3}$` 且 1.2–1.9 | 一（语义＝站立足高，起身终点） |
 | `audio:on\|off\|toggle` | 水声开关 | 允许 | 只切环境声 | 一 |
 | `voice:*` | 逐条/序列 | `parseVoice` | 目录校验 | 一 |
 | `sus:open\|close\|next\|prev` | 量表流程 | 允许 | 面板操作 | 一 |
 | `posture:rise\|lower\|stop` | 起身 | 允许 | 仅起身模式生效 | 一（页面再判） |
 
-本轮收紧的三条，意义相同：**两端必须接受同一份语法**，否则会出现"平板发出、头显放行、页面丢弃"
+本轮收紧的两条，意义相同：**两端必须接受同一份语法**，否则会出现"平板发出、头显放行、页面丢弃"
 或反之。改动点：
 
-1. `cue:intensity:` 头显原先只检查非空后缀 → 现在与页面同一正则、同一 0–1 区间。
-2. `sus:show:` / `sus:answer:` 接受任意后缀 → 现在只接受 1–10 / 单个 1–5 数字（`"01"` 是畸形帧，不是 1）。
-3. `settings:eyeheight:` 头显原先接受 `01.7`、`1.7000` → 现在与页面同为 `1\.\d{1,3}` 且 1.2–1.9。
+1. `sus:show:` / `sus:answer:` 接受任意后缀 → 现在只接受 1–10 / 单个 1–5 数字（`"01"` 是畸形帧，不是 1）。
+2. `settings:eyeheight:` 头显原先接受 `01.7`、`1.7000` → 现在与页面同为 `1\.\d{1,3}` 且 1.2–1.9。
+
+（`cue:*` 三条随近场粒子层一起删除：头显白名单、页面解析器、能力位名都不再接受它们。）
 
 镜像测试：`android/protocol/src/test/.../CommandGrammarTest.kt`（6 例）与 `tests/commands.test.ts`（10 例）
 一一对应；一侧新增规则，另一侧补同一组用例。
@@ -62,10 +61,8 @@ flowchart LR
 | `voiceId` | 目录索引 | −1..63 | — |
 | `viewAnim` / `viewPreset` | 枚举串 | 未知值按 idle/none | — |
 
-头显把 `ControlState` 编成 **v12（40 B）**：v11 的 28 B 布局原样保留，末尾追加 float32 世界平移
-x/y/z（米，设备系）——修正绕校准眼点旋转，镜像需要这个枢轴才能还原患者视角。平板连接建立时显式
-`requestMtu(128)`，MTU 不足不再回落：v11/v10 帧直接拒收（两端同版本发布）。
-`StateFrameTest` 用金向量锁住字段偏移。bit2 的语义是"环境声关"，与语音无关（语音有独立总线）。
+头显把 `ControlState` 编成 **v13（28 B）**：`mix` 一个字节承载姿态，`eyeHeight` 已含抬升，
+世界变换为 `worldQuat xyz`（int16）× `worldT cm`（int16）。v12 及更早整帧拒收。
 
 ## 2.1 JSON 通道（事件型数据）
 
@@ -81,7 +78,7 @@ state 帧冻结为**运动通道**（位置、角度、起伏、现在播放的�
 
 平板侧 `JsonAssembler` 按 id 拼接；缺片或乱序**整份丢弃**、不拼接坏数据；5 s 超时清理。文档体固定带
 `"t"` 主题：`sus`（`d` 为答卷）、`flags`（scene/session/calibrating/postureMode/sitUpActive/hold/
-voiceAuto/cueEnabled，变化即发 + 1 s 心跳）。
+voiceAuto，变化即发 + 1 s 心跳）。
 
 **新增字段一律进 JSON 通道，不再动 state 帧版本。**
 
@@ -94,7 +91,7 @@ voiceAuto/cueEnabled，变化即发 + 1 s 心跳）。
 | 应答 | `{"type":"ack","seq":N}` | status 特征（`OK:<cmd>`） |
 | SUS | `{"type":"sus","data":{answers,filled,complete,scene,sessionSec,completedAt}}` | `sus` 特征（UTF-8 JSON） |
 
-`view:orient` 是唯一免 seq/ack 的连续通道：平板队列只保留最新样本，页面侧按 10 Hz 重定向且无 TTL。
+所有命令都走 seq/ack；`view:anim:*` 只实时投递，不跨重连重放。
 
 ## 4 已知的不对称（有意保留）
 

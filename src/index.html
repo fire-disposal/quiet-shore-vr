@@ -10,8 +10,6 @@
 </head>
 <body>
   <main id="start" class="start">
-    <canvas id="gaze-guide" class="gaze-guide" aria-hidden="true"></canvas>
-
     <header class="entry-head">
       <p class="entry-scene">
         <span>即将进入</span>
@@ -21,16 +19,13 @@
 
     <section class="entry-core" aria-label="进入训练">
       <button id="enter" class="enter-target" type="button" disabled>
-        <span class="target-visual">
-          <span class="target-halo" aria-hidden="true"></span>
-          <span id="enter-label" class="target-label">准备好就开始</span>
-          <span class="target-sub">请保持舒适姿势，等待工作人员</span>
-          <span id="controller-guide" class="controller-guide" aria-hidden="true">
-            <span class="controller-outline">
-              <span class="controller-round controller-top"></span>
-              <span class="controller-pill"><i></i></span>
-              <span class="controller-round controller-bottom"></span>
-            </span>
+        <span id="enter-label" class="target-label">按一下头显右侧的按钮</span>
+        <span class="target-sub">准备好就开始，请保持舒适姿势</span>
+        <span id="controller-guide" class="controller-guide" aria-hidden="true">
+          <span class="controller-outline">
+            <span class="controller-round controller-top"></span>
+            <span class="controller-pill"><i></i></span>
+            <span class="controller-round controller-bottom"></span>
           </span>
         </span>
       </button>

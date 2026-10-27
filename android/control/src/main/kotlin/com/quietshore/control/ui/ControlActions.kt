@@ -1,7 +1,6 @@
 package com.quietshore.control.ui
 
 import com.quietshore.control.model.MirrorMode
-import com.quietshore.control.model.SessionMode
 
 /** Callbacks the control screen needs; keeps screens free of the ViewModel. */
 data class ControlActions(
@@ -13,8 +12,6 @@ data class ControlActions(
     val onExitSystem: () -> Unit,
     /** Scene choice, sent before a session; the headset stores it for the launch. */
     val onSceneSelect: (String) -> Unit,
-    /** Breathing layer on the buoyancy; default on. */
-    val onBreathToggle: (Boolean) -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
     val onAnimDuration: (Int) -> Unit,
     /** Gaze dwell selection (SUS answers and spatial targets). Default on. */
@@ -29,19 +26,11 @@ data class ControlActions(
     val onEnd: () -> Unit,
     val onRecalibrate: () -> Unit,
     val onToggleAudio: () -> Unit,
-    val onPreview: () -> Unit,
-    val onSessionMode: (SessionMode) -> Unit,
     val onFloatLevel: (Int) -> Unit,
-    /** Buoyancy character: "a" gentle, "b" standard, "c" immersive. */
-    val onFloatProfile: (String) -> Unit,
-    /** Extra view-pitch correction in degrees; 0 leaves the frame alone. */
-    val onViewPitch: (Int) -> Unit,
     /** One discrete view preset: up / down / recenter / breathe. */
     val onViewAnim: (String) -> Unit,
     /** Hold the current view angles; only `recenter` returns to level. */
     val onViewStop: () -> Unit,
-    /** Shows the patient-facing explanation page on the headset. */
-    val onShowAbout: () -> Unit,
     val onEmergencyStop: () -> Unit,
     /** Posture branch: only meaningful in posture mode. */
     val onPostureLower: () -> Unit,

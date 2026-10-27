@@ -1,15 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { clampSigned, degToRad, radToDeg } from '../src/core/xr/angle';
-import {
-  measureEuler,
-  measurePitchDeg,
-  measureRelativeEuler,
-  type EulerDeg
-} from '../src/core/xr/measure';
 import { worldQuaternion } from '../src/core/xr/frame';
 import { viewToWorld } from '../src/core/xr/view-motion';
-import { parseViewOrient, parseViewAnim } from '../src/app/view-command';
 
 const DEG = Math.PI / 180;
 const FORWARD = new THREE.Vector3(0, 0, -1);
@@ -53,37 +46,6 @@ describe('rotation contract', () => {
     expect(product.angleTo(expected)).toBeLessThan(1e-6);
   });
 
-  it('measures YXZ: yaw about +Y, pitch about +X', () => {
-    const q = new THREE.Quaternion()
-      .setFromAxisAngle(new THREE.Vector3(0, 1, 0), 30 * DEG)
-      .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -10 * DEG));
-    const out: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
-    measureEuler(q, out);
-    expect(out.yawDeg).toBeCloseTo(30, 6);
-    expect(out.pitchDeg).toBeCloseTo(-10, 6);
-    expect(Math.abs(out.rollDeg)).toBeLessThan(1e-6);
-    expect(Math.abs(measurePitchDeg(new THREE.Quaternion()))).toBe(0);
-  });
-
-  it('measures a frame relative to another', () => {
-    const reference = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      40 * DEG
-    );
-    const applied = worldQuaternion(new THREE.Quaternion(), {
-      pitchDeg: 18,
-      rollDeg: 0,
-      yawDeg: 0
-    })
-      .multiply(reference)
-      .normalize();
-    const out: EulerDeg = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
-    measureRelativeEuler(applied, reference, out);
-    expect(out.pitchDeg).toBeCloseTo(18, 6);
-    expect(out.yawDeg).toBeCloseTo(0, 6);
-    expect(Math.abs(out.rollDeg)).toBeLessThan(1e-6);
-  });
-
   it('a +90° world tilt cancels a +90° head pitch', () => {
     // The sit-up end state: the patient physically looks up while the world
     // tilts, and the content that was overhead lands dead ahead.
@@ -101,26 +63,4 @@ describe('rotation contract', () => {
     expect(content.distanceTo(gaze)).toBeLessThan(1e-9);
   });
 
-  it('parses the wire exactly as the tablet sends it', () => {
-    expect(parseViewOrient('0,45')).toEqual({ lookYawDeg: 0, upGazeDeg: 45 });
-    expect(parseViewOrient('-90,90')).toEqual({ lookYawDeg: -90, upGazeDeg: 90 });
-    expect(parseViewOrient('180,-90')).toEqual({ lookYawDeg: 180, upGazeDeg: -90 });
-    for (const raw of [
-      '0,90.5',
-      '181,0',
-      '-181,0',
-      '0,-91',
-      '0,NaN',
-      '0',
-      '0,0,0',
-      '0,.5',
-      '+0.5,0',
-      '0,5.'
-    ]) {
-      expect(parseViewOrient(raw), raw).toBeNull();
-    }
-    expect(parseViewAnim('up')).toBe('up');
-    expect(parseViewAnim('none')).toBeNull();
-    expect(parseViewAnim('up,0')).toBeNull();
-  });
 });

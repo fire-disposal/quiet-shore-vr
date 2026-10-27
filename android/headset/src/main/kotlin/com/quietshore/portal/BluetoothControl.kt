@@ -697,14 +697,12 @@ internal class BluetoothControl(
         }
         touchController()
 
-        val continuous = command.startsWith(ControlProtocol.VIEW_ORIENT)
         val handshake = synchronized(controlLock) {
             if (handshakeAddress == address) handshakeVersion else 0
         }
         if (handshake == 0) {
             // Never execute silently before HELLO.
             when {
-                continuous -> respondOnly(device, requestId)
                 sequenced != null -> replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
                 else -> replyWrite(device, requestId, ControlProtocol.STATUS_PROTOCOL_REQUIRED)
             }
@@ -712,7 +710,6 @@ internal class BluetoothControl(
         }
         if (handshake != ControlProtocol.protocolVersion) {
             when {
-                continuous -> respondOnly(device, requestId)
                 sequenced != null -> replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
                 else -> replyWrite(device, requestId, ControlProtocol.statusProtocolMismatch())
             }
@@ -724,13 +721,6 @@ internal class BluetoothControl(
             } else {
                 replyWrite(device, requestId, ControlProtocol.STATUS_COMMAND_REJECTED)
             }
-            return
-        }
-        if (continuous) {
-            // 10 Hz stream: keep the GATT write response but spend no status
-            // notification per sample.
-            listener.onCommand(command)
-            respondOnly(device, requestId)
             return
         }
         if (sequenced != null) {

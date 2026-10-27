@@ -35,17 +35,12 @@ interface MirrorState {
   scene?: string;
   session?: boolean;
   eyeHeight?: number;
-  worldYaw?: number;
-  worldPitch?: number;
-  worldRoll?: number;
-  /** Applied world translation, metres, device frame (the correction pivot). */
-  worldXM?: number;
-  worldYM?: number;
-  worldZM?: number;
+  /** Applied world rotation, xyz of a unit quaternion (`w` derived). */
+  worldQ?: { x?: number; y?: number; z?: number };
+  /** Applied world translation, metres, device frame. */
+  worldT?: { x?: number; y?: number; z?: number };
   /** Buoyancy already applied by the page, in millimetres. */
   floatMm?: number;
-  /** Horizon pitch already applied by the page, in degrees. */
-  swayDeg?: number;
   pose?: {
     x?: number;
     y?: number;
@@ -100,9 +95,11 @@ let lastFrame = 0;
 /** Newest payload values: radians for the angles, millimetres for the heave. */
 const target = {
   yaw: 0, pitch: 0, roll: 0,
-  worldYaw: 0, worldPitch: 0, worldRoll: 0,
-  worldXM: 0, worldYM: 0, worldZM: 0,
-  floatMm: 0, swayDeg: 0,
+  /** Applied world rotation: the page sends xyz, `w` is derived. */
+  world: new THREE.Quaternion(),
+  /** Applied world translation, metres, device frame. */
+  worldT: new THREE.Vector3(),
+  floatMm: 0,
   /** Device-frame eye position from telemetry, metres. */
   x: 0, y: 1.7, z: 0
 };
@@ -111,9 +108,9 @@ let hasPose = false;
 /** What this frame renders; eased toward `target` to hide the 5 Hz feed. */
 const applied = {
   yaw: 0, pitch: 0, roll: 0,
-  worldYaw: 0, worldPitch: 0, worldRoll: 0,
-  worldXM: 0, worldYM: 0, worldZM: 0,
-  floatMm: 0, swayDeg: 0,
+  world: new THREE.Quaternion(),
+  worldT: new THREE.Vector3(),
+  floatMm: 0,
   x: 0, y: 1.7, z: 0
 };
 /** False until the first payload, which snaps instead of easing in from zero. */
@@ -160,14 +157,22 @@ function setTarget(next: MirrorState): void {
     if (Number.isFinite(pose.z)) target.z = pose.z as number;
     hasPose = true;
   }
-  target.worldYaw = (next.worldYaw ?? 0) * DEG;
-  target.worldPitch = (next.worldPitch ?? 0) * DEG;
-  target.worldRoll = (next.worldRoll ?? 0) * DEG;
-  target.worldXM = next.worldXM ?? 0;
-  target.worldYM = next.worldYM ?? 0;
-  target.worldZM = next.worldZM ?? 0;
+  // The world transform arrives as a quaternion (xyz) plus metres; `w` comes
+  // from the unit length. Not Euler degrees any more: the composition order is
+  // then guaranteed rather than reconstructed from three angles.
+  const q = next.worldQ;
+  const qx = Number.isFinite(q?.x) ? (q!.x as number) : 0;
+  const qy = Number.isFinite(q?.y) ? (q!.y as number) : 0;
+  const qz = Number.isFinite(q?.z) ? (q!.z as number) : 0;
+  const qw = Math.sqrt(Math.max(0, 1 - (qx * qx + qy * qy + qz * qz)));
+  target.world.set(qx, qy, qz, qw).normalize();
+  const t = next.worldT;
+  target.worldT.set(
+    Number.isFinite(t?.x) ? (t!.x as number) : 0,
+    Number.isFinite(t?.y) ? (t!.y as number) : 0,
+    Number.isFinite(t?.z) ? (t!.z as number) : 0
+  );
   target.floatMm = next.floatMm ?? 0;
-  target.swayDeg = next.swayDeg ?? 0;
   if (primed) {
     return;
   }
@@ -175,14 +180,9 @@ function setTarget(next: MirrorState): void {
   applied.yaw = target.yaw;
   applied.pitch = target.pitch;
   applied.roll = target.roll;
-  applied.worldYaw = target.worldYaw;
-  applied.worldPitch = target.worldPitch;
-  applied.worldRoll = target.worldRoll;
-  applied.worldXM = target.worldXM;
-  applied.worldYM = target.worldYM;
-  applied.worldZM = target.worldZM;
+  applied.world.copy(target.world);
+  applied.worldT.copy(target.worldT);
   applied.floatMm = target.floatMm;
-  applied.swayDeg = target.swayDeg;
   applied.x = target.x;
   applied.y = target.y;
   applied.z = target.z;
@@ -221,6 +221,9 @@ function syncScene(): void {
   sceneName = definition.name.zh;
   collectCutaway();
   settleFloor();
+  // A new room gets a fresh framing; a manual zoom does not survive it.
+  userZoomed = false;
+  orbit.distance = fitDistance();
 }
 
 function shortestAngleDelta(from: number, to: number): number {
@@ -241,14 +244,10 @@ function smooth(dt: number): void {
   applied.roll += (target.roll - applied.roll) * alpha;
   // The world shell is the other half of the step: a sit-up rotates it at up to
   // 40 °/s, which at 5 Hz is an 8° jump per payload.
-  applied.worldYaw += shortestAngleDelta(applied.worldYaw, target.worldYaw) * alpha;
-  applied.worldPitch += (target.worldPitch - applied.worldPitch) * alpha;
-  applied.worldRoll += (target.worldRoll - applied.worldRoll) * alpha;
-  applied.worldXM += (target.worldXM - applied.worldXM) * alpha;
-  applied.worldYM += (target.worldYM - applied.worldYM) * alpha;
-  applied.worldZM += (target.worldZM - applied.worldZM) * alpha;
+  // Slerp, not per-axis lerp: the composition order must survive the easing.
+  applied.world.slerp(target.world, alpha);
+  applied.worldT.lerp(target.worldT, alpha);
   applied.floatMm += (target.floatMm - applied.floatMm) * alpha;
-  applied.swayDeg += (target.swayDeg - applied.swayDeg) * alpha;
   applied.x += (target.x - applied.x) * alpha;
   applied.y += (target.y - applied.y) * alpha;
   applied.z += (target.z - applied.z) * alpha;
@@ -259,7 +258,9 @@ function settleFloor(): void {
   // height, not the operator's measured one. Using `state.eyeHeight` here put
   // the washroom's floor 1.7 m too low, so the patient view was a wall far
   // below and the room looked enormous.
-  const sceneEye = getSceneDefinition(sceneId)?.eyeY ?? state.eyeHeight ?? 1.7;
+  // The page reports the eye it actually applied (lying..standing by mix); the
+  // mirror never re-derives it from a scene or from the operator's setting.
+  const sceneEye = state.eyeHeight ?? 1.59;
   // Unconditional: the camera lives in the page's `local` frame, where the eye
   // is the origin, so the art only lands at eye level because it is dropped by
   // its own eye height. Gating that on `state.session` put the camera on the
@@ -268,8 +269,6 @@ function settleFloor(): void {
   // The buoyancy arrives already applied: the mirror only adds it to the base
   // the page uses and never recomputes the curve.
   sceneHost.setFloorOffset(base + applied.floatMm / 1000);
-  // Horizon sway is the world pitch the page puts on its content.
-  sceneHost.content.rotation.x = applied.swayDeg * DEG;
 }
 
 /**
@@ -289,6 +288,8 @@ scene.add(overview);
 const FOV_HALF_H = 42;
 const FOV_HALF_V = 38;
 const FOV_LENGTH = 1.5;
+/** The diorama's own lens: narrow enough that the room fills the panel. */
+const OVERVIEW_FOV = 58;
 
 const frustumGeometry = (() => {
   const halfW = Math.tan((FOV_HALF_H * Math.PI) / 180) * FOV_LENGTH;
@@ -334,6 +335,8 @@ const upAxis = new THREE.Vector3(0, 1, 0);
 const lookAt = new THREE.Vector3();
 const basis = new THREE.Matrix4();
 const orbitOffset = new THREE.Vector3();
+const frustumX = new THREE.Vector3();
+const frustumZ = new THREE.Vector3();
 
 /**
  * Overview camera orbit: **not** driven by the patient's gaze.
@@ -367,6 +370,28 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Pull-back that frames the room instead of a magic 3.6 m.
+ *
+ * Bounded: a lake's dome is 90 m across and framing all of it would put the
+ * patient's own room at a dot. The radius is the room's footprint (its walls
+ * when the scene has them), capped at 6 m.
+ */
+const fitBox = new THREE.Box3();
+const fitSize = new THREE.Vector3();
+function fitDistance(): number {
+  fitBox.copy(sceneBounds);
+  if (fitBox.isEmpty()) {
+    return 3.6;
+  }
+  fitBox.getSize(fitSize);
+  const radius = clamp(Math.max(fitSize.x, fitSize.z) * 0.5, 1.2, 6);
+  const half = (OVERVIEW_FOV * Math.PI) / 360;
+  return clamp(radius / Math.tan(half), 2, 12);
+}
+/** True once the operator zoomed; the auto-fit then stops overriding them. */
+let userZoomed = false;
+
 canvasHost.addEventListener('pointerdown', (event) => {
   if (mode !== 'overview') {
     return;
@@ -393,12 +418,13 @@ canvasHost.addEventListener('pointermove', (event) => {
       // Fingers apart = closer: the diorama is what the gesture scales.
       orbit.distance = clamp(
         (pinchDistance * pinchSpan) / span,
-        ORBIT_DISTANCE_MIN,
-        ORBIT_DISTANCE_MAX
+        Math.min(ORBIT_DISTANCE_MIN, fitDistance() * 0.35),
+        Math.max(ORBIT_DISTANCE_MAX, fitDistance() * 2.2)
       );
     }
     return;
   }
+  userZoomed = true;
   // One finger walks around the patient; elevation stops short of both poles.
   orbit.azimuthDeg = (orbit.azimuthDeg - dx * 0.35) % 360;
   orbit.elevationDeg = clamp(orbit.elevationDeg + dy * 0.25, ORBIT_ELEVATION_MIN, ORBIT_ELEVATION_MAX);
@@ -428,18 +454,27 @@ function applyOverview(): void {
   );
 
   camera.position.copy(eyePoint).addScaledVector(orbitOffset, orbit.distance);
-  // Aim a little above the eye: the eye itself sits on the art floor's 1.7 m
-  // line, so aiming exactly at it puts the room's furniture at the frame edge.
-  lookAt.copy(eyePoint).addScaledVector(upAxis, 0.35);
+  // Aim at the room's own centre on the eye's height line, not a magic offset:
+  // a centred diorama keeps the furniture and the patient in frame together.
+  if (!sceneBounds.isEmpty()) {
+    sceneBounds.getCenter(lookAt);
+    lookAt.y = eyePoint.y;
+  } else {
+    lookAt.copy(eyePoint);
+  }
   camera.up.copy(upAxis);
   camera.lookAt(lookAt);
 
-  // Frustum: local -Z along the gaze, local +Y along the patient's up.
-  basis.makeBasis(
-    new THREE.Vector3().crossVectors(headUp, gazeDir).normalize(),
-    headUp,
-    gazeDir.clone().negate()
-  );
+  // Frustum: local -Z along the gaze, local +Y along the patient's up. A
+  // patient looking straight up makes `headUp × gaze` degenerate, so fall back
+  // to the room's +Z axis rather than producing a zero-length basis.
+  frustumX.crossVectors(headUp, gazeDir);
+  if (frustumX.lengthSq() < 1e-6) {
+    frustumX.set(0, 0, 1);
+  }
+  frustumX.normalize();
+  frustumZ.copy(gazeDir).negate().normalize();
+  basis.makeBasis(frustumX, headUp, frustumZ);
   frustum.position.copy(eyePoint);
   frustum.quaternion.setFromRotationMatrix(basis);
   overview.visible = true;
@@ -458,14 +493,7 @@ function applyCamera(): void {
   // Roll is the head's own, so it stays in the YXZ head rotation.
   mirrorCameraTransform(
     camera,
-    {
-      yaw: applied.worldYaw,
-      pitch: applied.worldPitch,
-      roll: applied.worldRoll,
-      xM: applied.worldXM,
-      yM: applied.worldYM,
-      zM: applied.worldZM
-    },
+    { q: applied.world, t: applied.worldT },
     { yaw: applied.yaw, pitch: applied.pitch, roll: applied.roll },
     { x: camera.position.x, y: camera.position.y, z: camera.position.z }
   );
@@ -474,11 +502,13 @@ function applyCamera(): void {
     applyOverview();
   } else {
     overview.visible = false;
-    camera.fov = 72;
+    // The headset's vertical field (2 × 38°), kept so the framing reads similar
+    // — the contract is the centre ray, not the field: no letterboxing.
+    camera.fov = FOV_HALF_V * 2;
     camera.updateProjectionMatrix();
     return;
   }
-  camera.fov = 58;
+  camera.fov = OVERVIEW_FOV;
   camera.updateProjectionMatrix();
 }
 
@@ -510,6 +540,9 @@ function setMode(next: MirrorMode): void {
   pointers.clear();
   pinchSpan = 0;
   mode = next;
+  if (next === 'overview' && !userZoomed) {
+    orbit.distance = fitDistance();
+  }
 }
 
 function frame(now: number): void {
@@ -585,8 +618,8 @@ Object.assign(window, {
       applied: {
         yaw: Math.round(applied.yaw * 1000) / 1000,
         pitch: Math.round(applied.pitch * 1000) / 1000,
-        worldYaw: Math.round(applied.worldYaw * 1000) / 1000,
-        worldPitch: Math.round(applied.worldPitch * 1000) / 1000
+        worldQ: applied.world.toArray().map((n) => Math.round(n * 1000) / 1000),
+        worldT: applied.worldT.toArray().map((n) => Math.round(n * 1000) / 1000)
       }
     }),
     start,

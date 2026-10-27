@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
-import { EYE_Y, createRoom } from './room';
+import { createRoom } from './room';
 
 /**
  * The ward, from the pillow.
@@ -42,8 +42,9 @@ export const wardScene = defineScene(
     // Rain outside the window: the one sound this room would have.
     audio: { track: 'rain', volume: 0.4, fadeMs: 1200, loop: true }
   },
-  // Drawn for a body on its back in the bed: mattress, pillow and raised head.
-  { eyeY: EYE_Y },
+  // Drawn for a body on its back in the bed: mattress 0.55 m plus a head on a
+  // pillow, which is what `core/anatomy.ts` derives as the lying eye.
+  { standingEyeY: 1.7, supine: 'mattress', pillow: true },
   function () {
     const room = createRoom();
     const settings: SceneSettings = {

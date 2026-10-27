@@ -7,8 +7,8 @@
 | # | 步骤 | 位置 | 患者看到 | 平板显示 |
 | --- | --- | --- | --- | --- |
 | 1 | 技术员点"启动训练" | 平板 `enterTraining()` | — | "已请求启动，等待患者确认"（本轮新加） |
-| 2 | 服务拉起页面 | `PortalService` → Firefox Reality | 入口页：场景名 + 一个圆 | 同上 |
-| 3 | 患者看向圆、按头显右侧中间按钮 | `start-screen.ts` / WebXR 手势 | 需要一次用户手势，浏览器强制 | 同上 |
+| 2 | 服务拉起页面 | `PortalService` → Firefox Reality | 入口页：场景名 + 按钮提示图 | 同上 |
+| 3 | 患者按头显右侧的按钮 | `start-screen.ts` / WebXR 手势 | 需要一次用户手势，浏览器强制；按在哪里都算 | 同上 |
 | 4 | 进入 XR，`enterVR()` | `App.ts` | 黑场 | `session=false`，仍"待机" |
 | 5 | 校准卡出现，自动进入稳定判定 | `beginCalibration()`、`calibration-overlay.ts` | "保持不动…" + 进度条 | `calibrating=true` → "校准中" |
 | 6 | 连续 1.8 s 偏差 ≤6°（晃动即清零重来） | `stepCalibration()` | 进度条按稳定时长填充 | 同上 |

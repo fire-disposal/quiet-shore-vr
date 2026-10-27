@@ -32,14 +32,8 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
      * @return false when the discrete lane is full and the command was refused.
      */
     fun enqueue(command: String): Boolean {
-        if (command.startsWith(ControlProtocol.VIEW_ORIENT)) {
-            // Latest sample wins; never queues behind anything.
-            move = command
-            return true
-        }
         if (command in STOP_COMMANDS) {
-            // Stop preempts: drop the queued pitch sample before it can lag.
-            move = null
+            // Stop preempts everything still queued.
             stops.addLast(command)
             return true
         }

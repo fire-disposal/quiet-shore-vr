@@ -4,191 +4,168 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
- * Golden vectors for the wire contract (layout documented on
- * `ControlProtocol.encodeState`; history in `docs/state-v11.md`).
+ * v13 state frame: 28 bytes, one posture scalar, no derivable duplicates.
  *
- * v12 is 40 bytes: the v11 layout through byte 27, plus the applied world
- * translation (float32 x/y/z, metres, device frame) the mirror needs to undo
- * the correction about its pivot. Older shapes are rejected outright — both
- * sides ship together.
+ * Every offset is pinned here because this array is the only thing the two
+ * ends share; a test that merely round-trips would pass with the fields in any
+ * order.
  */
 class StateFrameTest {
-    @Test
-    fun `v12 frame is 40 bytes with the documented offsets`() {
-        val state = ControlState(
-            session = true,
-            cueEnabled = true,
-            hold = true,
-            voiceAuto = true,
-            eyeHeight = 1.7f,
-            floatLevel = 2,
-            floatProfile = "c",
-            scene = ControlProtocol.SCENE_IDS.getOrElse(1) { ControlProtocol.DEFAULT_SCENE },
-            floatMm = 32f,
-            swayDeg = 1.5f,
-            voiceId = 7,
-            posturePitch = -90f,
-            postureRoll = -10f,
-            postureRise = 1.2f,
-            postureProgress = 1f,
-            viewPitch = -20f,
-            viewYaw = -90f,
-            worldYaw = -35f,
-            worldPitch = 12f,
-            worldRoll = -7f,
-            worldXM = 0.125f,
-            worldYM = -1.625f,
-            worldZM = 0.5f,
-            viewAnim = ViewAnim.PLAYING,
-            viewPreset = ViewPreset.BREATHE,
-            envelope = Envelope.HOLD,
-            cueIntensity = 0.5f,
-            calibrationConfidence = 92f,
-            elapsedSec = 312
-        )
-        val bytes = ControlProtocol.encodeState(state, nowMs = 0x1234, seq = 0x0042)
-
-        assertEquals(40, bytes.size)
-        assertEquals(12, bytes[0].toInt())
-        // flags: session | cue | hold | auto
-        assertEquals(1 or 8 or 64 or 128, bytes[1].toInt() and 0xFF)
-        // level 2 bits, profile 2 bits, scene index 4 bits
-        val sceneIndex = ControlProtocol.SCENE_IDS.indexOf(
-            expectedScene()
-        ).coerceAtLeast(0)
-        assertEquals(2 or (2 shl 2) or (sceneIndex shl 4), bytes[2].toInt() and 0xFF)
-        assertEquals(170, bytes[3].toInt() and 0xFF)
-        assertEquals(32, bytes[4].toInt())
-        assertEquals(15, bytes[5].toInt())
-        assertEquals(7, bytes[6].toInt() and 0xFF)
-        assertEquals(-90, bytes[7].toInt())
-        assertEquals(-10, bytes[8].toInt())
-        assertEquals(120, bytes[9].toInt() and 0xFF)
-        assertEquals(100, bytes[10].toInt() and 0xFF)
-        assertEquals(-20, bytes[11].toInt())
-        // anim 1 | preset 4 << 2 | envelope HOLD 2 << 5
-        assertEquals((1 or (4 shl 2) or (2 shl 5)), bytes[12].toInt() and 0xFF)
-        assertEquals(-90, shortAt(bytes, 13))
-        assertEquals(-35, shortAt(bytes, 15))
-        assertEquals(12, shortAt(bytes, 17))
-        assertEquals(-7, bytes[19].toInt())
-        assertEquals(0x1234, shortAt(bytes, 20) and 0xFFFF)
-        assertEquals(0x0042, shortAt(bytes, 22) and 0xFFFF)
-        assertEquals(50, bytes[24].toInt() and 0xFF)
-        assertEquals(92, bytes[25].toInt() and 0xFF)
-        assertEquals(312, shortAt(bytes, 26) and 0xFFFF)
-        assertEquals(0.125f, floatAt(bytes, 28))
-        assertEquals(-1.625f, floatAt(bytes, 32))
-        assertEquals(0.5f, floatAt(bytes, 36))
-
-        val decoded = requireNotNull(ControlProtocol.decodeState(bytes))
-        assertEquals(32f, decoded.floatMm)
-        assertEquals(1.5f, decoded.swayDeg)
-        assertEquals(7, decoded.voiceId)
-        assertEquals(1.2f, decoded.postureRise)
-        assertEquals(-90f, decoded.viewYaw)
-        assertEquals(12f, decoded.worldPitch)
-        assertEquals(0.125f, decoded.worldXM)
-        assertEquals(-1.625f, decoded.worldYM)
-        assertEquals(0.5f, decoded.worldZM)
-        assertEquals(expectedScene(), decoded.scene)
-        assertEquals(Envelope.HOLD, decoded.envelope)
-        assertEquals(ViewAnim.PLAYING, decoded.viewAnim)
-        assertEquals(ViewPreset.BREATHE, decoded.viewPreset)
-        assertEquals(312, decoded.elapsedSec)
-        assertTrue(decoded.hold)
-        assertTrue(decoded.voiceAuto)
-    }
-
-    @Test
-    fun `voice id none round-trips as -1`() {
-        val idle = requireNotNull(ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState())))
-        assertEquals(-1, idle.voiceId)
-        val speaking = requireNotNull(
-            ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState(voiceId = 31)))
-        )
-        assertEquals(31, speaking.voiceId)
-    }
-
-    @Test
-    fun `signed buoyancy and sway survive both directions`() {
-        for (mm in listOf(-127f, -32f, 0f, 32f, 127f)) {
-            val decoded = requireNotNull(ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState(floatMm = mm))))
-            assertEquals(mm, decoded.floatMm)
-        }
-        for (deg in listOf(-12f, -1.5f, 0f, 1.5f, 12f)) {
-            val decoded = requireNotNull(ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState(swayDeg = deg))))
-            assertTrue(abs(decoded.swayDeg - deg) < 0.11f)
-        }
-    }
-
-    @Test
-    fun `an unknown version or shape is rejected`() {
-        val bytes = ControlProtocol.encodeState(ControlState())
-        bytes[0] = 13
-        assertNull(ControlProtocol.decodeState(bytes))
-        assertNull(ControlProtocol.decodeState(ByteArray(19)))
-        assertNull(ControlProtocol.decodeState(ByteArray(28)))
-    }
-
-    @Test
-    fun `buoyancy level and profile round-trip`() {
-        for (profile in listOf("a", "b", "c")) {
-            for (level in 0..3) {
-                val bytes = ControlProtocol.encodeState(ControlState(floatLevel = level, floatProfile = profile))
-                val decoded = requireNotNull(ControlProtocol.decodeState(bytes))
-                assertEquals(level, decoded.floatLevel)
-                assertEquals(profile, decoded.floatProfile)
-            }
-        }
-    }
-
-    @Test
-    fun `an unknown profile decodes as the default instead of failing`() {
-        val decoded = requireNotNull(
-            ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState(floatProfile = "zzz")))
-        )
-        assertEquals("b", decoded.floatProfile)
-    }
-
-    @Test
-    fun `view orient parses exactly one grammar`() {
-        val move = ControlProtocol.parseViewOrient("view:orient:-90,45")
-        requireNotNull(move)
-        assertEquals(-90f, move.lookYawDeg)
-        assertEquals(45f, move.upGazeDeg)
-
-        val full = ControlProtocol.parseViewOrient("view:orient:180,-90")
-        requireNotNull(full)
-        assertTrue(abs(full.lookYawDeg - 180f) < 1e-3f)
-        assertTrue(abs(full.upGazeDeg + 90f) < 1e-3f)
-
-        for (raw in listOf(
-            "view:orient:0,.5",
-            "view:orient:0,5.",
-            "view:orient:+0.5,0",
-            "view:orient:181,0",
-            "view:orient:0,91",
-            "view:orient:0,0.5,0",
-            "view:orient:-90",
-            "view:move:0,0.6"
-        )) {
-            assertNull(ControlProtocol.parseViewOrient(raw), raw)
-        }
-    }
-
-    /** A non-default scene that the shipped registry actually knows about. */
-    private fun expectedScene(): String =
-        ControlProtocol.SCENE_IDS.getOrElse(1) { ControlProtocol.DEFAULT_SCENE }
 
     private fun shortAt(bytes: ByteArray, offset: Int): Int =
         ((bytes[offset].toInt() and 0xFF) or ((bytes[offset + 1].toInt() and 0xFF) shl 8)).toShort().toInt()
 
-    private fun floatAt(bytes: ByteArray, offset: Int): Float =
-        ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).float
+    @Test
+    fun `v13 frame is 28 bytes with the documented offsets`() {
+        val state = ControlState(
+            session = true,
+            calibrating = true,
+            audioMuted = true,
+            moving = true,
+            hold = true,
+            voiceAuto = true,
+            scene = ControlProtocol.SCENE_IDS[3],
+            floatLevel = 2,
+            viewAnim = ViewAnim.PLAYING,
+            eyeHeight = 0.71f,
+            mix = 0.5f,
+            floatMm = -32f,
+            viewPitch = -12f,
+            viewYaw = 90f,
+            voiceId = 7,
+            calibrationConfidence = 92f,
+            elapsedSec = 312,
+            worldQX = 0.5f,
+            worldQY = 0f,
+            worldQZ = 0f,
+            worldX = 0.12f,
+            worldY = -1.25f,
+            worldZ = 0.5f
+        )
+        val bytes = ControlProtocol.encodeState(state, nowMs = 0x1234, seq = 0x0042)
+
+        assertEquals(28, bytes.size)
+        assertEquals(13, bytes[0].toInt())
+        // session | calibrating | audio | moving | hold | voiceAuto
+        assertEquals(1 or 2 or 4 or 8 or 16 or 32, bytes[1].toInt() and 0xFF)
+        // scene index 3 | level 2 << 4 | anim playing 1 << 6
+        assertEquals(3 or (2 shl 4) or (1 shl 6), bytes[2].toInt() and 0xFF)
+        assertEquals(71, bytes[3].toInt() and 0xFF)
+        assertEquals(125, bytes[4].toInt() and 0xFF)
+        assertEquals(-32, bytes[5].toInt())
+        assertEquals(-12, bytes[6].toInt())
+        assertEquals(45, bytes[7].toInt())
+        assertEquals(7, bytes[8].toInt() and 0xFF)
+        assertEquals(92, bytes[9].toInt() and 0xFF)
+        assertEquals(312, shortAt(bytes, 10))
+        assertEquals(0x1234, shortAt(bytes, 12))
+        assertEquals(0x0042, shortAt(bytes, 14))
+        assertEquals((0.5f * ControlProtocol.QUAT_SCALE).roundToInt(), shortAt(bytes, 16))
+        assertEquals(0, shortAt(bytes, 18))
+        assertEquals(0, shortAt(bytes, 20))
+        assertEquals(12, shortAt(bytes, 22))
+        assertEquals(-125, shortAt(bytes, 24))
+        assertEquals(50, shortAt(bytes, 26))
+    }
+
+    @Test
+    fun `decoding restores every field inside its quantum`() {
+        val state = ControlState(
+            session = true,
+            calibrating = false,
+            audioMuted = false,
+            moving = true,
+            hold = false,
+            voiceAuto = true,
+            scene = "shore",
+            floatLevel = 3,
+            viewAnim = ViewAnim.HELD,
+            eyeHeight = 1.13f,
+            mix = 0.532f,
+            floatMm = 41f,
+            viewPitch = 7f,
+            viewYaw = -96f,
+            voiceId = 12,
+            calibrationConfidence = 100f,
+            elapsedSec = 7,
+            worldQX = -0.2079f,
+            worldQY = 0.0f,
+            worldQZ = 0.0f,
+            worldX = -0.01f,
+            worldY = -1.13f,
+            worldZ = 0.02f
+        )
+        val decoded = requireNotNull(
+            ControlProtocol.decodeState(ControlProtocol.encodeState(state, nowMs = 5, seq = 9))
+        )
+
+        assertEquals(state.session, decoded.session)
+        assertEquals(state.moving, decoded.moving)
+        assertEquals(state.voiceAuto, decoded.voiceAuto)
+        assertEquals(state.scene, decoded.scene)
+        assertEquals(state.floatLevel, decoded.floatLevel)
+        assertEquals(state.viewAnim, decoded.viewAnim)
+        assertEquals(state.eyeHeight, decoded.eyeHeight, 0.005f)
+        assertEquals(state.mix, decoded.mix, 1f / 250f)
+        assertEquals(state.floatMm, decoded.floatMm, 0.5f)
+        assertEquals(state.viewPitch, decoded.viewPitch, 0.5f)
+        assertEquals(state.viewYaw, decoded.viewYaw, 1f)
+        assertEquals(state.voiceId, decoded.voiceId)
+        assertEquals(state.calibrationConfidence, decoded.calibrationConfidence, 0.5f)
+        assertEquals(state.elapsedSec, decoded.elapsedSec)
+        assertEquals(state.worldQX, decoded.worldQX, 1f / ControlProtocol.QUAT_SCALE)
+        assertEquals(state.worldQY, decoded.worldQY, 1f / ControlProtocol.QUAT_SCALE)
+        assertEquals(state.worldQZ, decoded.worldQZ, 1f / ControlProtocol.QUAT_SCALE)
+        assertEquals(state.worldX, decoded.worldX, 0.005f)
+        assertEquals(state.worldY, decoded.worldY, 0.005f)
+        assertEquals(state.worldZ, decoded.worldZ, 0.005f)
+        assertEquals(0x0005, decoded.tMs)
+        assertEquals(9, decoded.seq)
+    }
+
+    @Test
+    fun `clamps what the byte cannot carry`() {
+        val state = ControlState(
+            eyeHeight = 3f,
+            mix = 4f,
+            floatMm = 900f,
+            viewPitch = -900f,
+            viewYaw = 900f,
+            calibrationConfidence = 250f
+        )
+        val decoded = requireNotNull(ControlProtocol.decodeState(ControlProtocol.encodeState(state)))
+        assertEquals(2.5f, decoded.eyeHeight, 0.005f)
+        assertEquals(1f, decoded.mix, 1f / 250f)
+        assertEquals(127f, decoded.floatMm, 0.5f)
+        assertEquals(-127f, decoded.viewPitch, 0.5f)
+        assertEquals(254f, decoded.viewYaw, 1f)
+        assertEquals(100f, decoded.calibrationConfidence, 0.5f)
+    }
+
+    @Test
+    fun `rejects any other shape`() {
+        val frame = ControlProtocol.encodeState(ControlState())
+        assertNull(ControlProtocol.decodeState(ByteArray(40)))
+        assertNull(ControlProtocol.decodeState(frame.copyOf(27)))
+        // A v12 frame is not upgraded: both ends ship together.
+        val wrongVersion = frame.copyOf()
+        wrongVersion[0] = 12
+        assertNull(ControlProtocol.decodeState(wrongVersion))
+    }
+
+    @Test
+    fun `a lying eye survives the wire`() {
+        // 0.08 m on water is the lowest eye the model produces; the byte range
+        // must not clip it the way v12's 120..190 cm clamp did.
+        for (height in listOf(0.08f, 0.66f, 0.71f, 1.13f, 2.4f)) {
+            val decoded = requireNotNull(
+                ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState(eyeHeight = height)))
+            )
+            assertTrue(abs(decoded.eyeHeight - height) < 0.006f, "$height -> ${decoded.eyeHeight}")
+        }
+    }
 }

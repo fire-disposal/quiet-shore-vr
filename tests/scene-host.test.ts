@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SceneHost } from '../src/core/scene/host';
-import type {
-  SceneBuildContext,
-  SceneDefinition,
-  SceneHandle,
-  SceneSettings
-} from '../src/core/scene/contract';
+import type { SceneDefinition, SceneHandle, SceneSettings } from '../src/core/scene/contract';
 
 interface HandleState {
   updates: number;
@@ -26,7 +21,6 @@ function createHandle(settings: Partial<SceneSettings> = {}): {
   const state: HandleState = { updates: 0, lastDt: 0, lastElapsed: 0, disposed: 0 };
   const handle: SceneHandle = {
     root,
-    selectables: [selectable],
     settings: {
       background: settings.background ?? null,
       fog: settings.fog ?? null
@@ -70,7 +64,6 @@ describe('SceneHost', () => {
     expect(host.scene.background).toBe(background);
     expect(host.scene.fog).toBe(fog);
     expect(host.content.children).toContain(scene.root);
-    expect(host.selectables).toBe(scene.handle.selectables);
 
     host.unload();
 
@@ -78,7 +71,6 @@ describe('SceneHost', () => {
     expect(host.scene.fog).toBeNull();
     expect(host.handle).toBeNull();
     expect(host.definition).toBeNull();
-    expect(host.selectables).toHaveLength(0);
     expect(host.content.children).toHaveLength(0);
     expect(scene.state.disposed).toBe(1);
   });
@@ -166,17 +158,14 @@ describe('SceneHost', () => {
     expect(second.state.lastElapsed).toBe(12.5);
   });
 
-  it('disposes the handle and drains the registry on dispose', () => {
+  it('disposes the handle on dispose', () => {
     const host = new SceneHost();
     const scene = createHandle();
     host.load(createDefinition('a', () => scene.handle));
-    host.registry.acquireGeometry('box', () => new THREE.BoxGeometry());
-    expect(host.registry.stats().geometries).toBe(1);
 
     host.dispose();
 
     expect(scene.state.disposed).toBe(1);
-    expect(host.registry.stats().geometries).toBe(0);
     expect(host.content.parent).toBeNull();
   });
 });

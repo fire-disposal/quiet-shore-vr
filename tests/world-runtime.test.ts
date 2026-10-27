@@ -54,15 +54,39 @@ const POSITION = new THREE.Vector3(0.1, 0.62, -1.2);
 describe('world runtime', () => {
   it('places the art by the scene eye and leaves the base to comfort', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 0.45 });
+    h.runtime.setScene({ lyingEyeY: 0.45, standingEyeY: 0.45 });
     h.runtime.calibrate(SUPINE, POSITION);
 
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.45, 6);
+  });
+
+  it('lifts the eye from the lying height to the standing height with the mix', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+
+    // Rest: the eye is where the head is, so the art is lowered by 0.66 only.
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.66, 6);
+    expect(h.lastOffset()).toBeCloseTo(-0.66, 6);
+
+    h.runtime.setDuration(6000);
+    h.runtime.rise(1);
+    h.run(3);
+    const mid = h.runtime.state();
+    expect(mid.eyeY).toBeGreaterThan(0.66);
+    expect(mid.eyeY).toBeLessThan(1.7);
+    // The offset is always the negative of the eye: one fact, not two.
+    expect(mid.offsetY).toBeCloseTo(-mid.eyeY, 6);
+
+    h.run(3.5);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+    expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
   });
 
   it('starts at the real ceiling and waits for the operator', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
 
     // The first frame is honest and stays honest: no automatic rise.
@@ -85,7 +109,7 @@ describe('world runtime', () => {
 
   it('stopping mid-ramp freezes the correction where it is', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     h.runtime.setDuration(6000);
     h.runtime.rise(1);
@@ -107,7 +131,7 @@ describe('world runtime', () => {
 
   it('ramps the correction up and back down with smootherstep', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     h.runtime.setDuration(4000);
 
@@ -131,7 +155,7 @@ describe('world runtime', () => {
 
   it('refuses a rise before a calibration exists', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.apply();
     expect(h.runtime.rise(1)).toBe(false);
     expect(h.runtime.state().ready).toBe(false);
@@ -139,7 +163,7 @@ describe('world runtime', () => {
 
   it('a stop freezes the mix where it is, and a new rise resumes', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     h.runtime.setDuration(4000);
     h.runtime.rise(1);
@@ -157,7 +181,7 @@ describe('world runtime', () => {
 
   it('holds every motion while the calibration card is up', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     h.runtime.setDuration(4000);
     h.runtime.rise(1);
@@ -174,23 +198,23 @@ describe('world runtime', () => {
 
   it('places the art from the scene eye only', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
-    h.runtime.setScene({ eyeY: 0.45 });
+    h.runtime.setScene({ lyingEyeY: 0.45, standingEyeY: 0.45 });
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
   });
 
   it('clearing the base releases the calibration freeze', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     h.runtime.hold(true);
     h.runtime.clearBase();
 
     // After a stop during calibration the world must move again next session:
     // a fresh calibration is ready and the operator's rise still lands.
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     expect(h.runtime.state().ready).toBe(true);
     expect(h.runtime.rise(1)).toBe(true);
@@ -200,7 +224,7 @@ describe('world runtime', () => {
 
   it('clearing the base drops the calibration and the mix', () => {
     const h = harness();
-    h.runtime.setScene({ eyeY: 1.7 });
+    h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     h.runtime.rise(1);
     h.run(1);

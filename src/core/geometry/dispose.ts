@@ -10,6 +10,7 @@ import * as THREE from 'three';
 const disposedGeometries = new WeakSet<THREE.BufferGeometry>();
 const disposedMaterials = new WeakSet<THREE.Material>();
 const disposedTextures = new WeakSet<THREE.Texture>();
+const disposedInstanced = new WeakSet<THREE.Object3D>();
 
 interface RenderableHolder {
   geometry?: THREE.BufferGeometry;
@@ -67,6 +68,12 @@ export function disposeObject3D(root: THREE.Object3D): void {
 
   root.traverse((object) => {
     const fields = renderableFields(object);
+    // An instanced mesh owns its instanceMatrix/instanceColor buffers outside
+    // the geometry; three only frees them when the mesh emits `dispose`.
+    if (fields.isInstancedMesh && !disposedInstanced.has(object)) {
+      disposedInstanced.add(object);
+      (object as unknown as { dispose?: () => void }).dispose?.();
+    }
     if (fields.geometry) geometries.add(fields.geometry);
     const material = fields.material;
     if (Array.isArray(material)) {

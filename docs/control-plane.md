@@ -44,7 +44,6 @@ UTF-8 字符串，去掉首尾空白后解释：
 | `HELLO <version>` | 协议握手；成功回 `WELCOME <v> <capMask>` |
 | `PING` | 存活探测；控制者回 `PONG` |
 | `#<seq> <command>` | 带序号与 `ACK` 的离散命令；头显对 seq 去重 |
-| `view:orient:<yaw>,<pitch>` | 连续朝向，Write Without Response，免序号/回执 |
 | 其他白名单字符串 | 旧式无序号命令，仅当前控制者可发；不在白名单内直接拒绝 |
 
 命令白名单由 `ControlProtocol.isAllowedCommand` 与 `CAPABILITIES` 共同维护，可通过 `GET /capabilities` 读取。
@@ -112,36 +111,33 @@ ASCII 字符串。命令回复只通知发起写入的设备；遥测/state 只�
 
 ### 2.4 state
 
-固定 20 字节二进制，小端；第一字节是版本号 `10`：
+固定 **28 字节**二进制，小端；第一字节是版本号 `13`（不向后兼容，两端同批发布）：
 
 | 偏移 | 字段 | 编码 |
 | --- | --- | --- |
-| 0 | version | `10` |
-| 1 | floatLevel | 0–3 |
-| 2 | flags | bit0 session, bit1 calibrating, bit2 **ambience off（水声关，语音无关）**, bit3 cueEnabled, bit4 sitUpActive, bit5 postureMode, bit6–7 float profile (0=a, 1=b, 2=c) |
-| 3 | eyeHeight | 厘米，120–190 |
-| 4 | posturePitch | **有符号**整数度：测得的世界倾角（0 → +90 为起身） |
-| 5 | postureRoll | **有符号**整数度：测得的世界横滚 |
-| 6 | postureRise | 厘米，0–120 |
-| 7 | postureProgress | 0–100 |
-| 8 | viewPitch | **有符号**整数度，−90–+90（页面是唯一夹紧点）；正值 = 上仰（患者看到更多天空） |
-| 9 | viewAnim | 0 idle / 1 playing / 2 held；其他值按 idle 处理 |
-| 10 | cueIntensity | 0–100 |
-| 11 | sceneIndex | `SCENE_IDS` 索引：0 = `washroom`，1 = `shore`，255 = unknown |
-| 12 | viewPreset | 0 none / 1 up / 2 down / 3 recenter / 4 breathe；其他值按 none 处理 |
-| 13–14 | viewYaw | **有符号** int16 小端，度；+ = 患者视线左转 |
-| 15–16 | worldYaw | **有符号** int16 小端：实际写入场景内容的世界偏航（外壳 × 基座） |
-| 17–18 | worldPitch | **有符号** int16 小端：实际世界俯仰 |
-| 19 | worldRoll | **有符号** int8：实际世界横滚 |
+| 0 | version | `13` |
+| 1 | flags | bit0 session, bit1 calibrating, bit2 ambience off, bit3 moving, bit4 hold, bit5 voiceAuto, bit6–7 reserved |
+| 2 | packed | scene index 低 4b ｜ floatLevel 2b ｜ viewAnim 2b |
+| 3 | eyeHeight | 厘米，0–250（躺姿 8 / 71 都在范围内） |
+| 4 | mix | 0–250 = 0–100%：**唯一的姿态标量**（旋转与眼高同源） |
+| 5 | floatMm | 有符号毫米，当前已应用的起伏 |
+| 6 | viewPitch | 有符号整数度，正值 = 上仰 |
+| 7 | viewYaw | 有符号，×2 度（±254） |
+| 8 | voiceId | 0xFF = 无 |
+| 9 | confidence | 0–100% |
+| 10–11 | elapsedSec | uint16 秒 |
+| 12–13 | tMs | uint16 |
+| 14–15 | seq | uint16 |
+| 16–21 | worldQuat x,y,z | 3 × int16 ÷ 32767；`w = √(1−|v|²)`，由读者推出 |
+| 22–27 | worldT x,y,z | 3 × int16，厘米，设备坐标系 |
 
-- 页面通过 WS `{"type":"state","data":...}` 提供这些字段；头显编码后通知控制者。
-- `viewPitch` 是**当前已应用**的角度，不是目标：平滑重定向或动画播放中会看到中间值。平板把它作为回读显示，拖动期间的目标值只保留在本机 `viewPitchRequested` / `viewYawRequested`，收到回读后清空。
-- `viewAnim` 只表示页面动画播放器的粗粒度相位（`idle` / `playing` / `held`），页面通过 WS `state` 的 `viewAnim` 字符串上报；未知值按 `idle` 处理。
-- `viewPreset` 是页面最近播放/正在播放的预设 id（`none|up|down|recenter|breathe`），未知值按 `none` 处理；平板只回显，不自行推断。
-- 20 字节仍落在默认 ATT 负载（20 字节）内；版本不等于 10 或长度不为 20 的帧直接丢弃。
-- 所有角度字段（byte 4 / 5 / 8 / 13–18 / 19）只做位宽检查：越界值不会被静默夹紧，口径见 `docs/rotation-contract.md`。
-- 场景可切换，但只在会话开始前：平板发 `scene:<id>`，头显校验后存入启动参数并转发页面；`CAP_SCENE`（bit 1）声明该能力。byte 11 是 `SCENE_IDS` 的索引（`washroom`=0、`shore`=1，255 = unknown），顺序只增不改。
-- 旧文本格式与 v6 及更早的二进制帧均已删除，没有兼容层。
+设计规则：
+
+- **能推导的不发**：姿态角度是 `90° × mix`，进度就是 `mix`，抬升包含在眼高里；会话没有模式，所以没有 mode 位。
+- **不往回测量**：帧里只有页面实际写入的 `mix / eyeHeight / worldQuat / worldT`，平板与镜像按这些渲染，不从四元数反推角度。
+- **唯一姿态标量**：`mix = 0` 是躺姿（真实天花板），`mix = 1` 是站立（美术视点）；旋转与眼高共用同一条 smootherstep 斜坡，`posture:stop` 冻结的也是它。
+- **中心视线对齐**：镜像用 `worldQuat/worldT` 求逆得到相机，只保证中心射线与头显一致，FOV 与纵横比不裁切。
+- 页面通过 WS `{"type":"state","data":...}` 提供字段 `scene/session/calibrating/moving/audio/floatLevel/mix/eyeHeight/floatMm/viewPitch/viewYaw/viewAnim/voiceId/calibrationConfidence/elapsedSec/worldQ{x,y,z}/worldT{x,y,z}/caps`；头显编码后通知平板。
 
 ## 3. 第一台接管
 
@@ -184,12 +180,11 @@ BLE 写入语法：
 ```text
 HELLO <version>          # CONTROL_OK 后一次；头显回 WELCOME <version> <capMask>
 #<seq> <command>         # 离散命令：单调 seq，头显回 ACK <seq> <OK|REJECTED|BUSY>
-view:orient:<yaw>,<pitch> # 连续朝向：无 seq、无 ACK，只保留最新样本
 PING / RELEASE / CLAIM   # 存活与租约
 ```
 
 - 离散命令在头显侧按控制器维护有界去重窗口；重复 seq 只重发原 ACK，不重复执行。
-- `view:orient` 使用 no-response 写，离散命令使用 response 写；平板一次只写一条，stop 优先并丢弃待发朝向。
+- 所有命令都走 response 写；平板一次只写一条，stop 优先。
 - 未完成 HELLO 的控制器发命令会得到 `PROTOCOL_REQUIRED` / ACK `REJECTED`，不会静默执行。
 
 | 命令 | 页面行为 |
@@ -202,7 +197,6 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `allapps` | 打开系统全部应用页 |
 | `settings:skipcalibration:on\|off` | 持久化下一次训练的校准跳过设置 |
 | `settings:hud:on\|off` | 持久化下一次训练的性能面板设置 |
-| `mode:float\|posture` | 会话前选择模式；会话中拒绝。起身为备选分支 |
 | `float:level:0-3` | 漂浮强度；0 为停用，停止时按 tau 0.25 s 渐出 |
 | `float:profile:a\|b\|c` | 漂浮档位：a 温和（55 mm / 16 s）、b 标准（75 mm / 13 s）、c 沉浸（100 mm / 9 s，最高 1 级）。**无地平线摆动**：世界只沿视觉竖直平移，从不旋转 |
 | `preview` | 进入 2D 预览（不请求 WebXR） |
@@ -210,14 +204,12 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `audio:on` / `audio:off` / `audio:toggle` | 环境声（水声）开关，**默认关**；只影响场景环境声，不静音语音。开启时两路交叉淡化播放，关闭时 0.4 s 渐出 |
 | `exit` / `stop` | 结束训练、退出会话 |
 | `posture:rise` / `posture:lower` / `posture:stop` | 俯仰修正斜坡：rise = 0→1（天花板 → 面向前方），lower = 1→0，stop = 冻结在当前 mix；两种模式下都可用，患者确认键仍只做开始/停止 |
-| `cue:on` / `cue:off` / `cue:intensity:<0..1>` | 近场粒子层开关与强度（应用级；`flow` 由漂浮振幅或起身上升驱动） |
 | `start` | 不启动 WebXR，只提示“请在头显内启动一次，之后由平板控制” |
-| `view:orient:<yaw>,<pitch>` | 绝对朝向（度）：yaw ±180（+ = 左转）、pitch ±90（+ = 上仰），无 TTL；免回执 |
 | `view:stop` | 停止动画并**保持**当前朝向，不回正 |
 | `view:anim:up\|down\|recenter\|breathe` | 播放页面的固定预设：up/down 相对当前角度 ±10°，recenter 回 0°，breathe 为 6 s 回到起点的曲线；无参数，作为一次性离散命令回 `ACK <seq> OK`，不跨重连重放 |
 | `status` | 协议允许，当前平板 UI 不发送 |
 
-`enter`、`home`、`allapps`、`sus:*`、`settings:*` 由头显服务执行；其余离散命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。`view:orient` 只保留最新样本，不等待 ack。
+`enter`、`home`、`sus:*` 由头显服务执行；其余命令进入 `/ws` 保留区，立即推给页面，直到页面 `ack`。
 
 非白名单命令在头显服务层直接拒绝，既不入队也不显示。
 
@@ -242,20 +234,20 @@ PING / RELEASE / CLAIM   # 存活与租约
 ```text
 {"type":"ready","seq":N,"control":bool,"controller":string|null}
 {"type":"cmd","seq":N,"command":"float:level:2","continuous":false}
-{"type":"cmd","seq":N,"command":"view:orient:0,35","continuous":true}
+{"type":"cmd","seq":N,"command":"posture:rise"}
 {"type":"control","control":bool,"controller":string|null}
 ```
 
 页面 → 服务端：
 
 ```text
-{"type":"state","data":{session,calibrating,postureMode,audio,eyeHeight,posturePitch,postureRoll,postureRise,postureProgress,viewPitch,viewAnim,viewPreset,cueEnabled,cueIntensity,calibrationConfidence}}
+{"type":"state","data":{scene,session,calibrating,moving,audio,eyeHeight,mix,floatLevel,floatMm,viewPitch,viewYaw,viewAnim,voiceId,calibrationConfidence,elapsedSec,worldQ,worldT,caps}}
 {"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
 {"type":"ack","seq":N}
 ```
 
-- 连接建立先发 `ready`，随后补发 `seq > since` 的离散命令与最新 `view:orient`；`since` 缺失按 `-1`。
-- 离散命令保留到页面 `ack`（≤64 条）；`view:orient` 免 ack、只保留最新；`view:anim:*` 只实时投递，不跨重连重放。
+- 连接建立先发 `ready`，随后补发 `seq > since` 的命令；`since` 缺失按 `-1`。
+- 命令保留到页面 `ack`（≤64 条）；`view:anim:*` 只实时投递，不跨重连重放。
 - 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。
 - 服务端每 15 s 发 ping，30 s 无 pong 关闭；页面断线后以指数退避重连并带 `since=lastSeq`。
 - `state` / `telemetry` 由页面按 1 Hz / 5 Hz（运动中 state 5 Hz）发送，头显编码为 state v10 / 20 B 遥测后 BLE 通知平板。
@@ -298,7 +290,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 - **单头显假设。** 扫描不提供设备列表：屏幕上同时有第二台广播 `QuietShore` 的头显时，会连上先被扫描到的那台。
 - **控制页布局。** 原生 Compose 单屏：顶部连接状态条，下方依次是会话（状态、计时、开始/结束、朝向）、模式、漂浮强度、声音，最底部常驻急停。底部保留只读角度仪表。
 - **遥测是 3DoF。** 位置分量不随头部平移变化，`yaw`/`pitch` 才是有效姿态。
-- **state 已固定为 20 字节二进制 v10**（flags bit5 为姿态模式、bit6–7 为漂浮档位，byte 1 为漂浮强度，见 `ControlProtocol.kt`；byte 4/5 为测得的世界俯仰/横滚有符号整度，byte 8 为当前已应用 `viewPitch`，byte 9 `viewAnim`：0 idle / 1 playing / 2 held，byte 12 `viewPreset`：0 none / 1 up / 2 down / 3 recenter / 4 breathe，byte 13–14 为当前已应用 `viewYaw` int16，byte 15–18 为实际世界 yaw/pitch int16、byte 19 为世界 roll int8；不再受场景名长度影响；版本不匹配或长度错误会被控制端丢弃，未知枚举值按 idle/none 处理。
+- **state 固定为 28 字节二进制 v13**（见 §2.4）；版本不匹配或长度错误整帧丢弃，未知枚举值按 idle 处理。
 - **回环接口无认证。** 只监听 `127.0.0.1`，但本机其他应用理论上可访问；不要把它当作安全边界。
 
 ## 9. 排障

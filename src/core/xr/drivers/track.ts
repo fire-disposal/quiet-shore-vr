@@ -28,7 +28,8 @@ export interface TrackLimits {
 }
 
 const SUBSTEP_S = 0.02;
-const MAX_SUBSTEPS = 6;
+/** Longest frame the integrator will accept; `App` clamps dt the same way. */
+const MAX_FRAME_S = 0.25;
 
 export function createTrackState(value = 0): TrackState {
   return { value, velocity: 0 };
@@ -50,8 +51,12 @@ export function stepTrack(
     return state.value;
   }
   const omega = 3 / Math.max(0.05, limits.tauS);
-  const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(dt / SUBSTEP_S)));
-  const h = dt / steps;
+  // Clamp the frame first, then split: the substep is ≤ SUBSTEP_S by
+  // construction. Capping the *count* let a 250 ms frame integrate in 41.7 ms
+  // steps and overshoot the spring it was meant to protect.
+  const frame = Math.min(dt, MAX_FRAME_S);
+  const steps = Math.max(1, Math.ceil(frame / SUBSTEP_S));
+  const h = frame / steps;
   const snap = limits.snapDeg ?? 0.05;
   const snapV = limits.snapDegPerS ?? 0.5;
 

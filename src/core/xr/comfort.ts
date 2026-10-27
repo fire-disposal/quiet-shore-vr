@@ -26,25 +26,14 @@ import { aroundPivot, clearTransform, writeBase } from './frame';
  * The rise animation is a ramp of that scalar; nothing else rotates the world.
  * Easing lives in the caller (`world-runtime`), this module only applies a mix.
  */
-export interface ComfortState {
-  calibrated: boolean;
-  /** 0 = uncorrected (real ceiling), 1 = fully corrected. */
-  mix: number;
-  quaternion: [number, number, number, number];
-  position: [number, number, number];
-}
-
 export interface ComfortApi {
   group: THREE.Group;
   /** Adopt the pose as the frame; starts uncorrected (mix 0). */
   calibrate(pose: PoseLike): boolean;
   reset(): void;
   isCalibrated(): boolean;
-  /** `q0` as captured; readers compare against it rather than re-deriving. */
-  getCalibrationQuaternion(out?: THREE.Quaternion): THREE.Quaternion;
   setCorrectionMix(mix: number): void;
   getCorrectionMix(): number;
-  getState(): ComfortState;
 }
 
 export function createComfort(options: {
@@ -117,17 +106,10 @@ export function createComfort(options: {
     calibrate,
     reset,
     isCalibrated: () => calibrated,
-    getCalibrationQuaternion: (out = new THREE.Quaternion()) => out.copy(q0),
     setCorrectionMix: (next) => {
       mix = Number.isFinite(next) ? Math.min(1, Math.max(0, next)) : 0;
       apply();
     },
     getCorrectionMix: () => mix,
-    getState: () => ({
-      calibrated,
-      mix,
-      quaternion: [group.quaternion.x, group.quaternion.y, group.quaternion.z, group.quaternion.w],
-      position: [group.position.x, group.position.y, group.position.z]
-    })
   };
 }

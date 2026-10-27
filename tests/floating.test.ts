@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { createFloating } from '../src/app/floating';
 import type { BuoyancyGate } from '../src/core/xr/buoyancy-frame';
-import { FLOAT_PROFILES } from '../src/core/xr/float';
+import { FLOAT_AMPLITUDE_M } from '../src/core/xr/float';
 import type { SceneHandle } from '../src/core/scene/contract';
 
 function harness(options: {
@@ -10,14 +10,12 @@ function harness(options: {
   axis?: THREE.Vector3;
   split?: boolean;
   level?: number;
-  profile?: 'a' | 'b' | 'c';
   heaveScale?: number;
 } = {}) {
   const content = new THREE.Group();
   const floor = { y: 0 };
   const applied: { amountM: number; swayDeg: number }[] = [];
   const gate: BuoyancyGate = {
-    mode: 'float',
     active: true,
     capturePending: false,
     rising: false,
@@ -47,7 +45,6 @@ function harness(options: {
     gate: () => gate,
     axis: (out) => out.copy(options.axis ?? new THREE.Vector3(0, 1, 0)),
     level: options.level,
-    profile: options.profile,
     breath: true,
     heaveScale: () => options.heaveScale ?? 1
   });
@@ -86,8 +83,8 @@ describe('buoyancy envelope', () => {
     expect(last.amountM).toBe(0);
   });
 
-  it('never runs outside the floating mode or inside a capture', () => {
-    for (const gate of [{ mode: 'posture' as const }, { capturePending: true }, { rising: true }]) {
+  it('never runs outside a running session or inside a capture', () => {
+    for (const gate of [{ active: false }, { capturePending: true }, { rising: true }]) {
       const h = harness({ level: 3, gate });
       h.run(1);
       expect(h.floating.getState().amplitudeM).toBe(0);
@@ -106,69 +103,62 @@ describe('buoyancy envelope', () => {
 });
 
 describe('perceptible heave', () => {
-  it('keeps flow-driving scenes scrolling where the heave is gated off', () => {
-    // The light well scrolls on getFlow(): gating the lake heave (heaveScale 0)
-    // must leave the intent amplitude — and therefore the flow — intact.
+  it('heaves as one vector along the visual up, never double-counted', () => {
+    // A tilted frame (the operator looked up): the content must move exactly
+    // offsetM along the axis. Adding the full offset to Y as well made the
+    // displacement 19% too long and pointed it the wrong way.
+    const axis = new THREE.Vector3(0.6, 0.8, 0).normalize();
+    const h = harness({ level: 3, axis, split: false });
+    h.run(9);
+    const state = h.floating.getState();
+    expect(Math.abs(state.offsetM)).toBeGreaterThan(0.001);
+
+    const moved = new THREE.Vector3(
+      h.content.position.x,
+      h.content.position.y - state.baseOffset,
+      h.content.position.z
+    );
+    const expected = axis.clone().multiplyScalar(state.offsetM);
+    expect(moved.distanceTo(expected)).toBeLessThan(1e-6);
+  });
+  it('leaves a heave-gated scene completely still', () => {
+    // Only the shore takes the heave; other scenes are static, not "breathing".
     const h = harness({ level: 3, heaveScale: 0 });
     h.run(2);
     expect(h.floating.getState().amplitudeM).toBeCloseTo(0, 6);
-    expect(h.floating.getFlow()).toBeGreaterThan(0.9);
-    // The applied offset is only the small breath swell.
-    const peak = Math.max(...h.applied.map((entry) => Math.abs(entry.amountM)));
-    expect(peak).toBeLessThan(0.02);
+    expect(h.floating.getState().offsetM).toBe(0);
   });
 
   it('uses the whole envelope at level 3 and a third of it at level 1', () => {
     const full = harness({ level: 3 });
     full.run(20);
-    expect(full.floating.getState().amplitudeM).toBeCloseTo(FLOAT_PROFILES.b.amplitudeM, 4);
+    expect(full.floating.getState().amplitudeM).toBeCloseTo(FLOAT_AMPLITUDE_M, 4);
     const peak = Math.max(...full.applied.map((entry) => Math.abs(entry.amountM)));
-    // Level 3 has to be a real vertical change: ~75 mm off the base.
-    expect(peak).toBeGreaterThan(0.06);
-    expect(peak).toBeLessThanOrEqual(FLOAT_PROFILES.b.amplitudeM + 1e-6);
+    // Level 3 has to be a real vertical change: ~150 mm off the base.
+    expect(peak).toBeGreaterThan(0.10);
+    expect(peak).toBeLessThanOrEqual(FLOAT_AMPLITUDE_M + 1e-6);
 
     const low = harness({ level: 1 });
     low.run(20);
     const lowPeak = Math.max(...low.applied.map((entry) => Math.abs(entry.amountM)));
-    expect(lowPeak).toBeLessThan(0.06);
-  });
-
-  it('carries the breathing layer inside the same envelope', () => {
-    const h = harness({ level: 3 });
-    h.run(20);
-    const magnitudes = h.applied.map((entry) => Math.abs(entry.amountM));
-    const peak = Math.max(...magnitudes);
-    // The slow heave dominates and the breath rides below it: the total stays
-    // inside the profile amplitude at every instant.
-    for (const value of magnitudes) {
-      expect(value).toBeLessThanOrEqual(FLOAT_PROFILES.b.amplitudeM + 1e-6);
-    }
-    expect(peak).toBeGreaterThan(0.06);
+    expect(lowPeak).toBeLessThan(0.07);
   });
 });
 
 describe('technician choice', () => {
-  it('clamps the level to the profile cap', () => {
-    const h = harness({ profile: 'c' });
-    expect(h.floating.setLevel(3)).toBe(2);
+  it('clamps the level to the global range', () => {
+    const h = harness();
+    expect(h.floating.setLevel(3)).toBe(3);
     expect(h.floating.setLevel(-2)).toBe(0);
     expect(h.floating.setLevel(Number.NaN)).toBe(0);
   });
 
-  it('pulls the level down when the profile gets stricter', () => {
-    const h = harness({ level: 3, profile: 'b' });
-    expect(h.floating.getLevel()).toBe(3);
-    expect(h.floating.setProfile('c')).toBe(2);
-    expect(h.floating.getLevel()).toBe(2);
-    expect(h.floating.getProfile().label).toBe(FLOAT_PROFILES.c.label);
-  });
-
-  it('honours a scene ceiling below the profile cap', () => {
-    const h = harness({ profile: 'b' });
+  it('honours a scene ceiling', () => {
+    const h = harness();
     expect(h.floating.setLevel(3, 2)).toBe(2);
     expect(h.floating.setLevel(3, 1)).toBe(1);
     expect(h.floating.setLevel(0, 1)).toBe(0);
-    // The scene cap never raises the profile cap.
+    // A generous scene cap never raises the global maximum.
     expect(h.floating.setLevel(3, 9)).toBe(3);
   });
 

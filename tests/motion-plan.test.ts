@@ -6,35 +6,35 @@ function input(overrides: Partial<MotionPlanInput> = {}): MotionPlanInput {
     session: true,
     presenting: true,
     capturing: false,
-    correctionDeg: 0,
+    correctionMix: 0,
     correctionMoving: false,
     ...overrides
   };
 }
 
 describe('motion plan', () => {
-  it('offers the rise at a settled ceiling and the lie-back once corrected', () => {
-    const ceiling = planCapabilities(input({ correctionDeg: 0 }));
+  it('offers the rise while lying and the lie-back while standing', () => {
+    const ceiling = planCapabilities(input({ correctionMix: 0 }));
     expect(ceiling.rise).toBe(true);
     expect(ceiling.lie).toBe(false);
 
-    // 88° still has 2° of rise left; only a settled forward view retires it.
-    expect(planCapabilities(input({ correctionDeg: 88 })).rise).toBe(true);
-    const forward = planCapabilities(input({ correctionDeg: 89.5 }));
-    expect(forward.rise).toBe(false);
-    expect(forward.lie).toBe(true);
-
-    const halfway = planCapabilities(input({ correctionDeg: 45, correctionMoving: true }));
+    // A mix of 0.5 is half-risen: both directions still have something to do.
+    const halfway = planCapabilities(input({ correctionMix: 0.5, correctionMoving: true }));
     expect(halfway.rise).toBe(true);
     expect(halfway.lie).toBe(true);
     expect(halfway.stop).toBe(true);
+
+    const forward = planCapabilities(input({ correctionMix: 1 }));
+    expect(forward.rise).toBe(false);
+    expect(forward.lie).toBe(true);
   });
 
-  it('reports the correction angle, not a sit-up-only field', () => {
-    // The bug this replaced: 躺下 was gated on postureRise, which only exists
-    // in sit-up mode, so in a float session it never armed.
-    const floatMode = planCapabilities(input({ correctionDeg: 90 }));
-    expect(floatMode.lie).toBe(true);
+  it('settles within a hair of each end so the button is never dead', () => {
+    // Past 0.99 the rise is retired; below 0.01 the lie-back is.
+    expect(planCapabilities(input({ correctionMix: 0.995 })).rise).toBe(false);
+    expect(planCapabilities(input({ correctionMix: 0.995 })).lie).toBe(true);
+    expect(planCapabilities(input({ correctionMix: 0.005 })).lie).toBe(false);
+    expect(planCapabilities(input({ correctionMix: 0.005 })).rise).toBe(true);
   });
 
   it('blocks everything outside a presenting session and says why', () => {
@@ -55,24 +55,24 @@ describe('motion plan', () => {
     }
   });
 
-  it('treats a non-finite correction as a settled ceiling', () => {
-    const caps = planCapabilities(input({ correctionDeg: Number.NaN }));
+  it('treats a non-finite mix as a settled ceiling', () => {
+    const caps = planCapabilities(input({ correctionMix: Number.NaN }));
     expect(caps.rise).toBe(true);
     expect(caps.lie).toBe(false);
   });
 
   it('bumps the revision only when the plan changed', () => {
-    const first = planMotion(input({ correctionDeg: 10 }));
-    const same = planMotion(input({ correctionDeg: 10 }), first);
+    const first = planMotion(input({ correctionMix: 0.1 }));
+    const same = planMotion(input({ correctionMix: 0.1 }), first);
     expect(same.revision).toBe(first.revision);
 
-    const moved = planMotion(input({ correctionDeg: 40, correctionMoving: true }), same);
+    const moved = planMotion(input({ correctionMix: 0.4, correctionMoving: true }), same);
     expect(moved.revision).toBe(first.revision + 1);
   });
 
-  it('expresses progress as a fraction of a full correction', () => {
-    expect(planMotion(input({ correctionDeg: 45 })).correctionFraction).toBeCloseTo(0.5, 6);
-    expect(planMotion(input({ correctionDeg: 400 })).correctionFraction).toBe(1);
-    expect(planMotion(input({ correctionDeg: -400 })).correctionFraction).toBe(1);
+  it('reports progress as the mix itself, clamped', () => {
+    expect(planMotion(input({ correctionMix: 0.5 })).correctionFraction).toBeCloseTo(0.5, 6);
+    expect(planMotion(input({ correctionMix: 4 })).correctionFraction).toBe(1);
+    expect(planMotion(input({ correctionMix: -4 })).correctionFraction).toBe(0);
   });
 });

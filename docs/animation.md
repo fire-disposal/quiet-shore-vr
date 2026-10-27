@@ -99,11 +99,23 @@ flowchart TB
 
 ## 5 场景侧字段（已对齐）
 
-场景不再"猜帧"，而是声明两件事，应用据此选帧：
+场景不再"猜帧"，也不再手写眼高：它声明**体位**，两个眼高由 `src/core/anatomy.ts` 推导。
 
 | 字段 | 含义 | 取值 |
 | --- | --- | --- |
-| `eyeY` | 作者把眼睛放在内容坐标的哪个高度（米） | washroom 1.70；shore 0.45；lightwell 1.70 |
+| `posture.standingEyeY` | 站立视点：**操作员的站立足高设置**（缺省用美术的 1.70） | 头显设置 `settings:eyeheight` |
+| `posture.supine` | 患者背下是什么 | `mattress` / `water` |
+| `posture.pillow` | 头是否垫枕（+0.05 m） | 仅 `ward` |
+
+推导（1.70 m 成年男性）：`mattress` = 0.55 床垫 + 0.11 头厚 → 0.66（垫枕 0.71）；`water` = 0.08。
+
+```text
+eyeY(mix)  = lying + (standing − lying) · mix
+offsetY    = −eyeY(mix)
+```
+
+于是**眼睛随修正一起升起**：`mix=0` 时眼在躺姿高度（0.66 / 0.71 / 0.08），`mix=1` 时在站立高度（1.70）。
+起身不需要第二条动画通道——它和旋转共用同一个 `mix` 斜坡（smootherstep，平板设定 4–14 s）。
 
 合成顺序是 **shell（视角）∘ base（帧）∘ content（偏移）**。任何"世界里的方向"都要先过这两层旋转：
 漂浮的起伏轴用 `visualUpInContent(headUp, (shellQ × baseQ)⁻¹)`——只反解 base，在操作员把视角抬到 30° 时
@@ -112,19 +124,12 @@ flowchart TB
 帧的推进顺序（`App` 的 render 管线）：`view-motion` → `world-motion`。视角先落定，同一帧里漂浮再读
 `shell` 的旋转算轴，因此没有一帧滞后。
 
-`planFrame()`（`src/core/xr/world-frame.ts`）是唯一的选帧处：
-
-| 场景 | `eyeY` |
-| --- | --- |
-| `washroom` | 1.70（地面在眼下方 1.7 m） |
-| `shore` | 0.45（水面在眼下方 0.45 m） |
-| `lightwell` | 1.70（环带中心） |
-
-选帧只由模式决定：漂浮 → 已校准帧、偏移 `-eyeY`；起身 → 起身路径、偏移 `视点高度 - eyeY`。
+只有一个式子在选帧：`src/app/world-runtime.ts` 的 `apply()` 用当前 `mix` 算出 `eyeY` 与 `offsetY`。
+没有第二种模式、没有第二张表——`core/xr/world-frame.ts` 只剩 `visualUpInContent()` 一个函数。
 
 同时删掉了两个错位来源：
 
-- `SceneBuildContext.eyeHeight`：三个场景一次都没读过；眼高改由场景自己声明，应用不再用全局 `-eyeHeight` 补偿。
+- `SceneBuildContext.eyeHeight`：四个场景一次都没读过；眼高改由场景 `posture` 声明、解剖表推导。
 - 漂浮的固定 −Y：起伏现在沿**视觉竖直**（`visualUpInContent()`），仰卧帧里它等于内容 +Z，因此"上下起伏"在两种帧里都成立，不再变成朝脸的逼近流。
 
 验收：`tests/animation-frame.test.ts`（11 例：选帧表、视觉竖直、两种帧下的地平线角度与位移方向）、

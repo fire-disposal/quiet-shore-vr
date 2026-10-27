@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
-import type { ResourceRegistry } from '../geometry/registry';
 import type { SceneBudget } from '../geometry/budget';
 import type { SceneAudio } from '../../audio/types';
+import type { ScenePosture } from '../anatomy';
 
 export interface LocalizedText {
   zh: string;
@@ -11,18 +11,6 @@ export interface LocalizedText {
 export interface SceneSettings {
   background: THREE.Color | THREE.Texture | null;
   fog: THREE.Fog | null;
-}
-
-/**
- * Build inputs. There is deliberately no quality tier: the system targets one
- * headset, so a scene has one shape and one budget.
- *
- * There is no eye height here: a scene states where its eye belongs
- * (`SceneDefinition.eyeY`) and the frame places it. Passing a height in as
- * well gave two sources for the same number, and every scene ignored it.
- */
-export interface SceneBuildContext {
-  registry: ResourceRegistry;
 }
 
 /**
@@ -45,15 +33,15 @@ export interface BuoyancyState {
 export interface SceneHandle {
   /** Everything the scene owns. Added under the host scene; never the host scene itself. */
   root: THREE.Object3D;
-  selectables: THREE.Object3D[];
   settings: SceneSettings;
   update(dt: number, elapsed: number): void;
   /**
-   * Optional motion cue, 0..1. Scenes that manufacture self-motion (the light
-   * well) ease their environment flow towards this; the app feeds it the same
-   * value that drives the posture cue, so one stop silences both.
+   * Optional world-motion permission, 0..1. Scenes that manufacture their own
+   * self-motion (the light well's fall) ease their speed towards this; the app
+   * feeds it the **session**, never the posture: a running session may move the
+   * scene, a stop, a calibration capture or an idle page may not.
    */
-  setFlow?(flow: number): void;
+  setMotion?(scale: number): void;
   /**
    * Optional: spread the frame's buoyancy across this scene's layers.
    *
@@ -86,11 +74,11 @@ export interface SceneDefinition extends SceneSummary {
    */
   comfortLevel?: number;
   /**
-   * Content-space Y of the eye the art was authored for. The frame places the
-   * art by it, which is why the app never needs a global `-eyeHeight` fudge:
-   * the washroom's floor is 1.70 m below its eye, the lake sits 0.45 m below
-   * the shore's, the light well centres its rings on its own.
+   * Where the eye is for this scene: the height its art was authored from, and
+   * what the patient's back rests on. The lying height is **derived** by
+   * `core/anatomy.ts`, never written here, so the world's rest offset and the
+   * end of a rise come from one table.
    */
-  eyeY: number;
-  build(ctx: SceneBuildContext): SceneHandle;
+  posture: ScenePosture;
+  build(): SceneHandle;
 }

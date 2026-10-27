@@ -4,18 +4,16 @@ import { parseRemoteCommand } from '../src/app/commands';
 describe('remote command grammar', () => {
   it('turns the float channel into typed commands', () => {
     expect(parseRemoteCommand('float:level:2')).toEqual({ kind: 'floatLevel', level: 2 });
-    expect(parseRemoteCommand('float:profile:c')).toEqual({ kind: 'floatProfile', id: 'c' });
-    expect(parseRemoteCommand('float:breath:off')).toEqual({ kind: 'floatBreath', on: false });
+    // The profile and breathing-layer presets were deleted: the only choice
+    // left is on/off, expressed as level 3 / 0.
+    expect(parseRemoteCommand('float:profile:c')?.kind).toBe('unknown');
+    expect(parseRemoteCommand('float:breath:off')?.kind).toBe('unknown');
   });
 
   it('rejects out-of-range or mistyped values whole', () => {
     for (const raw of ['float:level:4', 'float:level:-1', 'float:level:1.5', 'float:level:x']) {
       expect(parseRemoteCommand(raw)).toEqual({ kind: 'invalid', message: '漂浮强度无效' });
     }
-    expect(parseRemoteCommand('float:profile:z')).toEqual({
-      kind: 'invalid',
-      message: '未知漂浮档位'
-    });
   });
 
   it('keeps the eye height strict', () => {
@@ -38,24 +36,10 @@ describe('remote command grammar', () => {
     }
   });
 
-  it('routes the view channel through the strict orient parser', () => {
-    expect(parseRemoteCommand('view:orient:0,12')).toEqual({
-      kind: 'viewOrient',
-      lookYawDeg: 0,
-      upGazeDeg: 12
-    });
-    expect(parseRemoteCommand('view:orient:0,120')?.kind).toBe('invalid');
-    expect(parseRemoteCommand('view:anim:up')).toEqual({ kind: 'viewAnim', name: 'up' });
-    expect(parseRemoteCommand('view:anim:loop')?.kind).toBe('invalid');
-    expect(parseRemoteCommand('view:stop')).toEqual({ kind: 'viewStop' });
-  });
-
-  it('takes cue intensity in the same grammar as the headset allowlist', () => {
-    expect(parseRemoteCommand('cue:intensity:0.5')).toEqual({ kind: 'cueIntensity', value: 0.5 });
-    expect(parseRemoteCommand('cue:intensity:1')?.kind).toBe('cueIntensity');
-    expect(parseRemoteCommand('cue:intensity:0')?.kind).toBe('cueIntensity');
-    for (const raw of ['cue:intensity:1.5', 'cue:intensity:-0.1', 'cue:intensity:5e-1']) {
-      expect(parseRemoteCommand(raw)?.kind).toBe('invalid');
+  it('no longer accepts the retired particle-cue commands', () => {
+    // The near-field cue was removed; both ends drop its grammar together.
+    for (const raw of ['cue:on', 'cue:off', 'cue:intensity:0.5', 'cue:intensity:1']) {
+      expect(parseRemoteCommand(raw)?.kind).toBe('unknown');
     }
   });
 
@@ -81,7 +65,6 @@ describe('remote command grammar', () => {
 
   it('maps the discrete verbs', () => {
     const cases: Array<[string, string]> = [
-      ['mode:posture', 'mode'],
       ['scene:shore', 'scene'],
       ['preview', 'preview'],
       ['calibrate', 'calibrate'],
@@ -90,7 +73,6 @@ describe('remote command grammar', () => {
       ['audio:toggle', 'audio'],
       ['posture:rise', 'posture'],
       ['posture:stop', 'posture'],
-      ['cue:on', 'cue'],
       ['gaze:dwell:off', 'gazeDwell'],
       ['status', 'status'],
       ['start', 'start']
@@ -108,6 +90,5 @@ describe('remote command grammar', () => {
 
   it('normalises case and padding before parsing', () => {
     expect(parseRemoteCommand('  PREVIEW  ')).toEqual({ kind: 'preview' });
-    expect(parseRemoteCommand('Float:Profile:A')).toEqual({ kind: 'floatProfile', id: 'a' });
   });
 });

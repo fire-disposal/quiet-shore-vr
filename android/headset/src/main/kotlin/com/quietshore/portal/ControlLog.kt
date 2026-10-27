@@ -35,10 +35,9 @@ internal enum class FrameKind {
 /**
  * Ack-based command retention for the page.
  *
- * Discrete commands stay resident until the page acks them (`ack.seq` prunes
- * everything at or below it), so a reconnect with `since` can be gap-filled.
- * The newest continuous `view:orient` lives in its own slot and is never acked:
- * a 10 Hz movement stream can never evict a discrete command.
+ * Commands stay resident until the page acks them (`ack.seq` prunes everything
+ * at or below it), so a reconnect with `since` can be gap-filled. Every command
+ * is discrete: the 10 Hz `view:orient` stream is gone.
  *
  * `view:anim:*` is deliberately absent: it is a one-shot event, delivered live
  * and never retained, so a reconnect cannot replay an animation.
@@ -51,16 +50,11 @@ internal enum class FrameKind {
 internal class ControlLog(private val depth: Int = PENDING_DEPTH) {
 
     private val pending = LinkedHashMap<Int, ControlEntry>(16)
-    private var continuous: ControlEntry? = null
 
     /** Number of discrete commands still awaiting an ack. */
     val pendingSize: Int get() = pending.size
 
     fun record(seq: Int, command: String): ControlKind {
-        if (command.startsWith(ControlProtocol.VIEW_ORIENT)) {
-            continuous = ControlEntry(seq, command)
-            return ControlKind.CONTINUOUS
-        }
         if (command.startsWith(ControlProtocol.VIEW_ANIM)) {
             // One shot: delivered live only, never retained for replay.
             return ControlKind.DISCRETE
@@ -83,9 +77,6 @@ internal class ControlLog(private val depth: Int = PENDING_DEPTH) {
     /** Pending discrete commands newer than [since], ascending by seq. */
     fun pendingSince(since: Int): List<ControlEntry> =
         pending.values.filter { it.seq > since }.sortedBy { it.seq }
-
-    /** Newest continuous sample, ack-free and retained for reconnect gap-fill. */
-    fun latestContinuous(): ControlEntry? = continuous
 
     private fun trim() {
         while (pending.size > depth) {

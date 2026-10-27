@@ -40,8 +40,8 @@ internal object PortalSession {
         val eyeHeight = current.eyeHeight
             .takeIf {
                 it.isFinite() &&
-                    it >= ControlProtocol.EYE_HEIGHT_MIN &&
-                    it <= ControlProtocol.EYE_HEIGHT_MAX
+                    it >= HeadsetSettings.EYE_HEIGHT_MIN &&
+                    it <= HeadsetSettings.EYE_HEIGHT_MAX
             }
             ?: ControlProtocol.EYE_HEIGHT_DEFAULT
         // Two decimals keep the JSON readable (1.35, not 1.350000023841858).

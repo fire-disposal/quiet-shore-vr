@@ -14,7 +14,6 @@ import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.protocol.ViewAnim
-import com.quietshore.control.protocol.ViewPreset
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -678,14 +677,10 @@ class PortalService : Service() {
 
     /** Sends retained commands the page has not consumed (`seq > since`). */
     private fun sendGapFill(sink: WsSink, since: Int) {
-        val (pending, continuous) = synchronized(controlLock) {
-            controlLog.pendingSince(since) to controlLog.latestContinuous()
-        }
+        // Every command is discrete now: there is no movement slot to replay.
+        val pending = synchronized(controlLock) { controlLog.pendingSince(since) }
         for (entry in pending) {
             offer(sink, FrameKind.DISCRETE, textFrame(commandJson(entry, isContinuous = false)))
-        }
-        if (continuous != null && continuous.seq > since) {
-            offer(sink, FrameKind.CONTINUOUS, textFrame(commandJson(continuous, isContinuous = true)))
         }
     }
 
@@ -865,10 +860,6 @@ class PortalService : Service() {
         command == "enter" ||
             command == "exit" ||
             command == "home" ||
-            command == "allapps" ||
-            command.startsWith(ControlProtocol.SETTINGS_SKIP_CALIBRATION) ||
-            command.startsWith(ControlProtocol.SETTINGS_HUD) ||
-            command.startsWith(ControlProtocol.SETTINGS_EYE_HEIGHT) ||
             command.startsWith(ControlProtocol.SCENE_PREFIX)
 
     private fun dispatchControl(raw: String): Boolean {
@@ -891,85 +882,12 @@ class PortalService : Service() {
         var broadcastStatus = true
         when {
             command == "home" -> PortalActions.home(this)
-            command == "console:about" -> PortalActions.showAbout(this)
-            command == "allapps" -> PortalActions.allApps(this)
             // SUS lives in the page now: only the WebXR surface can offer gaze
             // selection, so these commands are forwarded instead of handled here.
             command == "enter" -> {
                 if (!PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())) {
                     return false
                 }
-            }
-            command.startsWith(ControlProtocol.SETTINGS_SKIP_CALIBRATION) -> {
-                val enabled = command.endsWith(":on")
-                synchronized(settingsLock) {
-                    HeadsetSettings.save(
-                        this,
-                        HeadsetSettings.read(this).copy(skipCalibration = enabled)
-                    )
-                }
-            }
-            command.startsWith(ControlProtocol.SETTINGS_HUD) -> {
-                val enabled = command.endsWith(":on")
-                synchronized(settingsLock) {
-                    HeadsetSettings.save(this, HeadsetSettings.read(this).copy(showHud = enabled))
-                }
-            }
-            command.startsWith(ControlProtocol.SETTINGS_EYE_HEIGHT) -> {
-                // The allowlist already range-checks the value; keep the second
-                // gate so an out-of-range height can never reach prefs or the page.
-                val meters = ControlProtocol.parseEyeHeight(command)
-                if (meters == null) {
-                    Log.w(TAG, "rejected eye height: $command")
-                    return false
-                }
-                synchronized(settingsLock) {
-                    HeadsetSettings.save(
-                        this,
-                        HeadsetSettings.read(this).copy(eyeHeight = meters)
-                    )
-                }
-                queued = true
-            }
-            command.startsWith(ControlProtocol.SCENE_PREFIX) -> {
-                val id = command.removePrefix(ControlProtocol.SCENE_PREFIX).trim()
-                if (id !in ControlProtocol.SCENE_IDS) {
-                    Log.w(TAG, "rejected scene: $command")
-                    return false
-                }
-                // Stored, not only forwarded: it is the launch parameter for the
-                // next `enter`, so the operator can change scene and go back in
-                // without touching the headset.
-                synchronized(settingsLock) {
-                    HeadsetSettings.save(this, HeadsetSettings.read(this).copy(sceneId = id))
-                }
-                queued = true
-            }
-            command == "exit" -> {
-                // Leave the browser scene and come back to the console app.
-                PortalActions.showConsole(this)
-            }
-            command.startsWith(ControlProtocol.VIEW_ORIENT) -> {
-                // Slider stream: the newest absolute orientation owns the
-                // continuous slot and persists there with no TTL. It never
-                // changes BLE/status state, so it skips the per-sample activity
-                // broadcast (the WS push carries it instead).
-                if (ControlProtocol.parseViewOrient(command) == null) {
-                    Log.w(TAG, "rejected view orient: $command")
-                    return false
-                }
-                queued = true
-                broadcastStatus = false
-            }
-            command.startsWith("cue:") -> {
-                if (command.startsWith("cue:intensity:")) {
-                    val intensity = command.substringAfter("cue:intensity:").toFloatOrNull()
-                    if (intensity == null || !intensity.isFinite() || intensity < 0f || intensity > 1f) {
-                        Log.w(TAG, "rejected cue intensity: $command")
-                        return false
-                    }
-                }
-                queued = true
             }
             command == "status" -> Unit
             else -> queued = true
@@ -1028,13 +946,11 @@ class PortalService : Service() {
         val state = lastState
         body.put("session", state.session)
         body.put("calibrating", state.calibrating)
-        body.put("postureProgress", state.postureProgress)
-        body.put("posturePitch", state.posturePitch)
-        body.put("postureRise", state.postureRise)
+        body.put("mix", state.mix)
+        body.put("eyeHeight", state.eyeHeight)
         body.put("viewPitch", state.viewPitch)
         body.put("viewYaw", state.viewYaw)
         body.put("viewAnim", state.viewAnim.wire)
-        body.put("viewPreset", state.viewPreset.wire)
         body.put("scene", state.scene)
         body.put("pendingSeq", controlSeq.get())
         return jsonResponse(body)
@@ -1089,53 +1005,37 @@ class PortalService : Service() {
         lastSessionRunning = running
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
+        fun vec(name: String): Float =
+            (json.optJSONObject(name)?.optDouble("x", 0.0) ?: 0.0).toFloat()
+
         val state = ControlState(
             scene = json.optString("scene", ControlState().scene)
                 .takeIf { it in ControlProtocol.SCENE_IDS } ?: ControlState().scene,
             session = json.optBoolean("session", false),
             calibrating = json.optBoolean("calibrating", false),
-            sitUpActive = json.optBoolean("sitUpActive", false),
-            postureMode = json.optBoolean("postureMode", false),
+            moving = json.optBoolean("moving", false),
+            audioMuted = json.optBoolean("audio", false),
             // Buoyancy the page is actually applying; the tablet mirrors this so
             // its controls can never drift from the headset.
             floatLevel = json.optInt("floatLevel", 1).coerceIn(0, 3),
-            floatProfile = json.optString("floatProfile", "b")
-                .takeIf { it == "a" || it == "b" || it == "c" } ?: "b",
-            audioMuted = json.optBoolean("audio", false),
-            cueEnabled = json.optBoolean("cueEnabled", true),
+            // The one posture scalar: rotation and eye height both follow it.
+            mix = finite("mix", 0f).coerceIn(0f, 1f),
             eyeHeight = finite("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT)
-                .takeIf { it >= ControlProtocol.EYE_HEIGHT_MIN && it <= ControlProtocol.EYE_HEIGHT_MAX }
-                ?: ControlProtocol.EYE_HEIGHT_DEFAULT,
-            posturePitch = finite("posturePitch", 0f),
-            postureRoll = finite("postureRoll", 0f),
-            postureRise = finite("postureRise", 0f),
-            postureProgress = finite("postureProgress", 0f),
-            // 视角俯仰是**当前已应用**的角度（度），不是目标。v3 的
-            // viewX/viewZ 平移字段已删除，页面若仍发送也会被忽略。
-            // ±20° 的夹紧只在页面做一次（见 docs/rotation-contract.md），
-            // 这里不重复，否则坏值会被静默改写成"合法"的错值。
-            viewPitch = finite("viewPitch", 0f),
-            // 视角偏航：+ = 患者视线向左（与世界层符号相反，页面已换算）。
-            viewYaw = finite("viewYaw", 0f),
-            // 实际写入场景内容的世界变换（外壳 × 基座），供镜像复现患者视角；
-            // 平移是修正绕校准眼点旋转的枢轴，缺了它镜像相机最多偏两倍眼距。
-            worldYaw = finite("worldYaw", 0f),
-            worldPitch = finite("worldPitch", 0f),
-            worldRoll = finite("worldRoll", 0f),
-            worldXM = finite("worldXM", 0f),
-            worldYM = finite("worldYM", 0f),
-            worldZM = finite("worldZM", 0f),
-            // 未知的动画相位/预设按空闲/未选择处理，坏值不会让整帧 state 失效。
-            viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
-            viewPreset = ViewPreset.fromWire(json.optString("viewPreset", ViewPreset.NONE.wire)),
-            cueIntensity = finite("cueIntensity", 1f),
-            calibrationConfidence = finite("calibrationConfidence", 0f).coerceIn(0f, 100f),
-            // Applied motion, reported by the page: the tablet renders these
-            // verbatim instead of re-deriving a curve it cannot see.
+                .coerceIn(0f, 2.5f),
             floatMm = finite("floatMm", 0f).coerceIn(-127f, 127f),
-            swayDeg = finite("swayDeg", 0f).coerceIn(-12.7f, 12.7f),
+            viewPitch = finite("viewPitch", 0f),
+            viewYaw = finite("viewYaw", 0f),
+            viewAnim = ViewAnim.fromWire(json.optString("viewAnim", ViewAnim.IDLE.wire)),
+            voiceId = json.optInt("voiceId", -1).coerceIn(-1, 63),
+            calibrationConfidence = finite("calibrationConfidence", 0f).coerceIn(0f, 100f),
             elapsedSec = json.optInt("elapsedSec", 0).coerceIn(0, 65535),
-            voiceId = json.optInt("voiceId", -1).coerceIn(-1, 63)
+            // Applied world transform (shell x base): quaternion xyz + metres.
+            worldQX = json.optJSONObject("worldQ")?.optDouble("x", 0.0)?.toFloat() ?: 0f,
+            worldQY = json.optJSONObject("worldQ")?.optDouble("y", 0.0)?.toFloat() ?: 0f,
+            worldQZ = json.optJSONObject("worldQ")?.optDouble("z", 0.0)?.toFloat() ?: 0f,
+            worldX = json.optJSONObject("worldT")?.optDouble("x", 0.0)?.toFloat() ?: 0f,
+            worldY = json.optJSONObject("worldT")?.optDouble("y", 0.0)?.toFloat() ?: 0f,
+            worldZ = json.optJSONObject("worldT")?.optDouble("z", 0.0)?.toFloat() ?: 0f
         )
         lastState = state
         bluetooth?.publishState(state)
@@ -1160,11 +1060,9 @@ class PortalService : Service() {
             put("scene", state.scene)
             put("session", state.session)
             put("calibrating", state.calibrating)
-            put("postureMode", state.postureMode)
-            put("sitUpActive", state.sitUpActive)
+            put("moving", state.moving)
             put("hold", state.hold)
             put("voiceAuto", state.voiceAuto)
-            put("cueEnabled", state.cueEnabled)
         }.toString()
         val now = System.currentTimeMillis()
         if (doc == lastFlagsJson && now - lastFlagsAt < FLAGS_HEARTBEAT_MS) {

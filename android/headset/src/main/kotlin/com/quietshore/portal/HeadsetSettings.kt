@@ -33,11 +33,15 @@ internal data class HeadsetSettings(
         // once; the next operator change is persisted under this key.
         private const val KEY_EYE_HEIGHT = "settings.eyeHeight.v2"
 
+        /** Comfort range for the standing eye height, metres. */
+        const val EYE_HEIGHT_MIN = 1.2f
+        const val EYE_HEIGHT_MAX = 1.9f
+
         /** True when [meters] is a usable eye height; the page only ever sees these. */
         fun isValidEyeHeight(meters: Float): Boolean =
             meters.isFinite() &&
-                meters >= ControlProtocol.EYE_HEIGHT_MIN &&
-                meters <= ControlProtocol.EYE_HEIGHT_MAX
+                meters >= EYE_HEIGHT_MIN &&
+                meters <= EYE_HEIGHT_MAX
 
         fun read(context: Context): HeadsetSettings {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

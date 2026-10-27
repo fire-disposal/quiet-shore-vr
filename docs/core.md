@@ -82,17 +82,13 @@ smootherstep 首末速为零，起身不改变眼高。详见 `docs/animation.md
 
 ```ts
 interface SceneDefinition extends SceneSummary {
-  eyeY: number;                     // 作者把眼睛放在内容坐标的哪个高度
-  build(ctx: SceneBuildContext): SceneHandle;
+  posture: ScenePosture;            // { standingEyeY, supine, pillow? }：眼高由解剖表推导
+  build(): SceneHandle;
 }
 
-interface SceneBuildContext {
-  registry: ResourceRegistry;       // 只注入资源注册表；眼高由场景自己声明
-}
 
 interface SceneHandle {
   root: THREE.Object3D;
-  selectables: THREE.Object3D[];   // 当前 MVP 不使用注视选择，为空
   settings: SceneSettings;         // background / fog
   update(dt: number, elapsed: number): void;
   dispose(): void;
@@ -101,7 +97,7 @@ interface SceneHandle {
 ```
 
 - 没有画质挡位：渲染参数写死在 `src/core/xr/renderer.ts`。
-- 场景声明 `eyeY`，应用据此放置画面（见 `docs/animation.md`）；不再向下传眼高。
+- 场景声明 `posture`，应用由 `src/core/anatomy.ts` 推导躺/立两个眼高（见 `docs/animation.md`）；不再向下传眼高。
 - 音频在场景定义中声明；场景构建器不直接调用音频 API；App 不按场景 ID 选择音频。
 - `root` 只含场景内容，不含相机、HUD、准星或控制对象。
 - `update` 不读写会话状态，不做网络或 BLE。
@@ -174,11 +170,12 @@ interface SceneHandle {
 ## 10. 现状事实（以代码为准）
 
 - 场景：四个 —— `washroom`（洁净立便间）、`shore`（仰望湖面）、`lightwell`（光井）、`ward`（病房），见 `src/scenes/`。
-  每个场景声明 `eyeY`（作者把眼睛放在内容坐标的哪个高度），应用据此放置画面；`ward` 是 0.85（人在床上）。
+  每个场景声明 `posture`（站立眼高 + 身下支撑物），应用由解剖表推导躺姿眼高：床上 0.66（病房垫枕 0.71）、水面 0.08；
+  画面偏移随 `mix` 从 `-躺姿眼高` 过渡到 `-站姿眼高`——眼睛和旋转共用一条起身曲线。
 - 场景预算：`washroom` 10 draw / 568 三角形 / 0 透明；`shore` 6 draw / 626 三角形 / 3 透明；`lightwell` 5 draw / 2.6 k 三角形 / 0 透明；
   `ward` 10 draw / 1670 三角形 / 1 透明。上限由 `tests/scenes.test.ts` 断言。
-- 世界帧：漂浮模式一律用已校准帧（偏移 `-eyeY`），起身模式用起身路径（偏移 `视点高度 - eyeY`）；
-  选帧只有 `src/core/xr/world-frame.ts` 一处，`src/app/world-runtime.ts` 是唯一写 base 的地方。详见 `docs/animation.md`。
+- 世界帧：只有一个式子——`world-runtime` 用当前 `mix` 算 `eyeY` 与 `offsetY`（躺 → 站），
+  写 base 的只有 `src/app/world-runtime.ts`。详见 `docs/animation.md`。
 - 校准：保持不动 1.8 s + 3 s 取样；世界在卡片期间冻结。
 - 漂浮：`src/app/floating.ts` 拥有等级、档位、包络、位移与 sway；起伏沿患者视觉竖直（`visualUpInContent()`），
   只在漂浮模式、会话进行中、非取帧窗口、非起身过程中运行。
@@ -187,5 +184,5 @@ interface SceneHandle {
 - SUS：头显单卡片、注视 5 s 作答；结果经 JSON socket → 头显 `sus` 特征（UTF-8 JSON）→ 平板计分并持久化（最近 50 份）。
 - 音频：环境声默认开、基准音量减半（0.4）；平板水声开关可关；语音独立音量，不受水声开关影响。
   环境声播放器双路交叉淡化（±0.6% 速率错开、11–19 s 随机交换），叠加 6–15 s 一次的短片段细节。
-- 协议：state v12（40 B，末尾 float32 世界平移 x/y/z；平板连接建立时 `requestMtu(128)`）；能力位含 `CAP_SCENE`、`CAP_POSTURE`；新增 `sus` 特征。不向后兼容：v11/v10 帧直接拒收。
+- 协议：state **v13（28 B）**：`mix` 是唯一姿态标量，`eyeHeight` 已含抬升，世界变换用 `worldQuat xyz + worldT cm`；命令面收敛到 21 条（无 `view:orient`/`settings:*`/`allapps`）。不向后兼容：v12 及更早整帧拒收。
 - 验证：`tsc`；vitest 30 文件 / 279 用例；web 构建 + standalone；`:protocol:test`；两个 APK 构建。实机：0.9.31 待烧录验证。

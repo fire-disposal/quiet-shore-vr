@@ -45,7 +45,7 @@ function placeAt(controller: ViewMotionControllerApi, deg: number): void {
 
 describe('view preset catalog', () => {
   it('declares ids, codes, labels, durations and curve semantics', () => {
-    expect(Object.keys(VIEW_PRESETS).sort()).toEqual(['breathe', 'down', 'recenter', 'up']);
+    expect(Object.keys(VIEW_PRESETS).sort()).toEqual(['down', 'recenter', 'up']);
 
     expect(VIEW_PRESETS.up.motion).toBe('relative');
     expect(VIEW_PRESETS.up.excursionDeg).toBe(10);
@@ -61,20 +61,15 @@ describe('view preset catalog', () => {
     expect(VIEW_PRESETS.recenter.excursionDeg).toBe(0);
     expect(VIEW_PRESETS.recenter.durationMs).toBe(2400);
 
-    expect(VIEW_PRESETS.breathe.motion).toBe('round-trip');
-    expect(VIEW_PRESETS.breathe.excursionDeg).toBe(6);
-    expect(VIEW_PRESETS.breathe.durationMs).toBe(6000);
-    expect(VIEW_PRESETS.breathe.curve).toBe('cycle');
-
     for (const preset of Object.values(VIEW_PRESETS)) {
       expect(preset.id).toBe(preset.id.toLowerCase());
       expect(preset.curveLabel.length).toBeGreaterThan(0);
       expect(VIEW_PRESET_CODES[preset.id]).toBeGreaterThan(0);
     }
 
-    expect(VIEW_PRESET_CODES).toEqual({ none: 0, up: 1, down: 2, recenter: 3, breathe: 4 });
+    expect(VIEW_PRESET_CODES).toEqual({ none: 0, up: 1, down: 2, recenter: 3 });
     expect(presetCode(null)).toBe('none');
-    expect(presetCode('breathe')).toBe('breathe');
+    expect(presetCode('recenter')).toBe('recenter');
   });
 
   it('lets the whole catalog play and only its ids be playable', () => {
@@ -160,35 +155,6 @@ describe('view motion controller', () => {
     expect(harness.controller.getUpGazeDeg()).toBeCloseTo(0, 6);
     expect(harness.controller.getStateName()).toBe('idle');
     expect(harness.controller.getPresetId()).toBeNull();
-  });
-
-  it('breathes out and back to the angle it started from', () => {
-    const harness = createHarness();
-    placeAt(harness.controller, 5);
-
-    harness.controller.play('breathe');
-    expect(harness.controller.getPresetId()).toBe('breathe');
-
-    // Quarter cycle: half the excursion; half cycle: the peak; end: back home.
-    harness.step(1.5);
-    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(8, 1);
-    harness.step(1.5);
-    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(11, 1);
-    harness.step(3.1);
-    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(5, 6);
-    expect(harness.controller.getStateName()).toBe('idle');
-    expect(harness.controller.getPresetId()).toBeNull();
-    expect(harness.controller.getTargetUpGazeDeg()).toBe(5);
-  });
-
-  it('clamps the breathe excursion at the envelope and still returns home', () => {
-    const harness = createHarness();
-    placeAt(harness.controller, 88);
-    harness.controller.play('breathe');
-    harness.step(3);
-    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(UP_GAZE_LIMIT_DEG, 6);
-    harness.step(3.1);
-    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(88, 6);
   });
 
   it('reports the preset through playing and held, then clears it', () => {
