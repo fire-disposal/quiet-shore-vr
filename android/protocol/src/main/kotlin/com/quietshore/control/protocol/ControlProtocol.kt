@@ -606,7 +606,7 @@ object ControlProtocol {
     val SCENE_BLURBS: Map<String, String> = linkedMapOf(
         "washroom" to "起身视角：0.85 米外的立便器与木隔屏；躺下只见天花板的一盏筒灯。",
         "shore" to "躺卧视角：水面在身下缓缓起伏，云在头顶漂移，地平线稳定。",
-        "lightwell" to "躺卧视角：竖井里十三道光环持续上行，强度跟着漂浮幅度走。",
+        "lightwell" to "躺卧视角：6 米见方的竖井，壁上灯架缓缓上行（约 33 秒一组），幅度随起伏走。",
         "ward" to "仰卧视角：被面轻褶、窗上百叶、监护仪滚动的波形，头顶两盏嵌灯。"
     )
 
