@@ -178,7 +178,7 @@ fun BatteryField(
         }
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -234,9 +234,14 @@ private val ChargeBarHeight = 26.dp
 /** One bracketed word at the right end: `[低电量]`, `[充电中]`. Ink only. */
 @Composable
 private fun ChargeTag(label: String) {
+    // Same face and line height as the rest of the line: a smaller tier inside
+    // the same Row sat on a different baseline and read as "not centred".
     Text(
         text = "[$label]",
-        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.2.sp),
+        style = MaterialTheme.typography.bodyMedium.copy(
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 0.2.sp
+        ),
         color = QuietPalette.InkSecondary,
         maxLines = 1
     )
