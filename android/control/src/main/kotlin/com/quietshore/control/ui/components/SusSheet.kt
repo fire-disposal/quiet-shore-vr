@@ -62,14 +62,14 @@ fun SusSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Key(
-                        label = "在头显中打开",
+                        label = "打开量表",
                         onClick = actions.onSusOpen,
                         modifier = Modifier.weight(1f),
                         kind = KeyKind.Fill,
                         enabled = connected
                     )
                     Key(
-                        label = "关闭",
+                        label = "关闭量表",
                         onClick = actions.onSusClose,
                         modifier = Modifier.weight(1f),
                         enabled = connected
@@ -77,7 +77,7 @@ fun SusSheet(
                 }
                 Text(
                     text = if (current in 1..questions.size) {
-                        "当前第 $current 题。作答后自动到下一题。"
+                        "当前第 $current 题。"
                     } else {
                         "未开始。打开后逐题出现。"
                     },
@@ -103,7 +103,7 @@ fun SusSheet(
                     checked = state.susVoice,
                     onCheckedChange = actions.onSusVoiceChange,
                     enabled = connected,
-                    note = "题目出现时同步播放这一题语音。"
+                    note = "显示题目时朗读题干。"
                 )
             }
         }
@@ -138,7 +138,7 @@ fun SusSheet(
                             )
                             Spacer(Modifier.width(8.dp))
                             Key(
-                                label = if (isCurrent) "当前" else "显示",
+                                label = "显示",
                                 onClick = { actions.onSusShow(number) },
                                 kind = if (isCurrent) KeyKind.Fill else KeyKind.Quiet,
                                 enabled = connected,
@@ -187,7 +187,7 @@ fun SusSheet(
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 if (state.susHistory.isEmpty()) {
-                    EmptyNote("暂无归档。完成一份量表后出现在这里。")
+                    EmptyNote("暂无归档")
                 } else {
                     for (record in state.susHistory.asReversed()) {
                         val score = record.score?.let { "$it 分" } ?: "${record.filled}/10"

@@ -3,6 +3,7 @@ package com.quietshore.control
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quietshore.control.ui.ControlApp
@@ -14,7 +15,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Light chrome: the bars are drawn over the app's own paper, so their
+        // icons must be dark. Nothing in this app is ever dark.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
+        )
         setContent {
             QuietShoreTheme {
                 // `--es preview running` renders the console over fixture state:
@@ -29,7 +41,12 @@ class MainActivity : ComponentActivity() {
                     ConsolePreview(
                         fixture = fixture,
                         batteryLevel = intent.getIntExtra("battery", -1)
-                            .takeIf { it in 0..100 }
+                            .takeIf { it in 0..100 },
+                        // `--ez mirror true` / `--ez pose true`: review the cover
+                        // and its empty state without a headset to feed it.
+                        openMirror = intent.getBooleanExtra("mirror", false),
+                        withPose = intent.getBooleanExtra("pose", false),
+                        withDrift = intent.getBooleanExtra("drift", false)
                     )
                 } else {
                     val controlViewModel: ControlViewModel = viewModel()

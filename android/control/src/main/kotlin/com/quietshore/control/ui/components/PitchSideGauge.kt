@@ -37,7 +37,7 @@ fun PitchSideGauge(
     val pitchDeg = if (pose == null) 0.0 else pose.pitch * 180.0 / Math.PI
     val fresh = pose != null && !stale
     val label = if (pose == null) {
-        "俯仰 —"
+        "俯仰 — 未更新"
     } else {
         String.format(Locale.US, "俯仰 %+d°", pitchDeg.roundToInt())
     }
@@ -66,7 +66,7 @@ fun PitchSideGauge(
 
             // Level reference, hairline, no label.
             drawLine(
-                color = QuietPalette.Hairline,
+                color = QuietPalette.InkSecondary.copy(alpha = 0.55f),
                 start = Offset(0f, hip.y),
                 end = Offset(w, hip.y),
                 strokeWidth = 1.dp.toPx()
@@ -76,7 +76,7 @@ fun PitchSideGauge(
             // slider at one end, which is worse than an empty frame.
             if (pose == null || !fresh) {
                 drawCircle(
-                    color = QuietPalette.Disabled,
+                    color = QuietPalette.InkSecondary,
                     radius = 3.dp.toPx(),
                     center = hip,
                     style = Stroke(width = 1.dp.toPx())
@@ -86,8 +86,10 @@ fun PitchSideGauge(
 
             // Body line + head, rotated by the head pitch (positive = up).
             rotate(degrees = -pitchDeg.toFloat(), pivot = hip) {
+                // The body is ink, not the accent: it is a reading, and the
+                // accent on this screen belongs to "you can press this".
                 drawLine(
-                    color = QuietPalette.Ice,
+                    color = QuietPalette.InkSecondary,
                     start = hip,
                     end = Offset(hip.x + length, hip.y),
                     strokeWidth = 6.dp.toPx(),

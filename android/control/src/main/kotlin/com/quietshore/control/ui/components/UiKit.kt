@@ -48,21 +48,27 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ui.theme.ControlMotion
 import com.quietshore.control.ui.theme.QuietPalette
+import com.quietshore.control.ui.theme.QuietSpace
 
 /**
- * The console's whole vocabulary, in one file: rule, band, key, chip, meter,
- * notice. Every screen composes out of these, so the palette, the touch sizes
- * and the "no radius / no shadow" rule are decided once.
+ * The console's whole vocabulary, in one file: rule, panel, band, key, chip,
+ * meter, notice. Every screen composes out of these, so the palette, the type
+ * ladder, the touch sizes and the "no radius / no shadow" rule are decided
+ * once.
  *
- * 冷库 rules encoded here, not at call sites:
- *  - ice is a fill with ink on top, or ink on the dark bar. Never body text on paper.
- *  - a pressable thing gets one cut corner; a static thing gets no shape at all.
- *  - a division is a 1 dp hairline, never a border wrapped around a filled card.
- *  - nothing is smaller than 48 dp on a side.
+ * Rules encoded here, not at call sites:
+ *  - ice is a *fill* with ink on top. It marks the current one and the stop.
+ *  - a pressable thing gets one cut corner; a static thing gets no shape.
+ *  - a division is a 1 dp hairline, never a border wrapped around a card.
+ *  - nothing that is pressed is smaller than 56 dp, because this is a 10"
+ *    tablet held in one hand at the bedside, not a phone in two.
  */
 
-/** Minimum touch target on a 10" tablet held at arm's length. */
-val TouchTarget: Dp = 48.dp
+/** Minimum touch target: 56 dp. The spec floor is 48; the arm at a bed is longer. */
+val TouchTarget: Dp = 56.dp
+
+/** The one pressable shape: bottom-right corner cut, so the cut never touches a label. */
+val KeyShape = CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
 
 private val TABULAR = "\"tnum\""
 
@@ -75,7 +81,7 @@ fun NumberText(
     text: String,
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.bodyMedium,
-    color: Color = QuietPalette.TextPrimary
+    color: Color = QuietPalette.Ink
 ) {
     Text(
         text = text,
@@ -91,43 +97,50 @@ fun NumberText(
 // Division
 // ---------------------------------------------------------------------------
 
-/** The only divider. [onBar] flips it to light ink for the dark bar. */
+/** The only divider: a 1 dp hairline of ink at 14 %. */
 @Composable
-fun Rule(
-    modifier: Modifier = Modifier,
-    onBar: Boolean = false
-) {
-    Box(
-        modifier
-            .height(1.dp)
-            .background(if (onBar) QuietPalette.OnBarHairline else QuietPalette.Hairline)
-    )
+fun Rule(modifier: Modifier = Modifier) {
+    Box(modifier.height(1.dp).background(QuietPalette.Hairline))
 }
 
 /**
- * A section: a small caps title in the margin, then a hairline, then the
- * content, then a hairline. No container, no fill, no border on three sides.
+ * A raised surface. The console's content lives on white boards over the opal
+ * sheet, which is what separates "the session's numbers" from "the page" in a
+ * bright room without a single shadow or radius.
+ */
+@Composable
+fun Panel(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier.background(QuietPalette.Board), content = content)
+}
+
+/**
+ * A named block inside a panel: the title carries the weight, a hairline
+ * closes it, the content follows. `trailing` sits on the title's baseline for
+ * the one fact the block is about ("进行中", "2/10").
+ *
+ * Three tiers, one page: 24 sp title (this), 18 sp row title, 16 sp note.
  */
 @Composable
 fun Band(
     title: String,
     modifier: Modifier = Modifier,
-    onBar: Boolean = false,
     trailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val secondary = if (onBar) QuietPalette.OnBarSecondary else QuietPalette.TextSecondary
     Column(modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp),
+                .padding(top = 4.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = title.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = secondary,
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = QuietPalette.Ink,
                 maxLines = 1
             )
             if (trailing != null) {
@@ -139,25 +152,44 @@ fun Band(
                 )
             }
         }
-        Rule(onBar = onBar)
+        Rule()
         Column(content = content)
-        Rule(onBar = onBar)
     }
 }
+
+/**
+ * The band's own body padding: 24 dp on the four sides the spec asks for, so
+ * every block in the app has the same internal air.
+ */
+val BandBody: Modifier = Modifier.padding(QuietSpace.Panel)
 
 // ---------------------------------------------------------------------------
 // Pressable things
 // ---------------------------------------------------------------------------
 
-enum class KeyKind { Fill, Outline, Quiet, Danger }
+/**
+ * The two meanings the system is allowed to draw with a shape:
+ *
+ *  - **Fill means "pressing this does something now."** At most one fill per
+ *    screen, and it is always the page's primary action (启动训练 / 起身).
+ *    The stop is the exception that proves it: it is a fill because it is
+ *    pressable, and red because it is the one dangerous press.
+ *  - **Outline means "this is the current state", or a secondary press.**
+ *    A selected scene, a selected rise length, a selected intensity: ice
+ *    hairline, ink text at medium weight. Selection is never a fill, so a
+ *    filled block always reads as an action and never as a status.
+ *
+ * `Quiet` is a word with no shape at all, for rows a hairline already divides.
+ */
+enum class KeyKind { Fill, Selected, Outline, Quiet, Danger }
 
 /**
  * One pressable key. [kind] is the whole hierarchy:
- *  - Fill: ice fill, ink label — the one thing its band is about.
+ *  - Fill: ice field, ink label — the one action the block is about.
  *  - Outline: hairline box on paper.
- *  - Quiet: no box, for a row that is already divided by hairlines.
- *  - Danger: red ink in a hairline box, never a red fill, so the ice fill
- *    stays the loudest thing on the screen and red means stop.
+ *  - Quiet: no box, for a word that sits in a row already divided by lines.
+ *  - Danger: red ink in a hairline box. Never a red fill: the one solid block
+ *    on a screen is the stop, and a second one would compete with it.
  */
 @Composable
 fun Key(
@@ -166,39 +198,42 @@ fun Key(
     modifier: Modifier = Modifier,
     kind: KeyKind = KeyKind.Outline,
     enabled: Boolean = true,
-    onBar: Boolean = false,
     icon: ImageVector? = null,
     height: Dp = TouchTarget,
-    minWidth: Dp = 0.dp
+    minWidth: Dp = 0.dp,
+    textStyle: TextStyle? = null
 ) {
-    val shape = CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
     val fill by animateColorAsState(
-        targetValue = if (enabled && kind == KeyKind.Fill) QuietPalette.Ice else Color.Transparent,
+        targetValue = when {
+            !enabled -> Color.Transparent
+            kind == KeyKind.Fill -> QuietPalette.Ice
+            else -> Color.Transparent
+        },
         animationSpec = tween(ControlMotion.duration(ControlMotion.TINT_MS)),
         label = "key-fill"
     )
     val labelColor = when {
-        !enabled && onBar -> QuietPalette.OnBarDisabled
         !enabled -> QuietPalette.Disabled
         kind == KeyKind.Danger -> QuietPalette.Danger
-        onBar -> QuietPalette.OnBar
-        else -> QuietPalette.TextPrimary
+        else -> QuietPalette.Ink
     }
-    val hairlines = if (onBar) QuietPalette.OnBarHairline else QuietPalette.Hairline
     val border: BorderStroke? = when {
-        !enabled -> BorderStroke(1.dp, if (onBar) QuietPalette.OnBarHairline else QuietPalette.Hairline.copy(alpha = 0.6f))
+        // Disabled keeps its silhouette: outlined in second ink, so the key is
+        // visibly there and visibly off, not faded to nothing.
+        !enabled -> BorderStroke(1.dp, QuietPalette.Hairline)
         kind == KeyKind.Fill || kind == KeyKind.Quiet -> null
+        kind == KeyKind.Selected -> BorderStroke(2.dp, QuietPalette.Ice)
         kind == KeyKind.Danger -> BorderStroke(1.dp, QuietPalette.Danger)
-        else -> BorderStroke(1.dp, hairlines)
+        else -> BorderStroke(1.dp, QuietPalette.Hairline)
     }
 
     Box(
         modifier = modifier
             .defaultMinSize(minWidth = maxOf(minWidth, TouchTarget), minHeight = TouchTarget)
             .height(height)
-            .clip(shape)
+            .clip(KeyShape)
             .background(fill)
-            .then(if (border != null) Modifier.border(border, shape) else Modifier)
+            .then(if (border != null) Modifier.border(border, KeyShape) else Modifier)
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
@@ -206,7 +241,7 @@ fun Key(
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick
             )
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -218,13 +253,14 @@ fun Key(
                     imageVector = icon,
                     contentDescription = null,
                     tint = labelColor,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(10.dp))
             }
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelLarge,
+                style = textStyle ?: MaterialTheme.typography.labelLarge,
+                fontWeight = if (kind == KeyKind.Selected) FontWeight.Medium else null,
                 color = labelColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -247,20 +283,20 @@ fun SwitchRow(
         modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = TouchTarget + 8.dp)
-            .padding(vertical = 4.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (enabled) QuietPalette.TextPrimary else QuietPalette.Disabled
+                color = if (enabled) QuietPalette.Ink else QuietPalette.Disabled
             )
             if (note != null) {
                 Text(
                     text = note,
                     style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
+                    color = QuietPalette.InkSecondary
                 )
             }
         }
@@ -270,13 +306,13 @@ fun SwitchRow(
             onCheckedChange = onCheckedChange,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = QuietPalette.TextPrimary,
+                checkedThumbColor = QuietPalette.Ink,
                 checkedTrackColor = QuietPalette.Ice,
                 checkedBorderColor = QuietPalette.Ice,
-                uncheckedThumbColor = QuietPalette.TextSecondary,
+                uncheckedThumbColor = QuietPalette.InkSecondary,
                 uncheckedTrackColor = Color.Transparent,
                 uncheckedBorderColor = QuietPalette.Disabled,
-                disabledCheckedThumbColor = QuietPalette.TextSecondary,
+                disabledCheckedThumbColor = QuietPalette.InkSecondary,
                 disabledCheckedTrackColor = QuietPalette.IceMuted,
                 disabledCheckedBorderColor = QuietPalette.IceMuted,
                 disabledUncheckedThumbColor = QuietPalette.Disabled,
@@ -287,7 +323,7 @@ fun SwitchRow(
     }
 }
 
-/** Label on the left, its value on the right, one baseline, one hairline row. */
+/** Label on the left, its value on the right, one baseline, one row. */
 @Composable
 fun FactRow(
     label: String,
@@ -300,22 +336,22 @@ fun FactRow(
         modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = TouchTarget)
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextSecondary
+            color = QuietPalette.InkSecondary
         )
         Spacer(Modifier.weight(1f))
-        Spacer(Modifier.width(12.dp))
-        val label = MaterialTheme.typography.bodyMedium
+        Spacer(Modifier.width(16.dp))
+        val style = MaterialTheme.typography.bodyMedium
         Text(
             text = value,
-            style = if (numeric) label.tabularFigures() else label,
+            style = if (numeric) style.tabularFigures() else style,
             fontWeight = if (emphasis) FontWeight.Medium else null,
-            color = QuietPalette.TextPrimary
+            color = QuietPalette.Ink
         )
     }
 }
@@ -324,7 +360,7 @@ fun FactRow(
 // Marks
 // ---------------------------------------------------------------------------
 
-/** Paper status chip: a 2 dp tone bar on the leading edge, then ink text. */
+/** A status chip: a tone bar on the leading edge, then ink text. */
 @Composable
 fun Chip(
     label: String,
@@ -338,54 +374,22 @@ fun Chip(
     }
     Row(
         modifier = modifier
-            .defaultMinSize(minHeight = 32.dp)
-            .height(32.dp),
+            .defaultMinSize(minHeight = 36.dp)
+            .height(36.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            Modifier
-                .width(10.dp)
-                .fillMaxHeight()
-                .background(bar)
-        )
-        Spacer(Modifier.width(8.dp))
+        Box(Modifier.width(10.dp).fillMaxHeight().background(bar))
+        Spacer(Modifier.width(10.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = QuietPalette.TextPrimary,
+            color = QuietPalette.Ink,
             maxLines = 1
         )
     }
 }
 
 enum class StatusTone { Neutral, Attention, Stopped }
-
-/** Chip for the dark bar: light ink, ice only when the operator must look. */
-@Composable
-fun BarChip(
-    label: String,
-    modifier: Modifier = Modifier,
-    attention: Boolean = false
-) {
-    Row(
-        modifier = modifier.height(28.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .background(if (attention) QuietPalette.Ice else QuietPalette.OnBarDisabled)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (attention) QuietPalette.Ice else QuietPalette.OnBar,
-            maxLines = 1
-        )
-    }
-}
 
 enum class Presence(val tier: Int, val description: String) {
     Live(2, "连接正常"),
@@ -400,25 +404,23 @@ enum class Presence(val tier: Int, val description: String) {
 @Composable
 fun PresenceMark(
     state: Presence,
-    modifier: Modifier = Modifier,
-    onBar: Boolean = false
+    modifier: Modifier = Modifier
 ) {
     val active = when (state) {
         Presence.Live -> QuietPalette.Ice
-        Presence.Waiting -> if (onBar) QuietPalette.OnBar else QuietPalette.TextPrimary
+        Presence.Waiting -> QuietPalette.Ink
         Presence.Offline -> QuietPalette.Danger
     }
-    val idle = if (onBar) QuietPalette.OnBarHairline else QuietPalette.Hairline
     Canvas(
         modifier
-            .size(width = 16.dp, height = 16.dp)
+            .size(width = 22.dp, height = 18.dp)
             .semantics { stateDescription = state.description }
     ) {
-        val gap = 2.dp.toPx()
+        val gap = 3.dp.toPx()
         val blockWidth = (size.width - gap * 2f) / 3f
         for (index in 0..2) {
             drawRect(
-                color = if (index <= state.tier) active else idle,
+                color = if (index <= state.tier) active else QuietPalette.Hairline,
                 topLeft = Offset(index * (blockWidth + gap), 0f),
                 size = Size(blockWidth, size.height)
             )
@@ -426,7 +428,7 @@ fun PresenceMark(
     }
 }
 
-/** A meter drawn on the band's own rule: hairlines below, ice above. */
+/** A meter drawn on the band's own rule: hairline below, ice above. */
 @Composable
 fun Meter(
     fraction: Float,
@@ -436,7 +438,7 @@ fun Meter(
     Box(
         modifier
             .fillMaxWidth()
-            .height(4.dp)
+            .height(6.dp)
             .background(QuietPalette.Hairline)
     ) {
         Box(
@@ -448,7 +450,7 @@ fun Meter(
     }
 }
 
-/** Empty state inside a band: one fact, secondary ink, no illustration. */
+/** Empty state inside a band: one fact, second ink, no illustration. */
 @Composable
 fun EmptyNote(
     text: String,
@@ -459,14 +461,14 @@ fun EmptyNote(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 14.dp),
-        style = MaterialTheme.typography.bodySmall,
-        color = QuietPalette.TextSecondary
+        style = MaterialTheme.typography.bodyMedium,
+        color = QuietPalette.InkSecondary
     )
 }
 
 /**
  * A refusal that the operator must read before retrying: ice field, ink text,
- * one sentence and the next step. Ice on paper is a fill, never text.
+ * one sentence and the next step. On paper ice is a fill, never text.
  */
 @Composable
 fun RefusalNote(
@@ -477,32 +479,12 @@ fun RefusalNote(
         modifier
             .fillMaxWidth()
             .background(QuietPalette.Ice)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextPrimary
-        )
-    }
-}
-
-/** Stop/irreversible warning: the only red fill in the app. */
-@Composable
-fun DangerNote(
-    text: String,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier
-            .fillMaxWidth()
-            .background(QuietPalette.Danger)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.Surface
+            color = QuietPalette.OnIce
         )
     }
 }
@@ -517,24 +499,24 @@ fun NoticeRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(if (danger) QuietPalette.Danger else QuietPalette.Surface)
+            .background(QuietPalette.Board)
             .defaultMinSize(minHeight = TouchTarget),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             Modifier
-                .width(6.dp)
+                .width(8.dp)
                 .height(TouchTarget)
                 .background(if (danger) QuietPalette.Danger else QuietPalette.Ice)
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(16.dp))
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (danger) QuietPalette.Surface else QuietPalette.TextPrimary,
+            color = QuietPalette.Ink,
             modifier = Modifier
                 .weight(1f)
-                .padding(vertical = 12.dp, horizontal = 4.dp)
+                .padding(vertical = 14.dp, horizontal = 4.dp)
         )
     }
 }
@@ -546,13 +528,12 @@ fun NoticeRow(
 /**
  * The spec's `ActionKey`, in the vocabulary this file already owns.
  *
- * A key is a key: [Key] carries the four kinds (Fill / Outline / Quiet /
- * Danger) and every screen uses it. This alias exists so screens can say
- * "primary action", "secondary action", "destructive action" without repeating
- * the fill rule — which is the one thing that must never be re-decided per
- * screen, since ice fill is the only "press this" mark the palette has.
+ * A key is a key: [Key] carries the four kinds and every screen uses it. This
+ * alias exists so screens can say "primary action", "secondary action",
+ * "dangerous action" without repeating the fill rule — which is the one thing
+ * that must never be re-decided per screen.
  */
-enum class ActionTone { Primary, Secondary, Quiet, Danger }
+enum class ActionTone { Primary, Selected, Secondary, Quiet, Danger }
 
 @Composable
 fun ActionKey(
@@ -563,7 +544,8 @@ fun ActionKey(
     enabled: Boolean = true,
     icon: ImageVector? = null,
     height: Dp = TouchTarget,
-    minWidth: Dp = 0.dp
+    minWidth: Dp = 0.dp,
+    textStyle: TextStyle? = null
 ) {
     Key(
         label = label,
@@ -571,6 +553,7 @@ fun ActionKey(
         modifier = modifier,
         kind = when (tone) {
             ActionTone.Primary -> KeyKind.Fill
+            ActionTone.Selected -> KeyKind.Selected
             ActionTone.Secondary -> KeyKind.Outline
             ActionTone.Quiet -> KeyKind.Quiet
             ActionTone.Danger -> KeyKind.Danger
@@ -578,6 +561,7 @@ fun ActionKey(
         enabled = enabled,
         icon = icon,
         height = height,
-        minWidth = minWidth
+        minWidth = minWidth,
+        textStyle = textStyle
     )
 }

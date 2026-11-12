@@ -48,7 +48,7 @@ fun AngleGauge(
             degrees(current.pitch).roundToInt()
         )
     } else {
-        "患者姿态未更新"
+        "患者朝向未更新"
     }
 
     Row(
@@ -61,7 +61,7 @@ fun AngleGauge(
         AngleDial(pose = pose, fresh = fresh)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = if (fresh) "朝向" else "无数据",
+                text = if (fresh) "朝向" else "朝向 · 未更新",
                 style = MaterialTheme.typography.labelSmall,
                 color = QuietPalette.TextSecondary
             )
@@ -79,25 +79,30 @@ fun AngleGauge(
     }
 }
 
-/** Ice is a fill: the needle is a filled wedge, the frame is a hairline. */
+/**
+ * The dial is drawn in ink, not in the accent: a heading is a reading, not a
+ * state and not a press. The needle is a thin wedge with an ink outline, the
+ * frame and reference lines are the same hairline that divides the page, and
+ * the only non-ink mark is the empty centre that says "no data yet".
+ */
 @Composable
 private fun AngleDial(pose: TelemetryPose?, fresh: Boolean) {
     Canvas(modifier = Modifier.size(72.dp)) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.minDimension / 2f - 2.dp.toPx()
         val inner = radius * 0.7f
-        val ring = if (fresh) QuietPalette.Hairline else QuietPalette.Hairline.copy(alpha = 0.6f)
+        val ring = if (fresh) QuietPalette.InkSecondary else QuietPalette.Hairline
 
         // Fixed frame: outer ring, level reference, and the crest line.
         drawCircle(color = ring, radius = radius, center = center, style = Stroke(width = 1.dp.toPx()))
         drawLine(
-            color = QuietPalette.Hairline,
+            color = QuietPalette.InkSecondary.copy(alpha = 0.55f),
             start = Offset(center.x - inner, center.y),
             end = Offset(center.x + inner, center.y),
             strokeWidth = 1.dp.toPx()
         )
         drawLine(
-            color = QuietPalette.Hairline,
+            color = QuietPalette.InkSecondary.copy(alpha = 0.55f),
             start = Offset(center.x, center.y - inner),
             end = Offset(center.x, center.y + inner),
             strokeWidth = 1.dp.toPx(),
@@ -108,7 +113,7 @@ private fun AngleDial(pose: TelemetryPose?, fresh: Boolean) {
             // Stale: a hollow centre and no needle. An old heading is worse
             // than none.
             drawCircle(
-                color = QuietPalette.Disabled,
+                color = QuietPalette.InkSecondary,
                 radius = radius * 0.16f,
                 center = center,
                 style = Stroke(width = 1.dp.toPx())
@@ -126,8 +131,8 @@ private fun AngleDial(pose: TelemetryPose?, fresh: Boolean) {
                 lineTo(center.x + 5.dp.toPx(), center.y + 4.dp.toPx())
                 close()
             }
-            drawPath(path, color = QuietPalette.Ice)
-            drawPath(path, color = QuietPalette.TextPrimary, style = Stroke(width = 1.dp.toPx()))
+            drawPath(path, color = QuietPalette.Board)
+            drawPath(path, color = QuietPalette.TextPrimary, style = Stroke(width = 1.5.dp.toPx()))
         }
 
         // Pitch bubble: ink, so it reads as a number rather than a highlight.

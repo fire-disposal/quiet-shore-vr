@@ -227,7 +227,10 @@ class ControlViewModel(application: Application) :
         // repeat as a no-op (same value → no write, no revision bump).
         val state = _uiState.value
         if (!state.control.session) {
-            sendCommand(ControlProtocol.SCENE_PREFIX + state.control.scene)
+            // Resend the operator's choice, not the last frame's echo: after a
+            // refused switch the two disagree, and the bench is what boots.
+            val wanted = state.sceneIntent.ifEmpty { state.control.scene }
+            sendCommand(ControlProtocol.SCENE_PREFIX + wanted)
         }
         _uiState.update {
             it.copy(startPending = true).also { notice("已请求启动，等待患者按确认键") }
@@ -297,11 +300,11 @@ class ControlViewModel(application: Application) :
         if (scene !in ControlProtocol.SCENE_LABELS) {
             return
         }
-        // No local echo, and therefore no pending window: the scene can be
-        // switched mid-session, so the row that shows it must show what the
-        // headset actually loaded. The page applies the command and answers
-        // with `state.control.scene`; anything the tablet draws ahead of that
-        // frame is a mark for a scene the patient may never be looking at.
+        // The intent is recorded here and nowhere else: `control.scene` keeps
+        // the headset's report, so the two can be compared. The page applies
+        // the command and answers with `state.control.scene`; a mark drawn
+        // ahead of that frame would claim a scene the patient may never see.
+        _uiState.update { it.copy(sceneIntent = scene) }
         sendCommand(ControlProtocol.SCENE_PREFIX + scene)
     }
 

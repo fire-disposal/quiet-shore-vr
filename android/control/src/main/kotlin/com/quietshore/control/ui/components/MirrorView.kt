@@ -66,6 +66,25 @@ fun MirrorView(
         )
     }
 
+    // The page lays its host out as `position:fixed; inset:0`, which ignores
+    // the WebView's own bounds and sizes the canvas to the whole window — it
+    // drew outside the panel in the cover. On a device-sized WebView the two
+    // are the same rectangle; it becomes visible only here, where the view is
+    // smaller than the screen, so the fit is anchored at 0.5 instead.
+    // The page lays its host out as `position:fixed; inset:0`, which resolves
+    // against the window, not the WebView's own box: embedded in a panel it
+    // drew over the whole screen. Pin it to the document instead and let the
+    // page re-size its canvas to the box it actually got.
+    LaunchedEffect(webView.value) {
+        webView.value?.evaluateJavascript(
+            "(function(){var h=document.getElementById('mirror-host');" +
+                "if(h){h.style.position='absolute';h.style.inset='0';}" +
+                "window.QuietShoreMirror&&window.QuietShoreMirror.resize&&" +
+                "window.QuietShoreMirror.resize();})()",
+            null
+        )
+    }
+
     LaunchedEffect(Unit) {
         while (isActive) {
             webView.value?.let { view ->

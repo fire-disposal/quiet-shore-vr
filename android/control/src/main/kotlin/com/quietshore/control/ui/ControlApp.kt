@@ -118,7 +118,7 @@ fun ControlApp(viewModel: ControlViewModel) {
     }
 
     if (showInfo) {
-        InfoScreen(onBack = { showInfo = false })
+        GuideScreen(onBack = { showInfo = false })
         return
     }
 

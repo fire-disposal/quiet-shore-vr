@@ -59,6 +59,19 @@ data class ControlUiState(
     val pose: TelemetryPose? = null,
     val poseStale: Boolean = true,
     val control: ControlState = ControlState(),
+    /**
+     * What the operator asked for, as opposed to what the headset is playing.
+     *
+     * `control.scene` is the headset's own report (the state frame's byte 11,
+     * or the flags document): it is what the patient is inside *now*. This
+     * field is the local intent — the card that carries the ice outline on the
+     * preparation bench. They differ for the second between a tap and the
+     * frame that confirms it, and they differ for good if the headset refuses
+     * the switch. Both are shown when they disagree, because a technician
+     * whose bench says one scene and whose mirror shows another is looking at
+     * a captured-SUS-grade data error, not a cosmetic one.
+     */
+    val sceneIntent: String = "",
     /** Last headset the operator connected to; null until one is stored. */
     val lastDeviceAddress: String? = null,
     /** 1-based attempt while the link is being re-established. */
@@ -112,6 +125,10 @@ data class ControlUiState(
     val battery: Battery? = null
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
+
+    /** True when the operator's choice has not been confirmed by the headset. */
+    val sceneIntentDiverges: Boolean
+        get() = sceneIntent.isNotEmpty() && sceneIntent != control.scene
 
     /** The cue the headset reports, resolved against the shipped catalog. */
     val voiceLine: com.quietshore.control.voice.VoiceCatalog.Line?

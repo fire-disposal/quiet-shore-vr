@@ -67,10 +67,10 @@ fun VoicePanel(
 
     Column(modifier.fillMaxWidth()) {
         Band(
-            title = "现在",
+            title = "正在播放",
             trailing = {
                 Text(
-                    text = if (connected) "可播放" else "链路断开",
+                    text = if (connected) "可播放" else "未连接",
                     style = MaterialTheme.typography.labelLarge,
                     color = QuietPalette.TextSecondary
                 )
@@ -79,7 +79,7 @@ fun VoicePanel(
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 val line = state.voiceLine
                 Text(
-                    text = line?.text ?: "未在播放",
+                    text = line?.text ?: "未播放",
                     style = MaterialTheme.typography.titleMedium,
                     color = if (line != null) QuietPalette.TextPrimary else QuietPalette.TextSecondary
                 )
@@ -125,18 +125,18 @@ fun VoicePanel(
             }
         }
 
-        Band(title = "开关") {
+        Band(title = "播放设置") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                 SwitchRow(
                     title = "字幕",
                     checked = state.subtitles,
                     onCheckedChange = actions.onSubtitlesChange,
                     enabled = connected,
-                    note = "念出台词时在患者视野下方显示，读完消失。"
+                    note = "在患者画面下方显示，播完消失。"
                 )
                 Rule()
                 SwitchRow(
-                    title = "朗读 SUS 题干",
+                    title = "朗读题干",
                     checked = state.susVoice,
                     onCheckedChange = actions.onSusVoiceChange,
                     enabled = connected,
@@ -147,7 +147,7 @@ fun VoicePanel(
 
         // Four scripted sequences. The page owns the pacing and keeps the bed
         // ducked until the last line, so one tap runs the whole arc.
-        Band(title = "序列") {
+        Band(title = "连续播放") {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -178,7 +178,7 @@ fun VoicePanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "切换会停顿一下。",
+                    text = "切换音色会短暂停顿。",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary,
                     modifier = Modifier.weight(1f)
@@ -197,7 +197,7 @@ fun VoicePanel(
             }
         }
 
-        Band(title = "混音") {
+        Band(title = "声音") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Row(
                     modifier = Modifier
@@ -213,7 +213,7 @@ fun VoicePanel(
                         modifier = Modifier.weight(1f)
                     )
                     Key(
-                        label = if (state.control.audioMuted) "开始" else "暂停",
+                        label = if (state.control.audioMuted) "开始水声" else "暂停水声",
                         onClick = actions.onToggleAudio,
                         enabled = connected,
                         minWidth = TouchTarget + 32.dp
@@ -238,7 +238,7 @@ fun VoicePanel(
 
         // Guidance lines are played by hand; SUS is not in this list.
         Band(
-            title = "台词",
+            title = "语音提示",
             trailing = {
                 Text(
                     text = "${guidance.size} 句",
