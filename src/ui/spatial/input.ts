@@ -21,7 +21,7 @@ const HINT_OFFSET = 0.168;
 const HINT_WIDTH = 0.38;
 const HINT_HEIGHT = 0.092;
 /** Default Chinese hint; the app can pass a localized string. */
-const DEFAULT_HINT = '保持注视以选择';
+const DEFAULT_HINT = '保持注视，即可选择';
 
 const EMPTY_HITS: THREE.Intersection[] = [];
 

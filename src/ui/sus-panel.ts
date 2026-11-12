@@ -32,7 +32,7 @@ const SUS_STATEMENTS: readonly string[] = [
   '我需要先学习很多内容才能开始使用这个系统。'
 ];
 
-const OPTION_LABELS = ['很不同意', '不同意', '一般', '同意', '很同意'];
+const OPTION_LABELS = ['非常不同意', '不同意', '一般', '同意', '非常同意'];
 
 /** `SUS n/10` was internal jargon; the patient reads a position, not a name. */
 const SUS_HEADERS = ['第 {n} 题，共十题', '最后一步', '谢谢您'] as const;

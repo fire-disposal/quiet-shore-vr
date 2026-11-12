@@ -257,6 +257,15 @@ export class PortalLink {
     this.send({ type: 'sus', data });
   }
 
+  /**
+   * One-off report for the operator: a refusal, or a fact the state frame has
+   * no room for. The headset relays it to the tablet over BLE; the page is the
+   * only place that knows *why* a command did not take effect.
+   */
+  sendNotice(text: string, tone: 'ok' | 'error' = 'ok'): void {
+    this.send({ type: 'notice', text, tone });
+  }
+
   sendStateNow(): void {
     const moving = this.sendState();
     if (this.stateTimer == null) {

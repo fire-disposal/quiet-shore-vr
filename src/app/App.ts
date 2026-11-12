@@ -389,7 +389,7 @@ export class QuietShoreApp {
     // differently instead of showing the same silent invitation again. The
     // press must land on the browser's window, so the instruction names it.
     if (this.config.entryRetry > 0) {
-      this.start.setEntryHint('没有等到确认。请看向画面中央，再按一下按钮。');
+      this.start.setEntryHint('没有等到确认。请看向画面中央，再按一下头显右侧的按钮。');
     }
     this.updateHud(performance.now());
   }
@@ -418,6 +418,8 @@ export class QuietShoreApp {
           this.handleRemoteCommand(cmd);
           return cmd;
         },
+        /** Scenes built and waiting, so a switch cannot build on the frame. */
+        parked: () => this.host.preloaded,
         /** Desktop check: load a scene in the 2D preview. */
         scene: (id: string) => {
           if (!this.previewing && !this.xr.isPresenting) {
@@ -637,7 +639,9 @@ export class QuietShoreApp {
    * swap.
    */
   private preloadScenes(): void {
-    if (this.scenesPreloaded) {
+    if (this.scenesPreloaded || this.xr.isPresenting) {
+      // Building a scene inside a session would hitch the frame it is meant to
+      // save; the call is retried when the session ends (`resetWorldToRest`).
       return;
     }
     this.scenesPreloaded = true;
@@ -651,7 +655,9 @@ export class QuietShoreApp {
   private loadScene(): void {
     this.disposeScene();
     const definition = getSceneDefinition(this.sceneId) ?? SCENE;
-    const handle = this.host.load(definition);
+    // Parking the outgoing scene (instead of disposing it) is what makes every
+    // later switch a pointer swap; the registry is four scenes at most.
+    const handle = this.host.load(definition, { keepPrevious: true });
     this.handle = handle;
     // World shell order: view pitch -> base (comfort/sit-up) -> content
     // (floor). Wrapping the host's content group, not the scene root, keeps the
@@ -924,7 +930,7 @@ export class QuietShoreApp {
     if (command.startsWith('voice:seq:')) {
       const name = command.slice('voice:seq:'.length) as SequenceName;
       if (!(name in SEQUENCES)) {
-        this.start.setStatus('未知语音序列', 'error');
+        this.refuse('未知语音序列');
         return;
       }
       this.voice.playSequence(name);
@@ -933,7 +939,7 @@ export class QuietShoreApp {
     if (command.startsWith('voice:volume:')) {
       const percent = Number(command.slice('voice:volume:'.length));
       if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-        this.start.setStatus('语音音量无效', 'error');
+        this.refuse('语音音量无效');
         return;
       }
       this.voice.setVolume(percent);
@@ -951,16 +957,33 @@ export class QuietShoreApp {
     }
   }
 
+  /**
+   * Refuse a command the operator sent, in the words they must act on.
+   *
+   * The local status line is not enough: the tablet is what they are holding,
+   * so the same sentence travels upstream (`notice`) and shows there. Both
+   * lines are the same string on purpose — two wordings would drift.
+   */
+  private refuse(text: string): void {
+    this.start.setStatus(text, 'error');
+    this.link.sendNotice(text, 'error');
+  }
+
   private applySceneCommand(id: string): void {
     const definition = getSceneDefinition(id);
     if (!definition) {
-      this.start.setStatus('未知场景', 'error');
+      this.refuse('未知场景');
       return;
     }
     if (this.capturePending) {
       // The card is teaching the patient to hold still; a world swap under it
       // would undo that.
-      this.start.setStatus('记录体位时无法切换场景', 'error');
+      this.refuse('记录体位时无法切换场景，稍后再试');
+      return;
+    }
+    if (this.lifecycle.phase === 'stopping') {
+      // The stop fade owns the world: a swap here would race the teardown and
+      // leave the next session on a scene nobody chose.
       return;
     }
     if (definition.id === this.sceneId && this.handle) {
@@ -993,13 +1016,19 @@ export class QuietShoreApp {
    */
   private switchSceneLive(definition: SceneDefinition): void {
     const previousLevel = this.floating.getLevel();
+    const previousRestMix = this.sceneRestMix;
     this.stopSceneAudio();
     this.handle = this.host.load(definition, { keepPrevious: true });
     this.sceneId = definition.id;
     this.applySceneDefinition(definition);
-    // A scene with a lower comfort ceiling must not inherit a higher level.
+    // A scene with a lower comfort ceiling must not inherit a higher level; the
+    // envelope eases down by itself, so the heave never steps.
     this.floating.setLevel(previousLevel, this.sceneComfortLevel);
-    this.floating.reset();
+    if (this.sceneRestMix !== previousRestMix) {
+      // The correction ramps, so the heave's axis is about to travel with it:
+      // zero the motion it would otherwise carry across the turn.
+      this.floating.reset();
+    }
     if (this.world.state().ready && this.world.state().mix !== this.sceneRestMix) {
       this.world.rise(this.sceneRestMix);
     }
@@ -1076,7 +1105,7 @@ export class QuietShoreApp {
     this.calibration.start(performance.now());
     this.calibrationOverlay?.setHint('保持不动…');
     this.calibrationOverlay?.setProgress(0);
-    this.start.setStatus('正在记录起始朝向', 'ok');
+    this.start.setStatus('正在记录起始体位', 'ok');
   }
 
   /** Called every frame while the card is up. */
@@ -1150,7 +1179,7 @@ export class QuietShoreApp {
     if (!ok) {
       // Restart the window rather than leaving an inert card on screen: the
       // hint asks for another attempt, so the run that produces it must live.
-      this.calibrationOverlay?.setHint('这次没有取到有效朝向，请再试一次');
+      this.calibrationOverlay?.setHint('这次没有记录成功，请再试一次');
       this.restartCalibration();
       return;
     }
@@ -1197,7 +1226,7 @@ export class QuietShoreApp {
           return;
         }
         if (this.world.rise(1)) {
-          this.start.setStatus('正在起身：世界缓缓转向站立视角', 'ok');
+          this.start.setStatus('正在进入站立视角', 'ok');
         }
       });
     });
@@ -1270,6 +1299,9 @@ export class QuietShoreApp {
     this.floating.reset();
     this.calibrationOverlay?.hide();
     this.shell?.update(this.headPose.position);
+    // A session that started before the idle preload ran leaves the other
+    // scenes unbuilt; now that nothing is presenting, catch up.
+    this.preloadScenes();
   }
 
   private startPreview(): void {
@@ -1352,7 +1384,7 @@ export class QuietShoreApp {
         return;
       case 'viewAnim':
         if (!this.viewCommandsAllowed()) {
-          this.start.setStatus('当前无法播放视角动画', 'error');
+          this.refuse('当前无法切换视角');
           return;
         }
         this.viewMotion.play(command.name);
@@ -1462,7 +1494,7 @@ export class QuietShoreApp {
    */
   private applyEyeHeight(next: number): void {
     if (this.capturePending) {
-      this.start.setStatus('校准中无法调整站立足高', 'error');
+      this.refuse('记录体位时无法调整站立足高');
       return;
     }
     this.eyeHeight = next;
@@ -1519,7 +1551,7 @@ export class QuietShoreApp {
     this.linkOnline = status === 'open';
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
-    this.start.setHint(status === 'open' ? '控制端已连接' : '控制端未连接，正在重连');
+    this.start.setHint(status === 'open' ? '平板已连接' : '平板未连接，正在重连');
     if (status === 'open' || !wasOnline) {
       return;
     }
@@ -1560,11 +1592,11 @@ export class QuietShoreApp {
     // mode because it no longer swaps world frames, it ramps the one frame the
     // calibration built.
     if (!this.session || !this.world.state().ready) {
-      this.start.setStatus('起身仅能在完成校准后的训练中使用', 'error');
+      this.refuse('起身需要先完成体位记录');
       return;
     }
     if (this.capturePending) {
-      this.start.setStatus('校准中无法调整姿态', 'error');
+      this.refuse('记录体位时无法调整姿态');
       return;
     }
     if (rising && this.sceneRestMix >= 1) {
@@ -1573,7 +1605,7 @@ export class QuietShoreApp {
     }
     this.world.rise(rising ? 1 : 0);
     this.start.setStatus(
-      rising ? '正在修正到面向前方，随时可停' : '正在回到天花板视角，随时可停',
+      rising ? '正在放大视野，随时可停' : '正在回到现在的视角，随时可停',
       'ok'
     );
   }
@@ -1583,7 +1615,7 @@ export class QuietShoreApp {
       return;
     }
     this.world.stopRise();
-    this.start.setStatus('已停在当前修正角度', 'ok');
+    this.start.setStatus('已停在当前视角', 'ok');
   }
 
   private applySceneBed(on: boolean): void {

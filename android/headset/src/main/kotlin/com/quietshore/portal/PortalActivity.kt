@@ -37,10 +37,10 @@ import com.quietshore.control.protocol.ControlProtocol
  */
 class PortalActivity : Activity() {
     private enum class Page(val label: String, val description: String) {
-        HOME("静岸", "请保持舒适，等待工作人员"),
-        SETTINGS("设置", "启动偏好与连接"),
-        HELP("帮助", "进入方式与平板控制"),
-        SUS("SUS 量表", "共 10 题，每题 1 到 5 分")
+        HOME("静岸", "等待平板接管"),
+        SETTINGS("设置", "启动偏好 · 连接"),
+        HELP("帮助", "进入方式 · 平板控制"),
+        SUS("SUS 量表", "共 10 题 · 每题 1–5 分")
     }
 
     private companion object {
@@ -267,7 +267,7 @@ class PortalActivity : Activity() {
         }
         val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         titleText = label("静岸", 28f, TEXT, Typeface.NORMAL)
-        subtitleText = label("请舒适躺好，等待工作人员提示", 14f, MUTED, Typeface.NORMAL).apply {
+        subtitleText = label("等待平板接管", 14f, MUTED, Typeface.NORMAL).apply {
             setPadding(0, dp(3), 0, 0)
         }
         titles.addView(titleText)
@@ -432,7 +432,7 @@ class PortalActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        sceneHead.addView(label("即将进入", 13f, MUTED, Typeface.BOLD))
+        sceneHead.addView(label("下一场景", 13f, MUTED, Typeface.BOLD))
         sceneCard.addView(sceneHead)
         sceneCard.addView(
             View(this).apply { setBackgroundColor(SCENE_TINT) },
@@ -474,9 +474,9 @@ class PortalActivity : Activity() {
         // is the one gesture Firefox Reality requires to enter immersive mode.
         page.addView(label(
             if (PortalActions.isFirefoxAvailable(this)) {
-                "页面会自动打开"
+                "进入页面自动打开"
             } else {
-                "未检测到 Firefox Reality，训练无法开始"
+                "缺少 Firefox Reality，训练无法开始"
             },
             14f,
             MUTED,
@@ -487,7 +487,7 @@ class PortalActivity : Activity() {
         })
         page.addView(
             label(
-                "感到不适请立即告知工作人员",
+                "患者不适：先停止，再摘头显",
                 13f,
                 MUTED,
                 Typeface.NORMAL
@@ -501,8 +501,12 @@ class PortalActivity : Activity() {
     }
 
     /**
-     * Battery sits directly under the header: one label row, one track.
-     * Hidden entirely when no sticky battery broadcast has arrived.
+     * Battery sits directly under the header: one field row and one hairline-thin
+     * measure.
+     *
+     * The number is the reading; the bar is only its proportion, so the track is
+     * a 3 dp rule rather than a widget — same weight as every other divider on
+     * this screen. Hidden entirely until a sticky battery broadcast arrives.
      */
     private fun batteryCard(): View {
         val card = sectionCard()
@@ -510,8 +514,8 @@ class PortalActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val labelView = label("头显电量", 15f, MUTED, Typeface.NORMAL)
-        val value = label("—", 20f, TEXT, Typeface.BOLD).apply {
+        val labelView = label("电量", 14f, MUTED, Typeface.NORMAL)
+        val value = label("—", 22f, TEXT, Typeface.BOLD).apply {
             gravity = Gravity.END
             numbers()
         }
@@ -535,8 +539,8 @@ class PortalActivity : Activity() {
         }
         card.addView(track, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(11)
-        ).apply { topMargin = dp(10) })
+            dp(3)
+        ).apply { topMargin = dp(8) })
         card.visibility = View.GONE
 
         batteryLabel = labelView
@@ -559,7 +563,7 @@ class PortalActivity : Activity() {
 
         val usage = sectionCard()
         usage.addView(sectionLabel("使用"))
-        usage.addView(settingSwitch("跳过方向校准", settings.skipCalibration) {
+        usage.addView(settingSwitch("跳过体位记录", settings.skipCalibration) {
             // Persist only the console keys: the scene is written by the tablet
             // path and merged-from-disk here would still be a second writer.
             settings = HeadsetSettings.read(this).copy(skipCalibration = it)
@@ -592,7 +596,7 @@ class PortalActivity : Activity() {
         val connection = sectionCard()
         connection.addView(sectionLabel("连接"))
         connection.addView(
-            label("场景、声音和校准由平板控制", 15f, MUTED, Typeface.NORMAL).apply {
+            label("场景 · 语音 · 体位记录由平板控制", 15f, MUTED, Typeface.NORMAL).apply {
                 setPadding(0, dp(8), 0, dp(10))
             }
         )
@@ -693,7 +697,7 @@ class PortalActivity : Activity() {
         card.addView(scale)
         page.addView(card)
         susScoreText = label(
-            if (susAnswers.all { it > 0 }) susScoreText?.text?.toString() ?: "完成 10 题后显示 SUS 得分"
+            if (susAnswers.all { it > 0 }) susScoreText?.text?.toString() ?: "答完 10 题后显示得分"
             else "已答 ${susAnswers.count { it > 0 }} / ${SUS_STATEMENTS.size}",
             15f,
             if (susAnswers.all { it > 0 }) OK else MUTED,
@@ -753,17 +757,17 @@ class PortalActivity : Activity() {
     private fun buildHelpPage(): View {
         val page = pageColumn()
         val steps = sectionCard()
-        steps.addView(sectionLabel("进入训练"))
-        steps.addView(stepRow("1", "在平板控制台搜索并连接头显"))
-        steps.addView(stepRow("2", "用准星对准进入按钮"))
-        steps.addView(stepRow("3", "按右侧中间键确认"))
+        steps.addView(sectionLabel("进入场景"))
+        steps.addView(stepRow("1", "平板搜索并连接头显"))
+        steps.addView(stepRow("2", "准星对准进入按钮"))
+        steps.addView(stepRow("3", "按右侧中间键"))
         page.addView(steps)
 
         val note = sectionCard()
         note.addView(sectionLabel("控制权"))
         note.addView(
             label(
-                "第一台连接的平板获得控制\n第二台平板提示已被占用",
+                "第一台平板获得控制\n第二台提示已被占用",
                 16f,
                 TEXT,
                 Typeface.NORMAL
@@ -786,8 +790,8 @@ class PortalActivity : Activity() {
         firefoxWarningShown = true
         AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
             .setTitle("缺少 Firefox Reality")
-            .setMessage("静岸的 WebXR 训练需要 Firefox Reality 10。本机未检测到该浏览器。")
-            .setPositiveButton("知道了", null)
+            .setMessage("训练页需要 Firefox Reality 10。本机未安装。")
+            .setPositiveButton("关闭", null)
             .show()
     }
 

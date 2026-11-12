@@ -204,7 +204,7 @@ class PortalService : Service() {
      * Entry supervision: one launch, at most two relaunches. The timer lives on
      * [mainHandler]; the policy itself is Android-free and unit-checked.
      */
-    private val entryRetry = EntryRetry()
+    private val entryRetry = EntryRetry(autoTapAvailable = { TapService.isEnabled(this) })
     private val entryWatch = Runnable { onEntryDeadline() }
 
     @Volatile
@@ -704,6 +704,22 @@ class PortalService : Service() {
             // a fixed size and has no room for a record.
             "sus" -> json.optJSONObject("data")?.let { data ->
                 bluetooth?.publishSus(data.toString())
+            }
+            // A refusal or one-off report from the page: the page knows why a
+            // command did not take effect, the tablet is what the operator is
+            // holding. Relayed verbatim on the JSON channel.
+            "notice" -> {
+                val text = json.optString("text")
+                if (text.isNotEmpty()) {
+                    val tone = if (json.optString("tone") == "error") "error" else "ok"
+                    bluetooth?.publishJson(
+                        org.json.JSONObject().apply {
+                            put("t", "notice")
+                            put("text", text)
+                            put("tone", tone)
+                        }.toString()
+                    )
+                }
             }
             // Unknown message types are ignored: forward compatibility beats a
             // disconnect when a newer page talks to an older service.
@@ -1273,6 +1289,16 @@ class PortalService : Service() {
 
     private fun onEntryDeadline() {
         when (entryRetry.onDeadline(System.currentTimeMillis())) {
+            EntryRetry.Decision.TAP -> {
+                // The patient never found the browser window. One display-level
+                // tap is the least disturbing remedy, and the page accepts a
+                // press anywhere on its entry screen.
+                if (TapService.tapCenter()) {
+                    Log.i(TAG, "entry: synthetic tap sent")
+                } else {
+                    Log.w(TAG, "entry: synthetic tap refused")
+                }
+            }
             EntryRetry.Decision.RELAUNCH -> {
                 // Either the page is up and the patient never pressed, or the
                 // cold start dropped the intent. Both are fixed the same way:
@@ -1312,6 +1338,9 @@ class PortalService : Service() {
             put("moving", state.moving)
             put("hold", state.hold)
             put("voiceAuto", state.voiceAuto)
+            // The tablet reads the headset's own battery from here: it talks
+            // BLE, and the WS `battery` frame only reaches the page.
+            put("battery", battery?.toJson() ?: JSONObject.NULL)
         }.toString()
         val now = System.currentTimeMillis()
         if (doc == lastFlagsJson && now - lastFlagsAt < FLAGS_HEARTBEAT_MS) {
