@@ -95,6 +95,8 @@ class ControlViewModel(application: Application) :
     /** Monotonic start of the running session; 0 when no session is running. */
     private var sessionStartedAt = 0L
     private var enterPendingJob: Job? = null
+    /** Clears [ControlUiState.scenePending] when the headset never confirms. */
+    private var scenePendingJob: Job? = null
 
     init {
         refreshBluetoothState()
@@ -127,7 +129,11 @@ class ControlViewModel(application: Application) :
     fun startScan() {
         val state = _uiState.value
         Log.i("QuietShoreBle", "viewModel.startScan phase=${state.phase.name}")
-        if (state.phase.isBusy || state.phase == BlePhase.READY) {
+        // Only a live link rules out a search. A phase stuck in CONNECTING or
+        // RECONNECTING must not swallow the operator's press: BleController
+        // supersedes the earlier attempt (cancel pending connect, close the
+        // manager), which is exactly what the 搜索 button should do.
+        if (state.phase == BlePhase.READY) {
             return
         }
         _uiState.update {
@@ -217,6 +223,14 @@ class ControlViewModel(application: Application) :
             sendCommand(ControlProtocol.ENTER)
             return
         }
+        // Whatever is on screen must be what boots: the operator's visible
+        // choice is re-sent right before the launch, because a selection made
+        // before the link existed was never transmitted. The headset treats a
+        // repeat as a no-op (same value → no write, no revision bump).
+        val state = _uiState.value
+        if (!state.control.session) {
+            sendCommand(ControlProtocol.SCENE_PREFIX + state.control.scene)
+        }
         _uiState.update {
             it.copy(startPending = true).also { notice("已请求启动，等待患者按确认键") }
         }
@@ -270,10 +284,19 @@ class ControlViewModel(application: Application) :
             return
         }
         // The page is often closed when the choice is made (it is a launch
-        // parameter), so echo the choice locally; the next state frame from a
-        // running page supersedes it.
-        _uiState.update { it.copy(control = it.control.copy(scene = scene)) }
+        // parameter), so echo the choice locally and hold it until a headset
+        // frame confirms it. Clearing on a timer matters when the headset
+        // rejects the command (mid-session): the panel must return to the
+        // scene that is actually loaded.
+        _uiState.update { it.copy(control = it.control.copy(scene = scene), scenePending = scene) }
         sendCommand(ControlProtocol.SCENE_PREFIX + scene)
+        scenePendingJob?.cancel()
+        scenePendingJob = viewModelScope.launch {
+            delay(SCENE_PENDING_MS)
+            _uiState.update {
+                if (it.scenePending == scene) it.copy(scenePending = null) else it
+            }
+        }
     }
 
     /** Leaves the browser scene and returns the headset to its console app. */
@@ -499,8 +522,11 @@ class ControlViewModel(application: Application) :
             error("头显未连接")
             return
         }
+        // No "已发送" banner here: it used to replace the acknowledgement or
+        // the rejection in the one-slot notice bar, so a refused command looked
+        // like a command that simply did nothing. The panels already show the
+        // applied state.
         ble.sendCommand(normalized)
-        notice("命令已发送")
     }
 
     fun reportError(message: String) {
@@ -559,10 +585,12 @@ class ControlViewModel(application: Application) :
 
     override fun onDisconnected() {
         lastPoseAt = 0L
+        scenePendingJob?.cancel()
         _uiState.update {
             it.copy(
                 controlGranted = false,
                 poseStale = true,
+                scenePending = null,
                 rssi = null
             )
         }
@@ -609,10 +637,18 @@ class ControlViewModel(application: Application) :
             )
         }
         _uiState.update { current ->
+            val flagsScene = json.optString("scene", current.control.scene)
+            // Same rule as a state frame: an unconfirmed operator pick wins.
+            val scene = if (current.scenePending != null && current.scenePending != flagsScene) {
+                current.control.scene
+            } else {
+                flagsScene
+            }
             current.copy(
                 caps = caps ?: current.caps,
+                scenePending = if (current.scenePending == flagsScene) null else current.scenePending,
                 control = current.control.copy(
-                    scene = json.optString("scene", current.control.scene),
+                    scene = scene,
                     session = json.optBoolean("session", current.control.session),
                     calibrating = json.optBoolean("calibrating", current.control.calibrating),
                     moving = json.optBoolean("moving", current.control.moving),
@@ -675,9 +711,9 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onMtu(mtu: Int, code: Int) {
-        // A 40-byte state frame needs 43; anything narrower truncates the
-        // notification and the tablet then shows a panel of disabled controls
-        // with no explanation. Say which it is.
+        // The state frame is 28 bytes and needs MTU 31 (payload = MTU - 3);
+        // anything narrower truncates the notification and the tablet then
+        // shows a panel of disabled controls with no explanation.
         if (code != 0 || mtu < MIN_STATE_MTU) {
             error("蓝牙包长不足（MTU $mtu）· 头显状态可能收不到")
         }
@@ -732,6 +768,8 @@ class ControlViewModel(application: Application) :
         const val TICK_MS = 500L
         /** How long "waiting for the patient" survives without a session. */
         const val ENTER_PENDING_MS = 20_000L
+        /** How long a scene pick stays "mine" without headset confirmation. */
+        const val SCENE_PENDING_MS = 6_000L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
         /** The four scripted sequences the page knows by name. */

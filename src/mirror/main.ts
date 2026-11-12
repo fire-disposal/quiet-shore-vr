@@ -62,14 +62,17 @@ canvasHost.style.cssText = 'position:absolute;inset:0;touch-action:none;';
 host.appendChild(canvasHost);
 
 const label = document.createElement('div');
+// Mirror chrome follows the same variant as the pages: paper, ink, one accent,
+// hairlines and tabular digits. It is read by the operator, so the type is
+// small but never decorative.
 label.style.cssText =
-  'position:absolute;left:12px;bottom:10px;font:12px/1.4 system-ui,sans-serif;' +
-  'color:#ECE6DA;opacity:.75;pointer-events:none;letter-spacing:.04em';
-label.textContent = `${SCENE.name.zh} · 等待头显数据`;
+  'position:absolute;left:14px;bottom:12px;font:13px/1.45 system-ui,sans-serif;' +
+  'color:#a6adb1;font-variant-numeric:tabular-nums;pointer-events:none';
+label.textContent = `${SCENE.name.zh} │ 等待头显数据`;
 host.appendChild(label);
 
 document.body.style.margin = '0';
-document.body.style.background = '#0f1210';
+document.body.style.background = '#171a1c';
 document.body.appendChild(host);
 
 const scene = new THREE.Scene();
@@ -316,9 +319,9 @@ const frustumGeometry = (() => {
   return geometry;
 })();
 const frustumMaterial = new THREE.LineBasicMaterial({
-  color: 0xdff3e6,
+  color: 0x7de6ff,
   transparent: true,
-  opacity: 0.7,
+  opacity: 0.45,
   depthTest: false,
   depthWrite: false,
   toneMapped: false
@@ -560,10 +563,10 @@ function frame(now: number): void {
   applyCutaway();
   renderer.render(scene, camera);
   const stale = lastStateAt > 0 && now - lastStateAt > 2500;
-  const hint = mode === 'overview' ? ' · 拖动旋转 · 双指缩放' : '';
+  const hint = mode === 'overview' ? ' │ 拖动旋转 │ 双指缩放' : '';
   label.textContent = (stale
-    ? `${sceneName} · 头显数据已中断`
-    : `${sceneName} · ${state.session ? '训练中' : '待机'}`) + hint;
+    ? `${sceneName} │ 头显数据已中断`
+    : `${sceneName} │ ${state.session ? '训练中' : '待机'}`) + hint;
   raf = requestAnimationFrame(frame);
 }
 

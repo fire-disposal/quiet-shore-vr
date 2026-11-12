@@ -4,6 +4,7 @@ import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.ViewAnim
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -43,6 +44,24 @@ class RemoteMergeTest {
         assertEquals(3, merged.floatLevel)
         assertEquals(7, merged.voiceId)
         assertEquals(ViewAnim.PLAYING, merged.control.viewAnim)
+    }
+
+    @Test
+    fun `an unconfirmed scene pick outranks the older frame`() {
+        val picked = ControlUiState(
+            control = ControlState(scene = "lightwell"),
+            scenePending = "lightwell"
+        )
+
+        // A frame produced before the page switched: it must not undo the pick,
+        // or the card flips back and the next tap lands on the wrong scene.
+        val stale = mergeRemoteFrame(picked, frame(scene = "shore"), 0L, 1_000L)
+        assertEquals("lightwell", stale.control.scene)
+        assertEquals("lightwell", stale.scenePending)
+
+        val confirmed = mergeRemoteFrame(picked, frame(scene = "lightwell"), 0L, 2_000L)
+        assertEquals("lightwell", confirmed.control.scene)
+        assertNull(confirmed.scenePending)
     }
 
     @Test

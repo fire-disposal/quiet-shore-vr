@@ -3,6 +3,7 @@ package com.quietshore.control.ble
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.content.Context
+import android.util.Log
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
@@ -14,16 +15,16 @@ import java.nio.charset.StandardCharsets
 /**
  * Central side of the headset GATT profile.
  *
- * The peripheral exposes one writable command characteristic and three
- * notifying characteristics. Telemetry is a fixed 20 byte little endian
- * payload, but the v12 state frame is 40 bytes, so bring-up requests a
- * widened ATT MTU before notifications start.
+ * The peripheral exposes one writable command characteristic and four
+ * notifying characteristics. Telemetry is a fixed 24 byte little endian
+ * payload (x, y, z, yaw, pitch, roll) and the v13 state frame is 28 bytes, so
+ * bring-up requests a widened ATT MTU before notifications start: at the
+ * default MTU 23 a notification carries 20 bytes and every state frame would
+ * be truncated.
  *
- * The 10 Hz `view:orient` stream is written with `WRITE_TYPE_NO_RESPONSE`; every
- * discrete command keeps `WRITE_TYPE_DEFAULT` so its ATT response still proves
- * the headset accepted it. The write type travels with each request instead of
- * being stored on the shared characteristic, so a move sample can never make a
- * discrete write fire-and-forget.
+ * Every write is `WRITE_TYPE_DEFAULT` (write with response): a discrete command
+ * is acked by the headset over the status characteristic, and the ATT response
+ * proves the controller accepted the frame.
  */
 class QuietShoreBleManager(
     context: Context,
@@ -53,6 +54,9 @@ class QuietShoreBleManager(
 
     /** Set once per connection so `CONNECTION_PRIORITY_HIGH` is not re-sent. */
     private var highPriorityRequested = false
+    /** Refused requests; the stack sometimes needs a second or third ask. */
+    private var highPriorityAttempts = 0
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun getGattCallback(): BleManager.BleManagerGattCallback =
         object : BleManager.BleManagerGattCallback() {
@@ -170,19 +174,33 @@ class QuietShoreBleManager(
             jsonCharacteristic = null
             jsonAssembler.reset()
             highPriorityRequested = false
+            highPriorityAttempts = 0
         }
     }
 
-    /** Asks for a high connection priority exactly once per connection. */
+    /** Asks for a high connection priority, retrying a refused request. */
     private fun requestHighPriority() {
-        if (highPriorityRequested) {
+        if (highPriorityRequested || highPriorityAttempts >= HIGH_PRIORITY_ATTEMPTS) {
             return
         }
         highPriorityRequested = true
         requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
-            .fail { _, _ ->
-                // Some stacks refuse the request; the link stays usable.
+            .fail { _, code ->
                 highPriorityRequested = false
+                highPriorityAttempts++
+                // Several stacks (Huawei/EMUI among them) refuse the first
+                // request right after service discovery. Left at the default
+                // 40-50 ms interval, every tap, every ACK and every 24-byte
+                // telemetry frame waits a full connection event — which is
+                // exactly the sluggishness an operator reports. Retry with a
+                // growing delay instead of giving up after one refusal.
+                Log.w(TAG, "connection priority refused ($code), attempt $highPriorityAttempts")
+                if (highPriorityAttempts < HIGH_PRIORITY_ATTEMPTS) {
+                    mainHandler.postDelayed(
+                        { if (isReady) requestHighPriority() },
+                        1000L shl (highPriorityAttempts - 1)
+                    )
+                }
             }
             .enqueue()
     }
@@ -269,8 +287,11 @@ class QuietShoreBleManager(
     }
 
     private companion object {
+        const val TAG = "QuietShoreBle"
         const val WRITE_TIMEOUT_MS = 6000L
-        /** Covers the 40-byte v12 state frame with room for the SUS JSON split. */
+        /** Covers the 28-byte v13 state frame with room for the SUS JSON split. */
         const val REQUEST_MTU = 128
+        /** Huawei/EMUI and a few other stacks refuse the first ask or two. */
+        const val HIGH_PRIORITY_ATTEMPTS = 3
     }
 }

@@ -7,14 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,14 +23,13 @@ import com.quietshore.control.voice.VoiceCatalog
  * SUS, question by question.
  *
  * The instrument is read out loud one item at a time, so every item carries its
- * own play button: the operator advances at the patient's pace and never has to
+ * own play key: the operator advances at the patient's pace and never has to
  * hunt through a flat list. Wording is the instrument's, verbatim.
  */
+
 /** Wall-clock stamp for an archived sheet; the tablet is the record keeper. */
 private fun stamp(epochMs: Long): String {
-    if (epochMs <= 0L) {
-        return "—"
-    }
+    if (epochMs <= 0L) return "—"
     return java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
         .format(java.util.Date(epochMs))
 }
@@ -48,173 +41,183 @@ fun SusPanel(
     modifier: Modifier = Modifier
 ) {
     val connected = state.sessionActive || state.controlGranted
-    val items = VoiceCatalog.LINES.filter { it.group == "SUS" }
-    val questions = items.filter { it.id != "v-sus-intro" }
+    val questions = VoiceCatalog.LINES.filter { it.group == "SUS" && it.id != "v-sus-intro" }
+    val answered = state.susAnswers.count { it != 0 }
+    val current = state.susIndex
 
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = QuietPalette.Surface,
-        contentColor = QuietPalette.TextPrimary
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    Column(modifier.fillMaxWidth()) {
+        Band(
+            title = "量表",
+            trailing = {
+                Text(
+                    text = "${answered}/${questions.size}",
+                    style = MaterialTheme.typography.labelLarge.tabularFigures(),
+                    color = QuietPalette.TextPrimary
+                )
+            }
         ) {
-            Text("SUS 量表", style = MaterialTheme.typography.titleMedium)
-            val answered = state.susAnswers.count { it != 0 }
-            val current = state.susIndex
-            Text(
-                text = buildString {
-                    append("逐题播放，作答后自动进入下一题。")
-                    append("已答 $answered/${questions.size}")
-                    if (current in 1..questions.size) {
-                        append(" · 当前第 $current 题")
-                    }
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = QuietPalette.TextSecondary
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = actions.onSusOpen,
-                    enabled = connected,
-                    modifier = Modifier.weight(1f)
-                ) { Text("在头显中打开") }
-                OutlinedButton(
-                    onClick = actions.onSusClose,
-                    enabled = connected,
-                    modifier = Modifier.weight(1f)
-                ) { Text("关闭") }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("目视选择", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        text = "患者注视选项 3 秒即可作答",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
-                    )
-                }
-                Switch(
-                    checked = state.gazeDwell,
-                    onCheckedChange = actions.onGazeDwellChange,
-                    enabled = connected
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("朗读题干", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        text = "题目出现时同步播放这一题语音",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
-                    )
-                }
-                Switch(
-                    checked = state.susVoice,
-                    onCheckedChange = actions.onSusVoiceChange,
-                    enabled = connected
-                )
-            }
-
-            for ((index, line) in questions.withIndex()) {
-                val number = index + 1
-                val answer = state.susAnswers.getOrNull(index) ?: 0
-                val current = state.susIndex == number
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "$number.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (current) QuietPalette.Primary else QuietPalette.TextSecondary,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            text = line.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedButton(
-                            onClick = { actions.onSusShow(number) },
-                            enabled = connected
-                        ) { Text("显示") }
-                    }
-                    if (current) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            for (value in 1..5) {
-                                val chosen = answer == value
-                                if (chosen) {
-                                    Button(
-                                        onClick = { actions.onSusAnswer(value) },
-                                        enabled = connected
-                                    ) { Text("$value") }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = { actions.onSusAnswer(value) },
-                                        enabled = connected
-                                    ) { Text("$value") }
-                                }
-                            }
-                        }
-                    } else if (answer != 0) {
-                        Text(
-                            text = "已记录：$answer",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.TextSecondary
-                        )
-                    }
-                }
-            }
-
-            // Filed sheets: the headset sends one per completion and the tablet
-            // keeps them, so a session's usability record survives the session.
-            if (state.susHistory.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "已归档 ${state.susHistory.size} 份",
-                        style = MaterialTheme.typography.titleSmall
+                    Key(
+                        label = "在头显中打开",
+                        onClick = actions.onSusOpen,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Fill,
+                        enabled = connected
                     )
-                    OutlinedButton(onClick = actions.onSusExport) { Text("导出") }
+                    Key(
+                        label = "关闭",
+                        onClick = actions.onSusClose,
+                        modifier = Modifier.weight(1f),
+                        enabled = connected
+                    )
                 }
-                for (record in state.susHistory.asReversed()) {
-                    val score = record.score?.let { "$it 分" } ?: "${record.filled}/10"
-                    Text(
-                        text = "$score · ${record.scene} · ${stamp(record.completedAt)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
-                    )
+                Text(
+                    text = if (current in 1..questions.size) {
+                        "当前第 $current 题。作答后自动到下一题。"
+                    } else {
+                        "未开始。打开后逐题出现。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
+        Band(title = "作答方式") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                SwitchRow(
+                    title = "目视选择",
+                    checked = state.gazeDwell,
+                    onCheckedChange = actions.onGazeDwellChange,
+                    enabled = connected,
+                    note = "患者注视选项 3 秒即作答。"
+                )
+                Rule()
+                SwitchRow(
+                    title = "朗读题干",
+                    checked = state.susVoice,
+                    onCheckedChange = actions.onSusVoiceChange,
+                    enabled = connected,
+                    note = "题目出现时同步播放这一题语音。"
+                )
+            }
+        }
+
+        Band(title = "题目") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                for ((index, line) in questions.withIndex()) {
+                    val number = index + 1
+                    val answer = state.susAnswers.getOrNull(index) ?: 0
+                    val isCurrent = state.susIndex == number
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = "$number",
+                                style = MaterialTheme.typography.titleMedium.tabularFigures(),
+                                color = if (isCurrent) QuietPalette.TextPrimary else QuietPalette.TextSecondary,
+                                modifier = Modifier
+                                    .width(28.dp)
+                                    .padding(top = 8.dp)
+                            )
+                            Text(
+                                text = line.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = QuietPalette.TextPrimary,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(top = 8.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Key(
+                                label = if (isCurrent) "当前" else "显示",
+                                onClick = { actions.onSusShow(number) },
+                                kind = if (isCurrent) KeyKind.Fill else KeyKind.Quiet,
+                                enabled = connected,
+                                minWidth = TouchTarget
+                            )
+                        }
+                        if (isCurrent) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                for (value in 1..5) {
+                                    Key(
+                                        label = "$value",
+                                        onClick = { actions.onSusAnswer(value) },
+                                        kind = if (answer == value) KeyKind.Fill else KeyKind.Outline,
+                                        enabled = connected,
+                                        minWidth = TouchTarget
+                                    )
+                                }
+                            }
+                        } else if (answer != 0) {
+                            Text(
+                                text = "已记 $answer",
+                                style = MaterialTheme.typography.bodySmall.tabularFigures(),
+                                color = QuietPalette.TextSecondary,
+                                modifier = Modifier.padding(start = 28.dp, top = 4.dp)
+                            )
+                        }
+                    }
+                    Rule()
                 }
             }
+        }
 
-            if (state.voiceLine != null) {
-                Text(
-                    text = "正在播放：${state.voiceLine!!.text}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
+        // Filed sheets: the headset sends one per completion and the tablet
+        // keeps them, so a session's usability record survives the session.
+        Band(
+            title = "归档",
+            trailing = {
+                Key(
+                    label = "导出",
+                    onClick = actions.onSusExport,
+                    kind = KeyKind.Quiet,
+                    enabled = state.susHistory.isNotEmpty()
                 )
+            }
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                if (state.susHistory.isEmpty()) {
+                    EmptyNote("暂无归档。完成一份量表后出现在这里。")
+                } else {
+                    for (record in state.susHistory.asReversed()) {
+                        val score = record.score?.let { "$it 分" } ?: "${record.filled}/10"
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = score,
+                                style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                                color = QuietPalette.TextPrimary,
+                                modifier = Modifier.width(72.dp)
+                            )
+                            Text(
+                                text = record.scene,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = QuietPalette.TextSecondary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = stamp(record.completedAt),
+                                style = MaterialTheme.typography.bodySmall.tabularFigures(),
+                                color = QuietPalette.TextSecondary
+                            )
+                        }
+                        Rule()
+                    }
+                }
             }
         }
     }

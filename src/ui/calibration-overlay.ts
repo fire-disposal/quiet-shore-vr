@@ -35,6 +35,19 @@ const CANVAS_H = 432;
 const PLANE_W = 0.8;
 const PLANE_H = (PLANE_W * CANVAS_H) / CANVAS_W;
 
+/**
+ * Type ladder for the 0.8 m card, one step above the old 54/34/32. The card is
+ * the closest thing the patient reads, so it leads the scale: title, body,
+ * hint. The vertical rhythm follows from these, not from hard-coded y values.
+ */
+const TITLE_PX = 58;
+const BODY_PX = 38;
+const HINT_PX = 34;
+const PAD = 56;
+const TITLE_TOP = 40;
+const BODY_TOP = 124;
+const BODY_LINE = Math.round(BODY_PX * 1.4);
+
 const TITLE = '记录起始体位';
 /**
  * The card asks for nothing the patient cannot already do. Calibration only
@@ -92,71 +105,52 @@ export function createCalibrationOverlay(
     if (!ctx) {
       return;
     }
-    const panel = options.theme.panel;
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // Card body.
-    const radius = 28;
-    ctx.fillStyle = panel;
-    ctx.beginPath();
-    ctx.moveTo(radius, 0);
-    ctx.arcTo(CANVAS_W, 0, CANVAS_W, CANVAS_H, radius);
-    ctx.arcTo(CANVAS_W, CANVAS_H, 0, CANVAS_H, radius);
-    ctx.arcTo(0, CANVAS_H, 0, 0, radius);
-    ctx.arcTo(0, 0, CANVAS_W, 0, radius);
-    ctx.closePath();
-    ctx.fill();
+    // Card body: square corners, flat fill, one hairline. No radius, no shadow:
+    // this is the closest card the patient sees, and furniture reads as weight.
+    ctx.fillStyle = options.theme.panel;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = options.theme.border;
+    ctx.strokeRect(1, 1, CANVAS_W - 2, CANVAS_H - 2);
 
-    const pad = 56;
     ctx.textBaseline = 'top';
     ctx.fillStyle = options.theme.text;
-    ctx.font = `600 54px ${options.theme.fontFamily}`;
-    ctx.fillText(TITLE, pad, 44);
+    ctx.font = `600 ${TITLE_PX}px ${options.theme.fontFamily}`;
+    ctx.fillText(TITLE, PAD, TITLE_TOP);
 
     ctx.fillStyle = options.theme.muted;
-    ctx.font = `400 34px ${options.theme.fontFamily}`;
-    let y = 128;
+    ctx.font = `400 ${BODY_PX}px ${options.theme.fontFamily}`;
+    let y = BODY_TOP;
     for (const line of BODY) {
-      ctx.fillText(line, pad, y);
-      y += 46;
+      ctx.fillText(line, PAD, y);
+      y += BODY_LINE;
     }
     if (hint) {
-      ctx.fillStyle = options.theme.success;
-      ctx.font = `500 32px ${options.theme.fontFamily}`;
-      ctx.fillText(hint, pad, y + 6);
+      // Ink, not green: this variant has one accent and the hint is not it.
+      ctx.fillStyle = options.theme.text;
+      ctx.font = `500 ${HINT_PX}px ${options.theme.fontFamily}`;
+      ctx.fillText(hint, PAD, y + 4);
     }
 
-    // Progress track: only while a window is running.
-    const barY = CANVAS_H - 58;
-    const barW = CANVAS_W - pad * 2;
+    // Progress track: a 1 px rule under the fill, both square. The accent is a
+    // fill only, so it never appears here as an outline.
     if (progress !== null) {
-      ctx.fillStyle = options.theme.border;
-      roundRect(ctx, pad, barY, barW, 14, 7);
-      ctx.fill();
-      const width = Math.max(6, barW * Math.max(0, Math.min(1, progress)));
-      ctx.fillStyle = options.theme.success;
-      roundRect(ctx, pad, barY, width, 14, 7);
-      ctx.fill();
+      const barH = 12;
+      const barY = CANVAS_H - 48;
+      const barW = CANVAS_W - PAD * 2;
+      ctx.fillStyle = options.theme.panelStrong;
+      ctx.fillRect(PAD, barY, barW, barH);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = options.theme.border;
+      ctx.strokeRect(PAD + 0.5, barY + 0.5, barW - 1, barH - 1);
+      const width = Math.max(4, (barW - 4) * Math.max(0, Math.min(1, progress)));
+      ctx.fillStyle = options.theme.accent;
+      ctx.fillRect(PAD + 2, barY + 2, width, barH - 4);
     }
 
     texture.needsUpdate = true;
-  }
-
-  function roundRect(
-    c: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    r: number
-  ): void {
-    c.beginPath();
-    c.moveTo(x + r, y);
-    c.arcTo(x + w, y, x + w, y + h, r);
-    c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r);
-    c.arcTo(x, y, x + w, y, r);
-    c.closePath();
   }
 
   draw();

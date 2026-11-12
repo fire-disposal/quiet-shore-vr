@@ -21,21 +21,19 @@ import type { HeadPose } from '../core/xr/types';
 const CARD_WIDTH = 1.16;
 const CARD_HEIGHT = 0.42;
 /**
- * Quiet reading size: at 1.35 m the plane is 1024 px ≈ 1.527 m wide, so 26 px
- * is about 4.2 cm per glyph — eight glyphs narrower than the old 30 px. The
- * card carries the spoken line, not a headline.
+ * Reading size: at 1.35 m the plane is 1024 px ≈ 1.527 m wide, so 28 px is
+ * about 4.2 cm per glyph. The card carries the spoken line, not a headline;
+ * 26 → 28 is the one step this variant adds.
  */
-const TEXT_PX = 26;
+const TEXT_PX = 28;
 /**
  * 1.6 rather than 1.4: Chinese has no ascender/descender to separate lines, so
  * the lines need the extra air to read as a paragraph instead of a block.
  */
 const LINE_HEIGHT = 1.6;
-/** Three lines fits the longest shipped cue (~62 characters) at 26 px. */
+/** Three lines fits the longest shipped cue (~62 characters) at 28 px. */
 const MAX_LINES = 3;
-/** Patient-facing type is sans and bold; the theme's serif stays for surfaces. */
-const SANS_FONT = '"Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", sans-serif';
-/** Text column in canvas pixels: the card's 1024 px less 48 px of side padding. */
+/** Text column in canvas pixels: the card's 1024 px less 96 px of side padding. */
 const TEXT_WIDTH_PX = 1024 - 96;
 /** Glyphs per line, for the backstop that keeps a runaway cue inside the card. */
 const GLYPHS_PER_LINE = Math.floor(TEXT_WIDTH_PX / TEXT_PX);
@@ -54,13 +52,16 @@ export class SubtitleCard {
   private readonly texture: THREE.CanvasTexture;
   private readonly geometry: THREE.PlaneGeometry;
   private readonly material: THREE.MeshBasicMaterial;
+  private readonly theme: SpatialTheme;
   private text: string | null = null;
 
   /**
-   * `theme` is accepted for symmetry with the other spatial UI and ignored: the
-   * subtitle line uses the accent-free palette below, not the card theme.
+   * Same paper, hairline and type as the SUS card and the HUD: the theme's
+   * panel, border and sans. Accent is untouched here — a spoken line is never
+   * "current" and never pressable.
    */
-  constructor(scene: THREE.Scene, _theme: SpatialTheme = DEFAULT_SPATIAL_THEME) {
+  constructor(scene: THREE.Scene, theme: SpatialTheme = DEFAULT_SPATIAL_THEME) {
+    this.theme = theme;
     this.anchor = new SpatialAnchor({
       mode: 'head-locked',
       distance: 1.35,
@@ -231,22 +232,23 @@ export class SubtitleCard {
     const height = this.canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    ctx.font = `700 ${TEXT_PX}px ${SANS_FONT}`;
+    ctx.font = `700 ${TEXT_PX}px ${this.theme.fontFamily}`;
     ctx.textBaseline = 'middle';
     const { lines } = this.wrap(text);
 
-    // A flat scrim, not a card: the scene stays visible behind the line and
-    // nothing here competes with it for attention.
-    const pad = 4;
-    ctx.beginPath();
-    ctx.rect(pad, pad, width - pad * 2, height - pad * 2);
-    ctx.fillStyle = 'rgba(20, 24, 22, 0.5)';
-    ctx.fill();
+    // A flat card, not a scrim: same paper as the rest of the spatial UI, so a
+    // spoken line never lands on a dark slab the SUS card does not have. The
+    // fill is opaque — a translucent panel over bright scenery is unreadable
+    // for exactly the patient this is for. One hairline, drawn inside the edge
+    // so it cannot read as a doubled line.
+    const pad = 2;
+    ctx.fillStyle = this.theme.panel;
+    ctx.fillRect(pad, pad, width - pad * 2, height - pad * 2);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(247, 243, 234, 0.18)';
-    ctx.stroke();
+    ctx.strokeStyle = this.theme.border;
+    ctx.strokeRect(pad + 1, pad + 1, width - pad * 2 - 2, height - pad * 2 - 2);
 
-    ctx.fillStyle = '#F6F1E6';
+    ctx.fillStyle = this.theme.text;
     ctx.textAlign = 'center';
     const lineHeight = TEXT_PX * LINE_HEIGHT;
     const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2;

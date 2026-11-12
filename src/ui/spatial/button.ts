@@ -11,23 +11,11 @@ export interface SpatialButtonOptions {
   dwellTime?: number;
 }
 
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
-}
+/** Ink at 6%: the pressed state of a light button, no second fill colour. */
+const PRESSED_INK = 'rgba(22, 22, 22, 0.06)';
+/** Edge inset of the canvas; the hover line sits on the fill's own edge. */
+const EDGE_PAD = 2;
+const INSET_PX = 24;
 
 function drawButton(
   ctx: CanvasRenderingContext2D,
@@ -41,34 +29,44 @@ function drawButton(
   chosen: boolean
 ): void {
   ctx.clearRect(0, 0, width, height);
-  const pad = 3;
-  roundRect(ctx, pad, pad, width - pad * 2, height - pad * 2, 20);
+  // Square corners: the variant has no radius, and a 1 px rule is the whole
+  // edge treatment. Nothing is stacked on top of the fill.
+  const left = EDGE_PAD;
+  const top = EDGE_PAD;
+  const boxW = width - EDGE_PAD * 2;
+  const boxH = height - EDGE_PAD * 2;
+  const active = enabled && (focused || chosen);
 
-  if (!enabled) {
-    ctx.fillStyle = 'rgba(40, 54, 51, 0.9)';
-  } else if (focused) {
-    ctx.fillStyle = pressed ? '#7d3c2d' : theme.accent;
-  } else if (chosen) {
-    // The recorded answer: a small accent fill, no extra words.
+  // Ice marks "current / pressable": focused or recorded, always as a fill
+  // with ink type on it. Hover is the same fill, pressed only adds a breath of
+  // ink over it.
+  if (active) {
     ctx.fillStyle = theme.accent;
   } else {
-    ctx.fillStyle = pressed ? '#e8ded0' : theme.panelStrong;
+    ctx.fillStyle = theme.panelStrong;
   }
-  ctx.fill();
+  ctx.fillRect(left, top, boxW, boxH);
+  if (enabled && pressed) {
+    ctx.fillStyle = active ? 'rgba(22, 22, 22, 0.10)' : PRESSED_INK;
+    ctx.fillRect(left, top, boxW, boxH);
+  }
 
-  ctx.lineWidth = focused ? 3 : 1.5;
-  ctx.strokeStyle = !enabled ? theme.muted : focused || chosen ? theme.focus : theme.border;
-  ctx.stroke();
+  // One hairline, never a coloured outline. The rule is drawn inside the fill
+  // so the two edges cannot read as a doubled line.
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = enabled ? theme.border : 'rgba(22, 22, 22, 0.08)';
+  ctx.strokeRect(left + 0.5, top + 0.5, boxW - 1, boxH - 1);
 
-  ctx.fillStyle = !enabled ? theme.muted : focused || chosen ? theme.accentText : theme.text;
+  ctx.fillStyle = !enabled ? theme.muted : active ? theme.accentText : theme.text;
   // Type follows the button's own height, not a fixed pixel size: a 0.13 m
   // button on a 512x128 canvas drew its label at a third of the height, which
-  // read as a tiny caption inside a large card.
-  const fontPx = Math.round(Math.max(18, height * 0.4));
+  // read as a tiny caption inside a large card. 0.46 rather than 0.4 lifts the
+  // label a step without touching the geometry.
+  const fontPx = Math.round(Math.max(20, height * 0.46));
   ctx.font = `600 ${fontPx}px ${theme.fontFamily}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, width / 2, height / 2 + 1, width - 48);
+  ctx.fillText(label, width / 2, height / 2 + 1, width - INSET_PX * 2);
 }
 
 export class SpatialButton {
@@ -168,9 +166,18 @@ export class SpatialButton {
       return;
     }
     this.focused = focused;
-    // The focused fill is the accent color, so the dwell bar must invert.
-    this.barMaterial.color.set(focused ? this.theme.accentText : this.theme.accent);
+    this.syncBarColor();
     this.draw();
+  }
+
+  /**
+   * The bar rides the button's own bottom edge, so it must stay visible against
+   * whichever fill it sits on: ink on an accent fill, accent on white paper.
+   * It tracks the same `focused || chosen` state the fill does.
+   */
+  private syncBarColor(): void {
+    const onAccent = this.focused || this.chosen;
+    this.barMaterial.color.set(onAccent ? this.theme.accentText : this.theme.accent);
   }
 
   setEnabled(enabled: boolean): void {
@@ -190,6 +197,7 @@ export class SpatialButton {
       return;
     }
     this.chosen = chosen;
+    this.syncBarColor();
     this.draw();
   }
 

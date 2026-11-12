@@ -1,8 +1,6 @@
 package com.quietshore.control.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,49 +10,61 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.AngleGauge
-import com.quietshore.control.ui.components.ConnectionChip
+import com.quietshore.control.ui.components.Band
+import com.quietshore.control.ui.components.CommandBar
+import com.quietshore.control.ui.components.Key
+import com.quietshore.control.ui.components.KeyKind
 import com.quietshore.control.ui.components.LoadingDots
+import com.quietshore.control.ui.components.NoticeRow
 import com.quietshore.control.ui.components.PitchSideGauge
+import com.quietshore.control.ui.components.ReadoutBoard
+import com.quietshore.control.ui.components.Rule
 import com.quietshore.control.ui.components.SceneMirror
 import com.quietshore.control.ui.components.ScenePage
 import com.quietshore.control.ui.components.SessionPanel
-import com.quietshore.control.ui.components.SignalBars
 import com.quietshore.control.ui.components.SusPanel
 import com.quietshore.control.ui.components.VoicePanel
 import com.quietshore.control.ui.theme.QuietPalette
 
+/**
+ * The console, one screen, top to bottom:
+ *
+ * ```text
+ *   [ dark command bar ]   link · scene · session · tabs · stop   (fixed)
+ *   [ readout board   ]    time · strength · posture              (fixed)
+ *   [ bands           ]    scene / voice / SUS, hairline-divided  (scrolls)
+ *   [ mirror + gauges ]    what the patient sees and where they face
+ * ```
+ *
+ * Only the band column scrolls. The stop is in the bar and the session figures
+ * are in the board, so neither can be scrolled away.
+ */
 @Composable
 fun ControlScreen(
     state: ControlUiState,
     actions: ControlActions,
-    /** Latest one-shot operator message; shown briefly under the top bar. */
+    /** Latest one-shot operator message; shown briefly under the bar. */
     event: UiEvent? = null,
     onOpenInfo: () -> Unit = {}
 ) {
@@ -68,11 +78,9 @@ fun ControlScreen(
             state.phase == BlePhase.SCANNING ||
             state.phase == BlePhase.CONNECTING)
 
-    // Panel selection lives above the layout so a constraint change (rotation,
-    // window resize) cannot reset or drop the visible panel.
     // The first action of every session is 场景 (pick, then 启动); opening on
-    // 控制 showed a panel whose every control is disabled with "未开始会话".
-    var tab by rememberSaveable { mutableStateOf(PanelTab.SCENE) }
+    // 控制 used to show a panel whose every control was dead.
+    var tab by rememberSaveable { mutableStateOf("SCENE") }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -80,415 +88,151 @@ fun ControlScreen(
             .background(QuietPalette.Background)
             .safeDrawingPadding()
     ) {
-        val compact = maxWidth < 1000.dp
-        val railWidth = if (compact) minOf(320.dp, maxWidth * 0.84f) else 380.dp
-        val voiceWidth = if (compact) minOf(360.dp, maxWidth * 0.92f) else 420.dp
-        val panelWidth = if (tab == PanelTab.VOICE) voiceWidth else railWidth
-        val railOverlayInset = panelWidth + 14.dp
-
-        Box(Modifier.fillMaxSize()) {
-            // Bottom layer: the scene mirror. Every control surface is drawn
-            // after it, so the top-left status panel is never covered.
-            run {
-                SceneMirror(
-                    state = state,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(
-                            start = if (compact) 10.dp else 16.dp,
-                            top = if (compact) 78.dp else 82.dp,
-                            end = railOverlayInset + 14.dp,
-                            bottom = 14.dp
-                        )
-                        .clip(RoundedCornerShape(14.dp))
-                )
-            }
-
-            ControlTopBar(
+        // A 10" tablet in landscape gets a fixed band column and the mirror
+        // takes the rest; anything narrower stacks the bands under the board
+        // so neither column is squeezed below a readable width.
+        val wide = maxWidth >= 1000.dp
+        val bandWidth = if (wide) 460.dp else maxWidth - 24.dp
+        Column(Modifier.fillMaxSize()) {
+            CommandBar(
                 state = state,
-                compact = compact,
                 tab = tab,
-                onSelectTab = { tab = it },
+                onSelect = { tab = it },
                 onMirrorModeChange = actions.onMirrorModeChange,
                 onOpenInfo = onOpenInfo,
                 onDisconnect = actions.onDisconnect,
                 onEmergencyStop = actions.onEmergencyStop
             )
+            ReadoutBoard(state = state)
+            Rule()
 
-            if (event != null) {
-                NoticeBar(
-                    event = event,
+            Box(Modifier.weight(1f)) {
+                // Left: what the patient sees, then the two read-only gauges.
+                // In the stacked layout the mirror is hidden rather than
+                // squeezed: a 200 dp video is not worth a third of the screen.
+                Column(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = if (compact) 78.dp else 82.dp, end = railOverlayInset)
-                )
-            }
+                        .fillMaxHeight()
+                        .padding(end = bandWidth + 32.dp)
+                ) {
+                    if (wide) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, top = 16.dp, end = 20.dp)
+                                .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 16.dp))
+                        ) {
+                            SceneMirror(state = state, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        PitchSideGauge(pose = state.pose, stale = state.poseStale)
+                        AngleGauge(pose = state.pose, stale = state.poseStale)
+                    }
+                }
 
-            if (reconnecting) {
-                ReconnectingBanner(
-                    attempt = state.reconnectAttempt,
-                    max = state.reconnectMax,
-                    onLeave = actions.onLeave,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(
-                            top = if (compact) 78.dp else 82.dp,
-                            end = railOverlayInset
-                        )
-                )
-            } else if (offline) {
-                DisconnectedBanner(
-                    onReconnect = actions.onReconnect,
-                    onLeave = actions.onLeave,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(
-                            top = if (compact) 78.dp else 82.dp,
-                            end = railOverlayInset
-                        )
-                )
-            }
-
-            when (tab) {
-                PanelTab.MOTION -> SessionPanel(
-                    state = state,
-                    actions = actions,
+                // Right: the bands. The only scrolling region on the screen.
+                Box(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                        .width(railWidth)
-                )
-                PanelTab.SCENE -> ScenePage(
-                    state = state,
-                    actions = actions,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                        .width(railWidth)
-                )
-                PanelTab.VOICE -> VoicePanel(
-                    state = state,
-                    actions = actions,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                        .width(voiceWidth)
-                )
-                PanelTab.SUS -> SusPanel(
-                    state = state,
-                    actions = actions,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(top = if (compact) 78.dp else 82.dp, end = 14.dp, bottom = 14.dp)
-                        .width(voiceWidth)
-                )
-            }
-
-            // Read-only readouts: heading dial plus a side elevation of the
-            // head pitch. Never touch targets.
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                PitchSideGauge(
-                    pose = state.pose,
-                    stale = state.poseStale
-                )
-                AngleGauge(
-                    pose = state.pose,
-                    stale = state.poseStale
-                )
-            }
-        }
-    }
-}
-
-/** The right half of the console: one panel at a time. */
-private enum class PanelTab { MOTION, SCENE, VOICE, SUS }
-
-@Composable
-private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    TextButton(onClick = onClick) {
-        Text(
-            text = label,
-            color = if (selected) QuietPalette.Primary else QuietPalette.TextSecondary
-        )
-    }
-}
-
-@Composable
-private fun ControlTopBar(
-    state: ControlUiState,
-    compact: Boolean,
-    tab: PanelTab,
-    onSelectTab: (PanelTab) -> Unit,
-    onMirrorModeChange: (MirrorMode) -> Unit,
-    onOpenInfo: () -> Unit,
-    onDisconnect: () -> Unit,
-    onEmergencyStop: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = if (compact) 10.dp else 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = QuietPalette.Background.copy(alpha = 0.92f),
-        contentColor = QuietPalette.TextPrimary
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier.padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "静岸控制台",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = QuietPalette.TextPrimary
-                )
-                if (!compact) {
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = "静岸头显",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = QuietPalette.TextSecondary
+                        .width(bandWidth + 20.dp)
+                        .fillMaxHeight()
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .width(1.dp)
+                            .background(QuietPalette.Hairline)
                     )
-                    if (state.deviceSuffix.isNotEmpty()) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "尾号 ${state.deviceSuffix}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.TextSecondary
-                        )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .padding(start = 1.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        if (reconnecting) {
+                            LinkBanner(
+                                title = "连接中断",
+                                body = "正在重连（${state.reconnectAttempt.coerceAtLeast(1)}/${state.reconnectMax.coerceAtLeast(1)}），保持头显开机。",
+                                actionLabel = "返回配对",
+                                onAction = actions.onLeave,
+                                loading = true
+                            )
+                        } else if (offline) {
+                            LinkBanner(
+                                title = "头显已断开",
+                                body = "让头显回到前台，再重新连接。",
+                                actionLabel = "重新连接",
+                                onAction = actions.onReconnect,
+                                secondaryLabel = "返回配对",
+                                onSecondary = actions.onLeave
+                            )
+                        }
+                        if (event != null) {
+                            NoticeRow(
+                                text = OperatorCopy.operatorText(event),
+                                danger = event is UiEvent.Error
+                            )
+                        }
+                        when (tab) {
+                            "MOTION" -> SessionPanel(state = state, actions = actions)
+                            "VOICE" -> VoicePanel(state = state, actions = actions)
+                            "SUS" -> SusPanel(state = state, actions = actions)
+                            else -> ScenePage(state = state, actions = actions)
+                        }
                     }
                 }
-                Spacer(Modifier.width(if (compact) 8.dp else 12.dp))
-                SignalBars(rssi = state.rssi)
-                Spacer(Modifier.width(8.dp))
-                ConnectionChip(phase = state.phase, stale = state.stateStale)
-                // Mirror camera, left of the status block: it is about what the
-                // operator is looking at, not about which panel is open, so it
-                // is separated from the tab row by the flexible gap below.
-                Spacer(Modifier.width(if (compact) 8.dp else 14.dp))
-                if (compact) {
-                    // One cycling button on a narrow bar: two toggles plus five
-                    // tabs and the stop overflow the row on a 10" tablet.
-                    TextButton(onClick = {
-                        val next = MirrorMode.entries[
-                            (MirrorMode.entries.indexOf(state.mirrorMode) + 1) % MirrorMode.entries.size
-                        ]
-                        onMirrorModeChange(next)
-                    }) {
-                        Text(state.mirrorMode.label, color = QuietPalette.TextSecondary)
-                    }
-                } else {
-                    for (option in MirrorMode.entries) {
-                        TabButton(
-                            option.label,
-                            state.mirrorMode == option
-                        ) { onMirrorModeChange(option) }
-                    }
-                }
             }
-            Spacer(Modifier.weight(1f))
-            // Tabs, not toggles: exactly one right-hand panel is visible and
-            // the selected one is never ambiguous.
-            TextButton(onClick = onOpenInfo) {
-                Text("说明", color = QuietPalette.TextSecondary)
-            }
-            TabButton("控制", tab == PanelTab.MOTION) { onSelectTab(PanelTab.MOTION) }
-            TabButton("场景", tab == PanelTab.SCENE) { onSelectTab(PanelTab.SCENE) }
-            TabButton("语音", tab == PanelTab.VOICE) { onSelectTab(PanelTab.VOICE) }
-            TabButton("SUS", tab == PanelTab.SUS) { onSelectTab(PanelTab.SUS) }
-            // The stop lives in the bar, not in a panel: it has to be one tap
-            // away from every tab, including the scene and SUS pages.
-            TextButton(
-                onClick = onEmergencyStop,
-                enabled = state.control.session,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = QuietPalette.Danger,
-                    disabledContentColor = QuietPalette.Outline
-                )
-            ) { Text("急停") }
-            TextButton(
-                onClick = onDisconnect,
-                enabled = state.phase.isConnected,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = QuietPalette.TextSecondary,
-                    disabledContentColor = QuietPalette.Outline
-                )
-            ) {
-                Text("断开")
-            }
-        }
-    }
-}
-
-@Composable
-private fun DisconnectedBanner(
-    onReconnect: () -> Unit,
-    onLeave: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        color = QuietPalette.Danger.copy(alpha = 0.12f),
-        contentColor = QuietPalette.Danger
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("头显已断开", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.weight(1f))
-            TextButton(
-                onClick = onReconnect,
-                colors = ButtonDefaults.textButtonColors(contentColor = QuietPalette.Danger)
-            ) {
-                Text("重新连接")
-            }
-            TextButton(
-                onClick = onLeave,
-                colors = ButtonDefaults.textButtonColors(contentColor = QuietPalette.Danger)
-            ) {
-                Text("返回配对")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReconnectingBanner(
-    attempt: Int,
-    max: Int,
-    onLeave: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        color = QuietPalette.Warning.copy(alpha = 0.14f),
-        contentColor = QuietPalette.Warning
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LoadingDots(color = QuietPalette.Warning)
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = "连接中断，正在重连（${attempt.coerceAtLeast(1)}/${max.coerceAtLeast(1)}）",
-                style = MaterialTheme.typography.titleSmall
-            )
-            Spacer(Modifier.weight(1f))
-            TextButton(
-                onClick = onLeave,
-                colors = ButtonDefaults.textButtonColors(contentColor = QuietPalette.Warning)
-            ) {
-                Text("返回配对")
-            }
-        }
-    }
-}
-
-@Composable
-private fun OverlayPill(
-    label: String,
-    accent: Color
-) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = QuietPalette.Surface.copy(alpha = 0.78f),
-        contentColor = QuietPalette.TextPrimary
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-@Composable
-private fun PoseFreshness(
-    stale: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val color = if (stale) QuietPalette.Warning else QuietPalette.Success
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(50),
-        color = QuietPalette.Surface.copy(alpha = 0.78f),
-        contentColor = color
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(color)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = if (stale) "姿态未更新" else "实时",
-                style = MaterialTheme.typography.labelLarge
-            )
         }
     }
 }
 
 /**
- * One-shot operator feedback, visible for a few seconds.
- *
- * The notices already existed in the view model but lost their surface when the
- * diagnostics panel was removed: "命令已发送" and every rejection went nowhere.
+ * Link state above the bands. Ice while it is a wait the operator can sit out;
+ * red never appears here — red belongs to the stop and to deletions.
  */
 @Composable
-private fun NoticeBar(event: UiEvent, modifier: Modifier = Modifier) {
-    val error = event is UiEvent.Error
-    val accent = if (error) QuietPalette.Danger else QuietPalette.Accent
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(50),
-        color = QuietPalette.Surface.copy(alpha = 0.92f),
-        contentColor = if (error) QuietPalette.Danger else QuietPalette.TextPrimary,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.5f))
-    ) {
+private fun LinkBanner(
+    title: String,
+    body: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    secondaryLabel: String? = null,
+    onSecondary: (() -> Unit)? = null,
+    loading: Boolean = false
+) {
+    Band(title = "链路") {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(text = event.text, style = MaterialTheme.typography.labelLarge)
+            if (loading) {
+                LoadingDots(color = QuietPalette.TextPrimary)
+                Spacer(Modifier.width(12.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Key(label = actionLabel, onClick = onAction, kind = KeyKind.Outline)
+            if (secondaryLabel != null && onSecondary != null) {
+                Spacer(Modifier.width(8.dp))
+                Key(label = secondaryLabel, onClick = onSecondary, kind = KeyKind.Quiet)
+            }
         }
     }
 }
+
+

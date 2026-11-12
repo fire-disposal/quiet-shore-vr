@@ -20,7 +20,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.quietshore.control.ControlViewModel
-import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.UiEvent
 import kotlinx.coroutines.delay
 

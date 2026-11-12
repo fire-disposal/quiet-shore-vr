@@ -1,41 +1,24 @@
 package com.quietshore.control.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.ui.ControlActions
 import com.quietshore.control.ui.theme.QuietPalette
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * The operator's whole session surface, built on the one kinematics the page
@@ -47,10 +30,10 @@ import kotlin.math.roundToInt
  *   view     presets   →  a screen-space offset, never a second posture
  * ```
  *
- * Three sections, one per perceivable channel (`docs/control-perception.md`),
- * plus the stop. Everything shown here is read from the headset's state frame —
- * no number is re-derived on this side, so the bar, the angle and the button
- * availability cannot disagree.
+ * Four bands, one per perceivable channel, plus the stop — which lives in the
+ * bar, not here. Everything shown is read from the headset's state frame; no
+ * number is re-derived on this side, so the board and the buttons cannot
+ * disagree.
  */
 @Composable
 fun SessionPanel(
@@ -62,192 +45,145 @@ fun SessionPanel(
     val control = state.control
     val caps = state.caps
     val running = control.session
-    val mix = control.mix.coerceIn(0f, 1f)
-    val percent = (mix * 100f).roundToInt()
 
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = QuietPalette.Surface,
-        contentColor = QuietPalette.TextPrimary
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Section("会话") {
-                LabeledValue(
-                    "状态",
-                    when {
-                        !connected -> "未连接"
-                        control.calibrating -> "校准中"
-                        running -> "进行中 · ${clock(state.sessionElapsedMs)}"
-                        else -> "待机"
-                    }
+    Column(modifier.fillMaxWidth()) {
+        Band(title = "会话", trailing = {
+            Text(
+                text = if (running) "进行中" else "未开始",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (running) QuietPalette.TextPrimary else QuietPalette.TextSecondary
+            )
+        }) {
+            Column(
+                modifier = Modifier.padding(
+                    horizontal = 20.dp,
+                    vertical = 12.dp
                 )
-                LabeledValue("场景", SceneCatalog.scene(control.scene)?.name ?: control.scene)
+            ) {
+                FactText("场景", com.quietshore.control.model.SceneCatalog
+                    .scene(control.scene)?.name ?: control.scene, numeric = false)
+                FactText(
+                    label = if (connected) "控制权" else "链路",
+                    value = when {
+                        !connected -> "头显未连接"
+                        control.calibrating -> "校准中"
+                        else -> "平板接管"
+                    },
+                    numeric = false
+                )
                 if (caps.blocked.isNotEmpty()) {
                     Text(
-                        text = "头显当前：${caps.blocked}",
+                        text = "头显限制：${caps.blocked}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
+                        color = QuietPalette.TextSecondary,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }
+        }
 
-            Section("体位") {
-                // The two numbers that describe the same scalar: how far the
-                // body has risen, and where the eye ended up.
+        Band(title = "体位") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "站立",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.TextSecondary
-                        )
-                        Text(
-                            text = "$percent%",
-                            style = MaterialTheme.typography.headlineMedium
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "视高",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.TextSecondary
-                        )
-                        Text(
-                            text = String.format(Locale.US, "%.2f m", control.eyeHeight),
-                            style = MaterialTheme.typography.headlineSmall
-                        )
-                    }
+                    Key("起身", actions.onPostureRise, Modifier.weight(1f),
+                        kind = KeyKind.Fill, enabled = connected && caps.rise)
+                    Key("躺下", actions.onPostureLower, Modifier.weight(1f),
+                        enabled = connected && caps.lie)
+                    Key("停止", actions.onPostureStop, Modifier.weight(1f),
+                        enabled = connected && caps.stop)
                 }
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(QuietPalette.Outline.copy(alpha = 0.35f))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(mix.coerceIn(0f, 1f))
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(QuietPalette.Accent)
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FilledTonalButton(
-                        onClick = actions.onPostureRise,
-                        enabled = connected && caps.rise,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("起身") }
-                    OutlinedButton(
-                        onClick = actions.onPostureLower,
-                        enabled = connected && caps.lie,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("躺下") }
-                    OutlinedButton(
-                        onClick = actions.onPostureStop,
-                        enabled = connected && caps.stop,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("停止") }
-                }
-                DurationRow(
-                    selected = state.animDurationMs,
-                    enabled = connected && running,
-                    onSelect = actions.onAnimDuration
-                )
-                Text(
-                    text = "起身同时抬起视线与转动世界，两者共用一条曲线；停止冻结在当前高度",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
-
-            // One switch, not four levels: the only thing an operator can check
-            // in the headset is "moving / not moving".
-            Section("起伏") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(top = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "竖直起伏", style = MaterialTheme.typography.bodyMedium)
-                    Switch(
-                        checked = control.floatLevel > 0,
-                        onCheckedChange = { on -> actions.onFloatLevel(if (on) 3 else 0) },
-                        enabled = connected && caps.float,
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = QuietPalette.Accent,
-                            checkedThumbColor = QuietPalette.Surface,
-                            checkedBorderColor = QuietPalette.Accent,
-                            uncheckedTrackColor = QuietPalette.Outline.copy(alpha = 0.4f),
-                            uncheckedThumbColor = QuietPalette.Surface
-                        )
+                    Text(
+                        text = "起身时长",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = QuietPalette.TextSecondary
+                    )
+                    Spacer(Modifier.weight(1f))
+                    DurationRow(
+                        selected = state.animDurationMs,
+                        enabled = connected && running,
+                        onSelect = actions.onAnimDuration
                     )
                 }
-                LabeledValue(
-                    "已应用",
-                    if (!running) {
-                        "未进入训练"
-                    } else {
+            }
+        }
+
+        // One switch, not four levels: the only thing an operator can check in
+        // the headset is "moving / not moving".
+        Band(title = "起伏") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                SwitchRow(
+                    title = "竖直起伏",
+                    checked = control.floatLevel > 0,
+                    onCheckedChange = { on -> actions.onFloatLevel(if (on) 3 else 0) },
+                    enabled = connected && caps.float,
+                    note = if (running) {
                         String.format(
                             Locale.US,
                             "±%.0f mm · %d 级",
                             abs(control.floatMm),
                             control.floatLevel
                         )
+                    } else {
+                        "未进入训练"
                     }
                 )
                 Text(
-                    text = "开 = 湖面飘浮（约 150 mm，13 s 一个来回）；其他场景 = 轻缓呼吸；关 = 世界静止",
+                    text = if (control.floatLevel > 0) {
+                        "世界随呼吸缓慢升降，头部跟着轻微浮动。"
+                    } else {
+                        "世界静止。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
+                    color = QuietPalette.TextSecondary,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
+        }
 
-            Section("视线") {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for ((label, preset) in listOf("上仰" to "up", "下俯" to "down", "回正" to "recenter")) {
-                        OutlinedButton(
-                            onClick = { actions.onViewAnim(preset) },
-                            enabled = connected && caps.view,
-                            modifier = Modifier.weight(1f)
-                        ) { Text(label) }
-                    }
+        Band(title = "视线") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Key("上仰", { actions.onViewAnim("up") }, Modifier.weight(1f),
+                        enabled = connected && caps.view)
+                    Key("下俯", { actions.onViewAnim("down") }, Modifier.weight(1f),
+                        enabled = connected && caps.view)
+                    Key("回正", { actions.onViewAnim("recenter") }, Modifier.weight(1f),
+                        enabled = connected && caps.view)
+                    Key("保持", actions.onViewStop, Modifier.weight(1f),
+                        enabled = connected && caps.view)
                 }
-                OutlinedButton(
-                    onClick = actions.onViewStop,
-                    enabled = connected && caps.view,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("保持当前视角") }
-                LabeledValue(
+                FactText(
                     "相对俯仰",
                     String.format(Locale.US, "%+.0f°", control.viewPitch)
                 )
-                LabeledValue(
+                FactText(
                     "播放",
                     when (control.viewAnim) {
                         com.quietshore.control.protocol.ViewAnim.PLAYING -> "播放中"
                         com.quietshore.control.protocol.ViewAnim.HELD -> "已保持"
-                        com.quietshore.control.protocol.ViewAnim.IDLE -> "待机"
-                    }
+                        else -> "待机"
+                    },
+                    numeric = false
                 )
                 Text(
-                    text = "视线是叠加在体位上的微调，不改变起身高度",
+                    text = "视线偏移叠加在体位之上，不改变起身高度。",
                     style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
+                    color = QuietPalette.TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
-
         }
     }
 }
@@ -257,38 +193,27 @@ private val DURATIONS_S = listOf(6, 8, 10, 12)
 
 @Composable
 private fun DurationRow(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "起身时长",
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextSecondary
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (seconds in DURATIONS_S) {
-                val active = selected == seconds * 1000
-                TextButton(
-                    onClick = { onSelect(seconds * 1000) },
-                    enabled = enabled
-                ) {
-                    Text(
-                        text = "${seconds}s",
-                        color = if (active) QuietPalette.Primary else QuietPalette.TextSecondary
-                    )
-                }
-            }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (seconds in DURATIONS_S) {
+            val active = selected == seconds * 1000
+            Key(
+                label = "${seconds}s",
+                onClick = { onSelect(seconds * 1000) },
+                kind = if (active) KeyKind.Fill else KeyKind.Outline,
+                enabled = enabled,
+                minWidth = TouchTarget
+            )
         }
     }
 }
 
+/** Label and value on one line; the value keeps the tabular figures. */
 @Composable
-private fun LabeledValue(label: String, value: String) {
+private fun FactText(label: String, value: String, numeric: Boolean = true) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -296,31 +221,17 @@ private fun LabeledValue(label: String, value: String) {
             style = MaterialTheme.typography.bodyMedium,
             color = QuietPalette.TextSecondary
         )
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = value,
+            style = if (numeric) {
+                MaterialTheme.typography.bodyMedium.tabularFigures()
+            } else {
+                MaterialTheme.typography.bodyMedium
+            },
+            color = QuietPalette.TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
-}
-
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(width = 3.dp, height = 14.dp)
-                    .background(QuietPalette.Accent, RoundedCornerShape(2.dp))
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = QuietPalette.TextPrimary
-            )
-        }
-        content()
-    }
-}
-
-private fun clock(milliseconds: Long): String {
-    val totalSeconds = (milliseconds / 1000).coerceIn(0, 3599)
-    return String.format(Locale.US, "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
 }

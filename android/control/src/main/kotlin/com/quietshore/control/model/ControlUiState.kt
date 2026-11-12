@@ -79,6 +79,12 @@ data class ControlUiState(
     val scanAttempted: Boolean = false,
     /** Launch requested, waiting for the patient's confirm key. */
     val startPending: Boolean = false,
+    /**
+     * Scene the operator just picked, until a headset frame confirms it.
+     * Confirmation is up to one state frame away (~1 s); without this the card
+     * snaps back to the old scene right after the tap.
+     */
+    val scenePending: String? = null,
     /** No state frame from the headset for a while: the link is not live. */
     val stateStale: Boolean = false,
     /** Capabilities reported by the headset's motion plan. */

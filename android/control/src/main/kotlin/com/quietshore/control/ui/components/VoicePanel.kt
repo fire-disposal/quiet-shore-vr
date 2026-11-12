@@ -1,25 +1,20 @@
 package com.quietshore.control.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.Switch
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +22,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.ControlActions
 import com.quietshore.control.ui.theme.QuietPalette
@@ -36,12 +34,12 @@ import com.quietshore.control.voice.VoiceCatalog
 /**
  * Voice cue drawer.
  *
- * Everything the operator does here is a name: play this clip, play this
+ * Everything the operator does here is a name: play this line, play this
  * sequence, stop. Audio never crosses the link, so every action lands in a few
  * hundred milliseconds and the panel stays usable while a session runs.
  *
- * Order is by frequency of use: transport, sequences, the last three clips, the
- * full catalog, then mixing. Nothing is hidden behind a gesture.
+ * Order is by frequency of use: transport, what is speaking now, the two
+ * switches, sequences, tone, mixing, then the full catalog.
  */
 @Composable
 fun VoicePanel(
@@ -50,9 +48,8 @@ fun VoicePanel(
     modifier: Modifier = Modifier
 ) {
     // Enabled whenever the link is up: a voice command is a play request, not
-    // a claim on the world, so it does not need the control grant. Before, the
-    // buttons were simply dead without explaining why.
-    val connected = state.phase == com.quietshore.control.ble.BlePhase.READY
+    // a claim on the world, so it does not need the control grant.
+    val connected = state.phase == BlePhase.READY
     // Every guidance group starts open: a sentence the operator has to expand
     // first is a sentence they will not use mid-session. SUS is excluded — its
     // statements are read by the panel as they appear, so tapping one here
@@ -60,88 +57,101 @@ fun VoicePanel(
     val guidance = VoiceCatalog.LINES.filter { it.group != "SUS" }
     var expanded by remember { mutableStateOf(guidance.map { it.group }.toSet()) }
 
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = QuietPalette.Surface,
-        contentColor = QuietPalette.TextPrimary
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+    val cursor = guidance.indexOfFirst { it.id == state.voiceLine?.id }
+    val previousLine = if (cursor > 0) guidance[cursor - 1] else null
+    val nextLine = when {
+        cursor < 0 -> guidance.firstOrNull()
+        cursor < guidance.lastIndex -> guidance[cursor + 1]
+        else -> null
+    }
+
+    Column(modifier.fillMaxWidth()) {
+        Band(
+            title = "现在",
+            trailing = {
+                Text(
+                    text = if (connected) "可播放" else "链路断开",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = QuietPalette.TextSecondary
+                )
+            }
         ) {
-            NowPlaying(state = state)
-            if (!connected) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                val line = state.voiceLine
                 Text(
-                    text = "链路未就绪：头显未连接时语音不可发送",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
+                    text = line?.text ?: "未在播放",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (line != null) QuietPalette.TextPrimary else QuietPalette.TextSecondary
                 )
-            }
-
-            // The session is a walk down one list, so the dominant action is
-            // "next". It also had to exist: the catalogue is 27 full-text
-            // buttons, and finding the following line meant scrolling to it
-            // while the patient waited.
-            val cursor = guidance.indexOfFirst { it.id == state.voiceLine?.id }
-            val previousLine = if (cursor > 0) guidance[cursor - 1] else null
-            val nextLine = when {
-                cursor < 0 -> guidance.firstOrNull()
-                cursor < guidance.lastIndex -> guidance[cursor + 1]
-                else -> null
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = actions.onVoiceStop,
-                    enabled = connected,
-                    modifier = Modifier.weight(1f)
-                ) { Text("停止") }
-                OutlinedButton(
-                    onClick = { previousLine?.let { actions.onVoicePlay(it.id) } },
-                    enabled = connected && previousLine != null,
-                    modifier = Modifier.weight(1f)
-                ) { Text("上一句") }
-                Button(
-                    onClick = { nextLine?.let { actions.onVoicePlay(it.id) } },
-                    enabled = connected && nextLine != null,
-                    modifier = Modifier.weight(1f)
-                ) { Text("下一句") }
-            }
-            if (state.voiceLine != null || nextLine != null) {
-                Text(
-                    text = nextLine?.let { "下一句 · ${it.group}：${it.text}" } ?: "已是最后一句",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("字幕", style = MaterialTheme.typography.bodyMedium)
+                if (line != null) {
                     Text(
-                        text = "朗读时在患者视野下方显示台词，读完自动消失",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
+                        text = line.group,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = QuietPalette.TextSecondary,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-                Switch(
-                    checked = state.subtitles,
-                    onCheckedChange = actions.onSubtitlesChange,
-                    enabled = connected
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Key(
+                        label = "停止",
+                        onClick = actions.onVoiceStop,
+                        modifier = Modifier.weight(1f),
+                        enabled = connected
+                    )
+                    Key(
+                        label = "上一句",
+                        onClick = { previousLine?.let { actions.onVoicePlay(it.id) } },
+                        modifier = Modifier.weight(1f),
+                        enabled = connected && previousLine != null
+                    )
+                    Key(
+                        label = "下一句",
+                        onClick = { nextLine?.let { actions.onVoicePlay(it.id) } },
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Fill,
+                        enabled = connected && nextLine != null
+                    )
+                }
+                Text(
+                    text = nextLine?.let { "下一句 · ${it.group}" } ?: "已是最后一句",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
+        }
 
-            // Four scripted sequences. The page owns the pacing (gaps measured
-            // from each clip's end) and keeps the bed ducked until the last
-            // line, so one tap runs the whole arc.
+        Band(title = "开关") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                SwitchRow(
+                    title = "字幕",
+                    checked = state.subtitles,
+                    onCheckedChange = actions.onSubtitlesChange,
+                    enabled = connected,
+                    note = "念出台词时在患者视野下方显示，读完消失。"
+                )
+                Rule()
+                SwitchRow(
+                    title = "朗读 SUS 题干",
+                    checked = state.susVoice,
+                    onCheckedChange = actions.onSusVoiceChange,
+                    enabled = connected,
+                    note = "题目出现时同步播放这一题语音。"
+                )
+            }
+        }
+
+        // Four scripted sequences. The page owns the pacing and keeps the bed
+        // ducked until the last line, so one tap runs the whole arc.
+        Band(title = "序列") {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 for ((label, name) in listOf(
@@ -150,54 +160,64 @@ fun VoicePanel(
                     "放松" to "relax",
                     "收束" to "close"
                 )) {
-                    OutlinedButton(
+                    Key(
+                        label = label,
                         onClick = { actions.onVoiceSequence(name) },
-                        enabled = connected,
-                        modifier = Modifier.weight(1f)
-                    ) { Text(label) }
-                }
-            }
-
-            // The set was reachable only by command: `onVoiceSet` was wired to
-            // the view model and no control ever called it.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("音色", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        text = "换音色会清空已解码的音频，会话中切换会停顿一下",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.TextSecondary
+                        modifier = Modifier.weight(1f),
+                        enabled = connected
                     )
                 }
+            }
+        }
+
+        Band(title = "音色") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "切换会停顿一下。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary,
+                    modifier = Modifier.weight(1f)
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for ((label, id) in listOf("女声" to "female", "男声" to "male")) {
-                        ToneChoice(
+                        Key(
                             label = label,
-                            selected = state.voiceSet == id,
+                            onClick = { actions.onVoiceSet(id) },
+                            kind = if (state.voiceSet == id) KeyKind.Fill else KeyKind.Outline,
                             enabled = connected,
-                            onClick = { actions.onVoiceSet(id) }
+                            minWidth = TouchTarget + 32.dp
                         )
                     }
                 }
             }
+        }
 
-            Seed("混音") {
+        Band(title = "混音") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = TouchTarget)
+                        .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("水声", style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(
+                    Text(
+                        text = "水声",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = QuietPalette.TextPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Key(
+                        label = if (state.control.audioMuted) "开始" else "暂停",
                         onClick = actions.onToggleAudio,
-                        enabled = connected
-                    ) {
-                        Text(if (state.control.audioMuted) "开始水声" else "暂停水声")
-                    }
+                        enabled = connected,
+                        minWidth = TouchTarget + 32.dp
+                    )
                 }
                 ValueSlider(
                     label = "语音音量",
@@ -214,39 +234,67 @@ fun VoicePanel(
                     enabled = connected
                 ) { actions.onVoiceDuck(it) }
             }
-            // Guidance lines are played by hand; SUS is not in this list.
-            Seed("引导台词（${guidance.size} 句）") {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for ((group, lines) in guidance.groupBy { it.group }) {
-                        val open = group in expanded
-                        TextButton(
-                            onClick = {
+        }
+
+        // Guidance lines are played by hand; SUS is not in this list.
+        Band(
+            title = "台词",
+            trailing = {
+                Text(
+                    text = "${guidance.size} 句",
+                    style = MaterialTheme.typography.labelLarge.tabularFigures(),
+                    color = QuietPalette.TextSecondary
+                )
+            }
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                for ((group, lines) in guidance.groupBy { it.group }) {
+                    val open = group in expanded
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = TouchTarget)
+                            .clickable(
+                                role = Role.Button,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
                                 expanded = if (open) expanded - group else expanded + group
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "$group · ${lines.size} 句",
-                                modifier = Modifier.weight(1f),
-                                color = QuietPalette.TextPrimary
-                            )
-                            Text(if (open) "▾" else "▸", color = QuietPalette.TextSecondary)
-                        }
-                        if (open) {
-                            for (line in lines) {
-                                OutlinedButton(
-                                    onClick = { actions.onVoicePlay(line.id) },
-                                    enabled = connected,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        // Full text: the operator reads the
-                                        // sentence before the patient hears it.
-                                        text = line.text,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
                             }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = group,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = QuietPalette.TextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${lines.size} 句 · ${if (open) "收起" else "展开"}",
+                            style = MaterialTheme.typography.bodySmall.tabularFigures(),
+                            color = QuietPalette.TextSecondary
+                        )
+                    }
+                    Rule()
+                    if (open) {
+                        for (line in lines) {
+                            Text(
+                                text = line.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = QuietPalette.TextPrimary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(
+                                        enabled = connected,
+                                        role = Role.Button,
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { actions.onVoicePlay(line.id) }
+                                    .padding(vertical = 12.dp),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -255,35 +303,7 @@ fun VoicePanel(
     }
 }
 
-@Composable
-private fun NowPlaying(state: ControlUiState) {
-    val line = state.voiceLine
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text("语音", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = line?.let { "正在播放：${it.group} · ${it.text}" } ?: "未在播放",
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.TextSecondary
-        )
-    }
-}
-
-@Composable
-private fun ToneChoice(
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    if (selected) {
-        Button(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { Text(label) }
-    }
-}
-
+/** One labelled slider with its value at the right, tabular. */
 @Composable
 private fun ValueSlider(
     label: String,
@@ -293,29 +313,37 @@ private fun ValueSlider(
     enabled: Boolean,
     onChange: (Int) -> Unit
 ) {
-    Column {
+    Column(Modifier.padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = QuietPalette.TextSecondary)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = QuietPalette.TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                color = QuietPalette.TextSecondary
+            )
         }
         Slider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toInt()) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
-            enabled = enabled
+            enabled = enabled,
+            colors = SliderDefaults.colors(
+                thumbColor = QuietPalette.TextPrimary,
+                activeTrackColor = QuietPalette.Ice,
+                inactiveTrackColor = QuietPalette.Hairline,
+                disabledThumbColor = QuietPalette.Disabled,
+                disabledActiveTrackColor = QuietPalette.IceMuted,
+                disabledInactiveTrackColor = QuietPalette.Hairline
+            )
         )
     }
 }
-
-@Composable
-private fun Seed(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = QuietPalette.TextSecondary)
-        content()
-    }
-}
-
-

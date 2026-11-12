@@ -1,76 +1,52 @@
 package com.quietshore.control.ui.components
 
-import android.animation.ValueAnimator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ui.theme.QuietPalette
+import com.quietshore.control.ui.theme.rememberMotionPhase
 import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * Indeterminate waiting cue: three small dots with a soft staggered wave.
- * Uses frame callbacks rather than an animation spec so it stays dependency
- * free, and settles into static dots when system animations are disabled.
+ * Waiting cue: three square blocks filling in sequence, on a fixed clock.
+ * Not a dot row — the console has no dots anywhere else. Settles into two lit
+ * blocks when the system asks for reduced motion.
  */
 @Composable
 fun LoadingDots(
     modifier: Modifier = Modifier,
-    color: Color = QuietPalette.Primary
+    color: Color = QuietPalette.TextPrimary
 ) {
-    val animated = remember { ValueAnimator.areAnimatorsEnabled() }
-    var phase by remember { mutableStateOf(0f) }
-
-    if (animated) {
-        LaunchedEffect(Unit) {
-            var startNanos = 0L
-            while (true) {
-                withFrameNanos { now ->
-                    if (startNanos == 0L) {
-                        startNanos = now
-                    }
-                    val elapsed = now - startNanos
-                    phase = (elapsed % CYCLE_NANOS) / CYCLE_NANOS.toFloat()
-                }
-            }
-        }
-    }
-
+    val phase = rememberMotionPhase(CYCLE_NANOS)
     Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.size(width = 24.dp, height = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         repeat(3) { index ->
-            val shift = (phase - index * 0.12f + 1f) % 1f
-            val wave = ((sin(shift * 2f * PI.toFloat()) + 1f) / 2f)
-            val alpha = if (animated) 0.35f + 0.65f * wave else 0.6f
-            val lift = if (animated) 3f * wave else 0f
+            val alpha = if (phase == null) {
+                if (index < 2) 1f else 0.25f
+            } else {
+                val shift = (phase - index * 0.16f + 1f) % 1f
+                val wave = (sin(shift * 2f * PI.toFloat()) + 1f) / 2f
+                0.3f + 0.7f * wave
+            }
             Box(
                 Modifier
-                    .offset(y = (-lift).dp)
                     .size(6.dp)
-                    .clip(CircleShape)
                     .background(color.copy(alpha = alpha))
             )
         }
     }
 }
 
-private const val CYCLE_NANOS = 840_000_000L
+/** Two cycles per second: fast enough to read as "working", slow enough to stay calm. */
+private const val CYCLE_NANOS = 1_200_000_000L
