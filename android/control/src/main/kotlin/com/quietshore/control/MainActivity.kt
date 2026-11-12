@@ -5,6 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quietshore.control.ui.ControlApp
 import com.quietshore.control.ui.ConsoleFixture
@@ -27,6 +30,14 @@ class MainActivity : ComponentActivity() {
                 android.graphics.Color.TRANSPARENT
             )
         )
+        // The console is a kiosk surface: the tablet has one job, and the
+        // launcher's taskbar sitting under the page reads as a second app.
+        // Bars stay reachable with a swipe from the edge.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
         setContent {
             QuietShoreTheme {
                 // `--es preview running` renders the console over fixture state:

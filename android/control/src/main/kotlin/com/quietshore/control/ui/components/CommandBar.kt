@@ -114,7 +114,9 @@ fun CommandBar(
             // under it in the figure face. A black block here read as a button.
             Column {
                 Text(
-                    text = "//" + barLinkLabel(state.phase, state.stateStale),
+                    // The link word is a state, not a field: no `//` here in
+                    // any state. `//` belongs to the readings on the right.
+                    text = barLinkLabel(state.phase, state.stateStale),
                     style = MaterialTheme.typography.labelSmall,
                     color = QuietPalette.InkSecondary,
                     maxLines = 1

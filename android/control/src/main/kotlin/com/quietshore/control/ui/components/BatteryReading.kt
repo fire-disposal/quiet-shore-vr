@@ -200,9 +200,11 @@ fun BatteryField(
                     maxLines = 1
                 )
             } else {
+                // No word, just a dash: "unconnected" is already said by the
+                // bar's empty track, and this line is a reading, not a status.
                 Text(
-                    text = "未连接",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "---",
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
                     color = QuietPalette.InkSecondary,
                     maxLines = 1
                 )
