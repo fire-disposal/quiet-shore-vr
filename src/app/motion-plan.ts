@@ -25,11 +25,23 @@ export interface MotionCapabilities {
   view: boolean;
   /** Short reason for the first blocked capability, '' when nothing is blocked. */
   blocked: string;
+  /**
+   * Highest buoyancy level the loaded scene allows (1..3).
+   *
+   * The scene owns this ceiling, not the motion plan: it is carried here so a
+   * remote stepper can clamp instead of sending a level the page will reduce.
+   */
+  floatMax: number;
 }
 
 export interface MotionPlanInput {
   /** A session exists in the page's state machine. */
   session: boolean;
+  /**
+   * Highest buoyancy level the loaded scene tolerates (1..3). Scene knowledge,
+   * carried through the plan so every consumer reads one number.
+   */
+  floatMax: number;
   /** The page is presenting in XR. */
   presenting: boolean;
   /** A calibration capture owns the world. */
@@ -70,7 +82,15 @@ export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
         ? '校准中'
         : '';
   if (!live) {
-    return { rise: false, lie: false, stop: false, float: false, view: false, blocked };
+    return {
+      rise: false,
+      lie: false,
+      stop: false,
+      float: false,
+      view: false,
+      blocked,
+      floatMax: input.floatMax
+    };
   }
   return {
     rise: mix < 1 - CORRECTION_EPSILON_MIX,
@@ -78,7 +98,8 @@ export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
     stop: input.correctionMoving,
     float: true,
     view: true,
-    blocked: ''
+    blocked: '',
+    floatMax: input.floatMax
   };
 }
 

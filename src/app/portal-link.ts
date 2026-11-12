@@ -57,6 +57,8 @@ export interface StateSnapshot {
     float: boolean;
     view: boolean;
     blocked: string;
+    /** Highest buoyancy level this scene allows (1..3), so a stepper can clamp. */
+    floatMax: number;
   }>;
 }
 
@@ -133,7 +135,8 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
       stop: snapshot.caps.stop,
       float: snapshot.caps.float,
       view: snapshot.caps.view,
-      blocked: snapshot.caps.blocked
+      blocked: snapshot.caps.blocked,
+      floatMax: snapshot.caps.floatMax
     } satisfies StateSnapshot['caps']
   };
 }

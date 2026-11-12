@@ -1527,7 +1527,10 @@ export class QuietShoreApp {
         // The scalar that poses the world: the tablet's buttons and its
         // progress bar both derive from it, so they cannot disagree.
         correctionMix: world.mix,
-        correctionMoving: world.moving
+        correctionMoving: world.moving,
+        // The loaded scene's buoyancy ceiling travels with the plan, so the
+        // tablet's stepper clamps to the same number the page enforces.
+        floatMax: this.sceneComfortLevel
       },
       this.plan ?? undefined
     );
@@ -1896,7 +1899,8 @@ export class QuietShoreApp {
         stop: false,
         float: false,
         view: false,
-        blocked: '未开始会话'
+        blocked: '未开始会话',
+        floatMax: this.sceneComfortLevel
       }
     });
   }
