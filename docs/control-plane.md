@@ -242,11 +242,13 @@ PING / RELEASE / CLAIM   # 存活与租约
 
 ```text
 {"type":"state","data":{scene,session,calibrating,moving,audio,eyeHeight,mix,floatLevel,floatMm,viewPitch,viewYaw,viewAnim,voiceId,calibrationConfidence,elapsedSec,worldQ,worldT,caps}}
+{"type":"notice","text":"记录体位时无法切换场景，稍后再试","tone":"error"}
 {"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
 {"type":"ack","seq":N}
 ```
 
 - 连接建立先发 `ready`，随后补发 `seq > since` 的命令；`since` 缺失按 `-1`。
+- `notice` 是页面 → 服务端 → 平板的一句话：命令被拒绝时的原因、或状态帧放不下的一次性事实。服务把它原样转成 BLE JSON 通道的 `{"t":"notice","text","tone"}`，平板据此提示；页面本地状态行用的是同一句文案，避免两处措辞漂移。
 - `battery` 是头显自己的电量（`ACTION_BATTERY_CHANGED` 粘性值），`ready` 之后立即发一条，`level` 或 `charging` 真正变化时再发；`charging` 为 true 时也包含“已充满且接着电源”。`/status` 里有同名对象，壳层刚启动、还没拿到粘性值时为 `null`。入口页目前**不**显示它——电量栏在 APK 控制台首页。
 - 命令保留到页面 `ack`（≤64 条）；`view:anim:*` 只实时投递，不跨重连重放。
 - 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。

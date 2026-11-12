@@ -705,6 +705,22 @@ class PortalService : Service() {
             "sus" -> json.optJSONObject("data")?.let { data ->
                 bluetooth?.publishSus(data.toString())
             }
+            // A refusal or one-off report from the page: the page knows why a
+            // command did not take effect, the tablet is what the operator is
+            // holding. Relayed verbatim on the JSON channel.
+            "notice" -> {
+                val text = json.optString("text")
+                if (text.isNotEmpty()) {
+                    val tone = if (json.optString("tone") == "error") "error" else "ok"
+                    bluetooth?.publishJson(
+                        org.json.JSONObject().apply {
+                            put("t", "notice")
+                            put("text", text)
+                            put("tone", tone)
+                        }.toString()
+                    )
+                }
+            }
             // Unknown message types are ignored: forward compatibility beats a
             // disconnect when a newer page talks to an older service.
             else -> Unit

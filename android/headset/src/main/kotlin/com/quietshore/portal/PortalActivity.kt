@@ -501,8 +501,12 @@ class PortalActivity : Activity() {
     }
 
     /**
-     * Battery sits directly under the header: one label row, one track.
-     * Hidden entirely when no sticky battery broadcast has arrived.
+     * Battery sits directly under the header: one field row and one hairline-thin
+     * measure.
+     *
+     * The number is the reading; the bar is only its proportion, so the track is
+     * a 3 dp rule rather than a widget — same weight as every other divider on
+     * this screen. Hidden entirely until a sticky battery broadcast arrives.
      */
     private fun batteryCard(): View {
         val card = sectionCard()
@@ -510,8 +514,8 @@ class PortalActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val labelView = label("头显电量", 15f, MUTED, Typeface.NORMAL)
-        val value = label("—", 20f, TEXT, Typeface.BOLD).apply {
+        val labelView = label("电量", 14f, MUTED, Typeface.NORMAL)
+        val value = label("—", 22f, TEXT, Typeface.BOLD).apply {
             gravity = Gravity.END
             numbers()
         }
@@ -535,8 +539,8 @@ class PortalActivity : Activity() {
         }
         card.addView(track, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(11)
-        ).apply { topMargin = dp(10) })
+            dp(3)
+        ).apply { topMargin = dp(8) })
         card.visibility = View.GONE
 
         batteryLabel = labelView

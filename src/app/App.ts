@@ -942,7 +942,7 @@ export class QuietShoreApp {
     if (command.startsWith('voice:seq:')) {
       const name = command.slice('voice:seq:'.length) as SequenceName;
       if (!(name in SEQUENCES)) {
-        this.start.setStatus('未知语音序列', 'error');
+        this.refuse('未知语音序列');
         return;
       }
       this.voice.playSequence(name);
@@ -951,7 +951,7 @@ export class QuietShoreApp {
     if (command.startsWith('voice:volume:')) {
       const percent = Number(command.slice('voice:volume:'.length));
       if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-        this.start.setStatus('语音音量无效', 'error');
+        this.refuse('语音音量无效');
         return;
       }
       this.voice.setVolume(percent);
@@ -969,16 +969,28 @@ export class QuietShoreApp {
     }
   }
 
+  /**
+   * Refuse a command the operator sent, in the words they must act on.
+   *
+   * The local status line is not enough: the tablet is what they are holding,
+   * so the same sentence travels upstream (`notice`) and shows there. Both
+   * lines are the same string on purpose — two wordings would drift.
+   */
+  private refuse(text: string): void {
+    this.start.setStatus(text, 'error');
+    this.link.sendNotice(text, 'error');
+  }
+
   private applySceneCommand(id: string): void {
     const definition = getSceneDefinition(id);
     if (!definition) {
-      this.start.setStatus('未知场景', 'error');
+      this.refuse('未知场景');
       return;
     }
     if (this.capturePending) {
       // The card is teaching the patient to hold still; a world swap under it
       // would undo that.
-      this.start.setStatus('记录体位时无法切换场景', 'error');
+      this.refuse('记录体位时无法切换场景，稍后再试');
       return;
     }
     if (this.lifecycle.phase === 'stopping') {
@@ -1384,7 +1396,7 @@ export class QuietShoreApp {
         return;
       case 'viewAnim':
         if (!this.viewCommandsAllowed()) {
-          this.start.setStatus('当前无法播放视角动画', 'error');
+          this.refuse('当前无法切换视角');
           return;
         }
         this.viewMotion.play(command.name);
@@ -1494,7 +1506,7 @@ export class QuietShoreApp {
    */
   private applyEyeHeight(next: number): void {
     if (this.capturePending) {
-      this.start.setStatus('校准中无法调整站立足高', 'error');
+      this.refuse('记录体位时无法调整站立足高');
       return;
     }
     this.eyeHeight = next;
@@ -1592,11 +1604,11 @@ export class QuietShoreApp {
     // mode because it no longer swaps world frames, it ramps the one frame the
     // calibration built.
     if (!this.session || !this.world.state().ready) {
-      this.start.setStatus('起身仅能在完成校准后的训练中使用', 'error');
+      this.refuse('起身需要先完成体位记录');
       return;
     }
     if (this.capturePending) {
-      this.start.setStatus('校准中无法调整姿态', 'error');
+      this.refuse('记录体位时无法调整姿态');
       return;
     }
     if (rising && this.sceneRestMix >= 1) {
