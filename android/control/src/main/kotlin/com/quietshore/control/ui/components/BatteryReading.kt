@@ -11,16 +11,19 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -132,46 +135,89 @@ fun BatteryField(
     modifier: Modifier = Modifier
 ) {
     val known = level != null && level in 0..100
-    val ink = if (known) BatteryInk.of(level!!, charging) else QuietPalette.InkSecondary
-    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = PREFIX,
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.InkSecondary,
-            maxLines = 1
-        )
-        Text(
-            text = "${label}电量:",
-            style = MaterialTheme.typography.bodyMedium,
-            color = QuietPalette.InkSecondary,
-            maxLines = 1
-        )
-        if (known) {
+    val fraction = if (known) level!!.coerceIn(0, 100) / 100f else 0f
+    // Three layers in one 24 dp bar: the neutral track, the coloured segment on
+    // top of it, and the words on top of both. Colour never reaches the words.
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(24.dp)
+    ) {
+        // Words first: they are ink and never take the charge colour, so the
+        // colour must not run underneath them — red text on a red fill is
+        // unreadable in the one state that matters most.
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
-                style = MaterialTheme.typography.bodyMedium.tabularFigures(),
-                color = ink,
-                maxLines = 1
-            )
-            Spacer(Modifier.weight(1f))
-            // One state word at the right end, never two: charging wins over
-            // low charge, because "energy is going in" is the more useful fact
-            // about a pad at 12 % on a cable. Unplug it and the word flips.
-            when {
-                charging && level < 100 ->
-                    ChargeTag(label = "充电中", ink = BatteryInk.Enough)
-                level <= 20 ->
-                    ChargeTag(label = "低电量", ink = BatteryInk.ChargeNow)
-            }
-        } else {
-            // No number at all: "未连接" is a state, a dash is an empty gauge.
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "未连接",
+                text = PREFIX,
                 style = MaterialTheme.typography.bodyMedium,
                 color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
+            Text(
+                text = "${label}电量:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = QuietPalette.InkSecondary,
+                maxLines = 1
+            )
+            if (known) {
+                Text(
+                    text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    color = QuietPalette.Ink,
+                    maxLines = 1
+                )
+            } else {
+                Text(
+                    text = "未连接",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.InkSecondary,
+                    maxLines = 1
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            // One state word at the right, never two: charging outranks low.
+            if (known) {
+                if (charging && level!! < 100) {
+                    ChargeTag("充电中")
+                } else if (level!! <= 20) {
+                    ChargeTag("低电量")
+                }
+            }
+        }
+        // The reading is a 4 dp strip along the bottom edge of the same bar:
+        // neutral track, charge-coloured length. Colour lives here and nowhere
+        // else. No number, no fill — "unconnected" is a bare track.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .background(QuietPalette.Hairline)
+        ) {
+            if (known) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(fraction)
+                        .background(BatteryInk.of(level!!, charging))
+                )
+            }
         }
     }
+}
+
+/** One bracketed word at the right end: `[低电量]`, `[充电中]`. Ink only. */
+@Composable
+private fun ChargeTag(label: String) {
+    Text(
+        text = "[$label]",
+        style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+        color = QuietPalette.InkSecondary,
+        maxLines = 1
+    )
 }

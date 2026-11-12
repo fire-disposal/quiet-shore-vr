@@ -69,6 +69,14 @@ const AUTO_RISE_GAP_MS = 2000;
 const SUPINE_GAZE_RAD = 1.35;
 /** Time from a stop to the fade-complete state; motion is frozen at once. */
 const STOP_FADE_MS = 1000;
+/**
+ * How long a session survives without its tablet.
+ *
+ * A dropped link used to leave the patient inside a frozen world until someone
+ * walked over. Five seconds is long enough for a reconnect to be invisible and
+ * short enough that nobody is left staring at a stopped picture.
+ */
+const LINK_LOST_GRACE_MS = 5000;
 /** Planned session length used by the voice auto plan until the wire carries it. */
 const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
 /** The stable window the operator (or the patient's button) starts. */
@@ -100,6 +108,12 @@ export class QuietShoreApp {
   private readonly hud: SpatialHud;
   private readonly link: PortalLink;
   private linkOnline = false;
+  /** The link has been up once, so a later drop is a real disconnect. */
+  private linkEverOnline = false;
+  /** The 5 s "the tablet is gone" timer; cleared the moment the link returns. */
+  private linkLostTimer = 0;
+  /** True while a link loss is unwinding the session. */
+  private abandoned = false;
   private readonly renderMonitor = new RenderMonitor();
   private readonly voice = createVoicePlayer();
   /** Wall clock at motion onset; 0 while idle. Drives the reported session clock. */
@@ -850,7 +864,13 @@ export class QuietShoreApp {
     this.stopSceneAudio();
     this.resetWorldToRest();
     this.renderer.setAnimationLoop(null);
-    // The session is over: do not invite the patient to start again.
+    // The session is over: do not invite the patient to start again. A session
+    // abandoned after a link loss lands here too, which is exactly the state it
+    // should land in — entry screen, world unloaded, readings at zero.
+    if (this.abandoned) {
+      this.abandoned = false;
+      this.start.setStatus(this.strings.linkLostExit);
+    }
     this.start.showEnded();
     this.input.setLayers(true, true);
     this.start.setStatus(
@@ -1585,12 +1605,62 @@ export class QuietShoreApp {
     // Only the fact, and only when it matters. "正在重连" is the system
     // narrating itself; the tablet either answers or it does not.
     this.start.setHint(status === 'open' ? '' : '平板未连接');
-    if (status === 'open' || !wasOnline) {
+    if (status === 'open') {
+      this.linkEverOnline = true;
+      // A reconnect inside the grace period is not an event: cancel and say
+      // nothing. The session never stopped.
+      if (this.linkLostTimer !== 0) {
+        window.clearTimeout(this.linkLostTimer);
+        this.linkLostTimer = 0;
+      }
+      return;
+    }
+    if (!wasOnline) {
+      // Startup: the socket has not opened yet. The browser is mid-load, and a
+      // timer here would kill a session that has not begun.
+      return;
+    }
+    if (!this.linkEverOnline) {
       return;
     }
     this.dispatch({ type: 'stop', reason: 'link-lost' });
     this.start.setStatus(this.strings.controlModeOff, 'error');
+    if (!this.session) {
+      return;
+    }
+    // The patient is still in the world. Say what is happening, once, in the
+    // same neutral voice as every other status line — and give the tablet five
+    // seconds to come back. During calibrating and during the ending fade this
+    // is the same rule: the timer does not care what phase the session is in.
+    this.start.setStatus(this.strings.linkLostGrace);
+    if (this.linkLostTimer !== 0) {
+      window.clearTimeout(this.linkLostTimer);
+    }
+    this.linkLostTimer = window.setTimeout(() => {
+      this.linkLostTimer = 0;
+      if (!this.linkOnline) {
+        this.abandonSession();
+      }
+    }, LINK_LOST_GRACE_MS);
   }
+
+  /**
+   * The tablet is not coming back: leave the immersive session the same way a
+   * planned stop does, so nothing about the exit is a second code path.
+   *
+   * `end()` runs the renderer's own teardown, which fires the session's `end`
+   * event; that path lands in `onSessionEnd` and returns the patient to the
+   * entry screen with the world unloaded and the readings at zero.
+   */
+  private abandonSession(): void {
+    this.start.setStatus(this.strings.linkLostExit);
+    this.abandoned = true;
+    const session = this.session;
+    if (session) {
+      void session.end();
+    }
+  }
+
 
   private setControlMode(active: boolean): void {
     if (this.controlMode === active) {
