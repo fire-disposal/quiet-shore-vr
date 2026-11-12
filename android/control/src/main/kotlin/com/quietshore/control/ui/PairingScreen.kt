@@ -58,20 +58,30 @@ fun PairingScreen(
     onCancelConnect: () -> Unit,
     onEnableBluetooth: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenInfo: () -> Unit = {}
+    onOpenInfo: () -> Unit = {},
+    /** False when it is embedded under the console's fixed bar. */
+    withChrome: Boolean = true
 ) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(QuietPalette.Paper)
-            .safeDrawingPadding()
+            .then(
+                if (withChrome) {
+                    Modifier.safeDrawingPadding()
+                } else {
+                    Modifier
+                }
+            )
     ) {
         val wide = maxWidth >= 900.dp
         val compact = maxHeight < 620.dp
         val cardMaxHeight = maxHeight - CHROME.dp - QuietSpace.Page
 
         Column(Modifier.fillMaxSize()) {
-            AppBar(onOpenInfo = onOpenInfo)
+            if (withChrome) {
+                AppBar(onOpenInfo = onOpenInfo)
+            }
 
             if (wide) {
                 Column(

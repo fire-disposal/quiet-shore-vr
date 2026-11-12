@@ -109,13 +109,20 @@ fun CommandBar(
                 stale = state.stateStale
             )
             Spacer(Modifier.width(10.dp))
-            StatusTag(barLinkLabel(state.phase, state.stateStale))
-            if (state.deviceSuffix.isNotEmpty()) {
-                Spacer(Modifier.width(10.dp))
+            // Two stacked fields, no filled chip: `//已连接` is an eyebrow in
+            // the same voice as `//头显电量`, and the device's own number sits
+            // under it in the figure face. A black block here read as a button.
+            Column {
                 Text(
-                    text = state.deviceSuffix,
-                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    text = "//" + barLinkLabel(state.phase, state.stateStale),
+                    style = MaterialTheme.typography.labelSmall,
                     color = QuietPalette.InkSecondary,
+                    maxLines = 1
+                )
+                Text(
+                    text = state.deviceSuffix.ifEmpty { "—" },
+                    style = MaterialTheme.typography.titleSmall.tabularFigures(),
+                    color = QuietPalette.Ink,
                     maxLines = 1
                 )
             }

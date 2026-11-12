@@ -122,61 +122,60 @@ fun ControlApp(viewModel: ControlViewModel) {
         return
     }
 
-    if (state.showControls) {
-        ControlScreen(
-            state = state,
-            event = latestEvent,
-            onOpenInfo = { showInfo = true },
-            actions = ControlActions(
-                onStartTraining = viewModel::enterTraining,
-                onExitScene = viewModel::exitScene,
-                onExitSystem = viewModel::exitSystem,
-                onSceneSelect = viewModel::selectScene,
-                onAnimDuration = viewModel::setAnimDuration,
-                onGazeDwellChange = viewModel::setGazeDwell,
-                onSusVoiceChange = viewModel::setSusVoice,
-                onSubtitlesChange = viewModel::setSubtitles,
-                onMirrorModeChange = viewModel::setMirrorMode,
-                onSusOpen = viewModel::openSus,
-                onSusClose = viewModel::closeSus,
-                onEnterTraining = viewModel::enterTraining,
-                onEnd = viewModel::endSession,
-                onRecalibrate = viewModel::recalibrate,
-                onToggleAudio = viewModel::toggleAudio,
-                onFloatLevel = viewModel::setFloatLevel,
-                onViewAnim = viewModel::playViewAnim,
-                onViewStop = viewModel::stopView,
-                onEmergencyStop = viewModel::emergencyStop,
-                onPostureLower = viewModel::postureLower,
-                onPostureRise = viewModel::postureRise,
-                onPostureStop = viewModel::postureStop,
-                onVoiceOpen = {},
-                onVoicePlay = viewModel::playVoice,
-                onVoiceSequence = viewModel::playVoiceSequence,
-                onVoiceStop = viewModel::stopVoice,
-                onVoiceVolume = viewModel::setVoiceVolume,
-                onVoiceDuck = viewModel::setVoiceDuck,
-                onVoiceSet = viewModel::setVoiceSet,
-                onSusShow = viewModel::susShow,
-                onSusAnswer = viewModel::susAnswer,
-                onSusExport = viewModel::exportSus,
-                onDisconnect = viewModel::disconnect,
-                onReconnect = viewModel::reconnect,
-                onLeave = viewModel::leaveControl
+    ControlScreen(
+        state = state,
+        event = latestEvent,
+        onOpenInfo = { showInfo = !showInfo },
+        initialContent = {
+            PairingScreen(
+                state = state,
+                bluetoothEnabled = bluetoothEnabled,
+                permissionsGranted = permissionsGranted,
+                permissionRequested = permissionRequested,
+                onScan = onScan,
+                onStopScan = viewModel::stopScan,
+                onCancelConnect = viewModel::cancelConnect,
+                onEnableBluetooth = onEnableBluetooth,
+                onOpenSettings = onOpenSettings,
+                withChrome = false
             )
+        },
+        actions = ControlActions(
+            onStartTraining = viewModel::enterTraining,
+            onExitScene = viewModel::exitScene,
+            onExitSystem = viewModel::exitSystem,
+            onSceneSelect = viewModel::selectScene,
+            onAnimDuration = viewModel::setAnimDuration,
+            onGazeDwellChange = viewModel::setGazeDwell,
+            onSusVoiceChange = viewModel::setSusVoice,
+            onSubtitlesChange = viewModel::setSubtitles,
+            onMirrorModeChange = viewModel::setMirrorMode,
+            onSusOpen = viewModel::openSus,
+            onSusClose = viewModel::closeSus,
+            onEnterTraining = viewModel::enterTraining,
+            onEnd = viewModel::endSession,
+            onRecalibrate = viewModel::recalibrate,
+            onToggleAudio = viewModel::toggleAudio,
+            onFloatLevel = viewModel::setFloatLevel,
+            onViewAnim = viewModel::playViewAnim,
+            onViewStop = viewModel::stopView,
+            onEmergencyStop = viewModel::emergencyStop,
+            onPostureLower = viewModel::postureLower,
+            onPostureRise = viewModel::postureRise,
+            onPostureStop = viewModel::postureStop,
+            onVoiceOpen = {},
+            onVoicePlay = viewModel::playVoice,
+            onVoiceSequence = viewModel::playVoiceSequence,
+            onVoiceStop = viewModel::stopVoice,
+            onVoiceVolume = viewModel::setVoiceVolume,
+            onVoiceDuck = viewModel::setVoiceDuck,
+            onVoiceSet = viewModel::setVoiceSet,
+            onSusShow = viewModel::susShow,
+            onSusAnswer = viewModel::susAnswer,
+            onSusExport = viewModel::exportSus,
+            onDisconnect = viewModel::disconnect,
+            onReconnect = viewModel::reconnect,
+            onLeave = viewModel::leaveControl
         )
-    } else {
-        PairingScreen(
-            state = state,
-            bluetoothEnabled = bluetoothEnabled,
-            permissionsGranted = permissionsGranted,
-            permissionRequested = permissionRequested,
-            onScan = onScan,
-            onStopScan = viewModel::stopScan,
-            onCancelConnect = viewModel::cancelConnect,
-            onEnableBluetooth = onEnableBluetooth,
-            onOpenSettings = onOpenSettings,
-            onOpenInfo = { showInfo = true }
-        )
-    }
+    )
 }

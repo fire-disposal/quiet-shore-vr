@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
@@ -94,6 +95,8 @@ fun ControlScreen(
     /** Latest one-shot operator message; shown briefly under the bar. */
     event: UiEvent? = null,
     onOpenInfo: () -> Unit = {},
+    /** The main area while no headset is claimed: the initial page. */
+    initialContent: @Composable () -> Unit = {},
     /** Design review only: open the mirror cover on first composition. */
     startWithMirrorOpen: Boolean = false
 ) {
@@ -142,6 +145,12 @@ fun ControlScreen(
                     Modifier.padding(horizontal = QuietSpace.Page, vertical = 0.dp)
                 } else {
                     Modifier.padding(horizontal = 20.dp)
+                }
+                if (!state.showControls) {
+                    // One frame, one main area: the initial page lives here,
+                    // not as a separate screen with its own bar.
+                    initialContent()
+                    return@Box
                 }
                 // Navigation on the left, as a rail: a landscape tablet is
                 // short on height, and the rail scrolls instead of clipping.
@@ -514,7 +523,8 @@ private fun ScenePage(
 ) {
     val ready = state.phase == BlePhase.READY
     val left = @Composable { modifier: Modifier ->
-        Column(modifier.verticalScroll(rememberScrollState())) {
+        Box(modifier) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             StartBlock(
                 state = state,
                 actions = actions,
@@ -589,6 +599,20 @@ private fun ScenePage(
                 enabled = ready
             )
             Spacer(Modifier.height(QuietSpace.Page))
+        }
+            // A block cut at the fold reads as a broken layout; the fade reads
+            // as "there is more".
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(QuietPalette.Paper.copy(alpha = 0f), QuietPalette.Paper)
+                        )
+                    )
+            )
         }
     }
     val right = @Composable { modifier: Modifier ->
