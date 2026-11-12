@@ -1,0 +1,104 @@
+@page {
+  size: A4;
+  margin: 18mm 16mm 18mm 16mm;
+  @bottom-center {
+    content: counter(page);
+    font-family: "Source Han Sans CN", "Noto Sans CJK SC", sans-serif;
+    font-size: 8.5pt;
+    color: #8a9499;
+  }
+}
+html { font-size: 10.5pt; }
+body {
+  font-family: "Source Han Sans CN", "Noto Sans CJK SC", "IBM Plex Sans SC", sans-serif;
+  color: #20282c;
+  line-height: 1.62;
+  margin: 0;
+}
+p { margin: 0 0 0.55em; }
+h1, h2, h3 { font-weight: 600; line-height: 1.25; color: #172126; }
+h1 {
+  font-size: 19pt;
+  margin: 0 0 12pt;
+  padding-top: 4pt;
+  border-top: 2.2pt solid #65cdec;
+  page-break-before: always;
+}
+h1:first-of-type { page-break-before: auto; }
+h2 { font-size: 14pt; margin: 18pt 0 8pt; }
+h3 { font-size: 11.5pt; margin: 14pt 0 6pt; }
+ol, ul { margin: 0.3em 0 0.8em 1.35em; padding: 0; }
+li { margin: 0.18em 0; }
+a { color: #1d7d97; text-decoration: none; }
+strong { font-weight: 600; }
+blockquote {
+  margin: 10pt 0;
+  padding: 7pt 10pt;
+  border-left: 3pt solid #9de4f5;
+  background: #f2fbfd;
+  color: #334148;
+}
+code {
+  font-family: "JetBrains Mono", "Noto Sans Mono", monospace;
+  font-size: 0.88em;
+  background: #eef3f5;
+  padding: 0.1em 0.3em;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8pt 0 12pt;
+  font-size: 9.4pt;
+  page-break-inside: avoid;
+}
+th {
+  background: #e9f8fc;
+  color: #1d3a44;
+  font-weight: 600;
+  text-align: left;
+  padding: 5pt 6pt;
+  border: 0.5pt solid #cfdde2;
+}
+td {
+  padding: 5pt 6pt;
+  border: 0.5pt solid #dbe3e6;
+  vertical-align: top;
+}
+figure { margin: 10pt 0 14pt; page-break-inside: avoid; text-align: center; }
+figure img {
+  display: block;
+  width: 100%;
+  border: 0.5pt solid #dbe3e6;
+  border-radius: 1.5pt;
+}
+figcaption { font-size: 8.6pt; color: #6d7a80; margin-top: 4pt; }
+.cover {
+  page-break-after: always;
+  padding-top: 45mm;
+  min-height: 210mm;
+  box-sizing: border-box;
+}
+.cover .kicker {
+  letter-spacing: 0.22em;
+  font-size: 10pt;
+  color: #2a9fbd;
+  font-weight: 600;
+  margin-bottom: 8mm;
+}
+.cover h1 {
+  font-size: 34pt;
+  border: none;
+  padding: 0;
+  margin: 0 0 8mm;
+  line-height: 1.15;
+}
+.cover .subtitle {
+  font-size: 16pt;
+  color: #34464e;
+  line-height: 1.5;
+  margin-bottom: 20mm;
+}
+.cover .meta { font-size: 10.5pt; color: #64737a; margin: 1.5mm 0; }
+.cover .device { margin-top: 20mm; font-size: 10pt; color: #7a898f; }
+.shot { width: 100%; }
+header#title-block-header { display: none; }
