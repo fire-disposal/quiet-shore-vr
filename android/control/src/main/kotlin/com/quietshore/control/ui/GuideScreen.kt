@@ -175,18 +175,31 @@ private val FAULTS: List<FaultRow> = listOf(
 // ---------------------------------------------------------------------------
 
 @Composable
-fun GuideScreen(onBack: () -> Unit) {
+fun GuideScreen(onBack: () -> Unit, withChrome: Boolean = true) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(QuietPalette.Background)
-            .safeDrawingPadding()
-            // The emulator's 3-button taskbar arrives as a tappable-element
-            // inset, which safeDrawing does not include; without it the last
-            // fault row sits under the buttons.
-            .padding(bottom = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding())
+            .then(
+                if (withChrome) {
+                    Modifier
+                        .safeDrawingPadding()
+                        // The emulator's 3-button taskbar arrives as a
+                        // tappable-element inset, which safeDrawing does not
+                        // include; without it the last fault row sits under it.
+                        .padding(
+                            bottom = WindowInsets.tappableElement
+                                .asPaddingValues()
+                                .calculateBottomPadding()
+                        )
+                } else {
+                    Modifier
+                }
+            )
     ) {
-        GuideBar(onBack)
+        if (withChrome) {
+            GuideBar(onBack)
+        }
         FadingScrollColumn(
             modifier = Modifier.weight(1f),
             startPadding = 32.dp,

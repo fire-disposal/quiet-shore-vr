@@ -39,8 +39,9 @@ import com.quietshore.control.ui.components.ActionKey
 import com.quietshore.control.ui.components.ActionColumnWidth
 import com.quietshore.control.ui.components.BarWordKey
 import com.quietshore.control.ui.components.CommandBar
-import com.quietshore.control.ui.components.ConsoleTab
-import com.quietshore.control.ui.components.ConsoleTabBar
+import com.quietshore.control.ui.components.ConsoleRail
+import com.quietshore.control.ui.components.ConsoleSection
+import com.quietshore.control.ui.components.RailRule
 import com.quietshore.control.ui.components.DurationRow
 import com.quietshore.control.ui.components.Key
 import com.quietshore.control.ui.components.KeyRow
@@ -102,9 +103,9 @@ fun ControlScreen(
         state.startPending,
         state.stopRequested
     )
-    var chosen by rememberSaveable { mutableStateOf<ConsoleTab?>(null) }
+    var chosen by rememberSaveable { mutableStateOf<ConsoleSection?>(null) }
     // Default by phase, but never yank the operator off a page they picked.
-    val tab = chosen ?: if (phase.inSession) ConsoleTab.Session else ConsoleTab.Scene
+    val section = chosen ?: if (phase.inSession) ConsoleSection.Session else ConsoleSection.Scene
 
     BoxWithConstraints(
         modifier = Modifier
@@ -142,43 +143,61 @@ fun ControlScreen(
                 } else {
                     Modifier.padding(horizontal = 20.dp)
                 }
-                Box(Modifier.fillMaxSize().then(pagePadding)) {
-                    when (tab) {
-                        ConsoleTab.Session -> SessionPage(
-                            state = state,
-                            actions = actions,
-                            phase = phase,
-                            wide = wide,
-                            onOpenScene = { chosen = ConsoleTab.Scene },
-                            onOpenVoice = { chosen = ConsoleTab.Voice }
-                        )
-                        ConsoleTab.Scene -> ScenePage(
-                            state = state,
-                            actions = actions,
-                            phase = phase,
-                            wide = wide
-                        )
-                        ConsoleTab.Voice -> PanelPage(
-                            title = "语音",
-                            note = "患者听到的提示语"
-                        ) {
-                            VoicePanel(state = state, actions = actions)
+                // Navigation on the left, as a rail: a landscape tablet is
+                // short on height, and the rail scrolls instead of clipping.
+                Row(Modifier.fillMaxSize()) {
+                    ConsoleRail(
+                        current = section,
+                        onSelect = { chosen = it },
+                        scaleBadge = susBadge(state)
+                    )
+                    RailRule()
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .then(pagePadding)
+                            .padding(bottom = 12.dp)
+                    ) {
+                        val back = if (phase.inSession) {
+                            ConsoleSection.Session
+                        } else {
+                            ConsoleSection.Scene
                         }
-                        ConsoleTab.Scale -> PanelPage(
-                            title = "量表",
-                            note = "训练结束后作答与归档"
-                        ) {
-                            SusSheet(state = state, actions = actions)
+                        when (section) {
+                            ConsoleSection.Session -> SessionPage(
+                                state = state,
+                                actions = actions,
+                                phase = phase,
+                                wide = wide,
+                                onOpenScene = { chosen = ConsoleSection.Scene },
+                                onOpenVoice = { chosen = ConsoleSection.Voice }
+                            )
+                            ConsoleSection.Scene -> ScenePage(
+                                state = state,
+                                actions = actions,
+                                phase = phase,
+                                wide = wide
+                            )
+                            ConsoleSection.Voice -> PanelPage(
+                                title = "语音",
+                                note = "患者听到的提示语",
+                                onBack = { chosen = back }
+                            ) {
+                                VoicePanel(state = state, actions = actions)
+                            }
+                            ConsoleSection.Scale -> PanelPage(
+                                title = "量表",
+                                note = "训练结束后作答与归档",
+                                onBack = { chosen = back }
+                            ) {
+                                SusSheet(state = state, actions = actions)
+                            }
                         }
                     }
                 }
             }
 
-            ConsoleTabBar(
-                current = tab,
-                onSelect = { chosen = it },
-                scaleBadge = susBadge(state)
-            )
         }
     }
 }
@@ -747,6 +766,7 @@ private fun StandbySteps(
 private fun PanelPage(
     title: String,
     note: String,
+    onBack: () -> Unit,
     content: @Composable () -> Unit
 ) {
     Column(
@@ -754,7 +774,13 @@ private fun PanelPage(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        SectionHead(title = title, note = note)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SectionHead(title = title, note = note, modifier = Modifier.weight(1f))
+            BarWordKey(label = "返回控制台", onClick = onBack)
+        }
         Rule()
         Spacer(Modifier.height(QuietSpace.Section))
         content()
@@ -784,7 +810,13 @@ private fun TwoColumns(
             horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
         ) {
             left(Modifier.weight(1f).fillMaxHeight())
-            right(Modifier.width(ActionColumnWidth).fillMaxHeight())
+            // The action column scrolls when the window is short: its last
+            // block used to be cut off under the system bar.
+            right(
+                Modifier
+                    .width(ActionColumnWidth)
+                    .fillMaxHeight()
+            )
         }
     } else {
         Column(

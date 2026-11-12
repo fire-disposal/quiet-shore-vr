@@ -68,13 +68,13 @@ import com.quietshore.control.ui.theme.rememberMotionEnabled
  */
 object BatteryInk {
     /** Enough. */
-    val Enough = Color(0xFF43A047)
+    val Enough = Color(0xFF00C853)
 
     /** Watch it: 20–40 %. */
-    val Watch = Color(0xFFF9A825)
+    val Watch = Color(0xFFFFB300)
 
     /** Charge now: 20 % or below. */
-    val ChargeNow = Color(0xFFD32F2F)
+    val ChargeNow = Color(0xFFF44336)
 
     /**
      * The one the reading takes, by charge.
@@ -136,21 +136,48 @@ fun BatteryField(
 ) {
     val known = level != null && level in 0..100
     val fraction = if (known) level!!.coerceIn(0, 100) / 100f else 0f
-    // Three layers in one 24 dp bar: the neutral track, the coloured segment on
-    // top of it, and the words on top of both. Colour never reaches the words.
-    Column(
+    // One bar, three layers, text centred vertically inside it:
+    //   1. the neutral track, full width and height;
+    //   2. the charge segment, same height, width = charge, a light tint so the
+    //      ink words stay readable on top of the one state that matters;
+    //   3. the words, ink, vertically centred, never colour-coded.
+    // A thin solid edge under the segment keeps the reading crisp without
+    // painting ink over a saturated fill.
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(24.dp)
+            .height(ChargeBarHeight)
+            .background(QuietPalette.Hairline.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.CenterStart
     ) {
-        // Words first: they are ink and never take the charge colour, so the
-        // colour must not run underneath them — red text on a red fill is
-        // unreadable in the one state that matters most.
+        if (known && fraction > 0f) {
+            Box(
+                Modifier
+                    .fillMaxWidth(fraction)
+                    .fillMaxHeight()
+                    .background(BatteryInk.of(level!!, charging).copy(alpha = 0.52f))
+            )
+            // The crisp edge of the reading: full-width guide, then the solid
+            // 3 dp marker at the segment's own end.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .drawBehind {
+                        val w = size.width * fraction
+                        val thickness = 3.dp.toPx()
+                        drawRect(
+                            color = BatteryInk.of(level, charging),
+                            topLeft = Offset(w - thickness, size.height - thickness),
+                            size = androidx.compose.ui.geometry.Size(thickness, thickness)
+                        )
+                    }
+            )
+        }
         Row(
             modifier = Modifier
-                .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -190,26 +217,11 @@ fun BatteryField(
                 }
             }
         }
-        // The reading is a 4 dp strip along the bottom edge of the same bar:
-        // neutral track, charge-coloured length. Colour lives here and nowhere
-        // else. No number, no fill — "unconnected" is a bare track.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .background(QuietPalette.Hairline)
-        ) {
-            if (known) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(fraction)
-                        .background(BatteryInk.of(level!!, charging))
-                )
-            }
-        }
     }
 }
+
+/** Height of one charge bar. Tall enough to hold its own words centred. */
+private val ChargeBarHeight = 28.dp
 
 /** One bracketed word at the right end: `[低电量]`, `[充电中]`. Ink only. */
 @Composable
