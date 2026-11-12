@@ -29,6 +29,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +57,7 @@ import com.quietshore.control.ui.components.MirrorSlot
 import com.quietshore.control.ui.components.NoticeRow
 import com.quietshore.control.ui.components.Panel
 import com.quietshore.control.ui.components.PostureGauges
+import com.quietshore.control.ui.components.RailWidth
 import com.quietshore.control.ui.components.QuestionnaireRail
 import com.quietshore.control.ui.components.QuestionnaireSection
 import com.quietshore.control.ui.components.Rule
@@ -116,15 +120,31 @@ fun ControlScreen(
     // Default by phase, but never yank the operator off a page they picked.
     val section = chosen ?: if (phase.inSession) ConsoleSection.Session else ConsoleSection.Scene
 
+    val bottomInset = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding()
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(QuietPalette.Paper)
+            // The rail is chrome down to the bottom edge; only its interior
+            // keeps the same 16 dp gap at the top and bottom. The system
+            // taskbar inset is outside the content, so the rail background is
+            // carried through it explicitly.
+            .drawBehind {
+                val inset = bottomInset.toPx()
+                val gap = 16.dp.toPx()
+                if (inset > gap) {
+                    drawRect(
+                        color = QuietPalette.Board,
+                        topLeft = Offset(0f, size.height - inset),
+                        size = Size(RailWidth.toPx(), inset - gap)
+                    )
+                }
+            }
             .safeDrawingPadding()
             // Same fix the guide page needed: `tappableElement` (the system
             // taskbar's tappable band) is not in safeDrawing, so the last rows
             // could render underneath it.
-            .padding(bottom = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding())
+            .padding(bottom = bottomInset)
     ) {
         // 1000 dp is where a picture and a column of keys both fit at a size
         // worth reading; below it the page becomes one column in the same order.
