@@ -34,6 +34,12 @@ import { lyingEyeY, restMixOf } from '../core/anatomy';
 import { degrees, metres } from '../core/units';
 import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
+import {
+  recordSession,
+  readSummaries,
+  sessionStorageSafe,
+  type SessionSummary
+} from './session-log';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { planMotion, type MotionPlan } from './motion-plan';
 import { parseRemoteCommand } from './commands';
@@ -122,6 +128,8 @@ export class QuietShoreApp {
   private sceneRestMix: 0 | 1 = 0;
   /** Scenes are built once, off the critical path (see `preloadScenes`). */
   private scenesPreloaded = false;
+  /** The page's own ledger of finished sessions (see `session-log.ts`). */
+  private sessions: SessionSummary[] = [];
 
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
@@ -420,6 +428,10 @@ export class QuietShoreApp {
         },
         /** Scenes built and waiting, so a switch cannot build on the frame. */
         parked: () => this.host.preloaded,
+        /** The last few finished sessions, newest last. */
+        sessions: () => readSummaries(sessionStorageSafe()),
+        /** In-memory copy from this page load (storage may be refused). */
+        sessionsThisLoad: () => this.sessions,
         /** Desktop check: load a scene in the 2D preview. */
         scene: (id: string) => {
           if (!this.previewing && !this.xr.isPresenting) {
@@ -818,6 +830,20 @@ export class QuietShoreApp {
     this.voice.stop();
     // Any stop — including one during calibration — takes the overlay with it.
     this.calibrationOverlay?.hide();
+    // A session that actually ran leaves one line behind, before the clock is
+    // cleared: the tablet only sees 1 Hz frames, and a dropped link would
+    // otherwise erase the only record of how long this lasted.
+    if (this.sessionStartedAt > 0) {
+      this.sessions = recordSession(sessionStorageSafe(), {
+        at: Date.now(),
+        scene: this.sceneId,
+        seconds: (performance.now() - this.sessionStartedAt) / 1000,
+        level: this.floating.getLevel(),
+        mix: this.world.state().mix,
+        stop: this.lifecycle.stopReason ?? 'unknown',
+        confidence: this.comfort?.isCalibrated() ? 100 : 0
+      });
+    }
     this.sessionStartedAt = 0;
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
