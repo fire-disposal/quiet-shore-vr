@@ -62,7 +62,8 @@ class CommandGrammarTest {
             "record:outcome:attempt:yes", "record:outcome:attempt:no",
             "record:outcome:success:yes", "record:outcome:success:no",
             "program:1:shore,360,start,3;ward,240,imagine,2;shore,180,close,1",
-            "program:next", "program:auto:on", "program:auto:off"
+            "program:next", "program:auto:on", "program:auto:off",
+            "app:training", "app:questionnaire"
         )) {
             assertTrue(ControlProtocol.isAllowedCommand(raw), raw)
         }
@@ -89,6 +90,8 @@ class CommandGrammarTest {
             "record:outcome:mood:yes",
             "record:outcome:",
             "program:\u0000",
+            "app:moon",
+            "app:",
         )) {
             assertFalse(ControlProtocol.isAllowedCommand(raw), raw)
         }

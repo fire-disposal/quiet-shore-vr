@@ -6,6 +6,7 @@ import { degrees, metres } from '../src/core/units';
 function neutralInput(): SceneSnapshotInput {
   return {
     sceneId: 'washroom',
+    app: 'training',
     loaded: true,
     session: true,
     calibrating: false,
@@ -79,7 +80,7 @@ describe('scene snapshot', () => {
     expect(snapshot.capture(input)).toBe(snapshot);
   });
 
-  it('emits exactly the v13 wire keys', () => {
+  it('emits exactly the v14 wire keys', () => {
     const snapshot = new SceneSnapshot();
     snapshot.capture({
       ...neutralInput(),
@@ -108,9 +109,11 @@ describe('scene snapshot', () => {
     expect(payload.caps.lie).toBe(false);
     expect(payload.elapsedSec).toBe(96);
     expect(payload.voiceId).toBe(7);
+    expect(payload.app).toBe('training');
 
     expect(Object.keys(payload).sort()).toEqual(
       [
+        'app',
         'calibrationConfidence',
         'calibrating',
         'audio',

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { SUS_ITEMS, buildSusPayload } from '../src/app/sus';
 
-const facts = { scene: 'shore', sessionSec: 612.4, now: 1_761_300_000_000 };
+const facts = {
+  scene: 'shore',
+  sessionSec: 612.4,
+  now: 1_761_300_000_000,
+  app: 'questionnaire',
+  questionnaireId: 'sus',
+  questionnaireName: '系统可用性量表'
+};
 const full = (value: number): number[] => Array.from({ length: 10 }, () => value);
 
 describe('SUS payload', () => {
@@ -25,6 +32,9 @@ describe('SUS payload', () => {
     expect(payload.scene).toBe('shore');
     expect(payload.sessionSec).toBe(612);
     expect(payload.completedAt).toBe(facts.now);
+    expect(payload.app).toBe('questionnaire');
+    expect(payload.questionnaireId).toBe('sus');
+    expect(payload.questionnaireName).toBe('系统可用性量表');
   });
 
   it('never invents a negative session time or more than ten slots', () => {

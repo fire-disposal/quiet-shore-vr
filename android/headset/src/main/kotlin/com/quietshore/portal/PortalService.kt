@@ -169,6 +169,10 @@ class PortalService : Service() {
     /** Last scene the page reported that disagreed with the launch record. */
     private var lastSceneMismatch: String? = null
 
+    /** Product face the page last reported; the tablet displays this value. */
+    @Volatile
+    private var pageApp: String = ControlProtocol.DEFAULT_APP
+
     @Volatile
     private var serverSocket: ServerSocket? = null
 
@@ -726,6 +730,20 @@ class PortalService : Service() {
                     // No visible activity.
                 }
             }
+            // One finished training session: the tablet stores it beside the
+            // questionnaire sheets, in the same record file.
+            "session" -> json.optJSONObject("data")?.let { data ->
+                bluetooth?.publishJson(
+                    org.json.JSONObject().put("t", "session").put("d", data).toString()
+                )
+            }
+            // Questionnaire catalogue: one source on the page, rendered by the
+            // tablet's answer sheet and record list.
+            "questionnaire" -> json.optJSONObject("data")?.let { data ->
+                bluetooth?.publishJson(
+                    org.json.JSONObject().put("t", "questionnaire").put("d", data).toString()
+                )
+            }
             // Program progress: index/total/scene/remaining. Change-driven on
             // the same JSON channel as SUS; the state frame stays fixed.
             "segment" -> json.optJSONObject("data")?.let { data ->
@@ -1237,6 +1255,13 @@ class PortalService : Service() {
         fun vec(name: String): Float =
             (json.optJSONObject(name)?.optDouble("x", 0.0) ?: 0.0).toFloat()
 
+        val app = json.optString("app", pageApp)
+            .takeIf { it in ControlProtocol.APP_IDS } ?: pageApp
+        if (app != pageApp) {
+            pageApp = app
+            // Remember the face for the next launch; the page is authoritative.
+            HeadsetSettings.saveApp(this, app)
+        }
         val state = ControlState(
             scene = json.optString("scene", ControlState().scene)
                 .takeIf { it in PageCatalog.idSet(this) } ?: ControlState().scene,
@@ -1360,6 +1385,8 @@ class PortalService : Service() {
             // tablet enables controls from this document alone.
             caps?.let { put("caps", it) }
             put("t", "flags")
+            // The page is authoritative; the tablet only displays this value.
+            put("app", pageApp)
             put("scene", state.scene)
             put("session", state.session)
             put("calibrating", state.calibrating)

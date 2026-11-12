@@ -59,6 +59,7 @@ internal object PortalSession {
         JSONObject().apply {
             // The scene is read from the owner, never from a caller's copy.
             put("scene", sceneState.scene)
+            put("app", current.app.takeIf { it in ControlProtocol.APP_IDS } ?: ControlProtocol.DEFAULT_APP)
             put("skipCalibration", current.skipCalibration)
             put("showHud", current.showHud)
             // Sanitize here too: the page must never receive an unusable eye

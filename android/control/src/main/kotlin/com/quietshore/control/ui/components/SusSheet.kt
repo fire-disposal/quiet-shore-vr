@@ -27,6 +27,17 @@ import com.quietshore.control.voice.VoiceCatalog
  * hunt through a flat list. Wording is the instrument's, verbatim.
  */
 
+private fun questionnaireFilterLabel(state: ControlUiState): String {
+    val id = state.susFilterQuestionnaire ?: return "全部"
+    return state.questionnaires.firstOrNull { it.id == id }?.nameZh ?: id
+}
+
+private fun daysFilterLabel(days: Int): String = when (days) {
+    7 -> "7 天"
+    30 -> "30 天"
+    else -> "全部"
+}
+
 /** Wall-clock stamp for an archived sheet; the tablet is the record keeper. */
 private fun stamp(epochMs: Long): String {
     if (epochMs <= 0L) return "—"
@@ -41,9 +52,25 @@ fun SusSheet(
     modifier: Modifier = Modifier
 ) {
     val connected = state.sessionActive || state.controlGranted
-    val questions = VoiceCatalog.LINES.filter { it.group == "SUS" && it.id != "v-sus-intro" }
+    val questions = state.questionnaire?.questions?.map { it.textZh }
+        ?: VoiceCatalog.LINES
+            .filter { it.group == "SUS" && it.id != "v-sus-intro" }
+            // The generated catalog is alphabetical (v-sus-1, v-sus-10, ...);
+            // the sheet must be in instrument order.
+            .sortedBy { it.id.substringAfterLast('-').toIntOrNull() ?: 0 }
+            .map { it.text }
     val answered = state.susAnswers.count { it != 0 }
     val current = state.susIndex
+    val cutoff = if (state.susFilterDays <= 0) {
+        Long.MIN_VALUE
+    } else {
+        System.currentTimeMillis() - state.susFilterDays * 24L * 3600L * 1000L
+    }
+    val archived = state.susHistory.filter { record ->
+        (state.susFilterQuestionnaire == null ||
+            record.questionnaireId == state.susFilterQuestionnaire) &&
+            record.completedAt >= cutoff
+    }
 
     Column(modifier.fillMaxWidth()) {
         Band(
@@ -111,6 +138,7 @@ fun SusSheet(
         Band(title = "题目") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                 for ((index, line) in questions.withIndex()) {
+
                     val number = index + 1
                     val answer = state.susAnswers.getOrNull(index) ?: 0
                     val isCurrent = state.susIndex == number
@@ -129,7 +157,7 @@ fun SusSheet(
                                     .padding(top = 8.dp)
                             )
                             Text(
-                                text = line.text,
+                                text = line,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = QuietPalette.TextPrimary,
                                 modifier = Modifier
@@ -181,15 +209,30 @@ fun SusSheet(
                     label = "导出",
                     onClick = actions.onSusExport,
                     kind = KeyKind.Quiet,
-                    enabled = state.susHistory.isNotEmpty()
+                    enabled = archived.isNotEmpty()
                 )
             }
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                if (state.susHistory.isEmpty()) {
-                    EmptyNote("暂无归档")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Key(
+                        label = "问卷：${questionnaireFilterLabel(state)}",
+                        onClick = actions.onSusFilterQuestionnaire,
+                        kind = KeyKind.Quiet,
+                        enabled = state.susHistory.isNotEmpty()
+                    )
+                    Key(
+                        label = "时间：${daysFilterLabel(state.susFilterDays)}",
+                        onClick = actions.onSusFilterDays,
+                        kind = KeyKind.Quiet,
+                        enabled = state.susHistory.isNotEmpty()
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                if (archived.isEmpty()) {
+                    EmptyNote(if (state.susHistory.isEmpty()) "暂无归档" else "当前筛选没有记录")
                 } else {
-                    for (record in state.susHistory.asReversed()) {
+                    for (record in archived.asReversed()) {
                         val score = record.score?.let { "$it 分" } ?: "${record.filled}/10"
                         Row(
                             modifier = Modifier
@@ -204,7 +247,9 @@ fun SusSheet(
                                 modifier = Modifier.width(72.dp)
                             )
                             Text(
-                                text = record.scene,
+                                text = record.questionnaireName.ifEmpty {
+                                    record.questionnaireId
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = QuietPalette.TextSecondary,
                                 modifier = Modifier.weight(1f)

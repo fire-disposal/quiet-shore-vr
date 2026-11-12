@@ -28,6 +28,8 @@ export interface SessionSegment {
 }
 
 export interface SessionSummary {
+  /** Product face the record belongs to; the shared ledger field. */
+  app: 'training' | 'questionnaire';
   /** Epoch milliseconds when the session ended. */
   at: number;
   /** Scene that was loaded at the end. */
@@ -94,6 +96,7 @@ export function summarize(input: SessionInput): SessionSummary {
   const clamp = (value: number, min: number, max: number): number =>
     Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
   return {
+    app: 'training',
     at: Number.isFinite(input.at) ? Math.round(input.at) : Date.now(),
     scene: typeof input.scene === 'string' ? input.scene : '',
     seconds: Math.max(0, Math.round(clamp(input.seconds, 0, 24 * 3600))),
@@ -173,6 +176,7 @@ function isSummary(value: unknown): value is SessionSummary {
   }
   const entry = value as Record<string, unknown>;
   return (
+    (entry.app === undefined || entry.app === 'training' || entry.app === 'questionnaire') &&
     typeof entry.at === 'number' &&
     typeof entry.scene === 'string' &&
     typeof entry.seconds === 'number' &&

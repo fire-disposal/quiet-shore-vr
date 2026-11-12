@@ -17,6 +17,8 @@ import java.net.Socket
 internal data class LaunchOptions(
     /** Scene the operator picked on the tablet; injected into the page bootstrap. */
     val scene: String = ControlProtocol.DEFAULT_SCENE,
+    /** Product face the page opens in; the tablet can switch it later. */
+    val app: String = ControlProtocol.DEFAULT_APP,
     val skipCalibration: Boolean = false,
     val showHud: Boolean = false,
     /** Comfort eye height in meters (1.2–1.9); the page applies it, never the headset. */
@@ -120,7 +122,8 @@ internal object PortalActions {
             return false
         }
         lastEnterAt = now
-        val base = PortalSession.snapshot()
+        val settings = HeadsetSettings.read(app)
+        val base = PortalSession.snapshot().copy(app = settings.app)
         // Every launch opens in the built-in preparation room. The operator
         // records the posture there and then switches to a real scene; the
         // last pick is remembered for the console card, not for the launch.

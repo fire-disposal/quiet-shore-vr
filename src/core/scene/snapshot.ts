@@ -16,6 +16,8 @@ import { mix01, type Degrees, type Metres, type Mix01, type Quat, type Vec3 } fr
  */
 export interface SceneSnapshotInput {
   readonly sceneId: string;
+  /** Product face currently owning the main area. */
+  readonly app: string;
   readonly loaded: boolean;
   readonly session: boolean;
   readonly calibrating: boolean;
@@ -48,6 +50,7 @@ export interface SceneSnapshotInput {
 
 export class SceneSnapshot {
   sceneId = '';
+  app = 'training';
   loaded = false;
   session = false;
   calibrating = false;
@@ -89,6 +92,7 @@ export class SceneSnapshot {
 
   capture(input: SceneSnapshotInput): this {
     this.sceneId = input.sceneId;
+    this.app = input.app;
     this.loaded = input.loaded;
     this.session = input.session;
     this.calibrating = input.calibrating;

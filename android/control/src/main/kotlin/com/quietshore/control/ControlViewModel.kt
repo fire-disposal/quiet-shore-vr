@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quietshore.control.ble.BleController
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.AppCatalog
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
@@ -54,6 +55,7 @@ class ControlViewModel(application: Application) :
         application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     private val susStore = SusStore(application)
+    private val trainingStore = com.quietshore.control.data.TrainingStore(application)
 
     private val _uiState = MutableStateFlow(
         ControlUiState(
@@ -365,6 +367,21 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.SCENE_PREFIX + target)
     }
 
+    /**
+     * Ask the headset to switch product face. The local app is not changed
+     * here: the top bar shows what the headset reports, not what was clicked.
+     */
+    fun selectApp(id: String) {
+        if (id !in AppCatalog.IDS) {
+            return
+        }
+        if (_uiState.value.control.session) {
+            notice("先结束会话，再切换应用")
+            return
+        }
+        sendCommand(ControlProtocol.APP_PREFIX + id)
+    }
+
     /** Opens the next program segment; at the last one the page ends. */
     fun nextSegment() {
         if (_uiState.value.segmentProgress == null) {
@@ -668,11 +685,46 @@ class ControlViewModel(application: Application) :
         }
     }
 
+    fun cycleSusFilterQuestionnaire() {
+        val state = _uiState.value
+        val ids = listOfNotNull(null) + state.susHistory.map { it.questionnaireId }.distinct()
+        val current = state.susFilterQuestionnaire
+        val next = ids[(ids.indexOf(current).coerceAtLeast(0) + 1) % ids.size]
+        _uiState.update { it.copy(susFilterQuestionnaire = next) }
+    }
+
+    fun cycleSusFilterDays() {
+        val days = listOf(0, 7, 30)
+        val current = _uiState.value.susFilterDays
+        val next = days[(days.indexOf(current).coerceAtLeast(0) + 1) % days.size]
+        _uiState.update { it.copy(susFilterDays = next) }
+    }
+
+    private fun filteredSus(state: ControlUiState): List<SusResult> {
+        val cutoff = if (state.susFilterDays <= 0) {
+            Long.MIN_VALUE
+        } else {
+            System.currentTimeMillis() - state.susFilterDays * 24L * 3600L * 1000L
+        }
+        return state.susHistory.filter { record ->
+            (state.susFilterQuestionnaire == null ||
+                record.questionnaireId == state.susFilterQuestionnaire) &&
+                record.completedAt >= cutoff
+        }
+    }
+
     /** Share the archived sheets as JSON through the system chooser. */
     fun exportSus() {
-        val history = _uiState.value.susHistory
-        if (history.isEmpty()) {
-            error("暂无已归档的 SUS 结果")
+        val state = _uiState.value
+        val history = filteredSus(state)
+        val cutoff = if (state.susFilterDays <= 0) {
+            Long.MIN_VALUE
+        } else {
+            System.currentTimeMillis() - state.susFilterDays * 24L * 3600L * 1000L
+        }
+        val training = trainingStore.load().filter { it.optLong("at", 0L) >= cutoff }
+        if (history.isEmpty() && training.isEmpty()) {
+            error("当前筛选没有已归档的结果")
             return
         }
         val array = org.json.JSONArray()
@@ -686,17 +738,28 @@ class ControlViewModel(application: Application) :
                     put("scene", record.scene)
                     put("sessionSec", record.sessionSec)
                     put("completedAt", record.completedAt)
+                    put("app", record.app)
+                    put("questionnaireId", record.questionnaireId)
+                    put("questionnaireName", record.questionnaireName)
                 }
             )
         }
+        val trainingArray = org.json.JSONArray()
+        for (record in training) {
+            trainingArray.put(record)
+        }
         val payload = org.json.JSONObject()
             .put("version", 1)
-            .put("count", history.size)
+            .put("count", history.size + training.size)
             .put("sheets", array)
+            .put("training", trainingArray)
             .toString()
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "application/json"
-            putExtra(android.content.Intent.EXTRA_SUBJECT, "SUS 结果 ${history.size} 份")
+            putExtra(
+                android.content.Intent.EXTRA_SUBJECT,
+                "记录 ${history.size + training.size} 条（问卷 ${history.size} / 训练 ${training.size}）"
+            )
             putExtra(android.content.Intent.EXTRA_TEXT, payload)
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -835,6 +898,8 @@ class ControlViewModel(application: Application) :
         when (topic) {
             "sus" -> handleSus(data)
             "catalog" -> handleCatalog(data)
+            "questionnaire" -> handleQuestionnaires(data)
+            "session" -> trainingStore.append(data)
             "segment" -> handleSegment(data)
             "flags" -> applyFlags(data)
             // Unknown topics are ignored: a newer headset may publish more.
@@ -858,6 +923,16 @@ class ControlViewModel(application: Application) :
             )
         }
         _uiState.update { it.copy(scenes = scenes) }
+    }
+
+    private fun handleQuestionnaires(data: String) {
+        val list = com.quietshore.control.protocol.QuestionnaireCatalogDocument.parse(data) ?: return
+        _uiState.update { current ->
+            val id = current.questionnaireId.takeIf { currentId ->
+                list.any { it.id == currentId }
+            } ?: list.first().id
+            current.copy(questionnaires = list, questionnaireId = id)
+        }
     }
 
     /**
@@ -890,8 +965,13 @@ class ControlViewModel(application: Application) :
                 charging = it.optBoolean("charging", false)
             )
         }?.takeIf { it.level in 0..100 }
+        val currentApp = _uiState.value.app
+        val reportedApp = json.optString("app", currentApp)
+            .takeIf { it in AppCatalog.IDS }
+            ?: currentApp
         _uiState.update { current ->
             current.copy(
+                app = reportedApp,
                 caps = caps ?: current.caps,
                 battery = battery ?: current.battery,
                 control = current.control.copy(
@@ -941,7 +1021,10 @@ class ControlViewModel(application: Application) :
             complete = root.optBoolean("complete", false),
             scene = root.optString("scene", ""),
             sessionSec = root.optInt("sessionSec", 0),
-            completedAt = root.optLong("completedAt", System.currentTimeMillis())
+            completedAt = root.optLong("completedAt", System.currentTimeMillis()),
+            app = root.optString("app", "questionnaire"),
+            questionnaireId = root.optString("questionnaireId", "sus"),
+            questionnaireName = root.optString("questionnaireName", "")
         )
     }
 

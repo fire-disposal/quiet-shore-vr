@@ -1,5 +1,8 @@
+import { isAppId, type AppId } from './apps';
+
 interface Bootstrap {
   scene?: string | null;
+  app?: string | null;
   skipCalibration?: boolean;
   showHud?: boolean;
   eyeHeight?: number | string | null;
@@ -36,6 +39,8 @@ function readEyeHeight(value: unknown): number {
 export interface AppConfig {
   /** Scene id from the launch bootstrap; the operator picks it on the tablet. */
   initialScene: string | null;
+  /** Product face the launch opens in; the tablet can switch it later. */
+  initialApp: AppId;
   skipCalibration: boolean;
   showPerf: boolean;
   eyeHeight: number;
@@ -76,8 +81,10 @@ export function readConfig(search: string): AppConfig {
   const params = new URLSearchParams(search);
   const bootstrap: Bootstrap = window.__QS_BOOTSTRAP__ ?? {};
   const lang = params.get('lang') === 'en' ? 'en' : 'zh';
+  const app = bootstrap.app ?? params.get('app') ?? 'training';
   return {
     initialScene: bootstrap.scene ?? params.get('scene'),
+    initialApp: isAppId(app) ? app : 'training',
     skipCalibration: bootstrap.skipCalibration ?? params.get('nocal') === '1',
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     eyeHeight: readEyeHeight(bootstrap.eyeHeight),

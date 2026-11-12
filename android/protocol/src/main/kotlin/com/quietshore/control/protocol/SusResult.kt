@@ -18,7 +18,13 @@ data class SusResult(
     val scene: String,
     val sessionSec: Int,
     /** Epoch millis reported by the headset when the sheet was filed. */
-    val completedAt: Long
+    val completedAt: Long,
+    /** Product face that produced the record; the ledger's app field. */
+    val app: String = "questionnaire",
+    /** Instrument id from the page's registry. */
+    val questionnaireId: String = "sus",
+    /** Human-readable instrument name at the time it was filed. */
+    val questionnaireName: String = ""
 ) {
     /** Standard SUS score, or null while any item is unanswered. */
     val score: Int? get() = if (complete) susScore(answers) else null

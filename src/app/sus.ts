@@ -18,13 +18,25 @@ export interface SusPayload {
   sessionSec: number;
   /** Epoch millis, taken from the headset clock. */
   completedAt: number;
+  /** Product face that produced the sheet; the ledger's app field. */
+  app: string;
+  /** Instrument id and its label at filing time. */
+  questionnaireId: string;
+  questionnaireName: string;
 }
 
 export const SUS_ITEMS = 10;
 
 export function buildSusPayload(
   answers: ReadonlyArray<number | null>,
-  facts: { scene: string; sessionSec: number; now: number }
+  facts: {
+    scene: string;
+    sessionSec: number;
+    now: number;
+    app: string;
+    questionnaireId: string;
+    questionnaireName: string;
+  }
 ): SusPayload {
   const slots = answers.slice(0, SUS_ITEMS);
   return {
@@ -35,6 +47,9 @@ export function buildSusPayload(
     complete: slots.length === SUS_ITEMS && slots.every((answer) => answer !== null),
     scene: facts.scene,
     sessionSec: Math.max(0, Math.round(facts.sessionSec)),
-    completedAt: facts.now
+    completedAt: facts.now,
+    app: facts.app,
+    questionnaireId: facts.questionnaireId,
+    questionnaireName: facts.questionnaireName
   };
 }

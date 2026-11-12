@@ -59,6 +59,9 @@ class SusStore(context: Context) {
         .put("scene", result.scene)
         .put("sessionSec", result.sessionSec)
         .put("completedAt", result.completedAt)
+        .put("app", result.app)
+        .put("questionnaireId", result.questionnaireId)
+        .put("questionnaireName", result.questionnaireName)
 
     private fun decode(json: JSONObject): SusResult {
         val answers = json.optJSONArray("answers")
@@ -73,7 +76,10 @@ class SusStore(context: Context) {
             complete = json.optBoolean("complete", false),
             scene = json.optString("scene", ""),
             sessionSec = json.optInt("sessionSec", 0),
-            completedAt = json.optLong("completedAt", 0L)
+            completedAt = json.optLong("completedAt", 0L),
+            app = json.optString("app", "questionnaire"),
+            questionnaireId = json.optString("questionnaireId", "sus"),
+            questionnaireName = json.optString("questionnaireName", "")
         )
     }
 

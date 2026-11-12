@@ -398,6 +398,8 @@ object ControlProtocol {
                 normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
             (normalized.startsWith(SCENE_PREFIX) &&
                 normalized.removePrefix(SCENE_PREFIX) in sceneIds) ||
+            (normalized.startsWith(APP_PREFIX) &&
+                normalized.removePrefix(APP_PREFIX) in APP_IDS) ||
             isProgramCommand(normalized) ||
             (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
             (normalized.startsWith(ANIM_DURATION) &&
@@ -644,6 +646,11 @@ object ControlProtocol {
 
     /** Default when the operator has not chosen: the neutral preparation room. */
     const val DEFAULT_SCENE: String = "prep"
+
+    const val APP_PREFIX: String = "app:"
+    const val DEFAULT_APP: String = "training"
+    /** The product faces the shell can switch between. */
+    val APP_IDS: Set<String> = setOf(DEFAULT_APP, "questionnaire")
 
     /**
      * Built-in surfaces that are never offered as a scene choice. The live

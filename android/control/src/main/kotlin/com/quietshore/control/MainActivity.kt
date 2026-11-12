@@ -65,7 +65,11 @@ class MainActivity : ComponentActivity() {
                         // loaded scene, including its mirror.
                         current = intent.getStringExtra("current"),
                         programWire = intent.getStringExtra("program"),
-                        segmentSpec = intent.getStringExtra("segment")
+                        segmentSpec = intent.getStringExtra("segment"),
+                        app = intent.getStringExtra("app"),
+                        seedRecords = intent.getBooleanExtra("records", false),
+                        filterDays = intent.getIntExtra("filterDays", -1)
+                            .takeIf { it >= 0 }
                     )
                 } else {
                     val controlViewModel: ControlViewModel = viewModel()

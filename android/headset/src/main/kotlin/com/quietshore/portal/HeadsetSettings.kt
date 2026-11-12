@@ -10,12 +10,15 @@ import com.quietshore.control.protocol.ControlProtocol
  */
 internal data class HeadsetSettings(
     val sceneId: String = ControlProtocol.DEFAULT_SCENE,
+    /** Product face the next launch opens in. */
+    val app: String = ControlProtocol.DEFAULT_APP,
     val skipCalibration: Boolean = false,
     val showHud: Boolean = false,
     val eyeHeight: Float = DEFAULT_EYE_HEIGHT
 ) {
     fun toLaunchOptions(): LaunchOptions = LaunchOptions(
         scene = sceneId,
+        app = app,
         skipCalibration = skipCalibration,
         showHud = showHud,
         eyeHeight = eyeHeight
@@ -27,6 +30,7 @@ internal data class HeadsetSettings(
 
         private const val PREFS = "quietshore.portal"
         private const val KEY_SCENE = "settings.scene"
+        private const val KEY_APP = "settings.app"
         private const val KEY_SKIP = "settings.skipCalibration"
         private const val KEY_HUD = "settings.showHud"
         // v2 resets the old 1.60/1.42 leftovers so the new 1.70 default wins
@@ -51,8 +55,12 @@ internal data class HeadsetSettings(
             val scene = prefs.getString(KEY_SCENE, null)
                 ?.takeIf { it in PageCatalog.idSet(context) }
                 ?: ControlProtocol.DEFAULT_SCENE
+            val app = prefs.getString(KEY_APP, null)
+                ?.takeIf { it in ControlProtocol.APP_IDS }
+                ?: ControlProtocol.DEFAULT_APP
             return HeadsetSettings(
                 sceneId = scene,
+                app = app,
                 skipCalibration = prefs.getBoolean(KEY_SKIP, false),
                 showHud = prefs.getBoolean(KEY_HUD, false),
                 eyeHeight = eyeHeight
@@ -85,6 +93,15 @@ internal data class HeadsetSettings(
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putString(KEY_SCENE, valid)
+                .apply()
+        }
+
+        /** The page is the authority on the running app; persist its report. */
+        fun saveApp(context: Context, app: String) {
+            val valid = app.takeIf { it in ControlProtocol.APP_IDS } ?: return
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_APP, valid)
                 .apply()
         }
     }

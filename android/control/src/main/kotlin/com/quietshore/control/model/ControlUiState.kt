@@ -146,13 +146,33 @@ data class ControlUiState(
      */
     val scenes: List<SceneCatalog.Scene> = emptyList(),
 
+    /** Product face the headset reports; the top bar displays this value. */
+    val app: String = "training",
+
     /** The operator's plan; empty segments = one open-ended scene. */
     val program: ProgramState = ProgramState(),
 
     /** Page-reported progress through [program], null outside a session. */
-    val segmentProgress: SegmentProgress? = null
+    val segmentProgress: SegmentProgress? = null,
+
+    /** Questionnaire catalogue announced by the page. */
+    val questionnaires: List<
+        com.quietshore.control.protocol.QuestionnaireCatalogDocument.Questionnaire
+        > = emptyList(),
+
+    /** Instrument the sheet currently shows; defaults to the first announced. */
+    val questionnaireId: String = "sus",
+
+    /** Record filters: null = all questionnaires, 0 = all time. */
+    val susFilterQuestionnaire: String? = null,
+    val susFilterDays: Int = 0
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
+
+    /** The announced instrument the sheet is showing, if any. */
+    val questionnaire: com.quietshore.control.protocol.QuestionnaireCatalogDocument.Questionnaire?
+        get() = questionnaires.firstOrNull { it.id == questionnaireId }
+            ?: questionnaires.firstOrNull()
 
     /** Cards the operator may choose; the built-in preparation room is not one. */
     val selectableScenes: List<SceneCatalog.Scene>

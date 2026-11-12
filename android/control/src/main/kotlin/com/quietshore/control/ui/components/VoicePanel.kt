@@ -54,7 +54,11 @@ fun VoicePanel(
     // first is a sentence they will not use mid-session. SUS is excluded — its
     // statements are read by the panel as they appear, so tapping one here
     // would talk over the schedule.
-    val guidance = VoiceCatalog.LINES.filter { it.group != "SUS" }
+    // SUS and its closing thanks belong to the questionnaire app; the training
+    // panel keeps only what a training session actually speaks.
+    val guidance = VoiceCatalog.LINES.filter {
+        it.group != "SUS" && it.id != "v-thanks-1"
+    }
     var expanded by remember { mutableStateOf(guidance.map { it.group }.toSet()) }
 
     val cursor = guidance.indexOfFirst { it.id == state.voiceLine?.id }

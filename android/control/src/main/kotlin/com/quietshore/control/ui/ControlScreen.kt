@@ -129,6 +129,7 @@ fun ControlScreen(
             CommandBar(
                 state = state,
                 onOpenInfo = onOpenInfo,
+                onAppSelect = actions.onAppSelect,
                 onDisconnect = actions.onDisconnect,
                 onExitScene = actions.onExitScene,
                 onExitSystem = actions.onExitSystem
@@ -157,6 +158,17 @@ fun ControlScreen(
                     // One frame, one main area: the initial page lives here,
                     // not as a separate screen with its own bar.
                     initialContent()
+                    return@Box
+                }
+                if (state.app == "questionnaire") {
+                    QuestionnaireApp(
+                        state = state,
+                        actions = actions,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(pagePadding)
+                            .padding(bottom = 12.dp)
+                    )
                     return@Box
                 }
                 // Navigation on the left, as a rail: a landscape tablet is
@@ -215,6 +227,26 @@ fun ControlScreen(
             }
 
         }
+    }
+}
+
+/**
+ * The questionnaire app's main area. The training rail is not shown: its four
+ * destinations are training's, and a rail that does nothing is worse than no
+ * rail. The shell (top bar) still says which app is running.
+ */
+@Composable
+private fun QuestionnaireApp(
+    state: ControlUiState,
+    actions: ControlActions,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier.verticalScroll(rememberScrollState())) {
+        SectionHead(title = "问卷", note = "作答、按次归档与导出")
+        Rule()
+        Spacer(Modifier.height(12.dp))
+        SusSheet(state = state, actions = actions)
+        Spacer(Modifier.height(QuietSpace.Page))
     }
 }
 

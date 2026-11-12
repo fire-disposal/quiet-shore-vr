@@ -6,6 +6,7 @@ import type { SpatialTheme } from '../core/spatial/theme';
 import { SpatialButton } from './spatial/button';
 import { SpatialSurface } from './spatial/surface';
 import type { SpatialInput } from './spatial/input';
+import { SUS } from '../questionnaire/registry';
 
 /**
  * System Usability Scale, answered by gaze.
@@ -19,20 +20,10 @@ import type { SpatialInput } from './spatial/input';
  * supine person never has to turn to read it.
  */
 
-const SUS_STATEMENTS: readonly string[] = [
-  '我愿意经常使用这个系统。',
-  '这个系统没有必要这么复杂。',
-  '我觉得这个系统容易使用。',
-  '我需要技术人员的帮助才能用这个系统。',
-  '这个系统的各项功能整合得很好。',
-  '这个系统有太多不一致的地方。',
-  '我认为大多数人能很快学会使用这个系统。',
-  '这个系统用起来很麻烦。',
-  '使用这个系统时我很有信心。',
-  '我需要先学习很多内容才能开始使用这个系统。'
-];
+/** Wording and options live in the questionnaire registry, once. */
+const SUS_STATEMENTS: readonly string[] = SUS.questions.map((question) => question.text.zh);
 
-const OPTION_LABELS = ['非常不同意', '不同意', '一般', '同意', '非常同意'];
+const OPTION_LABELS: readonly string[] = SUS.options.map((option) => option.label.zh);
 
 /** `SUS n/10` was internal jargon; the patient reads a position, not a name. */
 const SUS_HEADERS = ['第 {n} 题，共十题', '最后一步', '谢谢您'] as const;

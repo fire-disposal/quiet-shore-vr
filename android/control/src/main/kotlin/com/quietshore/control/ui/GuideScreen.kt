@@ -174,8 +174,63 @@ private val FAULTS: List<FaultRow> = listOf(
 // Page
 // ---------------------------------------------------------------------------
 
+/**
+ * The questionnaire app's own page. It is deliberately short: the instrument
+ * is answered in the headset, the tablet records, and the operator only needs
+ * the order and where the records go.
+ */
 @Composable
-fun GuideScreen(onBack: () -> Unit, withChrome: Boolean = true) {
+private fun QuestionnaireGuide() {
+    Text(
+        text = "问卷",
+        style = MaterialTheme.typography.displaySmall,
+        color = QuietPalette.TextPrimary,
+        modifier = Modifier.semantics { heading() }
+    )
+    Spacer(Modifier.height(12.dp))
+    Text(
+        text = "问卷是独立的应用面：训练记录与问卷记录同库，用应用字段区分。",
+        style = MaterialTheme.typography.bodyLarge,
+        color = QuietPalette.TextSecondary
+    )
+    Spacer(Modifier.height(32.dp))
+    Rule()
+    Spacer(Modifier.height(24.dp))
+    Text("施测", style = MaterialTheme.typography.titleLarge, color = QuietPalette.TextPrimary)
+    Spacer(Modifier.height(12.dp))
+    for (line in listOf(
+        "1 在顶栏把应用切到「问卷」；会话进行中不能切。",
+        "2 让患者戴上头显，打开问卷；题目与选项出现在视野里。",
+        "3 患者目视选项停住即作答；看不准的题由技术员在平板上代答。",
+        "4 全部答完后点「完成」，记录落在本机，不需要网络。"
+    )) {
+        Text(
+            text = line,
+            style = MaterialTheme.typography.bodyLarge,
+            color = QuietPalette.TextPrimary
+        )
+        Spacer(Modifier.height(10.dp))
+    }
+    Spacer(Modifier.height(24.dp))
+    Rule()
+    Spacer(Modifier.height(24.dp))
+    Text("记录", style = MaterialTheme.typography.titleLarge, color = QuietPalette.TextPrimary)
+    Spacer(Modifier.height(12.dp))
+    Text(
+        text = "按次查看，含完成时间；可按问卷与时间筛选后导出。记录只在本机，"
+            + "导出走系统分享，不自动上传。",
+        style = MaterialTheme.typography.bodyLarge,
+        color = QuietPalette.TextSecondary
+    )
+}
+
+@Composable
+fun GuideScreen(
+    onBack: () -> Unit,
+    /** Which app's guide: `i` follows the current app, never a global one. */
+    app: String = "training",
+    withChrome: Boolean = true
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -212,13 +267,17 @@ fun GuideScreen(onBack: () -> Unit, withChrome: Boolean = true) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 1152.dp).padding(horizontal = 16.dp)) {
                     Spacer(Modifier.height(40.dp))
-                    Positioning()
-                    Spacer(Modifier.height(44.dp))
-                    StepsBand()
-                    Spacer(Modifier.height(44.dp))
-                    StatesBand()
-                    Spacer(Modifier.height(44.dp))
-                    FaultsBand()
+                    if (app == "questionnaire") {
+                        QuestionnaireGuide()
+                    } else {
+                        Positioning()
+                        Spacer(Modifier.height(44.dp))
+                        StepsBand()
+                        Spacer(Modifier.height(44.dp))
+                        StatesBand()
+                        Spacer(Modifier.height(44.dp))
+                        FaultsBand()
+                    }
                     Spacer(Modifier.height(48.dp))
                 }
             }

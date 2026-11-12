@@ -118,7 +118,7 @@ fun ControlApp(viewModel: ControlViewModel) {
     }
 
     if (showInfo) {
-        GuideScreen(onBack = { showInfo = false })
+        GuideScreen(onBack = { showInfo = false }, app = state.app)
         return
     }
 
@@ -138,6 +138,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onStartTraining = viewModel::enterTraining,
             onExitScene = viewModel::exitScene,
             onExitSystem = viewModel::exitSystem,
+            onAppSelect = viewModel::selectApp,
             onSceneSelect = viewModel::selectScene,
             onSceneApply = viewModel::applyScene,
             onNextSegment = viewModel::nextSegment,
@@ -176,6 +177,8 @@ fun ControlApp(viewModel: ControlViewModel) {
             onSusShow = viewModel::susShow,
             onSusAnswer = viewModel::susAnswer,
             onSusExport = viewModel::exportSus,
+            onSusFilterQuestionnaire = viewModel::cycleSusFilterQuestionnaire,
+            onSusFilterDays = viewModel::cycleSusFilterDays,
             onOutcome = viewModel::recordOutcome,
             onDisconnect = viewModel::disconnect,
             onReconnect = viewModel::reconnect,

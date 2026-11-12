@@ -10,6 +10,8 @@ data class ControlActions(
     val onExitScene: () -> Unit,
     /** Ends the session and returns the headset to the system launcher. */
     val onExitSystem: () -> Unit,
+    /** Switches the product face; the top bar follows the headset's report. */
+    val onAppSelect: (String) -> Unit,
     /** Marks a scene as the operator's next choice; nothing is sent yet. */
     val onSceneSelect: (String) -> Unit,
     /** Applies the marked scene or the configured program. */
@@ -68,6 +70,8 @@ data class ControlActions(
     val onSusAnswer: (Int) -> Unit,
     /** SUS: share the archived sheets as JSON through the system chooser. */
     val onSusExport: () -> Unit,
+    val onSusFilterQuestionnaire: () -> Unit,
+    val onSusFilterDays: () -> Unit,
     /** Bedside answer: "attempt" | "success", yes/no. */
     val onOutcome: (String, Boolean) -> Unit,
 )

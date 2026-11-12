@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.AppCatalog
 import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.theme.QuietPalette
@@ -82,6 +83,7 @@ val StopHeight = 48.dp
 fun CommandBar(
     state: ControlUiState,
     onOpenInfo: () -> Unit,
+    onAppSelect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onExitScene: () -> Unit,
     onExitSystem: () -> Unit,
@@ -157,10 +159,21 @@ fun CommandBar(
                 )
             }
 
+            AppSelector(
+                app = state.app,
+                enabled = connected && !state.control.session,
+                onSelect = onAppSelect
+            )
+
+            Spacer(Modifier.width(8.dp))
+
+            GuideKey(onClick = onOpenInfo)
+
+            Spacer(Modifier.width(8.dp))
+
             OverflowMenu(
                 connected = connected,
                 inSession = state.control.session,
-                onOpenInfo = onOpenInfo,
                 onDisconnect = onDisconnect,
                 onExitScene = onExitScene,
                 onExitSystem = onExitSystem
@@ -205,6 +218,103 @@ fun CommandBar(
             }
         }
 
+    }
+}
+
+/**
+ * The current product face, and the way to change it.
+ *
+ * It shows what the headset reports (`state.app`), never the local click: a
+ * switch that the page refused must not look applied. A session locks it, as
+ * the page does.
+ */
+@Composable
+private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .height(44.dp)
+                .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
+                .border(
+                    1.dp,
+                    if (enabled) QuietPalette.Hairline else QuietPalette.Disabled,
+                    CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
+                )
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = { open = true }
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = AppCatalog.label(app),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (enabled) QuietPalette.Ink else QuietPalette.Disabled,
+                maxLines = 1
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "▾",
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.InkSecondary
+            )
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = QuietPalette.Board
+        ) {
+            for (entry in AppCatalog.ALL) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = entry.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (entry.id == app) {
+                                QuietPalette.InkSecondary
+                            } else {
+                                QuietPalette.Ink
+                            }
+                        )
+                    },
+                    enabled = entry.id != app,
+                    onClick = {
+                        open = false
+                        onSelect(entry.id)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** `i`: the current app's guide, nothing global. */
+@Composable
+private fun GuideKey(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
+            .background(QuietPalette.Ice)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .semantics { contentDescription = "当前应用说明" },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "i",
+            style = MaterialTheme.typography.titleMedium,
+            color = QuietPalette.Ink
+        )
     }
 }
 
@@ -301,7 +411,6 @@ private fun barLinkLabel(phase: BlePhase, stale: Boolean): String = when (phase)
 private fun OverflowMenu(
     connected: Boolean,
     inSession: Boolean,
-    onOpenInfo: () -> Unit,
     onDisconnect: () -> Unit,
     onExitScene: () -> Unit,
     onExitSystem: () -> Unit
@@ -312,25 +421,28 @@ private fun OverflowMenu(
     // takes this path — it is not in this menu.
     var confirmingExit by remember { mutableStateOf(false) }
     Box {
-        // Help is an icon, not a word: a 44 dp ice block with an ink `i`.
-        // Ice is the accent and it only ever fills; the glyph on top is ink,
-        // so it reads as "press me" without joining the words on this bar.
+        // Low-frequency exits stay behind one wordless key; the guide has its
+        // own ice `i` beside it, because `i` means the current app's guide.
         Box(
             modifier = Modifier
                 .size(44.dp)
                 .clip(androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
-                .background(QuietPalette.Ice)
+                .border(
+                    1.dp,
+                    QuietPalette.Hairline,
+                    androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     role = Role.Button,
                     onClick = { open = true }
                 )
-                .semantics { contentDescription = "操作说明" },
+                .semantics { contentDescription = "更多" },
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "i",
+                text = "⋯",
                 style = MaterialTheme.typography.titleMedium,
                 color = QuietPalette.Ink
             )
@@ -369,7 +481,6 @@ private fun OverflowMenu(
             onDismissRequest = { open = false },
             containerColor = QuietPalette.Board
         ) {
-            MenuWord("操作说明") { open = false; onOpenInfo() }
             MenuWord("断开", enabled = connected) { open = false; onDisconnect() }
             MenuWord("退出场景") { open = false; onExitScene() }
             MenuWord("退出系统") {

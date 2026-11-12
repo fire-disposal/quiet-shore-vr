@@ -44,6 +44,8 @@ import {
   type SessionSummary
 } from './session-log';
 import { isProgramCommand, parseProgram, type SessionProgram } from './program';
+import { appLabel, isAppId, type AppId } from './apps';
+import { QUESTIONNAIRES, SUS } from '../questionnaire/registry';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { planMotion, type MotionPlan } from './motion-plan';
 import { parseRemoteCommand } from './commands';
@@ -138,6 +140,8 @@ export class QuietShoreApp {
   /** Token for the scheduled auto-rise; any operator action bumps it. */
   private autoRiseToken = 0;
   private controlMode = false;
+  /** Which product face owns the main area; the tablet may switch it. */
+  private activeApp: AppId = 'training';
 
   private eyeHeight: number;
   /** Lying eye of the loaded scene; the rise is measured from it. */
@@ -265,6 +269,7 @@ export class QuietShoreApp {
 
   constructor() {
     this.config = readConfig(window.location.search);
+    this.activeApp = this.config.initialApp;
     this.eyeHeight = this.config.eyeHeight;
     this.strings = getStrings(this.config.lang);
     this.showPerf = this.config.showPerf;
@@ -544,6 +549,8 @@ export class QuietShoreApp {
         },
         /** Desktop check: what the program band would be showing right now. */
         segment: () => this.debugSegment(),
+        /** Desktop check: the product face the next state frame reports. */
+        app: () => this.activeApp,
         /**
          * Desktop check: frame clock against the wall clock. Anything but 1.00
          * means the compositor timestamp is not real time, and every dt-based
@@ -923,6 +930,12 @@ export class QuietShoreApp {
         peakUpGazeDeg: this.peakUpGazeDeg,
         segments: this.segments
       });
+      // The tablet's shared store gets the same line: questionnaire records
+      // and training records live together, distinguished by `app`.
+      const latest = this.sessions[this.sessions.length - 1];
+      if (latest) {
+        this.link.sendSession(latest);
+      }
     }
     this.sessionStartedAt = 0;
     this.program = null;
@@ -1535,7 +1548,10 @@ export class QuietShoreApp {
         this.sessionStartedAt > 0
           ? (performance.now() - this.sessionStartedAt) / 1000
           : 0,
-      now: Date.now()
+      now: Date.now(),
+      app: 'questionnaire',
+      questionnaireId: SUS.id,
+      questionnaireName: SUS.name.zh
     });
     console.info(`[sus] ${JSON.stringify(payload.answers)}`);
     this.link.sendSus(payload);
@@ -1598,6 +1614,34 @@ export class QuietShoreApp {
     this.publishSegment(now);
   }
 
+  /**
+   * Switch product face. Training and questionnaire share the shell but not
+   * the main area; a running session is never silently abandoned, so the
+   * switch waits for 结束.
+   */
+  private applyAppCommand(id: string): void {
+    if (!isAppId(id)) {
+      this.refuse('未知应用');
+      return;
+    }
+    if (isActive(this.lifecycle) || this.capturePending) {
+      this.refuse('先结束会话，再切换应用');
+      return;
+    }
+    if (this.activeApp === id) {
+      return;
+    }
+    this.activeApp = id;
+    if (id === 'questionnaire') {
+      // The questionnaire is the SUS face for now: same spatial card, its own
+      // app identity and records. Training keeps it closed.
+      this.openSus();
+    } else {
+      this.susPanel?.close();
+    }
+    this.report(`应用：${appLabel(id)}`);
+  }
+
   private debugSegment(): Record<string, unknown> {
     const program = this.program;
     if (!program || this.programIndex < 0) {
@@ -1626,6 +1670,10 @@ export class QuietShoreApp {
       const value = outcome[2] === 'yes';
       this.sessions = annotateOutcome(sessionStorageSafe(), { [which]: value });
       this.start.setStatus(value ? '已记录：是' : '已记录：否', 'ok');
+      return;
+    }
+    if (raw.startsWith('app:')) {
+      this.applyAppCommand(raw.slice('app:'.length));
       return;
     }
     if (isProgramCommand(raw)) {
@@ -1820,6 +1868,22 @@ export class QuietShoreApp {
       // Every connection gets the catalogue: the tablet may have been open
       // before this page loaded, and a stale list is worse than none.
       this.link.sendCatalog(catalogEntries());
+      this.link.sendQuestionnaire(
+        QUESTIONNAIRES.map((questionnaire) => ({
+          id: questionnaire.id,
+          name: questionnaire.name,
+          short: questionnaire.short,
+          questions: questionnaire.questions.map((question) => ({
+            id: question.id,
+            text: question.text,
+            voiceId: question.voiceId
+          })),
+          options: questionnaire.options.map((option) => ({
+            value: option.value,
+            label: option.label
+          }))
+        }))
+      );
     }
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
@@ -2356,6 +2420,7 @@ export class QuietShoreApp {
     const playing = this.voice.nowPlaying().id;
     const snapshot = this.snapshot.capture({
       sceneId: this.sceneId,
+      app: this.activeApp,
       loaded: this.handle !== null,
       session: this.session !== null,
       calibrating: this.lifecycle.phase === 'calibrating',

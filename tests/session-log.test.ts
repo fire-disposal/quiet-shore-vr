@@ -27,6 +27,7 @@ function memoryStorage(): Storage {
 
 function entry(at: number): SessionSummary {
   return {
+    app: 'training',
     at,
     scene: 'shore',
     seconds: 60,
@@ -60,6 +61,7 @@ describe('session log', () => {
       ]
     });
     expect(summary).toEqual({
+      app: 'training',
       at: 1001,
       scene: 'washroom',
       seconds: 61,

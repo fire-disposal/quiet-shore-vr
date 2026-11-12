@@ -53,6 +53,12 @@ fun ConsolePreview(
     programWire: String? = null,
     /** `--es segment '1,3,shore,312,360,1'` for the persistent band. */
     segmentSpec: String? = null,
+    /** `--es app questionnaire` renders the other product face. */
+    app: String? = null,
+    /** `--ez records true` seeds two archived questionnaire sheets. */
+    seedRecords: Boolean = false,
+    /** `--ei filterDays 7` seeds the archive's time filter. */
+    filterDays: Int? = null,
     modifier: Modifier = Modifier
 ) {
     val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped, withElapsed)
@@ -95,12 +101,46 @@ fun ConsolePreview(
             }
             if (progress == null) base else base.copy(segmentProgress = progress)
         }
+        .let { base -> if (app.isNullOrBlank()) base else base.copy(app = app) }
+        .let { base ->
+            if (!seedRecords) {
+                return@let base
+            }
+            val now = System.currentTimeMillis()
+            val answers = listOf(4, 2, 5, 1, 4, 2, 5, 2, 4, 1)
+            base.copy(
+                susHistory = listOf(
+                    com.quietshore.control.protocol.SusResult(
+                        answers = answers,
+                        filled = 10,
+                        complete = true,
+                        scene = "shore",
+                        sessionSec = 312,
+                        completedAt = now - 2L * 24 * 3600 * 1000,
+                        questionnaireId = "sus",
+                        questionnaireName = "系统可用性量表"
+                    ),
+                    com.quietshore.control.protocol.SusResult(
+                        answers = answers.map { 5 },
+                        filled = 10,
+                        complete = true,
+                        scene = "ward",
+                        sessionSec = 240,
+                        completedAt = now - 40L * 24 * 3600 * 1000,
+                        questionnaireId = "sus",
+                        questionnaireName = "系统可用性量表"
+                    )
+                )
+            )
+        }
+        .let { base -> if (filterDays == null) base else base.copy(susFilterDays = filterDays) }
     var showGuide by remember { mutableStateOf(false) }
     val noop: () -> Unit = {}
     val actions = ControlActions(
         onStartTraining = noop,
         onExitScene = noop,
         onExitSystem = noop,
+        onAppSelect = {},
         onSceneSelect = {},
         onSceneApply = noop,
         onNextSegment = noop,
@@ -142,6 +182,8 @@ fun ConsolePreview(
         onSusShow = {},
         onSusAnswer = {},
         onSusExport = noop,
+        onSusFilterQuestionnaire = noop,
+        onSusFilterDays = noop,
         onOutcome = { _, _ -> }
     )
     Box(
@@ -150,7 +192,7 @@ fun ConsolePreview(
             .background(QuietPalette.Paper)
     ) {
         if (showGuide) {
-            GuideScreen(onBack = { showGuide = false })
+            GuideScreen(onBack = { showGuide = false }, app = state.app)
         } else {
             ControlScreen(
                 state = state,

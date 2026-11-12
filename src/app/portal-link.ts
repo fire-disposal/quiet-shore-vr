@@ -26,6 +26,8 @@ export interface PoseSnapshot {
  */
 export interface StateSnapshot {
   readonly scene: string;
+  /** Product face the headset is actually running. */
+  readonly app: string;
   readonly session: boolean;
   readonly calibrating: boolean;
   readonly audio: boolean;
@@ -108,6 +110,7 @@ const RECONNECT_MAX_MS = 5000;
 export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
   return {
     scene: snapshot.sceneId,
+    app: snapshot.app,
     session: snapshot.session,
     calibrating: snapshot.calibrating,
     audio: snapshot.audioMuted,
@@ -283,6 +286,22 @@ export class PortalLink {
    */
   sendSegment(data: unknown): void {
     this.send({ type: 'segment', data });
+  }
+
+  /**
+   * The questionnaire catalogue, pushed once per connection like the scenes.
+   * One registry on the page feeds the headset card and the tablet's list.
+   */
+  sendQuestionnaire(questionnaires: readonly unknown[]): void {
+    this.send({ type: 'questionnaire', data: { questionnaires } });
+  }
+
+  /**
+   * One finished training session for the tablet's shared record store. The
+   * page already keeps it locally; this is the copy the control side exports.
+   */
+  sendSession(summary: unknown): void {
+    this.send({ type: 'session', data: summary });
   }
 
   /**
