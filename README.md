@@ -73,6 +73,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state 编解码
 - [docs/state-v11.md](docs/state-v11.md) — state 帧的字段定义与协议推演（当前实现见 `ControlProtocol.encodeState`，v12 40 字节）
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
+- [docs/releases.md](docs/releases.md) — 发布归档：v1.0.0 是旧界面的收尾（含校验值），界面重做后进入 v2.0
 - [docs/ux-tree.md](docs/ux-tree.md) — UX 树：会话状态机、触发权限表、四个面的层级与组件清单
 - [docs/ui-acceptance.md](docs/ui-acceptance.md) — 界面验收：五个面的判据与复现命令（`scripts/tablet-shots.sh`）
 - [docs/ui-system.md](docs/ui-system.md) — 界面系统：变体卡、固定规则、三个表面的层级与字号（分支 `feat/ui-system`）
