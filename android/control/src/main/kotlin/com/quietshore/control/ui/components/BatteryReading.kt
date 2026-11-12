@@ -154,11 +154,43 @@ fun BatteryField(
         contentAlignment = Alignment.CenterStart
     ) {
         if (known && fraction > 0f) {
+            val motion = rememberMotionEnabled()
+            // One highlight sweeping the *filled* part while charge is arriving:
+            // it says "energy is coming in", which no static mark can say, and
+            // it lives inside the fill so it never reads as a second reading.
+            val sweep = if (charging && motion && level!! < 100) {
+                val transition = rememberInfiniteTransition(label = "charge")
+                transition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1000, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "charge-sweep"
+                ).value
+            } else {
+                null
+            }
             Box(
                 Modifier
                     .fillMaxWidth(fraction)
                     .fillMaxHeight()
                     .background(BatteryInk.of(level!!, charging).copy(alpha = 0.52f))
+                    .drawBehind {
+                        val t = sweep ?: return@drawBehind
+                        // 1 s sweep, then a 1.4 s rest: the pause is what keeps
+                        // it calm instead of a machine's LED.
+                        val cycle = (t * 2.4f) % 1f
+                        if (cycle > 1f / 2.4f) return@drawBehind
+                        val band = 18.dp.toPx()
+                        val x = -band + (size.width + band) * (cycle * 2.4f)
+                        drawRect(
+                            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.45f),
+                            topLeft = androidx.compose.ui.geometry.Offset(x, 0f),
+                            size = androidx.compose.ui.geometry.Size(band, size.height)
+                        )
+                    }
             )
             // The crisp edge of the reading: full-width guide, then the solid
             // 3 dp marker at the segment's own end.
