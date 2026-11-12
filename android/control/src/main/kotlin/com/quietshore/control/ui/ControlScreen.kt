@@ -131,7 +131,12 @@ fun ControlScreen(
                 onExitScene = actions.onExitScene,
                 onExitSystem = actions.onExitSystem
             )
-            LinkBanners(state = state, event = event, actions = actions)
+            // No link banners on the initial page: the device list is the
+            // action, and a banner offering "重新连接" beside it is a second
+            // way to do the same thing.
+            if (state.showControls) {
+                LinkBanners(state = state, event = event, actions = actions)
+            }
 
             // 16 dp under the bar: the bar is chrome, close to the page; 32 dp
             // is for block-to-block gaps.

@@ -127,17 +127,11 @@ fun ControlApp(viewModel: ControlViewModel) {
         event = latestEvent,
         onOpenInfo = { showInfo = !showInfo },
         initialContent = {
-            PairingScreen(
+            InitialPanel(
                 state = state,
-                bluetoothEnabled = bluetoothEnabled,
-                permissionsGranted = permissionsGranted,
-                permissionRequested = permissionRequested,
                 onScan = onScan,
                 onStopScan = viewModel::stopScan,
-                onCancelConnect = viewModel::cancelConnect,
-                onEnableBluetooth = onEnableBluetooth,
-                onOpenSettings = onOpenSettings,
-                withChrome = false
+                onConnect = viewModel::connect
             )
         },
         actions = ControlActions(
