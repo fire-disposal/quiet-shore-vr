@@ -52,6 +52,69 @@ function createDefinition(
 }
 
 describe('SceneHost', () => {
+  it('preloads a scene once and swaps it in without building again', () => {
+    // The live switch path: a mid-session swap must never run build() on the
+    // frame that switches, so every scene is built while the page is idle.
+    const host = new SceneHost();
+    let builds = 0;
+    const scene = createHandle();
+    const definition = createDefinition('b', () => {
+      builds += 1;
+      return scene.handle;
+    });
+
+    host.preload(definition);
+    host.preload(definition);
+    expect(builds).toBe(1);
+    expect(host.preloaded).toEqual(['b']);
+
+    const loaded = host.load(definition);
+    expect(loaded).toBe(scene.handle);
+    expect(host.preloaded).toEqual([]);
+    expect(builds).toBe(1);
+  });
+
+  it('parks the outgoing scene instead of disposing it, so switching back is free', () => {
+    const host = new SceneHost();
+    const first = createHandle();
+    const second = createHandle();
+    let firstBuilds = 0;
+
+    const a = createDefinition('a', () => {
+      firstBuilds += 1;
+      return first.handle;
+    });
+    const b = createDefinition('b', () => second.handle);
+
+    host.load(a);
+    host.load(b, { keepPrevious: true });
+
+    expect(first.state.disposed).toBe(0);
+    expect(host.preloaded).toEqual(['a']);
+
+    const back = host.load(a, { keepPrevious: true });
+    expect(back).toBe(first.handle);
+    expect(firstBuilds).toBe(1);
+    expect(second.state.disposed).toBe(0);
+    expect(host.preloaded).toEqual(['b']);
+  });
+
+  it('releases parked scenes on dispose', () => {
+    const host = new SceneHost();
+    const first = createHandle();
+    const second = createHandle();
+    const a = createDefinition('a', () => first.handle);
+    const b = createDefinition('b', () => second.handle);
+
+    host.load(a);
+    host.load(b, { keepPrevious: true });
+    host.dispose();
+
+    expect(first.state.disposed).toBe(1);
+    expect(second.state.disposed).toBe(1);
+    expect(host.preloaded).toEqual([]);
+  });
+
   it('applies scene settings and restores the baseline on unload', () => {
     const background = new THREE.Color(0x102030);
     const fog = new THREE.Fog(0x102030, 1, 12);

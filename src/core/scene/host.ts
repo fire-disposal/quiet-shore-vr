@@ -18,6 +18,16 @@ export class SceneHost {
 
   private current: SceneHandle | null = null;
   private currentDefinition: SceneDefinition | null = null;
+  /**
+   * Built scenes waiting to be swapped in.
+   *
+   * A switch during a session must not run `build()` on the render thread: the
+   * light well alone generates several canvas textures. Every registered scene
+   * is built once, here, before it is needed; `load` takes the handle out of
+   * this map instead of building. `keepPrevious` puts the outgoing scene back,
+   * so switching back and forth costs two pointer swaps.
+   */
+  private readonly parked = new Map<string, SceneHandle>();
   private readonly baselineBackground: THREE.Color | THREE.Texture | null;
   private readonly baselineFog: THREE.FogBase | null;
   private floorOffset = 0;
@@ -52,10 +62,37 @@ export class SceneHost {
    * a scene states its own eye (`SceneDefinition.eyeY`) instead of receiving a
    * height from the caller.
    */
-  load(def: SceneDefinition): SceneHandle {
-    const handle = def.build();
+  /** Build `def` now and keep it out of the scene graph until it is loaded. */
+  preload(def: SceneDefinition): void {
+    if (this.currentDefinition?.id === def.id || this.parked.has(def.id)) {
+      return;
+    }
+    try {
+      this.parked.set(def.id, def.build());
+    } catch (error) {
+      // A scene that cannot build must not take the others down with it.
+      console.warn(`scene ${def.id} failed to preload`, error);
+    }
+  }
+
+  /** Ids currently parked, for diagnostics and tests. */
+  get preloaded(): readonly string[] {
+    return [...this.parked.keys()];
+  }
+
+  /**
+   * Swap `def` in, using a preloaded handle when there is one.
+   *
+   * The old scene is disposed unless `keepPrevious` is set, which is what a
+   * live scene switch asks for: parking it makes the way back instant instead
+   * of a rebuild on the render thread.
+   */
+  load(def: SceneDefinition, options: { keepPrevious?: boolean } = {}): SceneHandle {
+    const handle = this.parked.get(def.id) ?? def.build();
+    this.parked.delete(def.id);
 
     const previous = this.current;
+    const previousDefinition = this.currentDefinition;
     if (previous) previous.root.removeFromParent();
 
     this.current = handle;
@@ -65,7 +102,13 @@ export class SceneHost {
     this.scene.background = handle.settings.background;
     this.scene.fog = handle.settings.fog;
 
-    if (previous) previous.dispose();
+    if (previous && previousDefinition) {
+      if (options.keepPrevious) {
+        this.parked.set(previousDefinition.id, previous);
+      } else {
+        previous.dispose();
+      }
+    }
     return handle;
   }
 
@@ -113,6 +156,10 @@ export class SceneHost {
 
   dispose(): void {
     this.unload();
+    for (const handle of this.parked.values()) {
+      handle.dispose();
+    }
+    this.parked.clear();
     this.scene.remove(this.content);
     this.scene.background = this.baselineBackground;
     this.scene.fog = this.baselineFog;
