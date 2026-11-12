@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
@@ -651,6 +652,17 @@ private fun SessionActions(
     val scenesEnabled = false
     val level = state.control.floatLevel.coerceIn(0, 3)
     Column(modifier) {
+        // Keys that can grow live in a scroller so a taller type scale or a
+        // longer label can never push the stop out of reach; 结束 stays below
+        // it, pinned to the foot of the column.
+        Box(
+            Modifier.then(if (fill) Modifier.weight(1f) else Modifier)
+        ) {
+        Column(
+            Modifier.then(
+                if (fill) Modifier.fillMaxSize().verticalScroll(rememberScrollState()) else Modifier
+            )
+        ) {
         Panel(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp)) {
                 Text(
@@ -801,37 +813,41 @@ private fun SessionActions(
                         enabled = ready && state.caps.stop && phase.acceptsChanges
                     )
                 }
-                // Re-recording the start posture stays available mid-session,
-                // but at the secondary tier: a correction, not the thing the
-                // hand reaches for while the patient is moving. The word alone
-                // carries it — a sentence saying "re-record if it drifted"
-                // explains what the operator already knows.
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BarWordKey(
-                        label = "校准",
-                        onClick = actions.onRecalibrate,
-                        enabled = ready && phase == SessionPhase.Running
-                    )
-                }
             }
-            Rule()
-            // The patient's view lives here as one word: a cover opened on
-            // demand, never a permanent half of the session screen. No sentence
-            // in front of it — the label is the whole instruction.
-            Row(
-                modifier = Modifier
+        }
+        }
+        // The panels scroll under a fade: a row cut at the edge would read as a
+        // broken layout, the fade reads as "there is more".
+        if (fill) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BarWordKey(label = "患者视野", onClick = onOpenMirror)
-            }
+                    .height(40.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(QuietPalette.Board.copy(alpha = 0f), QuietPalette.Board)
+                        )
+                    )
+            )
+        }
+        }
+        // Corrections stay reachable without hunting: one row, outside the
+        // scroller, directly above the stop.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp, start = 20.dp, end = 20.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BarWordKey(
+                label = "校准",
+                onClick = actions.onRecalibrate,
+                enabled = ready && phase == SessionPhase.Running
+            )
+            Spacer(Modifier.width(28.dp))
+            BarWordKey(label = "患者视野", onClick = onOpenMirror)
         }
         Spacer(Modifier.height(16.dp))
         EndKey(
