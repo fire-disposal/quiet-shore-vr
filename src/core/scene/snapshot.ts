@@ -83,7 +83,8 @@ export class SceneSnapshot {
     stop: false,
     float: false,
     view: false,
-    blocked: '未开始会话'
+    blocked: '未开始会话',
+    floatMax: 3
   };
 
   capture(input: SceneSnapshotInput): this {
