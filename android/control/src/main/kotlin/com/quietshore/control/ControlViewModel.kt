@@ -726,7 +726,7 @@ class ControlViewModel(application: Application) :
         // anything narrower truncates the notification and the tablet then
         // shows a panel of disabled controls with no explanation.
         if (code != 0 || mtu < MIN_STATE_MTU) {
-            error("蓝牙包长不足（MTU $mtu）· 头显状态可能收不到")
+            error("蓝牙包长不足（MTU $mtu），头显状态可能收不到")
         }
     }
 

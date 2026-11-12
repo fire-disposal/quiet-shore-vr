@@ -51,7 +51,6 @@ import com.quietshore.control.ui.components.Key
 import com.quietshore.control.ui.components.KeyKind
 import com.quietshore.control.ui.components.KeyRow
 import com.quietshore.control.ui.components.LoadingDots
-import com.quietshore.control.ui.components.MirrorCover
 import com.quietshore.control.ui.components.MonitorPanel
 import com.quietshore.control.ui.components.NoticeRow
 import com.quietshore.control.ui.components.Panel
@@ -133,7 +132,6 @@ fun ControlScreen(
     val sessionLayout = phase.inSession
     // The mirror is on demand: it answers "what is the patient looking at",
     // which is a question asked, not a panel that sits on screen all session.
-    var mirrorOpen by rememberSaveable { mutableStateOf(startWithMirrorOpen) }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -191,7 +189,6 @@ fun ControlScreen(
                             modifier = Modifier
                                 .width(ActionColumnWidth)
                                 .fillMaxHeight(),
-                            onOpenMirror = { mirrorOpen = true }
                         )
                     } else {
                         StandbyMain(
@@ -238,7 +235,6 @@ fun ControlScreen(
                             phase = phase,
                             modifier = Modifier,
                             fill = false,
-                            onOpenMirror = { mirrorOpen = true }
                         )
                     } else {
                         StandbyMain(
@@ -257,16 +253,9 @@ fun ControlScreen(
                     }
                 }
             }
-                if (mirrorOpen) {
-                    MirrorCover(
-                        state = state,
-                        onModeChange = actions.onMirrorModeChange,
-                        onClose = { mirrorOpen = false }
-                    )
-                }
-            }
         }
     }
+}
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +541,13 @@ private fun SessionMain(
     scrollable: Boolean = true
 ) {
     Column(if (scrollable) modifier.verticalScroll(rememberScrollState()) else modifier) {
+        Spacer(Modifier.height(28.dp))
+        // The patient sees something: show it. A live mirror outranks a dial,
+        // because it is the only thing on this screen that can disagree with
+        // the scene you think you loaded.
+        SectionHead(title = "患者视野", note = "镜像来自状态帧")
+        Rule()
+        MirrorSlot(state = state, phase = phase)
         MonitorPanel(
             state = state,
             running = phase == SessionPhase.Running,
@@ -573,6 +569,7 @@ private fun SessionMain(
                 else -> "已运行"
             }
         )
+
         Spacer(Modifier.height(28.dp))
         // Same shape as every other block on the page: title, hairline, content
         // on the paper. No second white card inside the white panel.
@@ -598,43 +595,66 @@ private fun SessionMain(
  */
 private val MirrorHeight = 340.dp
 
-/** The patient's view, in a frame marked with the one cut corner. */
+/**
+ * The renderer: the patient's picture when there is one, a placeholder that
+ * says why when there is not.
+ *
+ * A session screen with an empty box is the old failure this replaces. The
+ * placeholder is paper, not an illustration and not an accent: "no picture" is
+ * information, not an alert.
+ */
 @Composable
-private fun MirrorPanel(state: ControlUiState, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        SectionHead(title = "患者视野", note = "镜像，只读")
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(MirrorHeight)
-                .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
-                .background(QuietPalette.Ink)
-        ) {
+private fun MirrorSlot(state: ControlUiState, phase: SessionPhase) {
+    val hasFrame = state.phase == BlePhase.READY && state.pose != null && !state.poseStale
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(MirrorHeight)
+            .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
+            .background(if (hasFrame) QuietPalette.Ink else QuietPalette.Board)
+    ) {
+        if (hasFrame) {
             com.quietshore.control.ui.components.MirrorView(
                 state = state,
                 modifier = Modifier.fillMaxSize()
             )
-            if (state.phase != BlePhase.READY) {
+        } else {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val title = if (phase == SessionPhase.Entry) "患者尚未进入场景" else "镜像未连接"
+                val note = if (phase == SessionPhase.Entry) {
+                    "头显在入口页，等待患者按压。"
+                } else {
+                    "头显未连接，或未收到状态帧。"
+                }
                 Text(
-                    text = "链路断开，镜像暂停。",
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = QuietPalette.Ink
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = note,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.Paper,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .background(QuietPalette.Ink)
-                        .padding(24.dp)
+                    color = QuietPalette.InkSecondary
                 )
             }
         }
     }
 }
 
+// ---------------------------------------------------------------------------
+// Link state
+// ---------------------------------------------------------------------------
+
 /**
- * Right: the four things that are live during a session, in the order the hand
- * reaches for them — scene, strength, voice, posture — then the end.
- *
- * Every key here acts on the running session. Anything that would only apply
- * *before* a session is not on this column.
+ * The link, when it needs saying: a banner above the content, never a dialog.
+ * Ice while it is a wait the operator can sit out; red never appears here —
+ * red belongs to a deletion.
  */
 @Composable
 private fun SessionActions(
@@ -644,7 +664,6 @@ private fun SessionActions(
     modifier: Modifier = Modifier,
     /** In the stacked layout the column takes its content height, not the screen's. */
     fill: Boolean = true,
-    onOpenMirror: () -> Unit = {}
 ) {
     val ready = state.phase == BlePhase.READY
     // During a session the scene is fixed: the page only accepts `scene:<id>`
@@ -847,8 +866,6 @@ private fun SessionActions(
                 onClick = actions.onRecalibrate,
                 enabled = ready && phase == SessionPhase.Running
             )
-            Spacer(Modifier.width(28.dp))
-            BarWordKey(label = "患者视野", onClick = onOpenMirror)
         }
         Spacer(Modifier.height(16.dp))
         EndKey(

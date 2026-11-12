@@ -32,7 +32,6 @@ fun ConsolePreview(
     fixture: ConsoleFixture,
     batteryLevel: Int? = null,
     /** `--ez mirror true` opens the mirror cover on launch, for design review. */
-    openMirror: Boolean = false,
     /** `--ez pose true` gives the fixture a live state frame. */
     withPose: Boolean = false,
     /** `--ez drift true` makes the local choice disagree with the frame. */
@@ -91,7 +90,6 @@ fun ConsolePreview(
                 state = state,
                 actions = actions,
                 onOpenInfo = { showGuide = true },
-                startWithMirrorOpen = openMirror
             )
         }
     }
