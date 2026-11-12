@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
@@ -498,34 +499,27 @@ private fun DurationRow(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit
 private fun VoiceSummary(state: ControlUiState, actions: ControlActions) {
     val line = state.voiceLine
     SectionHead(title = "语音", note = "患者听到的提示语")
-    Panel(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(QuietSpace.Panel),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = line?.text ?: "未播放",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (line != null) QuietPalette.Ink else QuietPalette.InkSecondary,
-                    maxLines = 2
-                )
-                if (line != null) {
-                    Text(
-                        text = line.group,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.InkSecondary
-                    )
-                }
-            }
-            Spacer(Modifier.width(16.dp))
-            ActionKey(
-                label = "下一句",
-                onClick = { actions.onVoicePlay(nextVoiceId(state)) },
-                tone = ActionTone.Secondary,
-                enabled = state.phase == BlePhase.READY
-            )
-        }
+    // One row, not a card: preparation has one primary action (启动训练) and
+    // this section's only job is to open the cue list. Playing one line early
+    // lives in that panel, and in the session's voice row.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = line?.text ?: "未播放",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (line != null) QuietPalette.Ink else QuietPalette.InkSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(16.dp))
+        BarWordKey(
+            label = "全部语音",
+            onClick = actions.onVoiceOpen,
+            enabled = state.phase == BlePhase.READY
+        )
     }
 }
 
