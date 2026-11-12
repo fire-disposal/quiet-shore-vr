@@ -184,13 +184,13 @@ fun BatteryField(
         ) {
             Text(
                 text = PREFIX,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
             Text(
                 text = "${label}电量:",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
@@ -200,7 +200,7 @@ fun BatteryField(
                 // "what is it" from "how much" without a divider.
                 Text(
                     text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
-                    style = MaterialTheme.typography.bodyMedium.tabularFigures()
+                    style = MaterialTheme.typography.bodyLarge.tabularFigures()
                         .copy(fontWeight = FontWeight.SemiBold),
                     color = QuietPalette.Ink,
                     maxLines = 1
@@ -238,8 +238,8 @@ private fun ChargeTag(label: String) {
     // the same Row sat on a different baseline and read as "not centred".
     Text(
         text = "[$label]",
-        style = MaterialTheme.typography.bodyMedium.copy(
-            fontWeight = FontWeight.Medium,
+        style = MaterialTheme.typography.bodyLarge.copy(
+            fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.2.sp
         ),
         color = QuietPalette.InkSecondary,

@@ -120,13 +120,16 @@ fun CommandBar(
                 // on the left so the eye lands on "which headset" first.
                 Text(
                     text = barLinkLabel(state.phase, state.stateStale),
-                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.4.sp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.4.sp
+                    ),
                     color = QuietPalette.InkSecondary,
                     maxLines = 1
                 )
                 Text(
                     text = state.deviceSuffix.ifEmpty { "—" },
-                    style = MaterialTheme.typography.titleSmall.tabularFigures()
+                    style = MaterialTheme.typography.titleMedium.tabularFigures()
                         .copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
                     color = QuietPalette.Ink,
                     maxLines = 1
@@ -195,7 +198,7 @@ fun CommandBar(
             ) {
                 Text(
                     text = "断开连接",
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
                     color = if (connected) QuietPalette.Ink else QuietPalette.InkSecondary,
                     maxLines = 1
                 )
