@@ -130,15 +130,16 @@ fun ControlScreen(
             // taskbar inset is outside the content, so the rail background is
             // carried through it explicitly.
             .drawBehind {
-                val inset = bottomInset.toPx()
-                val gap = 16.dp.toPx()
-                if (inset > gap) {
-                    drawRect(
-                        color = QuietPalette.Board,
-                        topLeft = Offset(0f, size.height - inset),
-                        size = Size(RailWidth.toPx(), inset - gap)
-                    )
-                }
+                // The rail is a full-height chrome surface. The page content
+                // stops above the system inset and its own bottom padding, so
+                // carrying only the inset left a detached white patch; this
+                // draws the whole left column behind whatever the rail frame
+                // happens to measure, and stops at the same 16 dp bottom gap.
+                drawRect(
+                    color = QuietPalette.Board,
+                    topLeft = Offset.Zero,
+                    size = Size(RailWidth.toPx(), size.height - 16.dp.toPx())
+                )
             }
             .safeDrawingPadding()
             // Same fix the guide page needed: `tappableElement` (the system
@@ -186,10 +187,7 @@ fun ControlScreen(
                     QuestionnaireApp(
                         state = state,
                         actions = actions,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(pagePadding)
-                            .padding(bottom = 12.dp)
+                        modifier = Modifier.fillMaxSize()
                     )
                     return@Box
                 }
@@ -267,7 +265,18 @@ private fun QuestionnaireApp(
             modifier = Modifier.fillMaxHeight()
         )
         RailRule()
-        Box(Modifier.weight(1f).fillMaxHeight()) {
+        // The rail is chrome and reaches the page edge exactly like the
+        // guidance app's rail; only the content takes the page gutter.
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(
+                    start = QuietSpace.Page,
+                    end = QuietSpace.Page,
+                    bottom = 12.dp
+                )
+        ) {
             Column(
                 Modifier
                     .fillMaxSize()
