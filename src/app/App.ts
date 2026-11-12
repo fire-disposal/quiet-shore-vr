@@ -185,6 +185,9 @@ export class QuietShoreApp {
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion()
   };
+  /** Patient pressed; waiting for the technician to start the capture. */
+  private awaitingCalibration = false;
+
   /** Debounce for the single physical confirm: `select*` plus DOM fallbacks. */
   private selectHandledAt = 0;
   private showPerf: boolean;
@@ -798,7 +801,12 @@ export class QuietShoreApp {
         this.dispatch({ type: 'calibrated' });
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
-        this.beginCalibration();
+        // Calibration is the technician's decision, not a side effect of the
+        // patient's press: the card asks the patient to hold still and waits
+        // for `calibrate` from the tablet. The patient's own press still works
+        // as a fallback, so a broken tablet does not strand the session.
+        this.awaitingCalibration = true;
+        this.startCalibrationOverlay();
       }
       this.updateHud(performance.now());
     } catch (error) {
@@ -1116,7 +1124,34 @@ export class QuietShoreApp {
    * countdown: the technician aims the patient, the session starts, the first
    * frame's head orientation is the reference.
    */
+  /**
+   * Put the hold-still card up and wait.
+   *
+   * The capture itself does not start here: the operator starts it. The card
+   * says what the patient must do and nothing else — no countdown, because
+   * there is no timer running yet.
+   */
+  private startCalibrationOverlay(): void {
+    // Same card as the capture uses, but with no progress bar: nothing is
+    // being measured yet, the operator has not started it.
+    this.world.hold(true);
+    this.world.clearBase();
+    this.viewMotion.reset();
+    this.input.setLayers(false, false);
+    this.calibrationOverlay ??= createCalibrationOverlay({
+      scene: this.scene,
+      theme: DEFAULT_SPATIAL_THEME
+    });
+    this.calibrationOverlay.show();
+    this.calibrationOverlay.setProgress(null);
+    this.calibrationOverlay.setHint('等待技术员开始记录');
+    // The card waits outside the lifecycle machine: `calibrating` means "the
+    // capture is running", and it is not running yet.
+    this.link.sendStateNow();
+  }
+
   private beginCalibration(): void {
+    this.awaitingCalibration = false;
     if (!this.handle) {
       return;
     }
@@ -1496,7 +1531,11 @@ export class QuietShoreApp {
         this.startPreview();
         return;
       case 'calibrate':
-        this.recalibrate();
+        if (this.awaitingCalibration) {
+          this.beginCalibration();
+        } else {
+          this.recalibrate();
+        }
         return;
       case 'exit':
         this.exitAll();
@@ -1766,6 +1805,12 @@ export class QuietShoreApp {
    * It never switches mode. Scene targets are still chosen by 6 s gaze dwell.
    */
   private onSelectShort(source: string = 'xr'): void {
+    if (this.awaitingCalibration) {
+      // Fallback path: the patient pressed while the card waits for the
+      // technician. Same result, one fewer thing to go wrong.
+      this.beginCalibration();
+      return;
+    }
     if (this.lifecycle.phase === 'calibrating') {
       // The flow runs by itself; a confirm simply ends the wait early.
       this.calibrationOverlay?.setHint(`确认来源：${source}`);
