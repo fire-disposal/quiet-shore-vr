@@ -63,25 +63,17 @@ function createPanelTexture(widthMeters: number, heightMeters: number, theme: Sp
     throw new Error('2D canvas context unavailable');
   }
 
-  const pad = 10;
-  const r = theme.radiusPx * (widthPx / 512);
+  // A flat fill and one 1 px rule: no shadow, no gradient, no radius. A card
+  // that casts a shadow reads as furniture and pulls the eye off the words.
   ctx.clearRect(0, 0, widthPx, heightPx);
-  ctx.shadowColor = 'rgba(32, 37, 31, 0.3)';
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 8;
-  ctx.beginPath();
-  ctx.moveTo(pad + r, pad);
-  ctx.arcTo(widthPx - pad, pad, widthPx - pad, heightPx - pad, r);
-  ctx.arcTo(widthPx - pad, heightPx - pad, pad, heightPx - pad, r);
-  ctx.arcTo(pad, heightPx - pad, pad, pad, r);
-  ctx.arcTo(pad, pad, widthPx - pad, pad, r);
-  ctx.closePath();
+  const rule = 1;
   ctx.fillStyle = theme.panel;
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.lineWidth = 3;
+  ctx.fillRect(0, 0, widthPx, heightPx);
+  // Stroked on the canvas edge so the rule lands as a single hairline inside
+  // the plane rather than a doubled line at the mesh border.
   ctx.strokeStyle = theme.border;
-  ctx.stroke();
+  ctx.lineWidth = rule;
+  ctx.strokeRect(rule / 2, rule / 2, widthPx - rule, heightPx - rule);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

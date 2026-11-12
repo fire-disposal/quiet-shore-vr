@@ -1,36 +1,45 @@
 export interface SpatialTheme {
   panel: string;
   panelStrong: string;
+  /** Hairline rule colour: ink at 16%. Never the accent — ice is fill only. */
   border: string;
   text: string;
   muted: string;
   accent: string;
   accentText: string;
-  focus: string;
   success: string;
   fontFamily: string;
   titlePx: number;
   bodyPx: number;
   buttonPx: number;
+  /** Corners are square in this variant; kept so callers can pass one scale. */
   radiusPx: number;
   paddingPx: number;
 }
 
-/** Calm, low-glare palette for the patient-facing spatial UI. */
+/**
+ * Variant: cold store — ice / cool / tight / plain / standard / calm.
+ *
+ * The panel stays light on purpose: a supine patient reads it at arm's length,
+ * and a dark card at that distance reads as a hole in the scene. The single
+ * accent is ice and is only ever a fill with ink (#161616) on top — 12.6:1; on
+ * a light panel ice is never the text, a rule or a 1 px outline. Red is
+ * reserved for delete and stop, so nothing here uses it.
+ */
 export const DEFAULT_SPATIAL_THEME: SpatialTheme = {
-  panel: 'rgba(247, 243, 234, 0.96)',
-  panelStrong: 'rgba(250, 247, 240, 0.98)',
-  border: '#b9ae9a',
-  text: '#20251f',
-  muted: '#5e655a',
-  accent: '#8f4634',
-  accentText: '#f8f3e9',
-  focus: '#8f4634',
-  success: '#486b58',
-  fontFamily: '"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "Noto Sans CJK SC", sans-serif',
-  titlePx: 54,
-  bodyPx: 30,
-  buttonPx: 30,
-  radiusPx: 4,
+  panel: '#F7F7F6',
+  panelStrong: '#FFFFFF',
+  border: 'rgba(22, 22, 22, 0.16)',
+  text: '#161616',
+  muted: '#5E655A',
+  accent: '#7DE6FF',
+  accentText: '#161616',
+  // Ink, not green: this variant has one accent and it is ice.
+  success: '#161616',
+  fontFamily: '"Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", sans-serif',
+  titlePx: 60,
+  bodyPx: 34,
+  buttonPx: 34,
+  radiusPx: 0,
   paddingPx: 30
 };

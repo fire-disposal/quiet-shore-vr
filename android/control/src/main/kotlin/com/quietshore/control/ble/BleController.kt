@@ -62,6 +62,8 @@ class BleController(
     private var scanCallback: ScanCallback? = null
     /** First matching advertisement already scheduled a connection. */
     private var scanConnectPending = false
+    /** Advertisements seen in this window; 0 means the stack filtered them all. */
+    private var scanResultCount = 0
     private var phase = BlePhase.IDLE
 
     private var manager: QuietShoreBleManager? = null
@@ -82,6 +84,10 @@ class BleController(
 
     /** Sequenced commands written but not yet acknowledged. */
     private val inFlight = LinkedHashMap<Int, InFlightCommand>()
+
+    /** Frames received since the last heartbeat, to measure the live cadence. */
+    private val telemetryFrames = java.util.concurrent.atomic.AtomicInteger()
+    private val stateFrames = java.util.concurrent.atomic.AtomicInteger()
 
     private var manualClose = false
     private var autoScan = false
@@ -104,6 +110,12 @@ class BleController(
                 return
             }
             expireInFlight()
+            val telemetry = telemetryFrames.getAndSet(0)
+            val states = stateFrames.getAndSet(0)
+            // Live cadence on the wire: telemetry at 5 Hz and state at 1 Hz
+            // (5 Hz while moving) is what the page promises. Numbers below that
+            // mean the link, not the UI, is the bottleneck.
+            Log.i(TAG, "rx/${HEARTBEAT_INTERVAL_MS}ms telemetry=$telemetry state=$states")
             enqueueCommand(ControlProtocol.PING)
             mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
         }
@@ -125,8 +137,16 @@ class BleController(
 
     private val scanWindow = Runnable {
         val wasAuto = autoScan
-        Log.i(TAG, "scan window expired (auto=$wasAuto, pending=$scanConnectPending)")
+        val seen = scanResultCount
+        Log.i(TAG, "scan window expired (auto=$wasAuto, pending=$scanConnectPending, results=$seen)")
         stopScan()
+        if (!manualClose && seen == 0) {
+            // Not one advertisement came back. On EMUI (and a few other stacks)
+            // that is what a scan looks like while location services are off,
+            // even with BLUETOOTH_SCAN granted: the radio filters everything.
+            // Say it, instead of reporting "headset not found".
+            listener.onError("未搜索到任何蓝牙设备：请开启定位服务后再试")
+        }
         if (wasAuto && !manualClose) {
             autoScan = false
             scheduleReconnect("未找到头显")
@@ -190,7 +210,12 @@ class BleController(
         // scan and return zero results while location services are off, even
         // when BLUETOOTH_SCAN is granted. Fail loudly instead of scanning
         // silently in that state.
-        if (!locationServicesEnabled()) {
+        //
+        // Only below Android 12: from S on the app holds BLUETOOTH_SCAN with
+        // `neverForLocation`, so a pad whose location switch is off can still
+        // scan. Refusing there was a false negative — the system Bluetooth
+        // screen kept listing the headset while this app would not search.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && !locationServicesEnabled()) {
             listener.onError("请先开启定位服务，部分设备的蓝牙搜索依赖它")
             setPhase(BlePhase.IDLE)
             return
@@ -202,9 +227,11 @@ class BleController(
         }
 
         scanConnectPending = false
+        scanResultCount = 0
 
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
+                scanResultCount++
                 val device = result.device ?: return
                 val address = device.address ?: return
                 val record = result.scanRecord
@@ -504,7 +531,11 @@ class BleController(
     private fun handleAck(ack: ControlProtocol.Ack) {
         // An ACK for a seq that already expired was reported once; ignore it
         // rather than repeating a stale error.
-        val command = synchronized(sendLock) { inFlight.remove(ack.seq)?.command } ?: return
+        val pending = synchronized(sendLock) { inFlight.remove(ack.seq) } ?: return
+        val command = pending.command
+        // End-to-end round trip of one operator action: tap, write, headset,
+        // ACK. This is the number to read when the console feels slow.
+        Log.i(TAG, "ack ${ack.result} in ${SystemClock.elapsedRealtime() - pending.sentAt}ms: $command")
         when (ack.result) {
             ControlProtocol.RESULT_OK -> Unit
             ControlProtocol.RESULT_BUSY -> listener.onError("头显忙，命令未执行：$command")
@@ -841,6 +872,7 @@ class BleController(
 
         override fun onTelemetry(pose: TelemetryPose) {
             if (isCurrent()) {
+                telemetryFrames.incrementAndGet()
                 listener.onTelemetry(pose)
             }
         }
@@ -855,6 +887,7 @@ class BleController(
 
         override fun onControlState(state: ControlState) {
             if (isCurrent()) {
+                stateFrames.incrementAndGet()
                 listener.onControlState(state)
             }
         }

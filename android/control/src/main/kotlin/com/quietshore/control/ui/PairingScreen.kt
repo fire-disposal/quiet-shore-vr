@@ -7,39 +7,44 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.ui.components.ConnectionChip
+import com.quietshore.control.ui.components.EmptyNote
+import com.quietshore.control.ui.components.Key
+import com.quietshore.control.ui.components.KeyKind
 import com.quietshore.control.ui.components.LoadingDots
+import com.quietshore.control.ui.components.RefusalNote
+import com.quietshore.control.ui.components.Rule
+import com.quietshore.control.ui.components.TouchTarget
+import com.quietshore.control.ui.components.tabularFigures
 import com.quietshore.control.ui.theme.QuietPalette
+import com.quietshore.control.ui.theme.QuietSpace
 
+/**
+ * The screen before a session: the procedure on the left, the link on the
+ * right. Same paper and same app bar as the console, so the app never changes
+ * identity between "pairing" and "controlling" — but nothing here competes with
+ * the patient: the only thing that matters is whether the headset is on.
+ */
 @Composable
 fun PairingScreen(
     state: ControlUiState,
@@ -58,151 +63,165 @@ fun PairingScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(QuietPalette.Background)
+            .background(QuietPalette.Paper)
             .safeDrawingPadding()
-            .padding(horizontal = 32.dp, vertical = 24.dp),
-        contentAlignment = Alignment.Center
     ) {
-        val wide = maxWidth >= 560.dp
-        val compact = maxHeight < 520.dp
-        // Captured here: inside the Row the two implicit receivers make the
-        // scope's height awkward to reach.
-        val cardMaxHeight = maxHeight - 48.dp
-        if (wide) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 1100.dp)
-                    .fillMaxHeight(),
-                horizontalArrangement = Arrangement.spacedBy(40.dp),
-                // The card wraps now, so a top-aligned row left it stranded at
-                // the top of a tall empty screen.
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PairingIntro(
-                    compact = compact,
-                    onOpenInfo = onOpenInfo,
-                    modifier = Modifier.weight(2f)
-                )
-                PairingCard(
-                    state = state,
-                    event = event,
-                    bluetoothEnabled = bluetoothEnabled,
-                    permissionsGranted = permissionsGranted,
-                    permissionRequested = permissionRequested,
-                    onScan = onScan,
-                    onStopScan = onStopScan,
-                    onCancelConnect = onCancelConnect,
-                    onEnableBluetooth = onEnableBluetooth,
-                    onOpenSettings = onOpenSettings,
-                    scrollable = true,
-                    maxHeight = cardMaxHeight,
-                    modifier = Modifier.weight(3f)
-                )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                PairingIntro(
-                    compact = compact,
-                    onOpenInfo = onOpenInfo,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                PairingCard(
-                    state = state,
-                    event = event,
-                    bluetoothEnabled = bluetoothEnabled,
-                    permissionsGranted = permissionsGranted,
-                    permissionRequested = permissionRequested,
-                    onScan = onScan,
-                    onStopScan = onStopScan,
-                    onCancelConnect = onCancelConnect,
-                    onEnableBluetooth = onEnableBluetooth,
-                    onOpenSettings = onOpenSettings,
-                    scrollable = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
+        val wide = maxWidth >= 900.dp
+        val compact = maxHeight < 620.dp
+        val cardMaxHeight = maxHeight - CHROME.dp - QuietSpace.Page
+
+        Column(Modifier.fillMaxSize()) {
+            AppBar(onOpenInfo = onOpenInfo)
+
+            if (wide) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(QuietSpace.Page),
+                    horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
+                ) {
+                    PairingIntro(
+                        compact = compact,
+                        modifier = Modifier.weight(1f)
+                    )
+                    PairingCard(
+                        state = state,
+                        event = event,
+                        bluetoothEnabled = bluetoothEnabled,
+                        permissionsGranted = permissionsGranted,
+                        permissionRequested = permissionRequested,
+                        onScan = onScan,
+                        onStopScan = onStopScan,
+                        onCancelConnect = onCancelConnect,
+                        onEnableBluetooth = onEnableBluetooth,
+                        onOpenSettings = onOpenSettings,
+                        scrollable = true,
+                        maxHeight = cardMaxHeight,
+                        modifier = Modifier
+                            .weight(1f)
+                            .widthIn(max = 560.dp)
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(QuietSpace.Section)
+                ) {
+                    PairingIntro(compact = compact, modifier = Modifier.fillMaxWidth())
+                    PairingCard(
+                        state = state,
+                        event = event,
+                        bluetoothEnabled = bluetoothEnabled,
+                        permissionsGranted = permissionsGranted,
+                        permissionRequested = permissionRequested,
+                        onScan = onScan,
+                        onStopScan = onStopScan,
+                        onCancelConnect = onCancelConnect,
+                        onEnableBluetooth = onEnableBluetooth,
+                        onOpenSettings = onOpenSettings,
+                        scrollable = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
+    }
+}
+
+/** Bar plus the screen's own cut: the card may take everything else. */
+private const val CHROME = 88
+
+/**
+ * The app bar on paper: the app's name, then 操作说明 as a shaped key. Same
+ * hairline as the console's, same height, so the two screens cannot drift.
+ */
+@Composable
+private fun AppBar(onOpenInfo: () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(QuietPalette.Board)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(88.dp)
+                .padding(horizontal = QuietSpace.Page),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "静岸控制台",
+                style = MaterialTheme.typography.titleLarge,
+                color = QuietPalette.Ink
+            )
+            Spacer(Modifier.weight(1f))
+            Key(
+                label = "说明",
+                onClick = onOpenInfo,
+                kind = KeyKind.Outline
+            )
+        }
+        Rule()
     }
 }
 
 @Composable
 private fun PairingIntro(
     compact: Boolean,
-    onOpenInfo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "静岸控制台",
-                style = MaterialTheme.typography.labelLarge,
-                color = QuietPalette.Primary
-            )
-            TextButton(onClick = onOpenInfo) { Text("流程说明") }
-        }
-        Spacer(Modifier.height(if (compact) 6.dp else 14.dp))
+    Column(modifier) {
         Text(
             text = "连接头显",
-            style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
-            color = QuietPalette.TextPrimary
+            style = if (compact) {
+                MaterialTheme.typography.headlineMedium
+            } else {
+                MaterialTheme.typography.headlineLarge
+            },
+            color = QuietPalette.Ink
         )
-        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = "先连头显，再开始会话",
-            style = MaterialTheme.typography.titleMedium,
-            color = QuietPalette.TextSecondary
+            text = "先连头显，再开始会话。",
+            style = MaterialTheme.typography.bodyLarge,
+            color = QuietPalette.InkSecondary
         )
-        Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
+        Spacer(Modifier.height(if (compact) 16.dp else 28.dp))
+        Rule()
+
+        // The pairing page only teaches pairing. The rest of the shift is in
+        // the guide, which is one press away; eight steps here made the one
+        // screen that has to be quick into a manual.
         val steps = listOf(
-            "1" to "打开头显",
-            "2" to "搜索并连接头显",
-            "3" to "平板接管控制",
-            "4" to "协助患者戴好头显",
-            "5" to "「场景」页选场景并进入",
-            "6" to "「控制」页调体位与起伏、微调视线",
-            "7" to "结束后在「SUS」页施测",
-            "8" to "摘下头显，记录反馈"
+            "打开头显",
+            "点“搜索头显”",
+            "等“已连接”"
         )
         for ((index, step) in steps.withIndex()) {
-            StepRow(step.first, step.second, compact)
-            if (index != steps.lastIndex) {
-                Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = if (compact) 6.dp else 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = String.format(java.util.Locale.US, "%02d", index + 1),
+                    style = MaterialTheme.typography.titleSmall.tabularFigures(),
+                    color = QuietPalette.InkSecondary,
+                    modifier = Modifier.width(44.dp)
+                )
+                Text(
+                    text = step,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.Ink
+                )
             }
+            Rule()
         }
-    }
-}
-
-@Composable
-private fun StepRow(index: String, text: String, compact: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(if (compact) 26.dp else 32.dp)
-                .clip(CircleShape)
-                .background(QuietPalette.SurfaceRaised),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = index,
-                style = MaterialTheme.typography.labelLarge,
-                color = QuietPalette.Primary
-            )
-        }
-        Spacer(Modifier.width(if (compact) 10.dp else 14.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
-            text = text,
-            style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
-            color = QuietPalette.TextPrimary
+            text = "患者说停：先按“急停”，再摘头显。",
+            style = MaterialTheme.typography.bodyLarge,
+            color = QuietPalette.Ink
         )
     }
 }
@@ -224,128 +243,118 @@ private fun PairingCard(
     /** The card wraps its content but never grows past the screen. */
     maxHeight: Dp = Dp.Unspecified
 ) {
-    Surface(
+    Column(
         modifier = if (maxHeight == Dp.Unspecified) {
-            modifier
+            modifier.fillMaxWidth().background(QuietPalette.Board)
         } else {
-            modifier.heightIn(max = maxHeight)
-        },
-        shape = RoundedCornerShape(28.dp),
-        color = QuietPalette.Surface
+            modifier.fillMaxWidth().heightIn(max = maxHeight).background(QuietPalette.Board)
+        }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (scrollable) {
-                        Modifier.verticalScroll(rememberScrollState())
-                    } else {
-                        Modifier
-                    }
+                    if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier
                 )
-                .padding(28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(QuietSpace.Panel),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "头显连接",
+                    text = "头显",
                     style = MaterialTheme.typography.titleLarge,
-                    color = QuietPalette.TextPrimary,
-                    modifier = Modifier.weight(1f)
+                    color = QuietPalette.Ink
                 )
-                ConnectionChip(phase = state.phase)
+                Spacer(Modifier.width(20.dp))
+                ConnectionChip(
+                    phase = state.phase,
+                    stale = state.stateStale,
+                    rssi = state.rssi
+                )
             }
+            Rule()
 
+            // A refusal the operator must read: ice field, ink text.
             (event as? UiEvent.Error)?.let { failure ->
-                Text(
-                    text = failure.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.Danger
-                )
-            }
-            when {
-                !permissionsGranted && permissionRequested -> PromptBlock(
-                    title = "需要附近设备权限",
-                    body = "搜索头显需要附近设备权限",
-                    actionLabel = "去设置",
-                    onAction = onOpenSettings
-                )
-
-                !bluetoothEnabled -> PromptBlock(
-                    title = "蓝牙未开启",
-                    body = "打开平板蓝牙后才能搜索头显",
-                    actionLabel = "去开启",
-                    onAction = onEnableBluetooth
-                )
-
-                state.phase == BlePhase.SCANNING -> StatusLine(
-                    text = "正在搜索头显",
-                    loading = true,
-                    actionLabel = "取消",
-                    onAction = onStopScan
-                )
-
-                state.phase == BlePhase.CONNECTING -> StatusLine(
-                    text = "正在连接头显",
-                    loading = true,
-                    actionLabel = "取消",
-                    onAction = onCancelConnect
-                )
-
-                state.phase == BlePhase.AUTHENTICATING -> StatusLine(
-                    text = "正在接管控制",
-                    loading = true,
-                    actionLabel = "取消",
-                    onAction = onCancelConnect
-                )
-
-                state.phase == BlePhase.RECONNECTING -> StatusLine(
-                    text = "连接中断，正在重连",
-                    loading = true,
-                    actionLabel = "取消",
-                    onAction = onCancelConnect
-                )
-
-                else -> Button(
-                    onClick = onScan,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    enabled = bluetoothEnabled && (permissionsGranted || !permissionRequested),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text(
-                        text = if (state.scanAttempted) "重新搜索" else "搜索头显",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                Spacer(Modifier.height(16.dp))
+                Box(Modifier.padding(horizontal = QuietSpace.Panel)) {
+                    RefusalNote(text = OperatorCopy.operatorText(failure))
                 }
             }
 
-            if (state.phase == BlePhase.IDLE &&
-                state.scanAttempted &&
-                bluetoothEnabled &&
-                permissionsGranted
-            ) {
-                Text(
-                    text = "未找到头显，请确认头显已开机",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.TextSecondary
-                )
-            }
+            Column(Modifier.padding(QuietSpace.Panel)) {
+                when {
+                    !permissionsGranted && permissionRequested -> PromptBlock(
+                        title = "缺少“附近设备”权限",
+                        body = "开启后再搜索。",
+                        actionLabel = "去设置",
+                        onAction = onOpenSettings
+                    )
 
-            Text(
-                text = "患者说停时：先按停止，再检查头显。",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary
-            )
+                    !bluetoothEnabled -> PromptBlock(
+                        title = "蓝牙未开启",
+                        body = "开启后再搜索。",
+                        actionLabel = "去开启",
+                        onAction = onEnableBluetooth
+                    )
+
+                    state.phase == BlePhase.SCANNING -> StatusLine(
+                        text = "正在搜索",
+                        loading = true,
+                        actionLabel = "取消",
+                        onAction = onStopScan
+                    )
+
+                    state.phase == BlePhase.CONNECTING -> StatusLine(
+                        text = "正在连接",
+                        loading = true,
+                        actionLabel = "取消",
+                        onAction = onCancelConnect
+                    )
+
+                    state.phase == BlePhase.AUTHENTICATING -> StatusLine(
+                        text = "正在接管",
+                        loading = true,
+                        actionLabel = "取消",
+                        onAction = onCancelConnect
+                    )
+
+                    state.phase == BlePhase.RECONNECTING -> StatusLine(
+                        text = "正在重连",
+                        loading = true,
+                        actionLabel = "取消",
+                        onAction = onCancelConnect
+                    )
+
+                    else -> {
+                        Key(
+                            label = if (state.scanAttempted) "重新搜索" else "搜索头显",
+                            onClick = onScan,
+                            modifier = Modifier.fillMaxWidth(),
+                            kind = KeyKind.Fill,
+                            height = 72.dp,
+                            enabled = bluetoothEnabled && (permissionsGranted || !permissionRequested),
+                            textStyle = MaterialTheme.typography.titleMedium
+                        )
+                        if (state.phase == BlePhase.IDLE &&
+                            state.scanAttempted &&
+                            bluetoothEnabled &&
+                            permissionsGranted
+                        ) {
+                            EmptyNote("未找到头显。确认头显已开机。")
+                        }
+                    }
+                }
+            }
 
         }
     }
 }
 
+/** A pre-condition the operator must clear: ice field, one instruction, one key. */
 @Composable
 private fun PromptBlock(
     title: String,
@@ -353,33 +362,22 @@ private fun PromptBlock(
     actionLabel: String,
     onAction: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = QuietPalette.Warning.copy(alpha = 0.12f),
-        contentColor = QuietPalette.Warning
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(QuietPalette.Ice)
+            .padding(20.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    body,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            TextButton(
-                onClick = onAction,
-                colors = ButtonDefaults.textButtonColors(contentColor = QuietPalette.Warning)
-            ) {
-                Text(actionLabel)
-            }
-        }
+        Text(title, style = MaterialTheme.typography.titleMedium, color = QuietPalette.OnIce)
+        Spacer(Modifier.height(4.dp))
+        Text(body, style = MaterialTheme.typography.bodySmall, color = QuietPalette.OnIce)
+        Spacer(Modifier.height(16.dp))
+        Key(
+            label = actionLabel,
+            onClick = onAction,
+            kind = KeyKind.Outline,
+            minWidth = 140.dp
+        )
     }
 }
 
@@ -391,21 +389,21 @@ private fun StatusLine(
     onAction: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TouchTarget + 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (loading) {
-            LoadingDots()
+            LoadingDots(color = QuietPalette.Ink)
             Spacer(Modifier.width(14.dp))
         }
         Text(
             text = text,
             style = MaterialTheme.typography.titleMedium,
-            color = QuietPalette.TextPrimary,
+            color = QuietPalette.Ink,
             modifier = Modifier.weight(1f)
         )
-        TextButton(onClick = onAction) {
-            Text(actionLabel, color = QuietPalette.TextSecondary)
-        }
+        Key(label = actionLabel, onClick = onAction, kind = KeyKind.Outline)
     }
 }

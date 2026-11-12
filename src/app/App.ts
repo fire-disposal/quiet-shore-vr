@@ -640,11 +640,6 @@ export class QuietShoreApp {
     });
     this.world.apply();
     preloadSceneAudio(definition.audio);
-    this.start.setScene(
-      definition.name[this.config.lang],
-      SCENES.indexOf(definition) + 1,
-      SCENES.length
-    );
   }
 
   /**
@@ -697,13 +692,6 @@ export class QuietShoreApp {
       this.camera.rotation.set(SUPINE_GAZE_RAD, 0, 0, 'YXZ');
     }
     preloadSceneAudio(definition.audio);
-    // Registry order is the ordinal the entry field prints: the same order the
-    // operator's scene list uses, so "03 / 04" means the same thing on both.
-    this.start.setScene(
-      definition.name[this.config.lang],
-      SCENES.indexOf(definition) + 1,
-      SCENES.length
-    );
   }
 
   private disposeScene(): void {

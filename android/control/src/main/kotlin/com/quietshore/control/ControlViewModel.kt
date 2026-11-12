@@ -127,7 +127,11 @@ class ControlViewModel(application: Application) :
     fun startScan() {
         val state = _uiState.value
         Log.i("QuietShoreBle", "viewModel.startScan phase=${state.phase.name}")
-        if (state.phase.isBusy || state.phase == BlePhase.READY) {
+        // Only a live link rules out a search. A phase stuck in CONNECTING or
+        // RECONNECTING must not swallow the operator's press: BleController
+        // supersedes the earlier attempt (cancel pending connect, close the
+        // manager), which is exactly what the 搜索 button should do.
+        if (state.phase == BlePhase.READY) {
             return
         }
         _uiState.update {
@@ -217,6 +221,17 @@ class ControlViewModel(application: Application) :
             sendCommand(ControlProtocol.ENTER)
             return
         }
+        // Whatever is on screen must be what boots: the operator's visible
+        // choice is re-sent right before the launch, because a selection made
+        // before the link existed was never transmitted. The headset treats a
+        // repeat as a no-op (same value → no write, no revision bump).
+        val state = _uiState.value
+        if (!state.control.session) {
+            // Resend the operator's choice, not the last frame's echo: after a
+            // refused switch the two disagree, and the bench is what boots.
+            val wanted = state.sceneIntent.ifEmpty { state.control.scene }
+            sendCommand(ControlProtocol.SCENE_PREFIX + wanted)
+        }
         _uiState.update {
             it.copy(startPending = true).also { notice("已请求启动，等待患者按确认键") }
         }
@@ -229,7 +244,7 @@ class ControlViewModel(application: Application) :
     }
 
     fun endSession() {
-        sendCommand("stop")
+        requestStop()
     }
 
     /**
@@ -238,6 +253,22 @@ class ControlViewModel(application: Application) :
      * patient's confirm key sends, so both converge on one path.
      */
     fun emergencyStop() {
+        // Idempotent on purpose: a second press while the fade runs must not
+        // be a dialog, a debounce, or a different code path.
+        requestStop()
+    }
+
+    /**
+     * One stop path for both keys. The tablet flips to [SessionPhase.Stopping]
+     * on the press, not on a reply — the page has already frozen by the time
+     * the command lands — and the next frame that drops the session flag clears
+     * it. Nothing here waits for an acknowledgement the wire does not carry.
+     */
+    private fun requestStop() {
+        if (!_uiState.value.control.session) {
+            return
+        }
+        _uiState.update { it.copy(stopRequested = true) }
         sendCommand("stop")
     }
 
@@ -269,10 +300,11 @@ class ControlViewModel(application: Application) :
         if (scene !in ControlProtocol.SCENE_LABELS) {
             return
         }
-        // The page is often closed when the choice is made (it is a launch
-        // parameter), so echo the choice locally; the next state frame from a
-        // running page supersedes it.
-        _uiState.update { it.copy(control = it.control.copy(scene = scene)) }
+        // The intent is recorded here and nowhere else: `control.scene` keeps
+        // the headset's report, so the two can be compared. The page applies
+        // the command and answers with `state.control.scene`; a mark drawn
+        // ahead of that frame would claim a scene the patient may never see.
+        _uiState.update { it.copy(sceneIntent = scene) }
         sendCommand(ControlProtocol.SCENE_PREFIX + scene)
     }
 
@@ -499,8 +531,11 @@ class ControlViewModel(application: Application) :
             error("头显未连接")
             return
         }
+        // No "已发送" banner here: it used to replace the acknowledgement or
+        // the rejection in the one-slot notice bar, so a refused command looked
+        // like a command that simply did nothing. The panels already show the
+        // applied state.
         ble.sendCommand(normalized)
-        notice("命令已发送")
     }
 
     fun reportError(message: String) {
@@ -605,13 +640,25 @@ class ControlViewModel(application: Application) :
                 stop = obj.optBoolean("stop", false),
                 float = obj.optBoolean("float", false),
                 view = obj.optBoolean("view", false),
-                blocked = obj.optString("blocked", "")
+                blocked = obj.optString("blocked", ""),
+                floatMax = obj.optInt("floatMax", 3).coerceIn(1, 3)
             )
         }
+        // Absent and null both mean "not read": keep the last reading rather
+        // than flashing the block away between heartbeats.
+        val battery = json.optJSONObject("battery")?.let {
+            com.quietshore.control.model.Battery(
+                level = it.optInt("level", -1),
+                charging = it.optBoolean("charging", false)
+            )
+        }?.takeIf { it.level in 0..100 }
         _uiState.update { current ->
             current.copy(
                 caps = caps ?: current.caps,
+                battery = battery ?: current.battery,
                 control = current.control.copy(
+                    // The headset owns the scene: this flag is what it will
+                    // boot, and a live switch re-publishes it immediately.
                     scene = json.optString("scene", current.control.scene),
                     session = json.optBoolean("session", current.control.session),
                     calibrating = json.optBoolean("calibrating", current.control.calibrating),
@@ -675,9 +722,9 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onMtu(mtu: Int, code: Int) {
-        // A 40-byte state frame needs 43; anything narrower truncates the
-        // notification and the tablet then shows a panel of disabled controls
-        // with no explanation. Say which it is.
+        // The state frame is 28 bytes and needs MTU 31 (payload = MTU - 3);
+        // anything narrower truncates the notification and the tablet then
+        // shows a panel of disabled controls with no explanation.
         if (code != 0 || mtu < MIN_STATE_MTU) {
             error("蓝牙包长不足（MTU $mtu）· 头显状态可能收不到")
         }

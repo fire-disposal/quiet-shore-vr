@@ -4,58 +4,60 @@
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-store">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0a1211">
+  <meta name="theme-color" content="#191919">
   <title>静岸</title>
   <!-- APP_CSS -->
 </head>
 <body>
+  <!-- Landscape only: the headset browser runs at 1024×576 or 1920×1080.
+       One layout, two edge-to-edge columns — the one instruction and its
+       picture on the left, the device state on the right. No scene name: the
+       scene can be switched mid-session, so an entry page that announced one
+       would be promising something the next tap changes. -->
   <main id="start" class="start">
-    <header class="entry-head">
-      <p class="entry-field">
-        <span class="field-slash" aria-hidden="true">//</span>
-        <span id="launch-index" class="field-number">01</span>
-        <span class="field-sep" aria-hidden="true">/</span>
-        <span id="launch-total" class="field-number">04</span>
-        <span class="field-label">场景</span>
-      </p>
-      <h1 class="entry-scene"><strong id="launch-scene"></strong></h1>
-    </header>
-
-    <section class="entry-core" aria-label="进入场景">
-      <button id="enter" class="enter-target" type="button" disabled>
-        <span id="enter-label" class="target-label">按一下头显右侧的按钮</span>
-        <span class="target-sub">准备好就开始</span>
-        <span id="controller-guide" class="entry-pictures" aria-hidden="true">
-          <!-- Two ways to give the same press: the headset's right side, or the
-               controller in the patient's hand. The sentence names the first,
-               so the headset sits on the left and the controller on the right. -->
-          <span class="headset-guide">
-            <svg viewBox="0 0 168 104" role="presentation">
-              <path class="guide-strap" d="M40 34 C52 12 104 12 116 34" />
-              <rect class="guide-body" x="16" y="30" width="118" height="44" rx="16" />
-              <circle class="guide-button" cx="140" cy="52" r="7.5" />
-              <circle class="guide-ring" cx="140" cy="52" r="16" />
-            </svg>
-          </span>
-          <span class="controller-guide">
-            <span class="controller-outline">
-              <span class="controller-round controller-top"></span>
-              <span class="controller-pill"></span>
-              <span class="controller-round controller-bottom"></span>
+    <div class="frame">
+      <section class="entry-core" aria-label="进入训练">
+        <div class="entry-copy">
+          <button id="enter" class="enter-target" type="button" disabled>
+            <span id="enter-label" class="target-label">按一下头显右侧的按钮</span>
+          </button>
+          <p class="target-sub">准备好就开始</p>
+          <span id="controller-guide" class="entry-pictures" aria-hidden="true">
+            <!-- Two ways to give the same press: the headset's right side, or
+                 the controller in the patient's hand. The sentence names the
+                 first, so the headset sits on the left and the controller on
+                 the right. -->
+            <span class="headset-guide">
+              <svg viewBox="0 0 168 104" role="presentation">
+                <path class="guide-strap" d="M40 34 C52 12 104 12 116 34" />
+                <rect class="guide-body" x="16" y="30" width="118" height="44" rx="16" />
+                <circle class="guide-button" cx="140" cy="52" r="7.5" />
+                <circle class="guide-ring" cx="140" cy="52" r="16" />
+              </svg>
+            </span>
+            <span class="controller-guide">
+              <span class="controller-outline">
+                <span class="controller-round controller-top"></span>
+                <span class="controller-pill"></span>
+                <span class="controller-round controller-bottom"></span>
+              </span>
             </span>
           </span>
-        </span>
-      </button>
-      <div class="entry-state">
-        <p id="status" class="status" role="status" data-tone="neutral">
-          <i class="status-mark" aria-hidden="true"></i>
-          <span id="status-text">正在检测设备</span>
-        </p>
-        <p id="enter-hint" class="entry-hint" role="status" hidden></p>
-      </div>
-    </section>
+        </div>
 
-    <p class="entry-note">若您感到不适，请立即告知工作人员</p>
+        <div class="entry-state">
+          <p id="status" class="status" role="status" data-tone="neutral">
+            <i class="status-mark" aria-hidden="true"></i>
+            <span id="status-text">正在检测设备…</span>
+          </p>
+          <p id="enter-hint" class="entry-hint" role="status" hidden></p>
+        </div>
+      </section>
+
+      <footer class="entry-foot">
+        <p class="entry-note">若您感到不适，请立即告知工作人员</p>
+      </footer>
+    </div>
   </main>
 
   <div id="stage" class="stage" hidden></div>

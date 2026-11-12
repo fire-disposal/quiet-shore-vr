@@ -1,15 +1,24 @@
 package com.quietshore.control.ui.theme
 
+import android.animation.ValueAnimator
+import android.provider.Settings
 import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalContext
 
 /**
- * Every decorative transition in the tablet console draws its timing from
- * here, so the whole UI can be made still in one place.
+ * Every transition in the tablet console draws its timing from here.
  *
- * Only presentation chrome animates: tab tint and the rail's own appearance.
- * Motion that the patient can perceive (view pitch, sit-up, the scene) is
- * driven by the wire contract and the page, never by these tokens.
+ * Motion is a state change, not a performance: a tint crossing when a scene
+ * fill moves, a meter taking its new value. Nothing slides, scales, bounces or
+ * pulses, and every duration is 100–320 ms so a press reads as a press.
  */
 object ControlMotion {
     /**
@@ -19,11 +28,66 @@ object ControlMotion {
     @Volatile
     var enabled: Boolean = true
 
-    /** Rail tab tint crossfade; short enough to feel like a press, not a slideshow. */
-    const val TAB_SWITCH_MS: Int = 180
+    /** Chosen/current fill; the shortest value that still reads as a fade. */
+    const val TINT_MS: Int = 120
 
-    /** Slack for the low-contrast palette: ease in and out, never bounce. */
-    val standard: Easing = FastOutSlowInEasing
+    /** A selection moving between two rows. */
+    const val SELECT_MS: Int = 160
+
+    /** Anything that replaces content: panel swap, notice in. */
+    const val CONTENT_MS: Int = 200
+
+    /** The slowest token here: a bar filling to a new value. */
+    const val BAR_MS: Int = 320
+
+    /** Mechanical: linear-ish, no overshoot. */
+    val standard: Easing = LinearOutSlowInEasing
 
     fun duration(milliseconds: Int): Int = if (enabled) milliseconds else 0
+}
+
+/**
+ * Honours the system "remove animations" switch (Animator duration scale 0 or
+ * accessibility reduce-motion). Kept as a remember so the reading happens once
+ * per screen rather than per frame.
+ */
+@Composable
+fun rememberMotionEnabled(): Boolean {
+    val context = LocalContext.current
+    return remember(context) {
+        val animations = ValueAnimator.areAnimatorsEnabled()
+        val reduced = try {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (error: Exception) {
+            false
+        }
+        val enabled = animations && !reduced
+        ControlMotion.enabled = enabled
+        enabled
+    }
+}
+
+/**
+ * Frame clock for a waiting cue: a fixed tick so any wave is time-based, never
+ * a spring. Returns 0..1, or null when motion is off.
+ */
+@Composable
+fun rememberMotionPhase(cycleNanos: Long): Float? {
+    val enabled = rememberMotionEnabled()
+    if (!enabled) return null
+    var phase by remember { mutableStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var start = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (start == 0L) start = now
+                phase = ((now - start) % cycleNanos) / cycleNanos.toFloat()
+            }
+        }
+    }
+    return phase
 }

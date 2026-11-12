@@ -20,12 +20,31 @@ data class MotionCaps(
     val stop: Boolean = false,
     val float: Boolean = false,
     val view: Boolean = false,
-    val blocked: String = ""
+    val blocked: String = "",
+    /**
+     * Buoyancy ceiling of the scene the headset has loaded (1..3). The stepper
+     * clamps to it, so a request never has to be reduced downstream.
+     */
+    val floatMax: Int = 3
 )
 
 enum class MirrorMode(val label: String) {
     PATIENT("VR视角"),
     OVERVIEW("全局视角")
+}
+
+/**
+ * The headset's own battery, as its sticky system broadcast reported it.
+ *
+ * Null means "not read yet", which is a different thing from "empty": the
+ * tablet draws nothing rather than a made-up 0 %. The one threshold that
+ * matters on a headset strapped to a patient is 20 % — below it the session may
+ * not outlast the exercise — so that is the only state that gets a mark, and it
+ * gets ice, not red: nothing is broken, something needs charging.
+ */
+data class Battery(val level: Int, val charging: Boolean) {
+    val low: Boolean get() = level <= 20
+    val full: Boolean get() = charging && level >= 100
 }
 
 /**
@@ -40,6 +59,19 @@ data class ControlUiState(
     val pose: TelemetryPose? = null,
     val poseStale: Boolean = true,
     val control: ControlState = ControlState(),
+    /**
+     * What the operator asked for, as opposed to what the headset is playing.
+     *
+     * `control.scene` is the headset's own report (the state frame's byte 11,
+     * or the flags document): it is what the patient is inside *now*. This
+     * field is the local intent — the card that carries the ice outline on the
+     * preparation bench. They differ for the second between a tap and the
+     * frame that confirms it, and they differ for good if the headset refuses
+     * the switch. Both are shown when they disagree, because a technician
+     * whose bench says one scene and whose mirror shows another is looking at
+     * a captured-SUS-grade data error, not a cosmetic one.
+     */
+    val sceneIntent: String = "",
     /** Last headset the operator connected to; null until one is stored. */
     val lastDeviceAddress: String? = null,
     /** 1-based attempt while the link is being re-established. */
@@ -79,12 +111,24 @@ data class ControlUiState(
     val scanAttempted: Boolean = false,
     /** Launch requested, waiting for the patient's confirm key. */
     val startPending: Boolean = false,
+    /**
+     * The tablet has asked to end the session and the page has not reported the
+     * session gone yet: the fade is running. Cleared by the frame that drops
+     * the session flag, never by a timer.
+     */
+    val stopRequested: Boolean = false,
     /** No state frame from the headset for a while: the link is not live. */
     val stateStale: Boolean = false,
     /** Capabilities reported by the headset's motion plan. */
-    val caps: MotionCaps = MotionCaps()
+    val caps: MotionCaps = MotionCaps(),
+    /** Headset battery from its `flags` document; null until it is read. */
+    val battery: Battery? = null
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
+
+    /** True when the operator's choice has not been confirmed by the headset. */
+    val sceneIntentDiverges: Boolean
+        get() = sceneIntent.isNotEmpty() && sceneIntent != control.scene
 
     /** The cue the headset reports, resolved against the shipped catalog. */
     val voiceLine: com.quietshore.control.voice.VoiceCatalog.Line?

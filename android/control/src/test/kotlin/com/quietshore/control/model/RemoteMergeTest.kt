@@ -46,6 +46,21 @@ class RemoteMergeTest {
     }
 
     @Test
+    fun `a mid-session scene switch is reported, never echoed ahead of the headset`() {
+        // The scene may be switched while the session runs, so the tablet has
+        // no pick of its own to defend: whatever the headset last reported is
+        // what every mark draws. An echo would flash a mark for a scene the
+        // patient is not looking at, and stay there if the switch was refused.
+        val running = ControlUiState(control = ControlState(scene = "shore", session = true))
+
+        val switched = mergeRemoteFrame(running, frame(session = true, scene = "ward"), 0L, 1_000L)
+        assertEquals("ward", switched.control.scene)
+
+        val unchanged = mergeRemoteFrame(switched, frame(session = true, scene = "ward"), 0L, 2_000L)
+        assertEquals("ward", unchanged.control.scene)
+    }
+
+    @Test
     fun `a pending launch survives a frame until the session starts`() {
         val pending = ControlUiState(startPending = true)
 

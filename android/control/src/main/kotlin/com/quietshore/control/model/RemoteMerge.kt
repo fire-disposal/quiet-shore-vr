@@ -40,6 +40,10 @@ fun mergeRemoteFrame(
         // Voice is authoritative on the headset: the tablet only echoes.
         voiceId = frame.voiceId,
         startPending = if (running) false else current.startPending,
+        // The fade is over when the page says the session is gone; until then
+        // the tablet keeps refusing scene and strength, which is what the page
+        // is doing too.
+        stopRequested = running && current.stopRequested,
         sessionElapsedMs = elapsedMs
     )
 }

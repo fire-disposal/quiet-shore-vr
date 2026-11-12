@@ -14,6 +14,8 @@ const MAX_DWELL_STEP = 0.25;
 /** Dwell ring: large enough to read at arm's length, small enough not to hide UI. */
 const ARC_INNER = 0.026;
 const ARC_OUTER = 0.034;
+/** Idle gaze dot: a filled disc, sized to sit inside the dwell arc's hole. */
+const RETICLE_RADIUS = 0.0085;
 /** Sprite hint sits below the dwell ring, clear of the target label. */
 const HINT_OFFSET = 0.168;
 const HINT_WIDTH = 0.38;
@@ -63,7 +65,8 @@ export class SpatialInput {
   private readonly headQuaternion = new THREE.Quaternion();
   private readonly lookProbe = new THREE.Object3D();
 
-  private readonly reticleGeometry: THREE.RingGeometry;
+  /** A filled disc for the gaze dot, an arc for dwell, a shadow ring behind it. */
+  private readonly reticleGeometry: THREE.CircleGeometry;
   private readonly reticleMaterial: THREE.MeshBasicMaterial;
   private readonly arcGeometry: THREE.RingGeometry;
   private readonly arcMaterial: THREE.ShaderMaterial;
@@ -108,9 +111,12 @@ export class SpatialInput {
 
     this.raycaster.far = MAX_RAY_DISTANCE;
 
-    this.reticleGeometry = new THREE.RingGeometry(0.0085, 0.012, 32);
+    // A small ink disc, not a ring: the accent is reserved for fills on panels,
+    // and an accent ring on top of an accent-filled button disappeared
+    // entirely. Ink reads on white paper and on scenery alike.
+    this.reticleGeometry = new THREE.CircleGeometry(RETICLE_RADIUS, 24);
     this.reticleMaterial = new THREE.MeshBasicMaterial({
-      color: theme.focus,
+      color: theme.text,
       transparent: true,
       opacity: 0.92,
       depthTest: false,
@@ -131,7 +137,10 @@ export class SpatialInput {
     this.arcMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uProgress: { value: 0 },
-        uColor: { value: new THREE.Color(theme.accentText) }
+        // The arc is the one place the gaze's own progress is drawn, so it is
+        // the accent — never ink, which would vanish on a light panel and read
+        // as a border on scenery. Self-drawn buttons hide the arc anyway.
+        uColor: { value: new THREE.Color(theme.accent) }
       },
       vertexShader: [
         'varying vec2 vUv;',
@@ -448,10 +457,10 @@ export class SpatialInput {
       if (entry) {
         entry.interactable.onFocus?.(true);
         entry.interactable.onProgress?.(0);
-        this.reticleMaterial.color.set(this.theme.accent);
-      } else {
-        this.reticleMaterial.color.set(this.theme.focus);
       }
+      // The reticle stays ink either way: the button it sits on already shows
+      // focus as an accent fill, and a second colour on the dot only made the
+      // gaze harder to find.
     }
 
     if (!entry || this.latched) {
@@ -579,21 +588,15 @@ export class SpatialInput {
       return;
     }
     ctx.clearRect(0, 0, 512, 128);
-    const radius = 28;
-    ctx.beginPath();
-    ctx.moveTo(18 + radius, 16);
-    ctx.arcTo(494, 16, 494, 112, radius);
-    ctx.arcTo(494, 112, 18, 112, radius);
-    ctx.arcTo(18, 112, 18, 16, radius);
-    ctx.arcTo(18, 16, 494, 16, radius);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(32, 37, 31, 0.86)';
-    ctx.fill();
+    // Same paper and hairline as the cards; accent is reserved for fills, so
+    // this chip gets neither a rounded corner nor a coloured outline.
+    ctx.fillStyle = this.theme.panel;
+    ctx.fillRect(16, 16, 480, 96);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = this.theme.accent;
-    ctx.stroke();
-    ctx.fillStyle = '#f8f3e9';
-    ctx.font = `600 48px ${this.theme.fontFamily}`;
+    ctx.strokeStyle = this.theme.border;
+    ctx.strokeRect(17, 17, 478, 94);
+    ctx.fillStyle = this.theme.text;
+    ctx.font = `600 52px ${this.theme.fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(this.hintText, 256, 65);

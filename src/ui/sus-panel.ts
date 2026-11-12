@@ -118,26 +118,29 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
 
   // One card holds the header, the statement, the five-option row and the
   // pager. It used to be a fixed 1.02 m slab sized for a three-line statement;
-  // with the guidance cut to one line every body is at most two, so the card
-  // is sized to that and every row is placed relative to its height.
+  // with the guidance cut to one line every body is at most three lines, so the
+  // card is sized to that and every row is placed relative to its height.
   const CARD_WIDTH = 1.5;
   const CARD_TOP = 0.4;
   const BOTTOM_PAD = 0.045;
   const OPTION_HALF = 0.065;
   const PAGER_HALF = 0.055;
-  // Header box: 26 px on a 512 px texture across 1.4 m ≈ 2.6 cm of type, so the
+  // Header box: 28 px on a 1536 px texture across 1.5 m ≈ 2.7 cm of type, so the
   // texture height is cut to 1.05 em instead of the surface's 1.35.
-  const HEADER_PX = 26;
+  const HEADER_PX = 28;
   const HEADER_EM = 1.05;
   const HEADER_TOP = CARD_TOP - 0.03;
   const HEADER_GAP = 0.045;
   /**
-   * 60 px across the 1.4 m text column is ~8.2 cm per glyph at the 1.2 m panel
-   * distance. Checked against every shipped statement plus the guidance line:
-   * the longest pair needs three lines (23 cm) and the card has 26 cm, so the
-   * statement keeps the size it had rather than shrinking to save a line.
+   * The statement is set at 56 px — unchanged — because the card's own budget
+   * leaves no room for more: header 4.3 cm + gap 4.5 cm + statement + 3 cm of
+   * air above the answers must fit in 25.5 cm. The longest shipped statement
+   * plus the guidance wraps to three lines, which is 22.7 cm at 56 px and
+   * 25.9 cm at 64 px — the latter would push the first line into the header.
+   * The step up in this variant therefore stays on the header (26 → 28) and on
+   * everything outside this card.
    */
-  const BODY_PX = 60;
+  const BODY_PX = 56;
   const BODY_LINE_HEIGHT = 1.3;
   /**
    * Rows stack upwards from the bottom: pager, 3 cm of air that keeps a gaze on
@@ -165,7 +168,10 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     titlePx: HEADER_PX,
     titleEm: HEADER_EM,
     bodyPx: BODY_PX,
-    bodyTexturePx: 1024,
+    // 1536 rather than the 512 default: the glyphs are drawn at BODY_PX into
+    // this texture and the texture is stretched across the card, so a wider
+    // canvas is what keeps the type crisp. The layout reads the same numbers.
+    bodyTexturePx: 1536,
     // Header and body are placed from their own anchors: the surface's own
     // stacking put the statement where the answer row now sits, and the row no
     // longer moves with the body's line count.
