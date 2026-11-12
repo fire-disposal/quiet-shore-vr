@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CutCornerShape
@@ -137,6 +140,10 @@ fun ControlScreen(
             .fillMaxSize()
             .background(QuietPalette.Paper)
             .safeDrawingPadding()
+            // Same fix the guide page needed: `tappableElement` (the system
+            // taskbar's tappable band) is not in safeDrawing, so the last rows
+            // could render underneath it.
+            .padding(bottom = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding())
     ) {
         // 1000 dp is where the mirror and the action column both fit at a size
         // worth reading; below it the page becomes one column in the same order.
