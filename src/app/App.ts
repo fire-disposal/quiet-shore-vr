@@ -642,7 +642,9 @@ export class QuietShoreApp {
    * swap.
    */
   private preloadScenes(): void {
-    if (this.scenesPreloaded) {
+    if (this.scenesPreloaded || this.xr.isPresenting) {
+      // Building a scene inside a session would hitch the frame it is meant to
+      // save; the call is retried when the session ends (`resetWorldToRest`).
       return;
     }
     this.scenesPreloaded = true;
@@ -656,7 +658,9 @@ export class QuietShoreApp {
   private loadScene(): void {
     this.disposeScene();
     const definition = getSceneDefinition(this.sceneId) ?? SCENE;
-    const handle = this.host.load(definition);
+    // Parking the outgoing scene (instead of disposing it) is what makes every
+    // later switch a pointer swap; the registry is four scenes at most.
+    const handle = this.host.load(definition, { keepPrevious: true });
     this.handle = handle;
     // World shell order: view pitch -> base (comfort/sit-up) -> content
     // (floor). Wrapping the host's content group, not the scene root, keeps the
@@ -1282,6 +1286,9 @@ export class QuietShoreApp {
     this.floating.reset();
     this.calibrationOverlay?.hide();
     this.shell?.update(this.headPose.position);
+    // A session that started before the idle preload ran leaves the other
+    // scenes unbuilt; now that nothing is presenting, catch up.
+    this.preloadScenes();
   }
 
   private startPreview(): void {
