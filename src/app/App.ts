@@ -418,6 +418,8 @@ export class QuietShoreApp {
           this.handleRemoteCommand(cmd);
           return cmd;
         },
+        /** Scenes built and waiting, so a switch cannot build on the frame. */
+        parked: () => this.host.preloaded,
         /** Desktop check: load a scene in the 2D preview. */
         scene: (id: string) => {
           if (!this.previewing && !this.xr.isPresenting) {
@@ -979,6 +981,11 @@ export class QuietShoreApp {
       this.start.setStatus('记录体位时无法切换场景', 'error');
       return;
     }
+    if (this.lifecycle.phase === 'stopping') {
+      // The stop fade owns the world: a swap here would race the teardown and
+      // leave the next session on a scene nobody chose.
+      return;
+    }
     if (definition.id === this.sceneId && this.handle) {
       return;
     }
@@ -1009,13 +1016,19 @@ export class QuietShoreApp {
    */
   private switchSceneLive(definition: SceneDefinition): void {
     const previousLevel = this.floating.getLevel();
+    const previousRestMix = this.sceneRestMix;
     this.stopSceneAudio();
     this.handle = this.host.load(definition, { keepPrevious: true });
     this.sceneId = definition.id;
     this.applySceneDefinition(definition);
-    // A scene with a lower comfort ceiling must not inherit a higher level.
+    // A scene with a lower comfort ceiling must not inherit a higher level; the
+    // envelope eases down by itself, so the heave never steps.
     this.floating.setLevel(previousLevel, this.sceneComfortLevel);
-    this.floating.reset();
+    if (this.sceneRestMix !== previousRestMix) {
+      // The correction ramps, so the heave's axis is about to travel with it:
+      // zero the motion it would otherwise carry across the turn.
+      this.floating.reset();
+    }
     if (this.world.state().ready && this.world.state().mix !== this.sceneRestMix) {
       this.world.rise(this.sceneRestMix);
     }
