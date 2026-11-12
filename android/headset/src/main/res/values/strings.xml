@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 控制侧文案：面向医务人员，专业、精简。 -->
+    <string name="tap_service_description">入口辅助：进入训练时代替患者完成一次点击。患者可自行按键时无需开启。</string>
+</resources>

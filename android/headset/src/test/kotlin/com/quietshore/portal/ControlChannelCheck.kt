@@ -91,6 +91,32 @@ private fun retryChecks() {
     // The operator's next launch starts a fresh allowance.
     live.launch(100_000, fresh = true)
     checkEquals("fresh launch resets retries", 0, live.retries)
+
+    // A synthetic tap is tried once, before anything is relaunched, and only
+    // when the accessibility helper is enabled.
+    val tapping = EntryRetry(
+        pageWaitMs = 1000,
+        pressWaitMs = 500,
+        maxRetries = 2,
+        autoTapAvailable = { true }
+    )
+    tapping.launch(40_000, fresh = true)
+    tapping.pageState(40_100, session = false)
+    checkEquals("tap before relaunching", EntryRetry.Decision.TAP, tapping.onDeadline(40_600))
+    checkEquals("tap is not a relaunch", 0, tapping.retries)
+    checkEquals("tap keeps the count", true, tapping.tapped)
+    checkEquals("press clock rearmed", 41_100L, tapping.checkAt)
+    checkEquals("a second deadline relaunches", EntryRetry.Decision.RELAUNCH, tapping.onDeadline(41_100))
+    checkEquals("relaunch resets the tap", false, tapping.tapped)
+
+    val silent = EntryRetry(pageWaitMs = 1000, pressWaitMs = 500, maxRetries = 2)
+    silent.launch(50_000, fresh = true)
+    silent.pageState(50_100, session = false)
+    checkEquals("no helper means no tap", EntryRetry.Decision.RELAUNCH, silent.onDeadline(50_600))
+
+    // A session still ends supervision, even mid-tap.
+    tapping.pageState(51_000, session = true)
+    checkEquals("session ends tap supervision", EntryRetry.Phase.IDLE, tapping.phase)
 }
 
 private fun retentionChecks() {
@@ -140,8 +166,10 @@ private fun retentionChecks() {
         listOf(3, 5),
         outOfOrder.pendingSince(-1).map { it.seq }
     )
-    check(outOfOrder.record(9, "view:orient:0,60") == ControlKind.CONTINUOUS)
-    check(outOfOrder.record(10, "view:stop") == ControlKind.DISCRETE)
+    // The 10 Hz `view:orient` stream is gone: every retained command is
+    // discrete now, and an animation never enters retention at all.
+    checkEquals("view target is discrete", ControlKind.DISCRETE, outOfOrder.record(9, "view:orient:0,60"))
+    checkEquals("view stop is discrete", ControlKind.DISCRETE, outOfOrder.record(10, "view:stop"))
 }
 
 private fun queueChecks() {
@@ -320,12 +348,20 @@ private fun codecChecks() {
 }
 
 private fun protocolGrammarChecks() {
-    checkEquals("hello payload", "HELLO 1", ControlProtocol.helloCommand())
-    checkEquals("hello parses", 1, ControlProtocol.parseHello("HELLO 1"))
+    checkEquals(
+        "hello payload",
+        "HELLO ${ControlProtocol.protocolVersion}",
+        ControlProtocol.helloCommand()
+    )
+    checkEquals(
+        "hello parses",
+        ControlProtocol.protocolVersion,
+        ControlProtocol.parseHello("HELLO ${ControlProtocol.protocolVersion}")
+    )
     checkEquals("hello is not a command", null, ControlProtocol.parseHello("scene:ward"))
     checkEquals("hello rejects junk", null, ControlProtocol.parseHello("HELLO x"))
 
-    val welcome = ControlProtocol.parseWelcome("WELCOME 1 63")
+    val welcome = ControlProtocol.parseWelcome(ControlProtocol.welcomeCommand())
     check(welcome != null)
     checkEquals("welcome version", ControlProtocol.protocolVersion, welcome.version)
     checkEquals("welcome capabilities", ControlProtocol.CAPABILITIES_MASK, welcome.capabilities)
@@ -357,7 +393,9 @@ private fun protocolGrammarChecks() {
     check(ControlProtocol.parseAck("ACK 7 BUSY")?.result == ControlProtocol.RESULT_BUSY)
 
     check("discrete needs an ack", ControlProtocol.requiresSequencedAck("scene:ward"))
-    check("view:orient needs no ack", !ControlProtocol.requiresSequencedAck("view:orient:0,30"))
+    // Every command that is retained needs an ack; the 10 Hz `view:orient`
+    // stream that used to be exempt is gone.
+    check("view:orient needs an ack", ControlProtocol.requiresSequencedAck("view:orient:0,30"))
     check("ping needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.PING))
     check("hello needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.helloCommand()))
 

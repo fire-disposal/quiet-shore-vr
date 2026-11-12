@@ -204,7 +204,7 @@ class PortalService : Service() {
      * Entry supervision: one launch, at most two relaunches. The timer lives on
      * [mainHandler]; the policy itself is Android-free and unit-checked.
      */
-    private val entryRetry = EntryRetry()
+    private val entryRetry = EntryRetry(autoTapAvailable = { TapService.isEnabled(this) })
     private val entryWatch = Runnable { onEntryDeadline() }
 
     @Volatile
@@ -1289,6 +1289,16 @@ class PortalService : Service() {
 
     private fun onEntryDeadline() {
         when (entryRetry.onDeadline(System.currentTimeMillis())) {
+            EntryRetry.Decision.TAP -> {
+                // The patient never found the browser window. One display-level
+                // tap is the least disturbing remedy, and the page accepts a
+                // press anywhere on its entry screen.
+                if (TapService.tapCenter()) {
+                    Log.i(TAG, "entry: synthetic tap sent")
+                } else {
+                    Log.w(TAG, "entry: synthetic tap refused")
+                }
+            }
             EntryRetry.Decision.RELAUNCH -> {
                 // Either the page is up and the patient never pressed, or the
                 // cold start dropped the intent. Both are fixed the same way:

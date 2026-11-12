@@ -37,6 +37,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Entry helper: injects one tap so the WebXR gesture gate can open
+             without the patient aiming at the browser window. Inert until the
+             operator enables the service (docs/pico-g2.md §9). -->
+        <service
+            android:name=".TapService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/auto_tap" />
+        </service>
+
         <service
             android:name=".PortalService"
             android:exported="false" />

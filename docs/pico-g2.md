@@ -60,6 +60,27 @@ A user gesture is required.
 
 监督不管 FireFox Reality 自己的窗口位置；重拉能否真的把窗口挪到患者当前视线前方，需要在实机上确认（见 §8 验证清单）。
 
+### 3.1a 入口自动点击（借患者一次按压）
+
+WebXR 的手势门只能由**头显内的输入**满足。患者仰卧时找不到那个窗口，平板又无法代办，
+于是壳层带一个可选的无障碍服务 `TapService`：它只听窗口切换事件（用来确认前台是
+Firefox Reality），然后在屏幕中心注入一次 90 ms 的点击（`dispatchGesture`，显示级坐标，
+落在最前台窗口上 → 页面收到一次真实触摸 → `requestSession` 的手势门通过）。
+
+- **默认不启用**，也不需要启用：患者自己按键的路径完全不变。
+- 启用（一次性，无需 root）：
+  ```bash
+  adb shell settings put secure enabled_accessibility_services \
+      com.quietshore.portal/com.quietshore.portal.TapService
+  adb shell settings put secure accessibility_enabled 1
+  ```
+  关闭：设置 → 无障碍 → 静岸入口辅助 → 关闭（或 `settings delete secure enabled_accessibility_services`）。
+- 监督顺序（`EntryRetry`）：页面上线后 20 s 没有会话 → **先注入一次点击**（不消耗重拉次数，
+  再给 20 s）→ 仍无会话 → 带新地址重拉（最多 2 次）。
+- 只在 `org.mozilla.vrbrowser` 位于前台时点击，避免误点控制台。
+- 未验证项：Firefox Reality 是否在点击后再要求一次确认；注入点击在 2D 窗口的命中点是否
+  为面板坐标。两者都需实机（`docs/pico-g2.md` §8）。
+
 ### 3.2 Gecko 78 的 `xrCompatible`
 
 `WebGLRenderingContext.makeXRCompatible()` 会 resolve，但没有真正把上下文标记为兼容，随后 `XRWebGLLayer` 构造抛错：

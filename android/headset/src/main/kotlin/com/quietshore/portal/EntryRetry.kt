@@ -16,11 +16,19 @@ package com.quietshore.portal
  * deadlines below are testable without a device.
  *
  * ```text
- * launch        --page state frame-->  waiting for the press
- *   |  no page within PAGE_WAIT_MS            | no session within PRESS_WAIT_MS
- *   +--------------------> relaunch <---------+
- *                            (at most MAX_RETRIES times)
+ * launch   --page state frame-->  waiting for the press
+ *   |  no page within PAGE_WAIT_MS           | no session within PRESS_WAIT_MS
+ *   |                                        +--> one synthetic tap (if enabled)
+ *   |                                        |      | still nothing
+ *   +----------------------> relaunch <-------+------+
+ *                              (at most MAX_RETRIES times)
  * ```
+ *
+ * The tap is the cheapest remedy and the only one that does not disturb the
+ * patient: a supine patient who never found the window gets a press delivered
+ * for them. It is attempted at most once per launch and only when the shell's
+ * accessibility helper is enabled, so a device without it behaves exactly as
+ * before.
  *
  * A page that reports a session ends supervision for good: a finished session
  * must never be mistaken for a patient who never pressed.
@@ -28,11 +36,13 @@ package com.quietshore.portal
 internal class EntryRetry(
     private val pageWaitMs: Long = PAGE_WAIT_MS,
     private val pressWaitMs: Long = PRESS_WAIT_MS,
-    private val maxRetries: Int = MAX_RETRIES
+    private val maxRetries: Int = MAX_RETRIES,
+    /** Whether a synthetic tap is possible right now (accessibility enabled). */
+    private val autoTapAvailable: () -> Boolean = { false }
 ) {
     enum class Phase { IDLE, WAITING_PAGE, WAITING_SESSION }
 
-    enum class Decision { HOLD, RELAUNCH, GIVE_UP }
+    enum class Decision { HOLD, TAP, RELAUNCH, GIVE_UP }
 
     var phase: Phase = Phase.IDLE
         private set
@@ -45,6 +55,10 @@ internal class EntryRetry(
     var checkAt: Long = -1L
         private set
 
+    /** A synthetic tap was already tried for this launch. */
+    var tapped: Boolean = false
+        private set
+
     /**
      * A launch was handed to the browser. `fresh` is the operator's own press:
      * it resets the allowance, while our own relaunch must not.
@@ -53,6 +67,8 @@ internal class EntryRetry(
         if (fresh) {
             retries = 0
         }
+        // A new attempt may try the tap again: the previous window is gone.
+        tapped = false
         phase = Phase.WAITING_PAGE
         checkAt = now + pageWaitMs
     }
@@ -85,12 +101,21 @@ internal class EntryRetry(
         if (now < checkAt) {
             return Decision.HOLD
         }
+        if (phase == Phase.WAITING_SESSION && !tapped && autoTapAvailable()) {
+            tapped = true
+            // The patient gets the same window again before we disturb anything.
+            checkAt = now + pressWaitMs
+            return Decision.TAP
+        }
         if (retries >= maxRetries) {
             phase = Phase.IDLE
             checkAt = -1L
             return Decision.GIVE_UP
         }
         retries++
+        // The relaunch puts a fresh window in front of the head, so the new
+        // window may try one tap of its own.
+        tapped = false
         phase = Phase.WAITING_PAGE
         checkAt = now + pageWaitMs
         return Decision.RELAUNCH
