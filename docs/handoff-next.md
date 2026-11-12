@@ -70,7 +70,7 @@ goal 进度：**第 1 项已完成**（`37b09bf`）；**第 2 项已完成**（�
 | 3 | 台账记 `peakMix` / `peakUpGazeDeg` / 每段停留 + 床边自评（尝试/成功） | ✅ `37b09bf` |
 | 4 | 题面文字重绘残留（画布缩小导致纹理残留） | ✅ `src/ui/spatial/text.ts` 只增不减 |
 | 5 | 场景目录外置为单一来源（加场景 Kotlin 零改动） | ✅ 页面 `catalogEntries` → `dist/catalog.json` → BLE JSON；平板/头显只渲染收到的目录 |
-| 6 | 会话按段编排（单段默认 = v1 行为）+「第 n/N 段 · 剩余时间」 | ⬜ 树 G / G2 |
+| 6 | 会话按段编排（单段默认 = v1 行为）+「第 n/N 段 · 剩余时间」 | ✅ 本轮：`program:` 命令 + 流程带 + 段台账 |
 | 7 | 应用层级：顶栏应用选择器（`i` 左边，电量左让位）、下拉切换、VR 同步 | ⬜ 树 H / H1–H3 |
 | 8 | `i` 指向当前应用的说明书 | ⬜ 树 H / H2（`GuideScreen` 现为 598 行全局字面量，需按 app 取内容） |
 | 9 | 问卷产品线：题目配置化加载、作答存储、控制侧按次查看（含时间）、按问卷与时间筛选导出 | ⬜ 树 H / H4；未动 |
@@ -95,14 +95,18 @@ goal 进度：**第 1 项已完成**（`37b09bf`）；**第 2 项已完成**（�
 - **两步切场景**：`ControlViewModel.selectScene` 只写 `sceneIntent`，`applyScene` 才发
   `scene:<id>`；`ControlUiState.selectableScenes` / `inSpecialScene` 决定解锁与文案。
 - **校准**：`App.dispatch` 只在第一次 `calibrating → running` 时开表；会话中重校准不清零。
+- **段编排**：平板 `ProgramState`（空 = 单段）→ `program:<auto>:...` 一条 BLE 命令；
+  页面 `startProgram/applyProgramSegment/tickProgram` 按墙钟推进，`program:next` 手动；
+  段进度经 JSON `segment` 回传，平板流程带显示第 n/N 段与剩余；台账段带 index/planned/峰值。
 - **镜像**：`prep` 的四面墙命名为 `prep-walls`，镜像全景会切开；镜像页本身在
   `dist/mirror.html`，平板通过 `MirrorView` 注入状态。
 - **布局**：会话页删除 `MonitorPanel`（原「训练中」大卡），已运行时间移到镜像标题行；
   会话页左列不再滚动，镜像用 `weight(1f)` 吃掉剩余高度；起身时长在场景页和会话操作区
   都紧邻「起身」。
-- 校验现状：`npm run verify` 通过（TS 239 项，`tsc` 干净，构建 + standalone）；
-  `:protocol:test`、`:control:testDebugUnitTest`、`:control:assembleDebug`、
-  `:headset:assembleDebug` 全绿。
+- 校验现状：`tsc` 干净；TS 244 项通过（新增 program 4 例、台账 1 例）；
+  `:protocol:test`、`:control:testDebugUnitTest`（含 `ProgramCodecTest`）、
+  `:control:assembleDebug`、`:headset:assembleDebug` 全绿。
+  页面预览实测：2 秒×2 段自动推进、手动 `下一段`、台账写出两段（index/planned/峰值）。
 
 ### 本轮次的验证命令
 
@@ -141,7 +145,6 @@ adb -s emulator-5554 exec-out screencap -p > /tmp/out.png
 
 ## 6 建议的下一步顺序
 
-1. H1 + H2：应用选择器与 `i` 指向当前应用说明书（问卷的入口依赖它们）；
-2. 需求 6：分段编排（与母目标最相关：渐进适应比场景数量重要）；
-3. 准备间实机验证：切换是否保留校准帧、镜像在空房间里的构图、窗口朝向；
-4. H4：问卷产品线（工作量最大，不阻塞训练主线）。
+1. H1–H3：应用选择器、`i` 指向当前应用说明书、VR 侧 app id 同步；语音按应用拆分；
+2. H4：问卷产品线（题目单一来源、VR 作答、平板按次查看与筛选导出）；
+3. 准备间/段编排实机验证：切换是否保留校准帧、镜像在空房间里的构图、窗口朝向。

@@ -40,8 +40,10 @@ import {
   recordSession,
   readSummaries,
   sessionStorageSafe,
+  type SessionSegment,
   type SessionSummary
 } from './session-log';
+import { isProgramCommand, parseProgram, type SessionProgram } from './program';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { planMotion, type MotionPlan } from './motion-plan';
 import { parseRemoteCommand } from './commands';
@@ -151,9 +153,27 @@ export class QuietShoreApp {
   /** Highest up-gaze applied this session, in degrees. */
   private peakUpGazeDeg = 0;
   /** Time spent in each scene, in order; the ledger's per-segment dwell. */
-  private segments: { scene: string; seconds: number }[] = [];
+  private segments: SessionSegment[] = [];
   /** When the current segment started, `performance.now()`; 0 = none. */
   private segmentStartedAt = 0;
+  // ---- the operator's program, executed by the page -----------------------
+  /** Plan sent by the tablet; null means "single scene, manual". */
+  private program: SessionProgram | null = null;
+  /** Index into [program]; -1 when no program is running. */
+  private programIndex = -1;
+  /** When the current program segment started. */
+  private programStartedAt = 0;
+  /** Auto-advance; the operator may turn it off per program. */
+  private programAuto = true;
+  /** Per-segment buoyancy ceiling; 0 = the scene's own. */
+  private segmentCap = 0;
+  /** Per-segment planned length; 0 = open-ended. */
+  private segmentPlannedSec = 0;
+  /** Peaks inside the current segment, for the ledger row. */
+  private segmentPeakMix = 0;
+  private segmentPeakUpGazeDeg = 0;
+  /** Last segment document sent, so the JSON channel stays change-driven. */
+  private lastSegmentNotice = '';
   /** Scenes are built once, off the critical path (see `preloadScenes`). */
   private scenesPreloaded = false;
   /** The page's own ledger of finished sessions (see `session-log.ts`). */
@@ -503,8 +523,27 @@ export class QuietShoreApp {
          */
         session: (on: boolean) => {
           this.lifecycle = on ? { phase: 'running', stopReason: null } : INITIAL_SESSION;
+          if (on) {
+            // A preview session needs the same clock and span the field path
+            // starts at calibration, or its ledger would be empty.
+            this.sessionStartedAt = performance.now();
+            this.segmentStartedAt = this.sessionStartedAt;
+          } else {
+            this.sessionStartedAt = 0;
+            this.segmentStartedAt = 0;
+          }
           return this.lifecycle.phase;
         },
+        /** Desktop check: apply a program command and open the 2D preview. */
+        program: (cmd: string) => {
+          if (!this.previewing && !this.xr.isPresenting) {
+            this.startPreview();
+          }
+          this.handleRemoteCommand(cmd);
+          return this.debugSegment();
+        },
+        /** Desktop check: what the program band would be showing right now. */
+        segment: () => this.debugSegment(),
         /**
          * Desktop check: frame clock against the wall clock. Anything but 1.00
          * means the compositor timestamp is not real time, and every dt-based
@@ -814,6 +853,7 @@ export class QuietShoreApp {
         this.comfort?.reset();
         this.startSceneAudio();
         this.dispatch({ type: 'calibrated' });
+        this.startProgram();
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
         // Calibration is the technician's decision, not a side effect of the
@@ -853,6 +893,8 @@ export class QuietShoreApp {
       this.sessionStartedAt = performance.now();
       this.peakMix = 0;
       this.peakUpGazeDeg = 0;
+      this.segmentPeakMix = 0;
+      this.segmentPeakUpGazeDeg = 0;
       this.segments = [];
       this.segmentStartedAt = this.sessionStartedAt;
     }
@@ -883,6 +925,12 @@ export class QuietShoreApp {
       });
     }
     this.sessionStartedAt = 0;
+    this.program = null;
+    this.programIndex = -1;
+    this.programAuto = true;
+    this.segmentCap = 0;
+    this.segmentPlannedSec = 0;
+    this.lastSegmentNotice = '';
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
 
@@ -1077,6 +1125,14 @@ export class QuietShoreApp {
     }
     if (definition.id === this.sceneId && this.handle) {
       return;
+    }
+    if (this.program || this.programIndex >= 0) {
+      // A manual scene choice overrides the plan; the tablet can resend one.
+      this.program = null;
+      this.programIndex = -1;
+      this.segmentCap = 0;
+      this.segmentPlannedSec = 0;
+      this.report('已改为手动场景，流程取消', 'ok', false);
     }
     if (this.session && this.handle) {
       this.switchSceneLive(definition);
@@ -1314,6 +1370,9 @@ export class QuietShoreApp {
     if (this.session && this.handle) {
       this.startSceneAudio();
       this.scheduleAutoRise();
+      // An initial calibration starts the plan; a recalibration must not
+      // restart it (startProgram is a no-op while an index is live).
+      this.startProgram();
     }
     this.link.sendStateNow();
     this.updateHud(performance.now());
@@ -1493,6 +1552,71 @@ export class QuietShoreApp {
     }
   }
 
+  /**
+   * `program:<auto>:<segments>` sets a plan; the verbs `next` and `auto:on|off`
+   * steer the running one. Everything here is a no-op outside a calibrated
+   * session except storing the plan for the next calibration.
+   */
+  private handleProgramCommand(raw: string): void {
+    const now = performance.now();
+    if (raw === 'program:next') {
+      if (!this.program || this.programIndex < 0) {
+        this.refuse('没有正在运行的流程');
+        return;
+      }
+      this.advanceProgram(now, true);
+      return;
+    }
+    const auto = /^program:auto:(on|off)$/.exec(raw);
+    if (auto) {
+      this.programAuto = auto[1] === 'on';
+      if (this.program) {
+        this.program = { ...this.program, auto: this.programAuto };
+      }
+      this.publishSegment(now);
+      this.report(`流程自动推进${this.programAuto ? '开' : '关'}`);
+      return;
+    }
+    const program = parseProgram(raw);
+    if (!program) {
+      this.refuse('流程格式无效');
+      return;
+    }
+    if (isActive(this.lifecycle) && (this.previewing || this.comfort?.isCalibrated() === true)) {
+      this.closeSegment(now);
+      this.program = program;
+      this.programAuto = program.auto;
+      this.programIndex = -1;
+      this.segments = [];
+      this.startProgram();
+      return;
+    }
+    this.program = program;
+    this.programAuto = program.auto;
+    this.programIndex = -1;
+    this.report(`流程已设定：${program.segments.length} 段`);
+    this.publishSegment(now);
+  }
+
+  private debugSegment(): Record<string, unknown> {
+    const program = this.program;
+    if (!program || this.programIndex < 0) {
+      return { running: false };
+    }
+    const segment = program.segments[this.programIndex];
+    const elapsed = (performance.now() - this.programStartedAt) / 1000;
+    return {
+      running: true,
+      index: this.programIndex + 1,
+      total: program.segments.length,
+      scene: this.sceneId,
+      plannedSec: segment.seconds,
+      remainingSec: segment.seconds > 0
+        ? Math.max(0, Math.ceil(segment.seconds - elapsed))
+        : null
+    };
+  }
+
   private handleRemoteCommand(raw: string): void {
     // The bedside question is answered on the tablet after the headset is off,
     // so it arrives as a command rather than as part of the session itself.
@@ -1502,6 +1626,10 @@ export class QuietShoreApp {
       const value = outcome[2] === 'yes';
       this.sessions = annotateOutcome(sessionStorageSafe(), { [which]: value });
       this.start.setStatus(value ? '已记录：是' : '已记录：否', 'ok');
+      return;
+    }
+    if (isProgramCommand(raw)) {
+      this.handleProgramCommand(raw);
       return;
     }
     const command = parseRemoteCommand(raw);
@@ -1531,12 +1659,13 @@ export class QuietShoreApp {
         this.applyVoiceCommand(command.command);
         return;
       case 'floatLevel': {
-        const capped = this.floating.setLevel(command.level, this.sceneComfortLevel);
+        const cap = this.floatCap();
+        const capped = this.floating.setLevel(command.level, cap);
         this.start.setStatus(
           capped === command.level
             ? `漂浮强度 ${command.level}/${FLOAT_MAX_LEVEL}`
-            : this.sceneComfortLevel < FLOAT_MAX_LEVEL
-              ? `本场景最高 ${this.sceneComfortLevel} 级（垂直流动上限）`
+            : cap < FLOAT_MAX_LEVEL
+              ? `本段最高 ${cap} 级`
               : `沉浸档最高 ${capped} 级（近场角速度上限）`,
           'ok'
         );
@@ -1662,9 +1791,10 @@ export class QuietShoreApp {
         // progress bar both derive from it, so they cannot disagree.
         correctionMix: world.mix,
         correctionMoving: world.moving,
-        // The loaded scene's buoyancy ceiling travels with the plan, so the
-        // tablet's stepper clamps to the same number the page enforces.
-        floatMax: this.sceneComfortLevel
+        // The loaded scene's buoyancy ceiling, narrowed by the program
+        // segment's cap, travels with the plan so the tablet's stepper clamps
+        // to the same number the page enforces.
+        floatMax: this.floatCap()
       },
       this.plan ?? undefined
     );
@@ -1897,6 +2027,9 @@ export class QuietShoreApp {
 
     readHeadPose(this.camera, this.xr, this.headPose);
     this.pipeline.run(dt, now);
+    // The plan's clock is wall time; the state-frame cadence is too coarse to
+    // end a segment on schedule (and absent entirely in the 2D preview).
+    this.tickProgram(now);
 
     this.frames += 1;
     if (now - this.fpsAt >= 500) {
@@ -2042,6 +2175,14 @@ export class QuietShoreApp {
     }
     this.peakMix = Math.max(this.peakMix, worldMix);
     this.peakUpGazeDeg = Math.max(this.peakUpGazeDeg, Math.abs(upGazeDeg));
+    this.segmentPeakMix = Math.max(this.segmentPeakMix, worldMix);
+    this.segmentPeakUpGazeDeg = Math.max(this.segmentPeakUpGazeDeg, Math.abs(upGazeDeg));
+  }
+
+  /** Effective buoyancy ceiling: the scene's, narrowed by this program segment. */
+  private floatCap(): number {
+    const programCap = this.segmentCap > 0 ? this.segmentCap : FLOAT_MAX_LEVEL;
+    return Math.min(this.sceneComfortLevel, programCap);
   }
 
   /** Close the current segment span at [now]; a scene change opens a new one. */
@@ -2051,12 +2192,145 @@ export class QuietShoreApp {
     }
     const seconds = (now - this.segmentStartedAt) / 1000;
     if (seconds > 0.5) {
-      this.segments.push({ scene: this.sceneId, seconds });
+      const span: SessionSegment = { scene: this.sceneId, seconds };
+      if (this.programIndex >= 0) {
+        span.index = this.programIndex + 1;
+        span.plannedSec = this.segmentPlannedSec;
+      }
+      span.peakMix = Number(this.segmentPeakMix.toFixed(3));
+      span.peakUpGazeDeg = Math.round(this.segmentPeakUpGazeDeg);
+      this.segments.push(span);
     }
     this.segmentStartedAt = 0;
   }
 
+  /**
+   * Execute the tablet's program. The page owns the clock and the scene
+   * switches; the tablet owns the plan and may override either.
+   */
+  private startProgram(): void {
+    const program = this.program;
+    const canRun = this.session !== null || this.previewing;
+    const calibrated = this.previewing || this.comfort?.isCalibrated() === true;
+    if (!program || !canRun || !calibrated || this.programIndex >= 0) {
+      return;
+    }
+    // The preparation room is not part of the program: its dwell belongs to
+    // onboarding, not to the therapy record.
+    this.segments = [];
+    this.segmentStartedAt = 0;
+    this.applyProgramSegment(0, performance.now());
+    this.report(`流程开始：第 1/${program.segments.length} 段`);
+  }
+
+  private applyProgramSegment(index: number, now: number): void {
+    const program = this.program;
+    const segment = program?.segments[index];
+    if (!program || !segment) {
+      return;
+    }
+    this.closeSegment(now);
+    this.programIndex = index;
+    this.programStartedAt = now;
+    this.segmentCap = segment.cap;
+    this.segmentPlannedSec = segment.seconds;
+    this.segmentPeakMix = 0;
+    this.segmentPeakUpGazeDeg = 0;
+    const definition = getSceneDefinition(segment.scene) ?? SCENE;
+    if (definition.id !== this.sceneId || !this.handle) {
+      if (this.session) {
+        this.switchSceneLive(definition);
+      } else {
+        this.sceneId = definition.id;
+        this.loadScene();
+      }
+    }
+    // `switchSceneLive` opens its own span; either way this is the start.
+    this.segmentStartedAt = now;
+    const level = Math.min(this.floating.getLevel(), this.floatCap());
+    this.floating.setLevel(level, this.floatCap());
+    if (segment.voice !== 'none') {
+      this.voice.playSequence(segment.voice);
+    }
+    this.link.sendStateNow();
+    this.publishSegment(now);
+  }
+
+  /** Advance the program; at the end, a planned session stops with a fade. */
+  private advanceProgram(now: number, manual: boolean): void {
+    const program = this.program;
+    if (!program || this.programIndex < 0) {
+      this.refuse('没有正在运行的流程');
+      return;
+    }
+    const next = this.programIndex + 1;
+    if (next >= program.segments.length) {
+      // Close the last span through the normal stop path: it still carries
+      // the program index and peaks until `dispatch` records the session.
+      this.dispatch({ type: 'stop', reason: 'program' });
+      this.report(manual ? '流程已结束' : '流程到点，正在结束');
+      return;
+    }
+    this.applyProgramSegment(next, now);
+  }
+
+  /** Checked from the state-frame cadence; the plan's clock is wall time. */
+  private tickProgram(now: number): void {
+    const program = this.program;
+    if (!program || this.programIndex < 0 || !this.programAuto || !isActive(this.lifecycle)) {
+      return;
+    }
+    const segment = program.segments[this.programIndex];
+    if (!segment || segment.seconds <= 0) {
+      return;
+    }
+    if ((now - this.programStartedAt) / 1000 >= segment.seconds) {
+      this.advanceProgram(now, false);
+    }
+  }
+
+  /**
+   * One small JSON document for the tablet's program band. It is change-driven:
+   * the remaining seconds move once a second, and nothing moves when idle.
+   */
+  private publishSegment(now: number): void {
+    if (!isActive(this.lifecycle) && this.programIndex < 0) {
+      return;
+    }
+    let doc: Record<string, unknown>;
+    if (this.program && this.programIndex >= 0) {
+      const segment = this.program.segments[this.programIndex];
+      const elapsed = Math.max(0, (now - this.programStartedAt) / 1000);
+      doc = {
+        index: this.programIndex + 1,
+        total: this.program.segments.length,
+        scene: this.sceneId,
+        remainingSec: segment.seconds > 0
+          ? Math.max(0, Math.ceil(segment.seconds - elapsed))
+          : null,
+        durationSec: segment.seconds,
+        auto: this.programAuto
+      };
+    } else {
+      doc = {
+        index: 1,
+        total: 1,
+        scene: this.sceneId,
+        remainingSec: null,
+        durationSec: 0,
+        auto: false
+      };
+    }
+    const key = JSON.stringify(doc);
+    if (key === this.lastSegmentNotice) {
+      return;
+    }
+    this.lastSegmentNotice = key;
+    this.link.sendSegment(doc);
+  }
+
   private captureSnapshot(): SceneSnapshot {
+    const now = performance.now();
     const world = this.world.state();
     // The dose is sampled here because this runs at the state-frame cadence and
     // both quantities are ramps measured in seconds, not frame spikes.
@@ -2080,7 +2354,7 @@ export class QuietShoreApp {
       this.worldPos.set(0, 0, 0);
     }
     const playing = this.voice.nowPlaying().id;
-    return this.snapshot.capture({
+    const snapshot = this.snapshot.capture({
       sceneId: this.sceneId,
       loaded: this.handle !== null,
       session: this.session !== null,
@@ -2111,7 +2385,7 @@ export class QuietShoreApp {
       floatMm: motion.offsetM * 1000,
       sessionSec:
         this.sessionStartedAt > 0
-          ? Math.floor((performance.now() - this.sessionStartedAt) / 1000)
+          ? Math.floor((now - this.sessionStartedAt) / 1000)
           : 0,
       voiceId: playing ? this.voice.indexOf(playing) : -1,
       caps: this.plan?.capabilities ?? {
@@ -2121,9 +2395,11 @@ export class QuietShoreApp {
         float: false,
         view: false,
         blocked: '未开始会话',
-        floatMax: this.sceneComfortLevel
+        floatMax: this.floatCap()
       }
     });
+    this.publishSegment(now);
+    return snapshot;
   }
 
   dispose(): void {

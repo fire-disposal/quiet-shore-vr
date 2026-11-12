@@ -144,7 +144,13 @@ data class ControlUiState(
      * list instead of a local table, so adding a scene is one entry in the
      * page's registry and nothing in Kotlin.
      */
-    val scenes: List<SceneCatalog.Scene> = emptyList()
+    val scenes: List<SceneCatalog.Scene> = emptyList(),
+
+    /** The operator's plan; empty segments = one open-ended scene. */
+    val program: ProgramState = ProgramState(),
+
+    /** Page-reported progress through [program], null outside a session. */
+    val segmentProgress: SegmentProgress? = null
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 

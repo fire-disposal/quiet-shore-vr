@@ -17,6 +17,14 @@ export interface SessionSegment {
   scene: string;
   /** Whole seconds spent in it. */
   seconds: number;
+  /** 1-based program position; absent for a manually switched session. */
+  index?: number;
+  /** The program's planned seconds; 0 or absent means open-ended. */
+  plannedSec?: number;
+  /** Highest posture correction reached inside this one segment. */
+  peakMix?: number;
+  /** Highest up-gaze reached inside this one segment, degrees. */
+  peakUpGazeDeg?: number;
 }
 
 export interface SessionSummary {
@@ -100,7 +108,13 @@ export function summarize(input: SessionInput): SessionSummary {
   };
 }
 
-/** Keep the segments that carry time, in order, seconds rounded. */
+/**
+ * Keep the segments that carry time, in order, seconds rounded.
+ *
+ * Consecutive spans in the same scene merge only when they are the *same*
+ * program segment: a three-segment plan may return to the lake twice, and those
+ * are two ledger rows, not one.
+ */
 function summarizeSegments(list: readonly SessionSegment[]): SessionSegment[] {
   const out: SessionSegment[] = [];
   for (const span of Array.isArray(list) ? list : []) {
@@ -111,12 +125,33 @@ function summarizeSegments(list: readonly SessionSegment[]): SessionSegment[] {
     if (seconds <= 0) {
       continue;
     }
+    const index = Number.isFinite(span.index) ? Math.max(1, Math.round(span.index!)) : undefined;
+    const plannedSec = Number.isFinite(span.plannedSec)
+      ? Math.max(0, Math.round(span.plannedSec!))
+      : undefined;
+    const peakMix = Number.isFinite(span.peakMix)
+      ? Number(Math.min(1, Math.max(0, span.peakMix!)).toFixed(3))
+      : undefined;
+    const peakUpGazeDeg = Number.isFinite(span.peakUpGazeDeg)
+      ? Math.max(0, Math.round(span.peakUpGazeDeg!))
+      : undefined;
     const last = out[out.length - 1];
-    if (last && last.scene === span.scene) {
+    if (last && last.scene === span.scene && last.index === index && last.plannedSec === plannedSec) {
       last.seconds += seconds;
+      if (peakMix !== undefined) {
+        last.peakMix = Math.max(last.peakMix ?? 0, peakMix);
+      }
+      if (peakUpGazeDeg !== undefined) {
+        last.peakUpGazeDeg = Math.max(last.peakUpGazeDeg ?? 0, peakUpGazeDeg);
+      }
       continue;
     }
-    out.push({ scene: span.scene, seconds });
+    const next: SessionSegment = { scene: span.scene, seconds };
+    if (index !== undefined) next.index = index;
+    if (plannedSec !== undefined) next.plannedSec = plannedSec;
+    if (peakMix !== undefined) next.peakMix = peakMix;
+    if (peakUpGazeDeg !== undefined) next.peakUpGazeDeg = peakUpGazeDeg;
+    out.push(next);
   }
   return out;
 }

@@ -277,6 +277,15 @@ export class PortalLink {
   }
 
   /**
+   * Program progress: which segment the page is executing, its planned length
+   * and the seconds left. The state frame has no room for it, and it is
+   * change-driven, so it rides the JSON channel like SUS and notices.
+   */
+  sendSegment(data: unknown): void {
+    this.send({ type: 'segment', data });
+  }
+
+  /**
    * One-off report for the operator: a refusal, or a fact the state frame has
    * no room for. The headset relays it to the tablet over BLE; the page is the
    * only place that knows *why* a command did not take effect.

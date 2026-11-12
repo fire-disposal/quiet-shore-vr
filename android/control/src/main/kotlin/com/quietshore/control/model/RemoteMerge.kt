@@ -44,6 +44,9 @@ fun mergeRemoteFrame(
         // the tablet keeps refusing scene and strength, which is what the page
         // is doing too.
         stopRequested = running && current.stopRequested,
-        sessionElapsedMs = elapsedMs
+        sessionElapsedMs = elapsedMs,
+        // A program band belongs to the run that reported it; the state frame
+        // dropping the session flag is the one reliable stop signal.
+        segmentProgress = if (running) current.segmentProgress else null
     )
 }

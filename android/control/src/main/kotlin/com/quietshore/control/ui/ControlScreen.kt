@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.ProgramSegment
 import com.quietshore.control.model.SessionPhase
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.sessionPhaseOf
@@ -419,6 +420,15 @@ private fun SessionColumn(
         ?.name
 
     Column(modifier) {
+        // The band is status, not a control page: it stays outside the scroller
+        // so the remaining time never leaves the screen mid-session.
+        if (phase == SessionPhase.Running || state.segmentProgress != null) {
+            SegmentBand(
+                state = state,
+                actions = actions,
+                enabled = scenesEnabled
+            )
+        }
         Column(
             Modifier.then(
                 if (fill) {
@@ -473,9 +483,16 @@ private fun SessionColumn(
                         )
                         Spacer(Modifier.width(8.dp))
                         Key(
-                            label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
+                            label = when {
+                                state.program.segments.isNotEmpty() ->
+                                    if (state.inSpecialScene) "开始流程" else "重启流程"
+                                state.inSpecialScene -> "进入正式场景"
+                                else -> "切换场景"
+                            },
                             onClick = actions.onSceneApply,
-                            enabled = scenesEnabled && state.sceneIntentDiverges,
+                            enabled = scenesEnabled && (
+                                state.program.segments.isNotEmpty() || state.sceneIntentDiverges
+                                ),
                             height = TouchTarget
                         )
                     }
@@ -658,6 +675,198 @@ private fun EndKey(enabled: Boolean, label: String, onClick: () -> Unit) {
 }
 
 // ---------------------------------------------------------------------------
+// 流程（段编排）
+// ---------------------------------------------------------------------------
+
+/** Scene name from the live catalogue, falling back to the built-in table. */
+private fun sceneName(state: ControlUiState, id: String): String =
+    state.scenes.firstOrNull { it.id == id }?.name
+        ?: com.quietshore.control.model.SceneCatalog.scene(id)?.name
+        ?: id
+
+private fun durationLabel(seconds: Int): String =
+    if (seconds <= 0) "不限时" else "${seconds / 60} 分"
+
+private fun voiceLabel(voice: String): String = when (voice) {
+    "start" -> "开场"
+    "imagine" -> "想象"
+    "relax" -> "放松"
+    "close" -> "结束"
+    else -> "无语音"
+}
+
+private fun capLabel(cap: Int): String =
+    if (cap <= 0) "默认" else "$cap 级"
+
+/**
+ * The always-on band: which segment of how many, where, and how long is left.
+ * The page is the clock; the tablet is a mirror of it.
+ */
+@Composable
+private fun SegmentBand(
+    state: ControlUiState,
+    actions: ControlActions,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val progress = state.segmentProgress ?: return
+    val name = sceneName(state, progress.scene)
+    val remaining = progress.remainingSec
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = buildString {
+                append("第 ${progress.index}/${progress.total} 段 · ")
+                append(name)
+                append(" · ")
+                append(if (remaining == null) "不限时" else "还剩 ${clock(remaining * 1000L)}")
+                if (progress.total > 1) {
+                    append(if (progress.auto) " · 自动" else " · 手动")
+                }
+            },
+            style = MaterialTheme.typography.bodySmall.tabularFigures(),
+            color = QuietPalette.InkSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Key(
+            label = "下一段",
+            onClick = actions.onNextSegment,
+            enabled = enabled && progress.index < progress.total,
+            height = TouchTarget
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    Rule()
+}
+
+/** One editable segment: scene, length, cue and strength ceiling, all cycled. */
+@Composable
+private fun ProgramRow(
+    index: Int,
+    segment: ProgramSegment,
+    state: ControlUiState,
+    actions: ControlActions,
+    enabled: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "${index + 1}",
+            style = MaterialTheme.typography.bodySmall.tabularFigures(),
+            color = QuietPalette.InkSecondary
+        )
+        Key(
+            label = sceneName(state, segment.scene),
+            onClick = { actions.onProgramScene(index) },
+            enabled = enabled,
+            height = 44.dp,
+            modifier = Modifier.weight(1.5f)
+        )
+        Key(
+            label = durationLabel(segment.seconds),
+            onClick = { actions.onProgramDuration(index) },
+            enabled = enabled,
+            height = 44.dp,
+            modifier = Modifier.weight(0.8f)
+        )
+        Key(
+            label = voiceLabel(segment.voice),
+            onClick = { actions.onProgramVoice(index) },
+            enabled = enabled,
+            height = 44.dp,
+            modifier = Modifier.weight(0.8f)
+        )
+        Key(
+            label = capLabel(segment.cap),
+            onClick = { actions.onProgramCap(index) },
+            enabled = enabled,
+            height = 44.dp,
+            modifier = Modifier.weight(0.7f)
+        )
+        Key(
+            label = "删",
+            onClick = { actions.onProgramRemove(index) },
+            enabled = enabled,
+            height = 44.dp,
+            modifier = Modifier.weight(0.5f)
+        )
+    }
+}
+
+/**
+ * The plan editor. An empty plan is the one open-ended segment the page already
+ * runs; pressing 增加 materialises both that segment and a second one, so the
+ * default single-segment session never pays for an editor it did not use.
+ */
+@Composable
+private fun ProgramEditor(
+    state: ControlUiState,
+    actions: ControlActions,
+    enabled: Boolean
+) {
+    val segments = state.program.segments
+    SectionHead(
+        title = "02 流程",
+        note = if (segments.isEmpty()) "默认单段：按当前场景，手动结束" else "${segments.size} 段，按顺序执行"
+    )
+    Panel(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(QuietSpace.Panel)) {
+            if (segments.isEmpty()) {
+                val sceneId = state.sceneIntent.ifEmpty { state.control.scene }
+                Text(
+                    text = "第 1 段 · ${sceneName(state, sceneId)} · 不限时",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.Ink
+                )
+            } else {
+                segments.forEachIndexed { index, segment ->
+                    ProgramRow(index, segment, state, actions, enabled)
+                    if (index != segments.lastIndex) {
+                        Rule()
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Key(
+                    label = "＋ 增加一段",
+                    onClick = actions.onProgramAdd,
+                    enabled = enabled && (segments.isEmpty() || segments.size < 8),
+                    height = TouchTarget
+                )
+                Key(
+                    label = "自动推进 ${if (state.program.auto) "开" else "关"}",
+                    onClick = { actions.onProgramAuto(!state.program.auto) },
+                    enabled = enabled,
+                    height = TouchTarget
+                )
+                Spacer(Modifier.weight(1f))
+                if (segments.isNotEmpty()) {
+                    Text(
+                        text = "点任一段的参数可循环",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.InkSecondary
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 场景
 // ---------------------------------------------------------------------------
 
@@ -707,9 +916,16 @@ private fun ScenePage(
                 // One key next to the header: the extra control costs width,
                 // not a new row in the app's main area.
                 Key(
-                    label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
+                    label = when {
+                        state.program.segments.isNotEmpty() ->
+                            if (state.inSpecialScene) "开始流程" else "重启流程"
+                        state.inSpecialScene -> "进入正式场景"
+                        else -> "切换场景"
+                    },
                     onClick = actions.onSceneApply,
-                    enabled = scenesEnabled && state.sceneIntentDiverges,
+                    enabled = scenesEnabled && (
+                        state.program.segments.isNotEmpty() || state.sceneIntentDiverges
+                        ),
                     height = TouchTarget,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -720,6 +936,14 @@ private fun ScenePage(
                 onSelect = actions.onSceneSelect,
                 playing = state.control.scene,
                 scenes = state.selectableScenes
+            )
+            Spacer(Modifier.height(QuietSpace.Section))
+            ProgramEditor(
+                state = state,
+                actions = actions,
+                enabled = ready &&
+                    phase != SessionPhase.Calibrating &&
+                    phase != SessionPhase.Stopping
             )
             Spacer(Modifier.height(QuietSpace.Section))
             SectionHead(title = "体位与起伏", note = "时长随起身选择，会话中也可调整")
@@ -865,6 +1089,7 @@ private fun StandbySteps(
     modifier: Modifier = Modifier
 ) {
     val ready = state.phase == BlePhase.READY
+    val live = phase == SessionPhase.Running || phase == SessionPhase.Stopping
     Panel(modifier) {
         Column(Modifier.padding(QuietSpace.Panel)) {
             Text(
@@ -899,21 +1124,21 @@ private fun StandbySteps(
                 "记录起始体位",
                 when {
                     phase == SessionPhase.Calibrating -> "进行中"
-                    !state.inSpecialScene -> "已记录"
-                    phase == SessionPhase.Running -> "待技术员"
+                    live && !state.inSpecialScene -> "已记录"
+                    live && state.inSpecialScene -> "待技术员"
                     else -> "启动后"
                 },
-                phase == SessionPhase.Calibrating || !state.inSpecialScene
+                phase == SessionPhase.Calibrating || (live && !state.inSpecialScene)
             )
             Spacer(Modifier.height(16.dp))
             StepLine(
                 "进入正式场景",
                 when {
-                    !state.inSpecialScene -> "已进入"
+                    live && !state.inSpecialScene -> "已进入"
                     phase == SessionPhase.Running -> "标定后可选"
                     else -> "标定后解锁"
                 },
-                !state.inSpecialScene
+                live && !state.inSpecialScene
             )
             Spacer(Modifier.height(24.dp))
             ActionKey(

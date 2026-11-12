@@ -12,8 +12,17 @@ data class ControlActions(
     val onExitSystem: () -> Unit,
     /** Marks a scene as the operator's next choice; nothing is sent yet. */
     val onSceneSelect: (String) -> Unit,
-    /** Applies the marked scene: the page switches (or enters it) now. */
+    /** Applies the marked scene or the configured program. */
     val onSceneApply: () -> Unit,
+    /** Advances a running program to its next segment. */
+    val onNextSegment: () -> Unit,
+    val onProgramAdd: () -> Unit,
+    val onProgramRemove: (Int) -> Unit,
+    val onProgramScene: (Int) -> Unit,
+    val onProgramDuration: (Int) -> Unit,
+    val onProgramVoice: (Int) -> Unit,
+    val onProgramCap: (Int) -> Unit,
+    val onProgramAuto: (Boolean) -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
     val onAnimDuration: (Int) -> Unit,
     /** Gaze dwell selection (SUS answers and spatial targets). Default on. */

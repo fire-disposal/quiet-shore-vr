@@ -80,6 +80,29 @@ describe('session log', () => {
     expect(Number.isFinite(summarize({ ...summary, at: Number.NaN }).at)).toBe(true);
   });
 
+  it('keeps two program visits to one scene as two rows', () => {
+    const summary = summarize({
+      at: 1,
+      scene: 'shore',
+      seconds: 540,
+      level: 2,
+      mix: 0.5,
+      stop: 'program',
+      confidence: 90,
+      peakMix: 0.8,
+      peakUpGazeDeg: 30,
+      segments: [
+        { scene: 'shore', seconds: 360.2, index: 1, plannedSec: 360, peakMix: 0.7, peakUpGazeDeg: 28 },
+        { scene: 'ward', seconds: 0.3, index: 2, plannedSec: 240 },
+        { scene: 'shore', seconds: 179.6, index: 3, plannedSec: 180, peakMix: 0.8, peakUpGazeDeg: 30 }
+      ]
+    });
+    expect(summary.segments).toEqual([
+      { scene: 'shore', seconds: 360, index: 1, plannedSec: 360, peakMix: 0.7, peakUpGazeDeg: 28 },
+      { scene: 'shore', seconds: 180, index: 3, plannedSec: 180, peakMix: 0.8, peakUpGazeDeg: 30 }
+    ]);
+  });
+
   it('keeps only the newest entries', () => {
     let list: SessionSummary[] = [];
     for (let i = 0; i < SESSION_LOG_CAP + 5; i += 1) {

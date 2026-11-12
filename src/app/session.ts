@@ -16,7 +16,9 @@ export type StopReason =
   | 'link-lost'
   | 'headset-removed'
   | 'pose-lost'
-  | 'session-end';
+  | 'session-end'
+  /** The planned program reached its last segment. */
+  | 'program';
 
 export interface SessionState {
   readonly phase: SessionPhase;

@@ -14,7 +14,11 @@ import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.ScannedHeadset
+import com.quietshore.control.model.ProgramCodec
+import com.quietshore.control.model.ProgramSegment
+import com.quietshore.control.model.ProgramState
 import com.quietshore.control.model.SceneCatalog
+import com.quietshore.control.model.SegmentProgress
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.SceneCatalogDocument
 import com.quietshore.control.data.SusStore
@@ -335,17 +339,178 @@ class ControlViewModel(application: Application) :
      */
     fun applyScene() {
         val current = _uiState.value
+        if (!current.control.session || current.control.calibrating || current.stopRequested) {
+            return
+        }
+        val program = current.program
+        if (program.segments.isNotEmpty()) {
+            if (!programIsValid(current, program)) {
+                notice("流程里有不可用的场景或参数")
+                return
+            }
+            sendCommand("program:auto:${if (program.auto) "on" else "off"}")
+            sendCommand(ProgramCodec.format(program))
+            // The page reports the actual segment; highlight the first now so
+            // the card row does not contradict the band.
+            _uiState.update { it.copy(sceneIntent = program.segments.first().scene) }
+            return
+        }
         val target = current.sceneIntent
         if (target.isEmpty() ||
             target == current.control.scene ||
-            target !in selectableSceneIds(current) ||
-            !current.control.session ||
-            current.control.calibrating ||
-            current.stopRequested
+            target !in selectableSceneIds(current)
         ) {
             return
         }
         sendCommand(ControlProtocol.SCENE_PREFIX + target)
+    }
+
+    /** Opens the next program segment; at the last one the page ends. */
+    fun nextSegment() {
+        if (_uiState.value.segmentProgress == null) {
+            return
+        }
+        sendCommand("program:next")
+    }
+
+    fun setProgramAuto(auto: Boolean) {
+        _uiState.update { it.copy(program = it.program.copy(auto = auto)) }
+        sendCommand("program:auto:${if (auto) "on" else "off"}")
+    }
+
+    /**
+     * Explicit plans. An empty list is not "no plan": it is the single
+     * open-ended segment the page already runs, so the editor only materialises
+     * when the operator adds a second one.
+     */
+    fun addProgramSegment() {
+        val current = _uiState.value
+        val seedScene = current.sceneIntent
+            .ifEmpty { current.control.scene }
+            .takeIf { it in selectableSceneIds(current) }
+            ?: current.selectableScenes.firstOrNull()?.id
+            ?: return
+        val existing = current.program.segments
+        val next = if (existing.isEmpty()) {
+            listOf(
+                ProgramSegment(scene = seedScene, seconds = 0, voice = "none", cap = 0),
+                ProgramSegment(scene = seedScene, seconds = 300, voice = "none", cap = 0)
+            )
+        } else {
+            val last = existing.last()
+            existing + ProgramSegment(scene = last.scene, seconds = 300, voice = "none", cap = last.cap)
+        }
+        _uiState.update { it.copy(program = it.program.copy(segments = next)) }
+    }
+
+    fun removeProgramSegment(index: Int) {
+        val current = _uiState.value.program
+        val next = current.segments.filterIndexed { at, _ -> at != index }
+        _uiState.update { it.copy(program = current.copy(segments = next)) }
+    }
+
+    fun cycleProgramScene(index: Int) {
+        val current = _uiState.value
+        val ids = current.selectableScenes.map { it.id }
+        if (ids.isEmpty()) {
+            return
+        }
+        val segments = current.program.segments
+        val segment = segments.getOrNull(index) ?: return
+        val next = ids[(ids.indexOf(segment.scene) + 1).mod(ids.size)]
+        _uiState.update {
+            it.copy(
+                program = it.program.copy(
+                    segments = segments.mapIndexed { at, value ->
+                        if (at == index) value.copy(scene = next) else value
+                    }
+                )
+            )
+        }
+    }
+
+    fun cycleProgramDuration(index: Int) {
+        val lengths = listOf(0, 180, 300, 480, 600)
+        val segments = _uiState.value.program.segments
+        val segment = segments.getOrNull(index) ?: return
+        val next = lengths[(lengths.indexOf(segment.seconds).coerceAtLeast(0) + 1) % lengths.size]
+        _uiState.update {
+            it.copy(
+                program = it.program.copy(
+                    segments = segments.mapIndexed { at, value ->
+                        if (at == index) value.copy(seconds = next) else value
+                    }
+                )
+            )
+        }
+    }
+
+    fun cycleProgramVoice(index: Int) {
+        val voices = listOf("none", "start", "imagine", "relax", "close")
+        val segments = _uiState.value.program.segments
+        val segment = segments.getOrNull(index) ?: return
+        val next = voices[(voices.indexOf(segment.voice).coerceAtLeast(0) + 1) % voices.size]
+        _uiState.update {
+            it.copy(
+                program = it.program.copy(
+                    segments = segments.mapIndexed { at, value ->
+                        if (at == index) value.copy(voice = next) else value
+                    }
+                )
+            )
+        }
+    }
+
+    fun cycleProgramCap(index: Int) {
+        val segments = _uiState.value.program.segments
+        val segment = segments.getOrNull(index) ?: return
+        val next = (segment.cap + 1) % 4
+        _uiState.update {
+            it.copy(
+                program = it.program.copy(
+                    segments = segments.mapIndexed { at, value ->
+                        if (at == index) value.copy(cap = next) else value
+                    }
+                )
+            )
+        }
+    }
+
+    private fun programIsValid(current: ControlUiState, program: ProgramState): Boolean {
+        val scenes = selectableSceneIds(current)
+        val voices = setOf("none", "start", "imagine", "relax", "close")
+        return program.segments.size in 1..8 && program.segments.all { segment ->
+            segment.scene in scenes &&
+                segment.seconds in 0..3600 &&
+                segment.cap in 0..3 &&
+                segment.voice in voices
+        }
+    }
+
+    private fun handleSegment(data: String) {
+        val json = try {
+            JSONObject(data)
+        } catch (error: JSONException) {
+            return
+        }
+        val total = json.optInt("total", 0)
+        if (total <= 0) {
+            return
+        }
+        val remaining = if (json.isNull("remainingSec")) {
+            null
+        } else {
+            json.optInt("remainingSec", 0).coerceAtLeast(0)
+        }
+        val progress = SegmentProgress(
+            index = json.optInt("index", 1).coerceIn(1, total),
+            total = total,
+            scene = json.optString("scene", ""),
+            remainingSec = remaining,
+            durationSec = json.optInt("durationSec", 0).coerceAtLeast(0),
+            auto = json.optBoolean("auto", false)
+        )
+        _uiState.update { it.copy(segmentProgress = progress) }
     }
 
     /** Leaves the browser scene and returns the headset to its console app. */
@@ -670,6 +835,7 @@ class ControlViewModel(application: Application) :
         when (topic) {
             "sus" -> handleSus(data)
             "catalog" -> handleCatalog(data)
+            "segment" -> handleSegment(data)
             "flags" -> applyFlags(data)
             // Unknown topics are ignored: a newer headset may publish more.
             else -> Unit

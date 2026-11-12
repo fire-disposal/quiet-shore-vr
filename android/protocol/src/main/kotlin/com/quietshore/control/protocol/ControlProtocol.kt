@@ -294,7 +294,9 @@ object ControlProtocol {
 
     fun normalize(command: String): String? {
         val normalized = command.trim().lowercase()
-        return normalized.takeIf { it.isNotEmpty() && it.length <= 64 && !it.contains('\n') }
+        // Programs carry a few segments in one command; everything else stays
+        // short. The page still parses and bounds the payload.
+        return normalized.takeIf { it.isNotEmpty() && it.length <= 512 && !it.contains('\n') }
     }
 
     /** Plain decimal meters only: no sign, exponent or locale-specific comma. */
@@ -354,6 +356,18 @@ object ControlProtocol {
         return value.takeIf { it.isFinite() && abs(it) <= limitDeg }
     }
 
+    /**
+     * `program:<auto>:<scene>,<seconds>,<voice>,<cap>;...`, plus the verbs
+     * `next` and `auto:on|off`. The page owns the exact grammar; this only
+     * refuses control characters and absurd lengths before the write.
+     */
+    private fun isProgramCommand(command: String): Boolean {
+        if (!command.startsWith("program:")) {
+            return false
+        }
+        return command.all { it.isLetterOrDigit() || it in ":;,._-" }
+    }
+
     /** `record:outcome:attempt|success:yes|no` — the post-session question. */
     private fun isOutcomeCommand(command: String): Boolean =
         command.startsWith("record:outcome:") &&
@@ -384,6 +398,7 @@ object ControlProtocol {
                 normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
             (normalized.startsWith(SCENE_PREFIX) &&
                 normalized.removePrefix(SCENE_PREFIX) in sceneIds) ||
+            isProgramCommand(normalized) ||
             (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
             (normalized.startsWith(ANIM_DURATION) &&
                 normalized.removePrefix(ANIM_DURATION).toIntOrNull() in 4000..20000) ||

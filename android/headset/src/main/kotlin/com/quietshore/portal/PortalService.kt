@@ -726,6 +726,13 @@ class PortalService : Service() {
                     // No visible activity.
                 }
             }
+            // Program progress: index/total/scene/remaining. Change-driven on
+            // the same JSON channel as SUS; the state frame stays fixed.
+            "segment" -> json.optJSONObject("data")?.let { data ->
+                bluetooth?.publishJson(
+                    org.json.JSONObject().put("t", "segment").put("d", data).toString()
+                )
+            }
             // A refusal or one-off report from the page: the page knows why a
             // command did not take effect, the tablet is what the operator is
             // holding. Relayed verbatim on the JSON channel.

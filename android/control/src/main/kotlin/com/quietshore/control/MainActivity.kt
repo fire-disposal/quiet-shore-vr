@@ -63,7 +63,9 @@ class MainActivity : ComponentActivity() {
                         catalog = intent.getStringExtra("catalog"),
                         // `--es current prep` renders the built-in room as the
                         // loaded scene, including its mirror.
-                        current = intent.getStringExtra("current")
+                        current = intent.getStringExtra("current"),
+                        programWire = intent.getStringExtra("program"),
+                        segmentSpec = intent.getStringExtra("segment")
                     )
                 } else {
                     val controlViewModel: ControlViewModel = viewModel()
