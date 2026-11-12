@@ -2,8 +2,7 @@ package com.quietshore.control.data
 
 import android.content.Context
 import com.quietshore.control.protocol.SusResult
-import org.json.JSONArray
-import org.json.JSONObject
+import com.quietshore.control.protocol.SusResultCodec
 
 /**
  * SUS sheets, kept on the tablet.
@@ -17,20 +16,8 @@ class SusStore(context: Context) {
     private val preferences =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    fun load(): List<SusResult> {
-        val raw = preferences.getString(KEY, null) ?: return emptyList()
-        return try {
-            val array = JSONArray(raw)
-            buildList {
-                for (index in 0 until array.length()) {
-                    array.optJSONObject(index)?.let { add(decode(it)) }
-                }
-            }
-        } catch (error: Exception) {
-            // A corrupted file must not take the console down with it.
-            emptyList()
-        }
-    }
+    fun load(): List<SusResult> =
+        SusResultCodec.decodeList(preferences.getString(KEY, null))
 
     /** Appends one sheet and returns the new list, newest last. */
     fun append(result: SusResult, keep: Int = MAX_RECORDS): List<SusResult> {
@@ -45,42 +32,9 @@ class SusStore(context: Context) {
     }
 
     private fun write(list: List<SusResult>) {
-        val array = JSONArray()
-        for (result in list) {
-            array.put(encode(result))
-        }
-        preferences.edit().putString(KEY, array.toString()).apply()
-    }
-
-    private fun encode(result: SusResult): JSONObject = JSONObject()
-        .put("answers", JSONArray(result.answers))
-        .put("filled", result.filled)
-        .put("complete", result.complete)
-        .put("scene", result.scene)
-        .put("sessionSec", result.sessionSec)
-        .put("completedAt", result.completedAt)
-        .put("app", result.app)
-        .put("questionnaireId", result.questionnaireId)
-        .put("questionnaireName", result.questionnaireName)
-
-    private fun decode(json: JSONObject): SusResult {
-        val answers = json.optJSONArray("answers")
-        val list = buildList {
-            for (index in 0 until (answers?.length() ?: 0)) {
-                add(answers?.optInt(index, 0) ?: 0)
-            }
-        }
-        return SusResult(
-            answers = list,
-            filled = json.optInt("filled", list.count { it in 1..5 }),
-            complete = json.optBoolean("complete", false),
-            scene = json.optString("scene", ""),
-            sessionSec = json.optInt("sessionSec", 0),
-            completedAt = json.optLong("completedAt", 0L),
-            app = json.optString("app", "questionnaire"),
-            questionnaireId = json.optString("questionnaireId", "sus"),
-            questionnaireName = json.optString("questionnaireName", "")
-        )
+        preferences.edit()
+            .putString(KEY, SusResultCodec.encodeList(list))
+            .apply()
     }
 
     private companion object {

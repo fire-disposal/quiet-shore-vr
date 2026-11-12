@@ -1007,26 +1007,9 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    private fun decodeSus(json: String): SusResult {
-        val root = JSONObject(json)
-        val answersArray = root.optJSONArray("answers")
-        val answers = buildList {
-            for (index in 0 until (answersArray?.length() ?: 0)) {
-                add(answersArray?.optInt(index, 0) ?: 0)
-            }
-        }
-        return SusResult(
-            answers = answers,
-            filled = root.optInt("filled", answers.count { it in 1..5 }),
-            complete = root.optBoolean("complete", false),
-            scene = root.optString("scene", ""),
-            sessionSec = root.optInt("sessionSec", 0),
-            completedAt = root.optLong("completedAt", System.currentTimeMillis()),
-            app = root.optString("app", "questionnaire"),
-            questionnaireId = root.optString("questionnaireId", "sus"),
-            questionnaireName = root.optString("questionnaireName", "")
-        )
-    }
+    private fun decodeSus(json: String): SusResult =
+        com.quietshore.control.protocol.SusResultCodec.decode(JSONObject(json))
+            ?: throw IllegalArgumentException("answers missing")
 
     override fun onControlState(state: ControlState) {
         lastStateAt = SystemClock.elapsedRealtime()
