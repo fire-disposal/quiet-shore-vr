@@ -1,6 +1,6 @@
 # quiet-shore-vr（静岸 · Quiet Shore VR）
 
-静岸是一套床边的沉浸式场景体验：在躺卧的体位下，获得近似站立时的视野与感受。节奏由技术员掌握，患者按一次头显上的按钮确认开始，随时可以说停。
+静岸是一套床边的场景体验。患者在躺卧的体位下，看见近似站立时的视野。节奏由技术员掌握。患者按一次头显上的按钮确认开始，随时可以说停。
 
 **状态**：v1.0.0（四场景 `shore` / `ward` / `washroom` / `lightwell`，按躺姿眼高重新构图；状态帧 v13；控制端只有一套运动学：体位 / 起伏 / 视线；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
@@ -8,7 +8,7 @@
 
 ## 本质
 
-把卧床病人的三维引导想象场景呈现与平板端远程 BLE/WebSocket 控制面解耦的沉浸式 WebXR 训练系统。
+卧床患者的三维引导想象场景呈现，与平板端远程 BLE/WebSocket 控制面解耦的 WebXR 训练系统。
 
 ## 选型
 

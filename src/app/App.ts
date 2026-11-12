@@ -389,7 +389,7 @@ export class QuietShoreApp {
     // differently instead of showing the same silent invitation again. The
     // press must land on the browser's window, so the instruction names it.
     if (this.config.entryRetry > 0) {
-      this.start.setEntryHint('没有等到确认。请看向画面中央，再按一下按钮。');
+      this.start.setEntryHint('没有等到确认。请看向画面中央，再按一下头显右侧的按钮。');
     }
     this.updateHud(performance.now());
   }
@@ -1117,7 +1117,7 @@ export class QuietShoreApp {
     this.calibration.start(performance.now());
     this.calibrationOverlay?.setHint('保持不动…');
     this.calibrationOverlay?.setProgress(0);
-    this.start.setStatus('正在记录起始朝向', 'ok');
+    this.start.setStatus('正在记录起始体位', 'ok');
   }
 
   /** Called every frame while the card is up. */
@@ -1191,7 +1191,7 @@ export class QuietShoreApp {
     if (!ok) {
       // Restart the window rather than leaving an inert card on screen: the
       // hint asks for another attempt, so the run that produces it must live.
-      this.calibrationOverlay?.setHint('这次没有取到有效朝向，请再试一次');
+      this.calibrationOverlay?.setHint('这次没有记录成功，请再试一次');
       this.restartCalibration();
       return;
     }
@@ -1238,7 +1238,7 @@ export class QuietShoreApp {
           return;
         }
         if (this.world.rise(1)) {
-          this.start.setStatus('正在起身：世界缓缓转向站立视角', 'ok');
+          this.start.setStatus('正在进入站立视角', 'ok');
         }
       });
     });
@@ -1563,7 +1563,7 @@ export class QuietShoreApp {
     this.linkOnline = status === 'open';
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
-    this.start.setHint(status === 'open' ? '控制端已连接' : '控制端未连接，正在重连');
+    this.start.setHint(status === 'open' ? '平板已连接' : '平板未连接，正在重连');
     if (status === 'open' || !wasOnline) {
       return;
     }
@@ -1617,7 +1617,7 @@ export class QuietShoreApp {
     }
     this.world.rise(rising ? 1 : 0);
     this.start.setStatus(
-      rising ? '正在修正到面向前方，随时可停' : '正在回到天花板视角，随时可停',
+      rising ? '正在放大视野，随时可停' : '正在回到现在的视角，随时可停',
       'ok'
     );
   }
@@ -1627,7 +1627,7 @@ export class QuietShoreApp {
       return;
     }
     this.world.stopRise();
-    this.start.setStatus('已停在当前修正角度', 'ok');
+    this.start.setStatus('已停在当前视角', 'ok');
   }
 
   private applySceneBed(on: boolean): void {
