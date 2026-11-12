@@ -31,9 +31,11 @@
    * 字号阶梯：3 档，比例约 1.5–1.6。
    * copy 在 40→60（1024→1920）之间，两窗口都宽于最长指令 11 字，指令恒为一行。
    */
-  --fs-copy: clamp(40px, 4.5vw, 54px);
-  --fs-body: clamp(18px, 1.65vw, 24px);
-  --fs-label: clamp(13px, .95vw, 16px);
+  /* The headset's panel is 4K but the optics are not: nothing smaller than
+     18 px survives the lens, and the reader may not have good vision. */
+  --fs-copy: clamp(44px, 4.8vw, 60px);
+  --fs-body: clamp(22px, 1.95vw, 28px);
+  --fs-label: clamp(18px, 1.4vw, 22px);
 
   /*
    * 间距阶梯：4 档，比例 1.6，全部 clamp 在两个目标视口之间连续。
@@ -276,6 +278,10 @@ html, body {
   flex: 0 0 auto;
   padding-top: var(--sp-2);
   border-top: 1px solid var(--line);
+  /* The footer sentence is read through the lens too, so it gets the label
+     tier instead of the browser's 16 px default. */
+  font-size: var(--fs-label);
+  line-height: 1.35;
 }
 .entry-note {
   margin: 0;

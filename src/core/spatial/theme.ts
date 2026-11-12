@@ -37,9 +37,12 @@ export const DEFAULT_SPATIAL_THEME: SpatialTheme = {
   // Ink, not green: this variant has one accent and it is ice.
   success: '#161616',
   fontFamily: '"Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", sans-serif',
-  titlePx: 60,
-  bodyPx: 34,
-  buttonPx: 34,
+  // Read through the G2's lenses, not on a monitor: 34 px body text was the
+  // size a patient with good eyes could just make out. Cards grow to fit —
+  // the layout follows the type, never the other way round.
+  titlePx: 72,
+  bodyPx: 44,
+  buttonPx: 44,
   radiusPx: 0,
-  paddingPx: 30
+  paddingPx: 32
 };
