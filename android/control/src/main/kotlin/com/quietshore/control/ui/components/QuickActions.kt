@@ -77,7 +77,8 @@ fun QuickActions(
                 value = "$level",
                 description = "强度 $level 级",
                 canDecrement = changes && level > 0,
-                canIncrement = changes && level < 3,
+                // The ceiling is the loaded scene's, not the global maximum.
+                canIncrement = changes && level < state.caps.floatMax,
                 onDecrement = { actions.onFloatLevel(level - 1) },
                 onIncrement = { actions.onFloatLevel(level + 1) }
             )

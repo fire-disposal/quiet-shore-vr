@@ -637,7 +637,8 @@ class ControlViewModel(application: Application) :
                 stop = obj.optBoolean("stop", false),
                 float = obj.optBoolean("float", false),
                 view = obj.optBoolean("view", false),
-                blocked = obj.optString("blocked", "")
+                blocked = obj.optString("blocked", ""),
+                floatMax = obj.optInt("floatMax", 3).coerceIn(1, 3)
             )
         }
         // Absent and null both mean "not read": keep the last reading rather

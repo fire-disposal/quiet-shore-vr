@@ -20,7 +20,12 @@ data class MotionCaps(
     val stop: Boolean = false,
     val float: Boolean = false,
     val view: Boolean = false,
-    val blocked: String = ""
+    val blocked: String = "",
+    /**
+     * Buoyancy ceiling of the scene the headset has loaded (1..3). The stepper
+     * clamps to it, so a request never has to be reduced downstream.
+     */
+    val floatMax: Int = 3
 )
 
 enum class MirrorMode(val label: String) {
