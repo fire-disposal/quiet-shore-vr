@@ -31,15 +31,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.theme.QuietPalette
 
 /** Bar height: one row — app name, link, the two doors, the stop. */
-val CommandBarHeight = 88.dp
+val CommandBarHeight = 72.dp
 
 /** Where the stop sits on the bar's second line, and how wide it is. */
 val StopWidth = 168.dp
@@ -75,7 +83,6 @@ fun CommandBar(
     onDisconnect: () -> Unit,
     onExitScene: () -> Unit,
     onExitSystem: () -> Unit,
-    onEmergencyStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
@@ -90,70 +97,49 @@ fun CommandBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(CommandBarHeight)
-                .padding(start = 32.dp, end = 20.dp),
+                .padding(start = 20.dp, end = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ---- the app's own row -------------------------------------
-            Column(Modifier.weight(1f)) {
+            // A terminal line, not a brand header: the app's name is not
+            // something the operator needs to read every session. State is
+            // one field — signal bars, a solid ink tag, then the device's own
+            // number.
+            SignalBars(
+                phase = state.phase,
+                stale = state.stateStale
+            )
+            Spacer(Modifier.width(10.dp))
+            StatusTag(barLinkLabel(state.phase, state.stateStale))
+            if (state.deviceSuffix.isNotEmpty()) {
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    text = "静岸控制台",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = QuietPalette.Ink
+                    text = state.deviceSuffix,
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    color = QuietPalette.InkSecondary,
+                    maxLines = 1
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PresenceMark(presenceOf(state.phase, state.stateStale))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = barLinkLabel(state.phase, state.stateStale),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = QuietPalette.Ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (state.deviceSuffix.isNotEmpty()) {
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = state.deviceSuffix,
-                            style = MaterialTheme.typography.bodyMedium.tabularFigures(),
-                            color = QuietPalette.InkSecondary,
-                            maxLines = 1
-                        )
-                    }
-                }
             }
 
-            Spacer(Modifier.weight(1f))
-
-            // Both batteries sit together at the right, just before the menu:
-            // they are telemetry about the two devices, not part of the link
-            // label. Two lines, always in the same order, both named.
+            // The middle of the bar is the charge, as two field lines. No
+            // bars: a bar made the operator read a length, a field makes the
+            // reading the number.
             Column(
-                horizontalAlignment = Alignment.End,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                state.battery?.let { headset ->
-                    Text(
-                        text = "头显 ${headset.level}%${if (headset.charging) " ⚡" else ""}",
-                        style = MaterialTheme.typography.labelMedium.tabularFigures(),
-                        color = if (headset.low) QuietPalette.Ink else QuietPalette.InkSecondary,
-                        maxLines = 1
-                    )
-                }
-                pad?.let { padBattery ->
-                    Text(
-                        text = "平板 ${padBattery.level}%${if (padBattery.charging) " ⚡" else ""}",
-                        style = MaterialTheme.typography.labelMedium.tabularFigures(),
-                        color = if (padBattery.level <= 20 && !padBattery.charging) {
-                            QuietPalette.Ink
-                        } else {
-                            QuietPalette.InkSecondary
-                        },
-                        maxLines = 1
-                    )
-                }
+                BatteryField(
+                    label = "头显",
+                    level = state.battery?.level,
+                    charging = state.battery?.charging ?: false
+                )
+                BatteryField(
+                    label = "平板",
+                    level = pad?.level,
+                    charging = pad?.charging ?: false
+                )
             }
-            Spacer(Modifier.width(16.dp))
 
             OverflowMenu(
                 connected = connected,
@@ -165,12 +151,85 @@ fun CommandBar(
             )
 
             Spacer(Modifier.width(16.dp))
-            StopKey(
-                enabled = connected && state.control.session,
-                onClick = onEmergencyStop
+            // The bar's right end is the way out of the link: 断开连接. The
+            // emergency stop is gone from the product; a session ends through
+            // 结束 on the console, which is the same planned stop it always was.
+            Key(
+                label = "断开连接",
+                onClick = onDisconnect,
+                kind = KeyKind.Outline,
+                enabled = connected
             )
         }
 
+    }
+}
+
+/**
+ * Link strength as four bars, tall to short: 24 dp high, 20 dp wide, 3 dp bars
+ * with 2 dp between them.
+ *
+ * The colour is `#29B6F6`, not the palette's ice `#7DE6FF`: on paper the ice
+ * tone is a fill colour and reads as a pale wash at 3 dp, while this blue holds
+ * contrast at bar width. It is a device reading, so it is shown and never
+ * pressed — square, no shape, no ripple.
+ */
+@Composable
+private fun SignalBars(phase: BlePhase, stale: Boolean) {
+    // How many bars are lit: a live link shows all four, a search or a retry
+    // shows the smallest one, and no link shows none. The count is the state;
+    // the RSSI is not a separate reading here (the pairing list carries it).
+    val lit = when {
+        phase == BlePhase.READY && !stale -> 4
+        phase == BlePhase.SCANNING || phase == BlePhase.CONNECTING ||
+            phase == BlePhase.AUTHENTICATING || phase == BlePhase.RECONNECTING -> 1
+        else -> 0
+    }
+    Canvas(
+        modifier = Modifier
+            .size(width = 20.dp, height = 24.dp)
+            .semantics { stateDescription = barLinkLabel(phase, stale) }
+    ) {
+        val barWidth = 3.dp.toPx()
+        val gap = 2.dp.toPx()
+        val full = size.height
+        for (index in 0 until 4) {
+            // Tall to short, left to right: the first bar lit is the shortest
+            // one, which is what "something answered" looks like.
+            val height = full * (0.35f + 0.2f * (3 - index))
+            val left = index * (barWidth + gap)
+            drawRect(
+                color = if (index < lit) SignalBlue else QuietPalette.Hairline,
+                topLeft = Offset(left, full - height),
+                size = Size(barWidth, height)
+            )
+        }
+    }
+}
+
+/** The one blue that survives being 3 dp wide on paper. */
+private val SignalBlue = Color(0xFF29B6F6)
+
+/**
+ * The link state as a field: an ink block with reverse paper text.
+ *
+ * It is square, not cut, because a cut corner means "pressable" and this is a
+ * readout. Its colour never changes with state — ink always, so the accent
+ * keeps meaning "current / you can press this" and the stop keeps its red.
+ */
+@Composable
+private fun StatusTag(label: String) {
+    Box(
+        modifier = Modifier
+            .background(QuietPalette.Ink)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = QuietPalette.Paper,
+            maxLines = 1
+        )
     }
 }
 
@@ -211,7 +270,7 @@ private fun OverflowMenu(
     var confirmingExit by remember { mutableStateOf(false) }
     Box {
         Key(
-            label = "更多",
+            label = "i",
             onClick = { open = true },
             kind = KeyKind.Outline,
             height = 48.dp
@@ -280,48 +339,6 @@ private fun MenuWord(
     )
 }
 
-/**
- * The stop: 184×56, ink on ice, cut corner, top-right corner of the bar.
- *
- * It is the only solid block on any screen. Ice rather than red, because red
- * would make it look like a report of a failure rather than a thing to press;
- * red ink appears only in the confirmation of an irreversible exit, which the
- * stop never passes through. Disabled when there is no session to stop, so it
- * cannot be pressed into silence.
- */
-@Composable
-private fun StopKey(enabled: Boolean, onClick: () -> Unit) {
-    val shape = CutCornerShape(0.dp, 0.dp, 12.dp, 0.dp)
-    Box(
-        modifier = Modifier
-            .width(StopWidth)
-            .height(StopHeight)
-            .clip(shape)
-            .background(if (enabled) QuietPalette.Danger else QuietPalette.Board)
-            // Disabled keeps its silhouette: a red hairline and second ink, so
-            // the operator still sees where the stop lives before a session.
-            .then(
-                if (enabled) Modifier
-                else Modifier.border(1.dp, QuietPalette.Danger.copy(alpha = 0.55f), shape)
-            )
-            .clickable(
-                enabled = enabled,
-                role = Role.Button,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick
-            )
-            .padding(horizontal = 20.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "急停",
-            style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) QuietPalette.Board else QuietPalette.InkSecondary,
-            maxLines = 1
-        )
-    }
-}
 
 /**
  * A secondary word in a row that already has a shape: it keeps its own 56 dp

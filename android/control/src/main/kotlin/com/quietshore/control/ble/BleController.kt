@@ -46,6 +46,12 @@ class BleController(
         fun onControlState(state: ControlState)
         /** One JSON-channel document: topic plus its payload. */
         fun onJson(topic: String, data: String)
+        /**
+         * One advertising headset seen during a scan. The scan never connects
+         * on its own: which pad takes a headset is the operator's decision,
+         * and two pads in the same room would otherwise race for it.
+         */
+        fun onScanResult(name: String, address: String, rssi: Int)
         fun onSignal(rssi: Int)
         /** Negotiated ATT MTU, or [code] non-zero when negotiation failed. */
         fun onMtu(mtu: Int, code: Int)
@@ -60,8 +66,6 @@ class BleController(
     private val adapter: BluetoothAdapter? get() = bluetoothManager?.adapter
 
     private var scanCallback: ScanCallback? = null
-    /** First matching advertisement already scheduled a connection. */
-    private var scanConnectPending = false
     /** Advertisements seen in this window; 0 means the stack filtered them all. */
     private var scanResultCount = 0
     private var phase = BlePhase.IDLE
@@ -138,7 +142,7 @@ class BleController(
     private val scanWindow = Runnable {
         val wasAuto = autoScan
         val seen = scanResultCount
-        Log.i(TAG, "scan window expired (auto=$wasAuto, pending=$scanConnectPending, results=$seen)")
+        Log.i(TAG, "scan window expired (auto=$wasAuto, results=$seen)")
         stopScan()
         if (!manualClose && seen == 0) {
             // Not one advertisement came back. On EMUI (and a few other stacks)
@@ -184,7 +188,6 @@ class BleController(
         cancelClaimTimeout()
         cancelHandshakeTimeout()
         awaitingControl = false
-        scanConnectPending = false
         closeManager()
         if (phase != BlePhase.SCANNING) {
             setPhase(BlePhase.IDLE)
@@ -226,7 +229,6 @@ class BleController(
             return
         }
 
-        scanConnectPending = false
         scanResultCount = 0
 
         val callback = object : ScanCallback() {
@@ -248,16 +250,12 @@ class BleController(
                 if (!serviceMatch && !nameMatch) {
                     return
                 }
-                Log.i(TAG, "scan match $address (pending=$scanConnectPending)")
-                // One headset, one pad: connect the moment the advertised
-                // QuietShore device appears instead of making the operator
-                // pick it from a list.
-                if (scanConnectPending) {
-                    return
-                }
-                scanConnectPending = true
-                autoScan = false
-                mainHandler.post { connectInternal(address) }
+                val name = record?.deviceName ?: deviceName ?: "头显"
+                Log.i(TAG, "scan found $address ($name, rssi=${result.rssi})")
+                // Report, never connect. The list on the tablet is the only
+                // place a link starts; a scan that connected by itself made
+                // "which headset am I on" unanswerable with two pads present.
+                mainHandler.post { listener.onScanResult(name, address, result.rssi) }
             }
 
             override fun onScanFailed(errorCode: Int) {
@@ -403,8 +401,11 @@ class BleController(
 
     /** Releases control on the headset, then closes the link. */
     fun disconnect() {
+        Log.i(TAG, "disconnect: manual, auto-reconnect stays off")
         manualClose = true
         autoScan = false
+        lastAddress = null
+        reconnectAttempts = 0
         cancelReconnect()
         stopScan()
         cancelClaimTimeout()

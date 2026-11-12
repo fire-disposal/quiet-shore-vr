@@ -32,7 +32,9 @@ import org.json.JSONObject
 @Composable
 fun MirrorView(
     state: ControlUiState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Called true once the page has finished loading and can draw. */
+    onLoadedChange: (Boolean) -> Unit = {}
 ) {
     val webView = remember { mutableStateOf<WebView?>(null) }
     val latest by rememberUpdatedState(state)
@@ -67,23 +69,29 @@ fun MirrorView(
     }
 
     // The page lays its host out as `position:fixed; inset:0`, which ignores
-    // the WebView's own bounds and sizes the canvas to the whole window — it
-    // drew outside the panel in the cover. On a device-sized WebView the two
-    // are the same rectangle; it becomes visible only here, where the view is
-    // smaller than the screen, so the fit is anchored at 0.5 instead.
     // The page lays its host out as `position:fixed; inset:0`, which resolves
     // against the window, not the WebView's own box: embedded in a panel it
     // drew over the whole screen. Pin it to the document instead and let the
     // page re-size its canvas to the box it actually got.
-    LaunchedEffect(webView.value) {
+    //
+    // This runs from `onPageFinished`, not from composition: the view exists
+    // long before the document does, and a script injected into an empty
+    // document finds no host.
+    //
+    // The rotation is 0 because the page may have loaded before this view had
+    // its final size, so a host left at `fixed` would keep the window's
+    // rectangle.
+    val fixHost = {
         webView.value?.evaluateJavascript(
             "(function(){var h=document.getElementById('mirror-host');" +
                 "if(h){h.style.position='absolute';h.style.inset='0';}" +
-                "window.QuietShoreMirror&&window.QuietShoreMirror.resize&&" +
-                "window.QuietShoreMirror.resize();})()",
+                "if(window.QuietShoreMirror&&window.QuietShoreMirror.resize){" +
+                "window.QuietShoreMirror.resize();}return h?'ok':'no-host';})()",
             null
         )
     }
+
+    LaunchedEffect(webView.value) { fixHost() }
 
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -120,6 +128,13 @@ fun MirrorView(
                     )
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = false
+                    webChromeClient = android.webkit.WebChromeClient()
+                    webViewClient = object : android.webkit.WebViewClient() {
+                        override fun onPageFinished(view: android.webkit.WebView, url: String) {
+                            fixHost()
+                            onLoadedChange(true)
+                        }
+                    }
                     settings.mediaPlaybackRequiresUserGesture = true
                     setBackgroundColor(0xFF0F1210.toInt())
                     loadUrl("file:///android_asset/mirror.html")

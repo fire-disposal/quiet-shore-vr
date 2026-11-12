@@ -109,7 +109,7 @@ fun SceneCardView(
                 onClick = { onSelect(scene.id) }
             )
             .padding(
-                horizontal = 16.dp,
+                horizontal = if (showBlurb) 16.dp else 10.dp,
                 vertical = if (showBlurb) 18.dp else 16.dp
             ),
         verticalArrangement = Arrangement.Center
