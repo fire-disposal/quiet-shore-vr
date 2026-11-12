@@ -538,3 +538,46 @@ fun NoticeRow(
         )
     }
 }
+
+// ---------------------------------------------------------------------------
+// Named roles
+// ---------------------------------------------------------------------------
+
+/**
+ * The spec's `ActionKey`, in the vocabulary this file already owns.
+ *
+ * A key is a key: [Key] carries the four kinds (Fill / Outline / Quiet /
+ * Danger) and every screen uses it. This alias exists so screens can say
+ * "primary action", "secondary action", "destructive action" without repeating
+ * the fill rule — which is the one thing that must never be re-decided per
+ * screen, since ice fill is the only "press this" mark the palette has.
+ */
+enum class ActionTone { Primary, Secondary, Quiet, Danger }
+
+@Composable
+fun ActionKey(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tone: ActionTone = ActionTone.Secondary,
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
+    height: Dp = TouchTarget,
+    minWidth: Dp = 0.dp
+) {
+    Key(
+        label = label,
+        onClick = onClick,
+        modifier = modifier,
+        kind = when (tone) {
+            ActionTone.Primary -> KeyKind.Fill
+            ActionTone.Secondary -> KeyKind.Outline
+            ActionTone.Quiet -> KeyKind.Quiet
+            ActionTone.Danger -> KeyKind.Danger
+        },
+        enabled = enabled,
+        icon = icon,
+        height = height,
+        minWidth = minWidth
+    )
+}

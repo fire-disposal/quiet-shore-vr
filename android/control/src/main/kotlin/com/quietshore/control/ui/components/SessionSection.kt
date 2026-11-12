@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.SessionPhase
+import com.quietshore.control.model.sessionPhaseOf
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.ControlActions
 import com.quietshore.control.ui.theme.QuietPalette
@@ -36,7 +38,7 @@ import kotlin.math.abs
  * disagree.
  */
 @Composable
-fun SessionPanel(
+fun SessionSection(
     state: ControlUiState,
     actions: ControlActions,
     modifier: Modifier = Modifier
@@ -45,13 +47,24 @@ fun SessionPanel(
     val control = state.control
     val caps = state.caps
     val running = control.session
+    val phase = sessionPhaseOf(control, state.phase, state.startPending, state.stopRequested)
 
     Column(modifier.fillMaxWidth()) {
         Band(title = "会话", trailing = {
             Text(
-                text = if (running) "进行中" else "未开始",
+                text = when (phase) {
+                    SessionPhase.Running -> "进行中"
+                    SessionPhase.Stopping -> "正在结束"
+                    SessionPhase.Calibrating -> "记录体位中"
+                    SessionPhase.Entry -> "等待患者确认"
+                    else -> "未开始"
+                },
                 style = MaterialTheme.typography.labelLarge,
-                color = if (running) QuietPalette.TextPrimary else QuietPalette.TextSecondary
+                color = if (phase.inSession) {
+                    QuietPalette.TextPrimary
+                } else {
+                    QuietPalette.TextSecondary
+                }
             )
         }) {
             Column(

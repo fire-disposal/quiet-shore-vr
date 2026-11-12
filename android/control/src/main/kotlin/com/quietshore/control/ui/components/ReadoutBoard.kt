@@ -70,21 +70,21 @@ fun ReadoutBoard(
             },
         verticalAlignment = Alignment.Bottom
     ) {
-        Figure(
+        Readout(
             label = "时长",
             value = elapsed,
             unit = if (running) "进行中" else "未开始",
             modifier = Modifier.weight(1f),
             primary = true
         )
-        Divider()
-        Figure(
+        ReadoutDivider()
+        Readout(
             label = "强度",
             value = strength,
             unit = strengthUnit,
             modifier = Modifier.weight(1f)
         )
-        Divider()
+        ReadoutDivider()
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
@@ -122,64 +122,82 @@ fun ReadoutBoard(
                 )
             }
         }
+        // The headset's charge is the fourth reading on this row, never a
+        // control: it only appears when the flags document carried one, and its
+        // figure is a tier below the three session numbers.
+        if (state.battery != null) {
+            ReadoutDivider()
+            Column(modifier = Modifier.width(132.dp)) {
+                BatteryReading(state.battery)
+            }
+        }
     }
 }
 
-/** One number, its small caps label above it, its unit beside it. */
+/**
+ * `电量 62% 充电中` with a 3 dp proportional track underneath.
+ *
+ * At 20 % or below the figure sits on ice with ink on top — ice *text* on this
+ * paper is 1.3:1 and unreadable, while ice *fill* is 12.6:1. The label and the
+ * state word never change colour: the mark is on the number the operator reads.
+ */
 @Composable
-private fun Figure(
-    label: String,
-    value: String,
-    unit: String,
-    modifier: Modifier = Modifier,
-    primary: Boolean = false
-) {
-    Column(modifier) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = value,
-                style = if (primary) {
-                    MaterialTheme.typography.displayMedium
-                } else {
-                    MaterialTheme.typography.displaySmall
-                },
-                color = QuietPalette.TextPrimary,
-                maxLines = 1
+private fun BatteryReading(battery: com.quietshore.control.model.Battery) {
+    val level = battery.level.coerceIn(0, 100)
+    val state = when {
+        battery.full -> "已充满"
+        battery.charging -> "充电中"
+        else -> ""
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "电量",
+            style = MaterialTheme.typography.labelSmall.tabularFigures(),
+            color = QuietPalette.TextSecondary,
+            maxLines = 1
+        )
+        Spacer(Modifier.width(6.dp))
+        if (battery.low) {
+            Box(
+                Modifier
+                    .background(QuietPalette.Ice)
+                    .padding(horizontal = 4.dp)
+            ) {
+                NumberText(
+                    text = "$level%",
+                    style = MaterialTheme.typography.titleMedium.tabularFigures()
+                )
+            }
+        } else {
+            NumberText(
+                text = "$level%",
+                style = MaterialTheme.typography.titleMedium.tabularFigures()
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        if (state.isNotEmpty()) {
+            Spacer(Modifier.width(6.dp))
             Text(
-                text = label,
+                text = state,
                 style = MaterialTheme.typography.labelSmall,
                 color = QuietPalette.TextSecondary,
                 maxLines = 1
             )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = unit,
-                style = MaterialTheme.typography.bodySmall.tabularFigures(),
-                color = QuietPalette.TextSecondary,
-                maxLines = 1
-            )
         }
     }
-}
-
-/** Hairline column rule between two figures; the board's only division. */
-@Composable
-private fun Divider() {
+    Spacer(Modifier.height(8.dp))
     Box(
         Modifier
-            .padding(horizontal = 16.dp)
-            .width(1.dp)
-            .height(56.dp)
-            .fillMaxHeight(0.72f)
+            .fillMaxWidth()
+            .height(3.dp)
             .background(QuietPalette.Hairline)
-    )
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(level / 100f)
+                .height(3.dp)
+                .background(QuietPalette.Ice)
+        )
+    }
 }
 
 /** mm:ss, capped at an hour so the figure never changes width. */

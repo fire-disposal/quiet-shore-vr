@@ -29,6 +29,20 @@ enum class MirrorMode(val label: String) {
 }
 
 /**
+ * The headset's own battery, as its sticky system broadcast reported it.
+ *
+ * Null means "not read yet", which is a different thing from "empty": the
+ * tablet draws nothing rather than a made-up 0 %. The one threshold that
+ * matters on a headset strapped to a patient is 20 % — below it the session may
+ * not outlast the exercise — so that is the only state that gets a mark, and it
+ * gets ice, not red: nothing is broken, something needs charging.
+ */
+data class Battery(val level: Int, val charging: Boolean) {
+    val low: Boolean get() = level <= 20
+    val full: Boolean get() = charging && level >= 100
+}
+
+/**
  * Everything the screens render. High frequency telemetry lands here too, but
  * only the small pose readouts watch it, so recomposition stays cheap.
  */
@@ -80,15 +94,17 @@ data class ControlUiState(
     /** Launch requested, waiting for the patient's confirm key. */
     val startPending: Boolean = false,
     /**
-     * Scene the operator just picked, until a headset frame confirms it.
-     * Confirmation is up to one state frame away (~1 s); without this the card
-     * snaps back to the old scene right after the tap.
+     * The tablet has asked to end the session and the page has not reported the
+     * session gone yet: the fade is running. Cleared by the frame that drops
+     * the session flag, never by a timer.
      */
-    val scenePending: String? = null,
+    val stopRequested: Boolean = false,
     /** No state frame from the headset for a while: the link is not live. */
     val stateStale: Boolean = false,
     /** Capabilities reported by the headset's motion plan. */
-    val caps: MotionCaps = MotionCaps()
+    val caps: MotionCaps = MotionCaps(),
+    /** Headset battery from its `flags` document; null until it is read. */
+    val battery: Battery? = null
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 

@@ -28,11 +28,10 @@
   --cut: 6px;
 
   /*
-   * 字号阶梯：4 档，比例约 1.5–1.6。
+   * 字号阶梯：3 档，比例约 1.5–1.6。
    * copy 在 40→60（1024→1920）之间，两窗口都宽于最长指令 11 字，指令恒为一行。
    */
   --fs-copy: clamp(40px, 4.5vw, 54px);
-  --fs-scene: clamp(26px, 3.1vw, 34px);
   --fs-body: clamp(18px, 1.65vw, 24px);
   --fs-label: clamp(13px, .95vw, 16px);
 
@@ -85,47 +84,6 @@ html, body {
   display: flex;
   flex-direction: column;
 }
-
-/* 01 / 04 场景 —— what this session is. It is context for the instruction,
-   so it owns its own rule at the top and nothing touches it. */
-.entry-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding-bottom: var(--sp-1);
-  border-bottom: 1px solid var(--line);
-}
-.entry-field {
-  display: flex;
-  align-items: baseline;
-  gap: .5em;
-  margin: 0;
-  color: var(--faint);
-  /* The label tier: one size, one weight for the field, the status and the
-     footer note. Wide caps for the Latin, plain Chinese after. */
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: 1.2;
-}
-.field-slash { color: var(--line-strong); }
-.field-number {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-}
-.field-sep { color: var(--line-strong); }
-.field-label { color: var(--faint); }
-
-.entry-scene {
-  margin: 0;
-  font-size: var(--fs-scene);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-.entry-scene strong { font-weight: inherit; font-family: inherit; }
 
 /* The body of the screen: the instruction and its two pictures on the left,
    the device report on the right. Optical centre, not arithmetic centre. */

@@ -35,7 +35,7 @@ private fun stamp(epochMs: Long): String {
 }
 
 @Composable
-fun SusPanel(
+fun SusSheet(
     state: ControlUiState,
     actions: ControlActions,
     modifier: Modifier = Modifier

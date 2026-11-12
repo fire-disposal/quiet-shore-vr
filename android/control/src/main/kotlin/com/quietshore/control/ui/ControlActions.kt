@@ -39,6 +39,8 @@ data class ControlActions(
     val onDisconnect: () -> Unit,
     val onReconnect: () -> Unit,
     val onLeave: () -> Unit,
+    /** Opens the voice panel; the quick row's 语音 key is a door, not a player. */
+    val onVoiceOpen: () -> Unit,
     /** Plays one guidance cue; SUS statements are scheduled by the panel. */
     val onVoicePlay: (String) -> Unit,
     /** start | imagine | relax | close */

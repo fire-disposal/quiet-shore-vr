@@ -23,11 +23,6 @@ fun mergeRemoteFrame(
     nowMs: Long
 ): ControlUiState {
     val running = frame.session
-    // The operator's pick outranks an in-flight frame until the headset echoes
-    // it back: confirmation is at most one frame away, and letting the older
-    // frame win made the card flip back, so the next tap hit the wrong card.
-    val pending = current.scenePending
-    val scene = if (pending != null && pending != frame.scene) current.control.scene else frame.scene
     val elapsedMs = when {
         // No running session, no clock: the caller clears `sessionStartedAt` on
         // the falling edge, but the merge must not depend on that ordering.
@@ -37,8 +32,7 @@ fun mergeRemoteFrame(
         else -> (nowMs - sessionStartedAt).coerceAtLeast(0L)
     }
     return current.copy(
-        control = frame.copy(scene = scene),
-        scenePending = if (pending == frame.scene) null else pending,
+        control = frame,
         // While a session runs the headset is authoritative for the mode too,
         // so a rejected command cannot leave the panel showing something that
         // is not happening. Before a session the operator's choice stands.
@@ -46,6 +40,10 @@ fun mergeRemoteFrame(
         // Voice is authoritative on the headset: the tablet only echoes.
         voiceId = frame.voiceId,
         startPending = if (running) false else current.startPending,
+        // The fade is over when the page says the session is gone; until then
+        // the tablet keeps refusing scene and strength, which is what the page
+        // is doing too.
+        stopRequested = running && current.stopRequested,
         sessionElapsedMs = elapsedMs
     )
 }

@@ -150,6 +150,7 @@ fun ControlApp(viewModel: ControlViewModel) {
                 onPostureLower = viewModel::postureLower,
                 onPostureRise = viewModel::postureRise,
                 onPostureStop = viewModel::postureStop,
+                onVoiceOpen = {},
                 onVoicePlay = viewModel::playVoice,
                 onVoiceSequence = viewModel::playVoiceSequence,
                 onVoiceStop = viewModel::stopVoice,

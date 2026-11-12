@@ -95,8 +95,6 @@ class ControlViewModel(application: Application) :
     /** Monotonic start of the running session; 0 when no session is running. */
     private var sessionStartedAt = 0L
     private var enterPendingJob: Job? = null
-    /** Clears [ControlUiState.scenePending] when the headset never confirms. */
-    private var scenePendingJob: Job? = null
 
     init {
         refreshBluetoothState()
@@ -243,7 +241,7 @@ class ControlViewModel(application: Application) :
     }
 
     fun endSession() {
-        sendCommand("stop")
+        requestStop()
     }
 
     /**
@@ -252,6 +250,22 @@ class ControlViewModel(application: Application) :
      * patient's confirm key sends, so both converge on one path.
      */
     fun emergencyStop() {
+        // Idempotent on purpose: a second press while the fade runs must not
+        // be a dialog, a debounce, or a different code path.
+        requestStop()
+    }
+
+    /**
+     * One stop path for both keys. The tablet flips to [SessionPhase.Stopping]
+     * on the press, not on a reply — the page has already frozen by the time
+     * the command lands — and the next frame that drops the session flag clears
+     * it. Nothing here waits for an acknowledgement the wire does not carry.
+     */
+    private fun requestStop() {
+        if (!_uiState.value.control.session) {
+            return
+        }
+        _uiState.update { it.copy(stopRequested = true) }
         sendCommand("stop")
     }
 
@@ -283,20 +297,12 @@ class ControlViewModel(application: Application) :
         if (scene !in ControlProtocol.SCENE_LABELS) {
             return
         }
-        // The page is often closed when the choice is made (it is a launch
-        // parameter), so echo the choice locally and hold it until a headset
-        // frame confirms it. Clearing on a timer matters when the headset
-        // rejects the command (mid-session): the panel must return to the
-        // scene that is actually loaded.
-        _uiState.update { it.copy(control = it.control.copy(scene = scene), scenePending = scene) }
+        // No local echo, and therefore no pending window: the scene can be
+        // switched mid-session, so the row that shows it must show what the
+        // headset actually loaded. The page applies the command and answers
+        // with `state.control.scene`; anything the tablet draws ahead of that
+        // frame is a mark for a scene the patient may never be looking at.
         sendCommand(ControlProtocol.SCENE_PREFIX + scene)
-        scenePendingJob?.cancel()
-        scenePendingJob = viewModelScope.launch {
-            delay(SCENE_PENDING_MS)
-            _uiState.update {
-                if (it.scenePending == scene) it.copy(scenePending = null) else it
-            }
-        }
     }
 
     /** Leaves the browser scene and returns the headset to its console app. */
@@ -585,12 +591,10 @@ class ControlViewModel(application: Application) :
 
     override fun onDisconnected() {
         lastPoseAt = 0L
-        scenePendingJob?.cancel()
         _uiState.update {
             it.copy(
                 controlGranted = false,
                 poseStale = true,
-                scenePending = null,
                 rssi = null
             )
         }
@@ -636,19 +640,22 @@ class ControlViewModel(application: Application) :
                 blocked = obj.optString("blocked", "")
             )
         }
+        // Absent and null both mean "not read": keep the last reading rather
+        // than flashing the block away between heartbeats.
+        val battery = json.optJSONObject("battery")?.let {
+            com.quietshore.control.model.Battery(
+                level = it.optInt("level", -1),
+                charging = it.optBoolean("charging", false)
+            )
+        }?.takeIf { it.level in 0..100 }
         _uiState.update { current ->
-            val flagsScene = json.optString("scene", current.control.scene)
-            // Same rule as a state frame: an unconfirmed operator pick wins.
-            val scene = if (current.scenePending != null && current.scenePending != flagsScene) {
-                current.control.scene
-            } else {
-                flagsScene
-            }
             current.copy(
                 caps = caps ?: current.caps,
-                scenePending = if (current.scenePending == flagsScene) null else current.scenePending,
+                battery = battery ?: current.battery,
                 control = current.control.copy(
-                    scene = scene,
+                    // The headset owns the scene: this flag is what it will
+                    // boot, and a live switch re-publishes it immediately.
+                    scene = json.optString("scene", current.control.scene),
                     session = json.optBoolean("session", current.control.session),
                     calibrating = json.optBoolean("calibrating", current.control.calibrating),
                     moving = json.optBoolean("moving", current.control.moving),
@@ -768,8 +775,6 @@ class ControlViewModel(application: Application) :
         const val TICK_MS = 500L
         /** How long "waiting for the patient" survives without a session. */
         const val ENTER_PENDING_MS = 20_000L
-        /** How long a scene pick stays "mine" without headset confirmation. */
-        const val SCENE_PENDING_MS = 6_000L
         const val RSSI_INTERVAL_MS = 3000L
         const val POSE_STALE_MS = 1500L
         /** The four scripted sequences the page knows by name. */

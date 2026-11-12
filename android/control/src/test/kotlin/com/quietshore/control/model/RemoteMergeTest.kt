@@ -4,7 +4,6 @@ import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.ViewAnim
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -47,21 +46,18 @@ class RemoteMergeTest {
     }
 
     @Test
-    fun `an unconfirmed scene pick outranks the older frame`() {
-        val picked = ControlUiState(
-            control = ControlState(scene = "lightwell"),
-            scenePending = "lightwell"
-        )
+    fun `a mid-session scene switch is reported, never echoed ahead of the headset`() {
+        // The scene may be switched while the session runs, so the tablet has
+        // no pick of its own to defend: whatever the headset last reported is
+        // what every mark draws. An echo would flash a mark for a scene the
+        // patient is not looking at, and stay there if the switch was refused.
+        val running = ControlUiState(control = ControlState(scene = "shore", session = true))
 
-        // A frame produced before the page switched: it must not undo the pick,
-        // or the card flips back and the next tap lands on the wrong scene.
-        val stale = mergeRemoteFrame(picked, frame(scene = "shore"), 0L, 1_000L)
-        assertEquals("lightwell", stale.control.scene)
-        assertEquals("lightwell", stale.scenePending)
+        val switched = mergeRemoteFrame(running, frame(session = true, scene = "ward"), 0L, 1_000L)
+        assertEquals("ward", switched.control.scene)
 
-        val confirmed = mergeRemoteFrame(picked, frame(scene = "lightwell"), 0L, 2_000L)
-        assertEquals("lightwell", confirmed.control.scene)
-        assertNull(confirmed.scenePending)
+        val unchanged = mergeRemoteFrame(switched, frame(session = true, scene = "ward"), 0L, 2_000L)
+        assertEquals("ward", unchanged.control.scene)
     }
 
     @Test

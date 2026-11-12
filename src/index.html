@@ -10,21 +10,12 @@
 </head>
 <body>
   <!-- Landscape only: the headset browser runs at 1024×576 or 1920×1080.
-       One layout, two edge-to-edge columns — what this is entering on the
-       left, where the button is on the right. -->
+       One layout, two edge-to-edge columns — the one instruction and its
+       picture on the left, the device state on the right. No scene name: the
+       scene can be switched mid-session, so an entry page that announced one
+       would be promising something the next tap changes. -->
   <main id="start" class="start">
     <div class="frame">
-      <header class="entry-head">
-        <p class="entry-field">
-          <span class="field-slash" aria-hidden="true">//</span>
-          <span id="launch-index" class="field-number">01</span>
-          <span class="field-sep" aria-hidden="true">/</span>
-          <span id="launch-total" class="field-number">04</span>
-          <span class="field-label">场景</span>
-        </p>
-        <h1 class="entry-scene"><strong id="launch-scene"></strong></h1>
-      </header>
-
       <section class="entry-core" aria-label="进入训练">
         <div class="entry-copy">
           <button id="enter" class="enter-target" type="button" disabled>

@@ -20,7 +20,7 @@ import kotlinx.coroutines.isActive
 import org.json.JSONObject
 
 /**
- * Scene mirror for the operator.
+ * The patient's view, mirrored for the operator (`MirrorView` in the ux tree).
  *
  * It exists so the technician can see what the patient sees. Everything about
  * it is deliberately bounded: it loads only when the operator opens it, runs at
@@ -30,7 +30,7 @@ import org.json.JSONObject
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun SceneMirror(
+fun MirrorView(
     state: ControlUiState,
     modifier: Modifier = Modifier
 ) {

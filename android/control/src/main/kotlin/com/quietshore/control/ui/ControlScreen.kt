@@ -38,12 +38,13 @@ import com.quietshore.control.ui.components.KeyKind
 import com.quietshore.control.ui.components.LoadingDots
 import com.quietshore.control.ui.components.NoticeRow
 import com.quietshore.control.ui.components.PitchSideGauge
+import com.quietshore.control.ui.components.QuickActions
 import com.quietshore.control.ui.components.ReadoutBoard
 import com.quietshore.control.ui.components.Rule
-import com.quietshore.control.ui.components.SceneMirror
-import com.quietshore.control.ui.components.ScenePage
-import com.quietshore.control.ui.components.SessionPanel
-import com.quietshore.control.ui.components.SusPanel
+import com.quietshore.control.ui.components.MirrorView
+import com.quietshore.control.ui.components.SceneSection
+import com.quietshore.control.ui.components.SessionSection
+import com.quietshore.control.ui.components.SusSheet
 import com.quietshore.control.ui.components.VoicePanel
 import com.quietshore.control.ui.theme.QuietPalette
 
@@ -53,12 +54,14 @@ import com.quietshore.control.ui.theme.QuietPalette
  * ```text
  *   [ dark command bar ]   link · scene · session · tabs · stop   (fixed)
  *   [ readout board   ]    time · strength · posture              (fixed)
+ *   [ quick actions   ]    scene · strength · end                 (fixed)
  *   [ bands           ]    scene / voice / SUS, hairline-divided  (scrolls)
  *   [ mirror + gauges ]    what the patient sees and where they face
  * ```
  *
- * Only the band column scrolls. The stop is in the bar and the session figures
- * are in the board, so neither can be scrolled away.
+ * Only the band column scrolls. The stop is in the bar, and the figures plus the
+ * one row of in-session shortcuts sit under it, so none of them can be scrolled
+ * away mid-session.
  */
 @Composable
 fun ControlScreen(
@@ -104,6 +107,14 @@ fun ControlScreen(
                 onEmergencyStop = actions.onEmergencyStop
             )
             ReadoutBoard(state = state)
+            // Board and shortcuts are the session view: fixed, above every
+            // scrolling container. During a session the technician never has to
+            // scroll to reach the two things they act on.
+            QuickActions(
+                state = state,
+                actions = actions,
+                onOpenVoice = { tab = "VOICE" }
+            )
             Rule()
 
             Box(Modifier.weight(1f)) {
@@ -123,7 +134,7 @@ fun ControlScreen(
                                 .padding(start = 20.dp, top = 16.dp, end = 20.dp)
                                 .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 16.dp))
                         ) {
-                            SceneMirror(state = state, modifier = Modifier.fillMaxSize())
+                            MirrorView(state = state, modifier = Modifier.fillMaxSize())
                         }
                     }
                     Row(
@@ -180,10 +191,10 @@ fun ControlScreen(
                             )
                         }
                         when (tab) {
-                            "MOTION" -> SessionPanel(state = state, actions = actions)
+                            "MOTION" -> SessionSection(state = state, actions = actions)
                             "VOICE" -> VoicePanel(state = state, actions = actions)
-                            "SUS" -> SusPanel(state = state, actions = actions)
-                            else -> ScenePage(state = state, actions = actions)
+                            "SUS" -> SusSheet(state = state, actions = actions)
+                            else -> SceneSection(state = state, actions = actions)
                         }
                     }
                 }
