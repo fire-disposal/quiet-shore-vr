@@ -40,7 +40,7 @@ import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.theme.QuietPalette
 
 /** Bar height: one row — app name, link, the two doors, the stop. */
-val CommandBarHeight = 88.dp
+val CommandBarHeight = 72.dp
 
 /** Where the stop sits on the bar's second line, and how wide it is. */
 val StopWidth = 168.dp
@@ -91,63 +91,49 @@ fun CommandBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(CommandBarHeight)
-                .padding(start = 32.dp, end = 20.dp),
+                .padding(start = 20.dp, end = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ---- the app's own row -------------------------------------
-            Column(Modifier.weight(1f)) {
+            // A terminal line, not a brand header: the app's name is not
+            // something the operator needs to read every session. State is
+            // one field — a solid ink tag, then the device's own number.
+            StatusTag(barLinkLabel(state.phase, state.stateStale))
+            if (state.deviceSuffix.isNotEmpty()) {
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    text = "静岸控制台",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = QuietPalette.Ink
+                    text = state.deviceSuffix,
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    color = QuietPalette.InkSecondary,
+                    maxLines = 1
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PresenceMark(presenceOf(state.phase, state.stateStale))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = barLinkLabel(state.phase, state.stateStale),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = QuietPalette.Ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (state.deviceSuffix.isNotEmpty()) {
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = state.deviceSuffix,
-                            style = MaterialTheme.typography.bodyMedium.tabularFigures(),
-                            color = QuietPalette.InkSecondary,
-                            maxLines = 1
-                        )
-                    }
-                }
             }
 
-            Spacer(Modifier.weight(1f))
-
-            // Both charges at the right, before the menu: they are telemetry
-            // about two devices, not part of the link label. Two bars, always
-            // in the same order, both named — in the battery convention
-            // (green / amber / red), which is deliberately outside the
-            // interface palette; see BatteryReading.
+            // The middle of the bar is the charge: two full-width bars, the
+            // label inside at the left end and the figure inside at the right
+            // end. The fill is the reading, so there is no text column beside
+            // it — the spare width of the bar is what measures the battery.
+            //
+            // The sweep is the pad's only, and only while it is still filling:
+            // the headset renders a Web3D page and must never drive our clock.
             Column(
-                modifier = Modifier.width(168.dp),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                BatteryReading(
+                BatteryBar(
                     label = "头显",
                     level = state.battery?.level ?: -1,
-                    charging = state.battery?.charging ?: false
+                    charging = state.battery?.charging ?: false,
+                    animateCharge = false
                 )
-                BatteryReading(
+                BatteryBar(
                     label = "平板",
                     level = pad?.level ?: -1,
-                    charging = pad?.charging ?: false
+                    charging = pad?.charging ?: false,
+                    animateCharge = true
                 )
             }
-            Spacer(Modifier.width(16.dp))
 
             OverflowMenu(
                 connected = connected,
@@ -165,6 +151,29 @@ fun CommandBar(
             )
         }
 
+    }
+}
+
+/**
+ * The link state as a field: an ink block with reverse paper text.
+ *
+ * It is square, not cut, because a cut corner means "pressable" and this is a
+ * readout. Its colour never changes with state — ink always, so the accent
+ * keeps meaning "current / you can press this" and the stop keeps its red.
+ */
+@Composable
+private fun StatusTag(label: String) {
+    Box(
+        modifier = Modifier
+            .background(QuietPalette.Ink)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = QuietPalette.Paper,
+            maxLines = 1
+        )
     }
 }
 

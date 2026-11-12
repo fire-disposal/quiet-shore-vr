@@ -42,7 +42,8 @@ class MainActivity : ComponentActivity() {
                         fixture = fixture,
                         batteryLevel = intent.getIntExtra("battery", -1)
                             .takeIf { it in 0..100 },                        withPose = intent.getBooleanExtra("pose", false),
-                        withDrift = intent.getBooleanExtra("drift", false)
+                        withDrift = intent.getBooleanExtra("drift", false),
+                        tapped = intent.getStringExtra("tapped")
                     )
                 } else {
                     val controlViewModel: ControlViewModel = viewModel()

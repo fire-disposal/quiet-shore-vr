@@ -131,7 +131,7 @@ fun PairingScreen(
 }
 
 /** Bar plus the screen's own cut: the card may take everything else. */
-private const val CHROME = 88
+private const val CHROME = 72
 
 /**
  * The app bar on paper: the app's name, then 操作说明 as a shaped key. Same
@@ -143,13 +143,13 @@ private fun AppBar(onOpenInfo: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(88.dp)
+                .height(72.dp)
                 .padding(horizontal = QuietSpace.Page),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "静岸控制台",
-                style = MaterialTheme.typography.titleLarge,
+                text = "连接头显",
+                style = MaterialTheme.typography.titleMedium,
                 color = QuietPalette.Ink
             )
             Spacer(Modifier.weight(1f))

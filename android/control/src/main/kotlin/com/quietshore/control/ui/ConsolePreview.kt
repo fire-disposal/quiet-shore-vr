@@ -36,9 +36,11 @@ fun ConsolePreview(
     withPose: Boolean = false,
     /** `--ez drift true` makes the local choice disagree with the frame. */
     withDrift: Boolean = false,
+    /** `--es tapped washroom` pretends that card was just pressed. */
+    tapped: String? = null,
     modifier: Modifier = Modifier
 ) {
-    val state = fixtureState(fixture, batteryLevel, withPose, withDrift)
+    val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped)
     var showGuide by remember { mutableStateOf(false) }
     val noop: () -> Unit = {}
     val actions = ControlActions(
@@ -100,7 +102,8 @@ fun fixtureState(
     fixture: ConsoleFixture,
     batteryLevel: Int?,
     withPose: Boolean = false,
-    withDrift: Boolean = false
+    withDrift: Boolean = false,
+    tapped: String? = null
 ): ControlUiState {
     val base = ControlUiState(
         phase = BlePhase.READY,
@@ -131,7 +134,7 @@ fun fixtureState(
     )
     // The spread the mirror exists to expose: the bench asked for one scene,
     // the headset is still playing the other.
-    val drift = if (withDrift) "washroom" else ""
+    val drift = tapped ?: if (withDrift) "washroom" else ""
     return when (fixture) {
         ConsoleFixture.Running -> base.copy(
             sceneIntent = drift,

@@ -170,7 +170,9 @@ fun ControlScreen(
                         .padding(
                             start = QuietSpace.Page,
                             end = QuietSpace.Page,
-                            top = QuietSpace.Page,
+                            // 16 dp under the bar: the bar is chrome, close to
+                            // the page; 32 dp is for block-to-block gaps.
+                            top = 16.dp,
                             bottom = QuietSpace.Page
                         ),
                     horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
@@ -279,7 +281,7 @@ private fun StandbyMain(
             note = when (phase) {
                 SessionPhase.Entry -> "切换会重开页面"
                 SessionPhase.Calibrating -> "校准中，暂不可切换"
-                else -> "会话前选择，会话中不可切换"
+                else -> "点选后立即切换，会话中也可换"
             }
         )
         SceneChooser(
@@ -666,11 +668,20 @@ private fun SessionActions(
     fill: Boolean = true,
 ) {
     val ready = state.phase == BlePhase.READY
-    // During a session the scene is fixed: the page only accepts `scene:<id>`
-    // before the launch, so a scene key that looked live would be a key that
-    // does nothing. Strength and posture stay live; the scene is read-only.
-    val scenesEnabled = false
+    // A scene switch is live during training: the page swaps only the content,
+    // keeps the calibration frame and the gaze offset, clamps the buoyancy
+    // ceiling to the new scene and runs the posture change along the operator's
+    // ramp. It is reversible — pressing another card switches straight back —
+    // so it needs no confirmation and no "switching" state of its own.
+    //
+    // Two windows stay closed because the page refuses there: recording the
+    // posture (it is measuring the body) and the ending fade.
+    val scenesEnabled = ready && (phase == SessionPhase.Running ||
+        phase == SessionPhase.Idle || phase == SessionPhase.Entry)
     val level = state.control.floatLevel.coerceIn(0, 3)
+    // The card the operator last pressed, until the frame confirms it: a tap
+    // that has not arrived back yet still has to look like it landed.
+    val selectedScene = state.sceneIntent.ifEmpty { state.control.scene }
     Column(modifier) {
         // Keys that can grow live in a scroller so a taller type scale or a
         // longer label can never push the stop out of reach; 结束 stays below
@@ -698,11 +709,12 @@ private fun SessionActions(
                         for (scene in com.quietshore.control.model.SceneCatalog.ALL.take(2)) {
                             SceneCardView(
                                 scene = scene,
-                                current = scene.id == state.control.scene,
+                                current = scene.id == selectedScene,
                                 enabled = scenesEnabled,
                                 onSelect = actions.onSceneSelect,
                                 modifier = Modifier.weight(1f),
-                                showBlurb = false
+                                showBlurb = false,
+                                playing = scene.id == state.control.scene
                             )
                         }
                     }
@@ -710,11 +722,12 @@ private fun SessionActions(
                         for (scene in com.quietshore.control.model.SceneCatalog.ALL.drop(2)) {
                             SceneCardView(
                                 scene = scene,
-                                current = scene.id == state.control.scene,
+                                current = scene.id == selectedScene,
                                 enabled = scenesEnabled,
                                 onSelect = actions.onSceneSelect,
                                 modifier = Modifier.weight(1f),
-                                showBlurb = false
+                                showBlurb = false,
+                                playing = scene.id == state.control.scene
                             )
                         }
                     }
@@ -723,8 +736,10 @@ private fun SessionActions(
                 Text(
                     text = if (phase == SessionPhase.Calibrating) {
                         "校准中，仅急停可用。"
+                    } else if (phase == SessionPhase.Stopping) {
+                        "正在结束，结束后再切换。"
                     } else {
-                        "会话中不可切换"
+                        "点选后立即切换"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.InkSecondary
