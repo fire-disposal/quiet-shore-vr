@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.quietshore.control.ui.theme.QuietPalette
 import com.quietshore.control.ui.theme.rememberMotionEnabled
 
@@ -188,14 +190,18 @@ fun BatteryField(
             )
             Text(
                 text = "${label}电量:",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal),
                 color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
             if (known) {
+                // The number is the reading: semibold, tabular, ink. The label
+                // beside it stays regular and secondary, so the eye sorts
+                // "what is it" from "how much" without a divider.
                 Text(
                     text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
-                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    style = MaterialTheme.typography.bodyMedium.tabularFigures()
+                        .copy(fontWeight = FontWeight.SemiBold),
                     color = QuietPalette.Ink,
                     maxLines = 1
                 )
@@ -230,7 +236,7 @@ private val ChargeBarHeight = 28.dp
 private fun ChargeTag(label: String) {
     Text(
         text = "[$label]",
-        style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.2.sp),
         color = QuietPalette.InkSecondary,
         maxLines = 1
     )

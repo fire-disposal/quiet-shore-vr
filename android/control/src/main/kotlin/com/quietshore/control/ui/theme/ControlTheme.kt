@@ -74,6 +74,13 @@ object QuietPalette {
      */
     val Danger = Color(0xFFE53935)
 
+    /**
+     * Warning, not deletion: the skill keeps red for delete and asks warnings
+     * to use a block plus ink. Amber is that block here; ice stays "pressable",
+     * red stays "destructive", amber means "this changes the link".
+     */
+    val Warning = Color(0xFFFFB300)
+
     // Names the earlier bar used; kept as aliases so call sites read the same
     // way they did when the bar was dark.
     val Background: Color get() = Paper

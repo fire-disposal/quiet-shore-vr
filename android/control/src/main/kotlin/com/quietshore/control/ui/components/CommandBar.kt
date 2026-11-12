@@ -1,6 +1,7 @@
 package com.quietshore.control.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -41,6 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
@@ -113,17 +115,19 @@ fun CommandBar(
             // the same voice as `//头显电量`, and the device's own number sits
             // under it in the figure face. A black block here read as a button.
             Column {
+                // Weight carries the hierarchy, not size: the word is light
+                // and quiet, the device number is the only medium-weight thing
+                // on the left so the eye lands on "which headset" first.
                 Text(
-                    // The link word is a state, not a field: no `//` here in
-                    // any state. `//` belongs to the readings on the right.
                     text = barLinkLabel(state.phase, state.stateStale),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.4.sp),
                     color = QuietPalette.InkSecondary,
                     maxLines = 1
                 )
                 Text(
                     text = state.deviceSuffix.ifEmpty { "—" },
-                    style = MaterialTheme.typography.titleSmall.tabularFigures(),
+                    style = MaterialTheme.typography.titleSmall.tabularFigures()
+                        .copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
                     color = QuietPalette.Ink,
                     maxLines = 1
                 )
@@ -163,12 +167,39 @@ fun CommandBar(
             // The bar's right end is the way out of the link: 断开连接. The
             // emergency stop is gone from the product; a session ends through
             // 结束 on the console, which is the same planned stop it always was.
-            Key(
-                label = "断开连接",
-                onClick = onDisconnect,
-                kind = KeyKind.Outline,
-                enabled = connected
-            )
+            // Warning, not deletion: ending the link is reversible but it does
+            // interrupt a session, so it takes the amber block the skill asks
+            // for (red stays for delete). Disabled keeps a hairline + ink, so
+            // the key never disappears.
+            Box(
+                modifier = Modifier
+                    .height(48.dp)
+                    .clip(androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
+                    .background(if (connected) QuietPalette.Warning else QuietPalette.Board)
+                    .then(
+                        if (connected) {
+                            Modifier
+                        } else {
+                            Modifier.border(1.dp, QuietPalette.Hairline, androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
+                        }
+                    )
+                    .clickable(
+                        enabled = connected,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClick = onDisconnect
+                    )
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "断开连接",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (connected) QuietPalette.Ink else QuietPalette.InkSecondary,
+                    maxLines = 1
+                )
+            }
         }
 
     }
@@ -278,12 +309,29 @@ private fun OverflowMenu(
     // takes this path — it is not in this menu.
     var confirmingExit by remember { mutableStateOf(false) }
     Box {
-        Key(
-            label = "i",
-            onClick = { open = true },
-            kind = KeyKind.Outline,
-            height = 48.dp
-        )
+        // Help is an icon, not a word: a 44 dp ice block with an ink `i`.
+        // Ice is the accent and it only ever fills; the glyph on top is ink,
+        // so it reads as "press me" without joining the words on this bar.
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
+                .background(QuietPalette.Ice)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = { open = true }
+                )
+                .semantics { contentDescription = "操作说明" },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "i",
+                style = MaterialTheme.typography.titleMedium,
+                color = QuietPalette.Ink
+            )
+        }
         if (confirmingExit) {
             AlertDialog(
                 onDismissRequest = { confirmingExit = false },
