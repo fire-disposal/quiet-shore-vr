@@ -149,6 +149,7 @@ fun BatteryField(
         modifier = modifier
             .fillMaxWidth()
             .height(ChargeBarHeight)
+            .clipToBounds()
             .background(QuietPalette.Hairline.copy(alpha = 0.16f)),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -184,13 +185,13 @@ fun BatteryField(
         ) {
             Text(
                 text = PREFIX,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp, fontWeight = FontWeight.Medium),
                 color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
             Text(
                 text = "${label}电量:",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp, fontWeight = FontWeight.Medium),
                 color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
@@ -201,7 +202,7 @@ fun BatteryField(
                 Text(
                     text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
                     style = MaterialTheme.typography.bodyLarge.tabularFigures()
-                        .copy(fontWeight = FontWeight.SemiBold),
+                        .copy(lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
                     color = QuietPalette.Ink,
                     maxLines = 1
                 )
@@ -210,7 +211,7 @@ fun BatteryField(
                 // bar's empty track, and this line is a reading, not a status.
                 Text(
                     text = "---",
-                    style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                    style = MaterialTheme.typography.bodyLarge.tabularFigures().copy(lineHeight = 22.sp),
                     color = QuietPalette.InkSecondary,
                     maxLines = 1
                 )
