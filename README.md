@@ -2,9 +2,9 @@
 
 静岸是一套床边的场景体验。患者在躺卧的体位下，看见近似站立时的视野。节奏由技术员掌握。患者按一次头显上的按钮确认开始，随时可以说停。
 
-**状态**：v1.0.0（四场景 `shore` / `ward` / `washroom` / `lightwell`，按躺姿眼高重新构图；状态帧 v13；控制端只有一套运动学：体位 / 起伏 / 视线；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v2.0.0（四场景 `shore` / `ward` / `washroom` / `lightwell`，按躺姿眼高重新构图；状态帧 v13；控制端只有一套运动学：体位 / 起伏 / 视线；平板界面为浅色 App 版式，双端 debug 签名）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
-**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-1.0.0.apk`、`artifacts/flash/quiet-shore-control-1.0.0.apk`，校验见同目录 `SHA256SUMS.txt`。
+**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-2.0.0.apk`、`artifacts/flash/quiet-shore-control-2.0.0.apk`，校验见同目录 `SHA256SUMS.txt`。
 
 ## 本质
 
