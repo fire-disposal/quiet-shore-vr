@@ -34,8 +34,8 @@
   /* The headset's panel is 4K but the optics are not: nothing smaller than
      18 px survives the lens, and the reader may not have good vision. */
   --fs-copy: clamp(44px, 4.8vw, 60px);
-  --fs-body: clamp(22px, 1.95vw, 28px);
-  --fs-label: clamp(18px, 1.4vw, 22px);
+  --fs-body: clamp(24px, 2.1vw, 30px);
+  --fs-label: clamp(22px, 1.65vw, 26px);
 
   /*
    * 间距阶梯：4 档，比例 1.6，全部 clamp 在两个目标视口之间连续。

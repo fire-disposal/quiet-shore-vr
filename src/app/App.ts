@@ -712,7 +712,9 @@ export class QuietShoreApp {
 
   private async detectXR(): Promise<void> {
     if (!navigator.xr) {
-      this.start.setStatus(this.strings.noXR, 'error');
+      // No sentence: naming the browser is plumbing the operator cannot act on
+      // from here. The enter key simply stays closed.
+      this.start.setStatus('');
       this.start.setEnterEnabled(false);
       return;
     }
@@ -722,7 +724,7 @@ export class QuietShoreApp {
       if (supported) {
         this.start.setStatus('');
       } else {
-        this.start.setStatus(this.strings.xrUnsupported, 'error');
+        this.start.setStatus('');
       }
     } catch {
       this.start.setStatus(this.strings.xrFailed, 'error');
@@ -735,7 +737,6 @@ export class QuietShoreApp {
       return;
     }
     if (!navigator.xr) {
-      this.start.setStatus(this.strings.noXR, 'error');
       return;
     }
     this.enterPending = true;
@@ -1580,7 +1581,9 @@ export class QuietShoreApp {
     this.linkOnline = status === 'open';
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
-    this.start.setHint(status === 'open' ? '平板已连接' : '平板未连接，正在重连');
+    // Only the fact, and only when it matters. "正在重连" is the system
+    // narrating itself; the tablet either answers or it does not.
+    this.start.setHint(status === 'open' ? '' : '平板未连接');
     if (status === 'open' || !wasOnline) {
       return;
     }

@@ -4,8 +4,6 @@ export interface Strings {
   entering: string;
   checking: string;
   xrReady: string;
-  noXR: string;
-  xrUnsupported: string;
   xrFailed: string;
   sceneTitle: string;
   debug: string;
@@ -42,8 +40,6 @@ export const ZH: Strings = {
   entering: '正在进入场景',
   checking: '正在检测设备',
   xrReady: '设备已就绪',
-  noXR: '请用 Firefox Reality 打开本页',
-  xrUnsupported: '请用 Firefox Reality 打开本页',
   xrFailed: '设备检测失败，请重试',
   sceneTitle: '场景',
   debug: '显示诊断信息',
@@ -80,8 +76,6 @@ export const EN: Strings = {
   entering: 'Entering VR',
   checking: 'Checking device…',
   xrReady: 'Ready, put on the headset and start',
-  noXR: 'Open this page in Firefox Reality',
-  xrUnsupported: 'Open this page in Firefox Reality',
   xrFailed: 'Device check failed. Try again.',
   sceneTitle: 'Scenes',
   debug: 'Show diagnostics',
