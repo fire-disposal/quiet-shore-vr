@@ -105,11 +105,5 @@ fun PitchSideGauge(
 
             drawCircle(color = QuietPalette.TextPrimary, radius = 2.dp.toPx(), center = hip)
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall.tabularFigures(),
-            color = if (fresh) QuietPalette.TextPrimary else QuietPalette.TextSecondary,
-            modifier = Modifier.padding(top = 2.dp)
-        )
     }
 }

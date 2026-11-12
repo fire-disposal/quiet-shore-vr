@@ -31,3 +31,5 @@ __pycache__/
 
 # gradle copies the built page and cues here; never commit them
 android/headset/src/main/assets/voice/
+
+docs/manual-v2/manual.html

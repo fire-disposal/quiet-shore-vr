@@ -138,14 +138,45 @@ fun VoicePanel(
                     enabled = connected,
                     note = "在患者画面下方显示，播完消失。"
                 )
-                Rule()
-                SwitchRow(
-                    title = "朗读题干",
-                    checked = state.susVoice,
-                    onCheckedChange = actions.onSusVoiceChange,
-                    enabled = connected,
-                    note = "题目出现时同步播放这一题语音。"
-                )
+            }
+        }
+
+        Band(title = "声音") {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = TouchTarget)
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "水声",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = QuietPalette.TextPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Key(
+                        label = if (state.control.audioMuted) "开始水声" else "暂停水声",
+                        onClick = actions.onToggleAudio,
+                        enabled = connected,
+                        minWidth = TouchTarget + 32.dp
+                    )
+                }
+                ValueSlider(
+                    label = "语音音量",
+                    value = state.voiceVolume,
+                    range = 0..100,
+                    text = "${state.voiceVolume}",
+                    enabled = connected
+                ) { actions.onVoiceVolume(it) }
+                ValueSlider(
+                    label = "水声压低",
+                    value = state.duckDb,
+                    range = 0..18,
+                    text = "${state.duckDb} dB",
+                    enabled = connected
+                ) { actions.onVoiceDuck(it) }
             }
         }
 
@@ -198,45 +229,6 @@ fun VoicePanel(
                         )
                     }
                 }
-            }
-        }
-
-        Band(title = "声音") {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = TouchTarget)
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "水声",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = QuietPalette.TextPrimary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Key(
-                        label = if (state.control.audioMuted) "开始水声" else "暂停水声",
-                        onClick = actions.onToggleAudio,
-                        enabled = connected,
-                        minWidth = TouchTarget + 32.dp
-                    )
-                }
-                ValueSlider(
-                    label = "语音音量",
-                    value = state.voiceVolume,
-                    range = 0..100,
-                    text = "${state.voiceVolume}",
-                    enabled = connected
-                ) { actions.onVoiceVolume(it) }
-                ValueSlider(
-                    label = "水声压低",
-                    value = state.duckDb,
-                    range = 0..18,
-                    text = "${state.duckDb} dB",
-                    enabled = connected
-                ) { actions.onVoiceDuck(it) }
             }
         }
 

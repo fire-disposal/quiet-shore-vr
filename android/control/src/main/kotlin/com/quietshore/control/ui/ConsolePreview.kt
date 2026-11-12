@@ -59,6 +59,8 @@ fun ConsolePreview(
     seedRecords: Boolean = false,
     /** `--ei filterDays 7` seeds the archive's time filter. */
     filterDays: Int? = null,
+    /** `--ei sessionAgeSec 0` overrides the fixture's running clock. */
+    sessionAgeSec: Int? = null,
     modifier: Modifier = Modifier
 ) {
     val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped, withElapsed)
@@ -134,12 +136,14 @@ fun ConsolePreview(
             )
         }
         .let { base -> if (filterDays == null) base else base.copy(susFilterDays = filterDays) }
+        .let { base ->
+            if (sessionAgeSec == null) base
+            else base.copy(sessionElapsedMs = sessionAgeSec.toLong() * 1000L)
+        }
     var showGuide by remember { mutableStateOf(false) }
     val noop: () -> Unit = {}
     val actions = ControlActions(
         onStartTraining = noop,
-        onExitScene = noop,
-        onExitSystem = noop,
         onAppSelect = {},
         onSceneSelect = {},
         onSceneApply = noop,

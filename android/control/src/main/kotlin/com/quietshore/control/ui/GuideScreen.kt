@@ -165,7 +165,7 @@ private val FAULTS: List<FaultRow> = listOf(
     FaultRow("等待确认超时", "患者再按右侧按钮"),
     // Two different failures: one is the patient, one is the link. Merging
     // them into one row used to send the operator to the wrong one.
-    FaultRow("患者不适", "按«急停»，再摘头显", ActionTone.Primary),
+    FaultRow("患者不适", "按«结束»，再摘头显", ActionTone.Primary),
     FaultRow("连接中断", "摘头显，再重新连接"),
     FaultRow("电量偏低", "‹20%› 以下，先充电")
 )
@@ -182,14 +182,14 @@ private val FAULTS: List<FaultRow> = listOf(
 @Composable
 private fun QuestionnaireGuide() {
     Text(
-        text = "问卷",
+        text = "作答与归档",
         style = MaterialTheme.typography.displaySmall,
         color = QuietPalette.TextPrimary,
         modifier = Modifier.semantics { heading() }
     )
     Spacer(Modifier.height(12.dp))
     Text(
-        text = "问卷是独立的应用面：训练记录与问卷记录同库，用应用字段区分。",
+        text = "场景化问卷作答器是独立的应用面：排尿引导记录与问卷记录同库，用应用字段区分；题目从问卷配置加载。",
         style = MaterialTheme.typography.bodyLarge,
         color = QuietPalette.TextSecondary
     )
@@ -199,10 +199,10 @@ private fun QuestionnaireGuide() {
     Text("施测", style = MaterialTheme.typography.titleLarge, color = QuietPalette.TextPrimary)
     Spacer(Modifier.height(12.dp))
     for (line in listOf(
-        "1 在顶栏把应用切到「问卷」；会话进行中不能切。",
+        "1 在顶栏把应用切到「场景化问卷作答器」；会话进行中不能切。",
         "2 让患者戴上头显，打开问卷；题目与选项出现在视野里。",
         "3 患者目视选项停住即作答；看不准的题由技术员在平板上代答。",
-        "4 全部答完后点「完成」，记录落在本机，不需要网络。"
+        "4 答完最后一题即记录；提前关闭只保存已完成部分。"
     )) {
         Text(
             text = line,
@@ -253,7 +253,7 @@ fun GuideScreen(
             )
     ) {
         if (withChrome) {
-            GuideBar(onBack)
+            GuideBar(onBack, if (app == "questionnaire") "场景化问卷作答器" else "场景化排尿引导器")
         }
         FadingScrollColumn(
             modifier = Modifier.weight(1f),
@@ -354,7 +354,7 @@ private fun FadingScrollColumn(
 
 /** The app bar on paper: the way back, then what this page is. */
 @Composable
-private fun GuideBar(onBack: () -> Unit) {
+private fun GuideBar(onBack: () -> Unit, title: String) {
     Column(Modifier.fillMaxWidth().background(QuietPalette.Board)) {
         Row(
             modifier = Modifier
@@ -370,7 +370,7 @@ private fun GuideBar(onBack: () -> Unit) {
             )
             Spacer(Modifier.width(24.dp))
             Text(
-                text = "操作说明",
+                text = title,
                 style = MaterialTheme.typography.titleLarge,
                 color = QuietPalette.Ink
             )

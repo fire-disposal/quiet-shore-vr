@@ -49,7 +49,9 @@ private fun stamp(epochMs: Long): String {
 fun SusSheet(
     state: ControlUiState,
     actions: ControlActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showAnswer: Boolean = true,
+    showArchive: Boolean = true
 ) {
     val connected = state.sessionActive || state.controlGranted
     val questions = state.questionnaire?.questions?.map { it.textZh }
@@ -73,6 +75,7 @@ fun SusSheet(
     }
 
     Column(modifier.fillMaxWidth()) {
+        if (showAnswer) {
         Band(
             title = "量表",
             trailing = {
@@ -84,6 +87,14 @@ fun SusSheet(
             }
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                // The hook for the multi-instrument skeleton: the page announces
+                // the catalogue; this line names the one currently loaded.
+                Text(
+                    text = "当前量表：${state.questionnaire?.nameZh ?: "系统可用性量表"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -200,10 +211,12 @@ fun SusSheet(
             }
         }
 
+        }
         // Filed sheets: the headset sends one per completion and the tablet
         // keeps them, so a session's usability record survives the session.
+        if (showArchive) {
         Band(
-            title = "归档",
+            title = "记录",
             trailing = {
                 Key(
                     label = "导出",
@@ -218,13 +231,13 @@ fun SusSheet(
                     Key(
                         label = "问卷：${questionnaireFilterLabel(state)}",
                         onClick = actions.onSusFilterQuestionnaire,
-                        kind = KeyKind.Quiet,
+                        kind = KeyKind.Outline,
                         enabled = state.susHistory.isNotEmpty()
                     )
                     Key(
                         label = "时间：${daysFilterLabel(state.susFilterDays)}",
                         onClick = actions.onSusFilterDays,
-                        kind = KeyKind.Quiet,
+                        kind = KeyKind.Outline,
                         enabled = state.susHistory.isNotEmpty()
                     )
                 }
@@ -266,4 +279,6 @@ fun SusSheet(
             }
         }
     }
+        }
+
 }

@@ -530,20 +530,6 @@ class ControlViewModel(application: Application) :
         _uiState.update { it.copy(segmentProgress = progress) }
     }
 
-    /** Leaves the browser scene and returns the headset to its console app. */
-    fun exitScene() {
-        sendCommand("exit")
-    }
-
-    /** Full exit: leave the scene, end any session, then go to the system home. */
-    fun exitSystem() {
-        if (_uiState.value.control.session) {
-            sendCommand("stop")
-        }
-        sendCommand("exit")
-        sendCommand("home")
-    }
-
     /**
      * Gaze dwell switch. It is on by default because a supine patient has no
      * pointer; turning it off leaves only the tablet able to answer.

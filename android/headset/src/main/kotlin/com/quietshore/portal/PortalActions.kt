@@ -37,7 +37,6 @@ internal object PortalActions {
 
     const val ACTION_ENTER = "com.quietshore.portal.ENTER"
     const val ACTION_ALLAPPS = "com.quietshore.portal.ALLAPPS"
-    const val ACTION_HOME = "com.quietshore.portal.HOME"
     const val ACTION_SUS = "com.quietshore.portal.SUS"
     const val EXTRA_SUS_DELTA = "susDelta"
     const val EXTRA_SUS_ANSWER = "susAnswer"
@@ -279,14 +278,6 @@ internal object PortalActions {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         launch(context, intent, "未找到系统全部应用页")
-    }
-
-    fun home(context: Context) {
-        val intent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        launch(context, intent, "未找到可用的桌面")
     }
 
     /**

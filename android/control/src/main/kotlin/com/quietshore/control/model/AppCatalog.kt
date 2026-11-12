@@ -1,12 +1,17 @@
 package com.quietshore.control.model
 
-/** The product faces the shell can switch between. */
+/**
+ * The product faces the top bar can switch between.
+ *
+ * The label is the face's full name: the operator reads the system and the
+ * current job in one line, and the box opens the other face.
+ */
 object AppCatalog {
     data class Entry(val id: String, val label: String)
 
     val ALL: List<Entry> = listOf(
-        Entry("training", "训练"),
-        Entry("questionnaire", "问卷")
+        Entry("training", "场景化排尿引导器"),
+        Entry("questionnaire", "场景化问卷作答器")
     )
 
     val IDS: Set<String> = ALL.mapTo(HashSet()) { it.id }

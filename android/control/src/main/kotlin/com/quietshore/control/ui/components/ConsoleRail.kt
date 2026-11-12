@@ -43,8 +43,7 @@ import com.quietshore.control.ui.theme.QuietSpace
 enum class ConsoleSection(val label: String, val latin: String) {
     Session("会话", "SESSION"),
     Scene("场景", "SCENE"),
-    Voice("语音", "VOICE"),
-    Scale("量表", "SCALE")
+    Voice("语音", "VOICE")
 }
 
 /** Width of the rail: Latin eyebrow + Chinese label, one column each. */
@@ -54,9 +53,7 @@ val RailWidth = 132.dp
 fun ConsoleRail(
     current: ConsoleSection,
     onSelect: (ConsoleSection) -> Unit,
-    modifier: Modifier = Modifier,
-    /** A count sitting under 量表, e.g. "3 待答"; null hides it. */
-    scaleBadge: String? = null
+    modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
@@ -71,7 +68,6 @@ fun ConsoleRail(
             RailItem(
                 section = section,
                 selected = section == current,
-                badge = if (section == ConsoleSection.Scale) scaleBadge else null,
                 onClick = { onSelect(section) }
             )
             Spacer(Modifier.height(6.dp))
@@ -83,7 +79,6 @@ fun ConsoleRail(
 private fun RailItem(
     section: ConsoleSection,
     selected: Boolean,
-    badge: String?,
     onClick: () -> Unit
 ) {
     val shape = CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
@@ -121,15 +116,6 @@ private fun RailItem(
             color = QuietPalette.Ink,
             maxLines = 1
         )
-        if (badge != null) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = badge,
-                style = MaterialTheme.typography.labelSmall,
-                color = QuietPalette.InkSecondary,
-                maxLines = 1
-            )
-        }
     }
 }
 

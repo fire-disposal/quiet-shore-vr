@@ -69,6 +69,8 @@ class MainActivity : ComponentActivity() {
                         app = intent.getStringExtra("app"),
                         seedRecords = intent.getBooleanExtra("records", false),
                         filterDays = intent.getIntExtra("filterDays", -1)
+                            .takeIf { it >= 0 },
+                        sessionAgeSec = intent.getIntExtra("sessionAgeSec", -1)
                             .takeIf { it >= 0 }
                     )
                 } else {

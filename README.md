@@ -38,8 +38,7 @@
 - 场景：三个正式场景，由技术员在标定后选择（会话中也能换，见上）；另有内置准备间 `prep`，不作为场景卡出现，但同样有可用的患者视野镜像。`washroom` 洁净立便间（默认）：2.4 × 2.4 × 2.55 m 单间、立便器、木隔屏、天光；`shore` 仰望湖面：天穹、一层漂移云、水面与日光、4 m 内木桩与芦苇；`ward` 病房：床、被面、百叶窗与床旁监护仪。均无人物、无标牌。每个场景声明 `posture`（站立眼高、身下支撑、`viewer`），画面据此放置（见 `docs/animation.md`）。
 - 双 APK 通信：头显前台服务广播 BLE 外设，平板自动扫描连接、`HELLO 2` / `WELCOME 2` 握手与 5 s PING 存活检测；state 为 28 字节 v14，另有独立的 `sus` 特征回传量表答卷。
 - 音频：训练语音从面板手动播放，SUS 与结束语归问卷应用，不在训练语音里出现；播放时环境声自动压低 12 dB。环境声**默认关闭**，由平板开启；播放器双路交叉淡化 + 随机起点/速率（详见 `docs/core.md` §10）。
-- 平板界面：顶栏应用选择器（训练 / 问卷，会话中锁定）、`i` 打开当前应用的说明书；
-  训练侧有会话/场景/流程/语音/量表，问卷侧是独立的作答与归档面。问卷题目由页面
+- 平板界面：顶栏显示完整应用名（场景化排尿引导器 / 场景化问卷作答器，会话中锁定），点应用名切换，`i` 打开当前应用说明书；首页左侧三个说明标签（连接 / 排尿引导 / 问卷作答），右侧固定的头显连接窗口。排尿引导侧有会话/场景/流程/语音；问卷作答器是独立的配置化作答与归档面，题目由页面
   `src/questionnaire/registry.ts` 单一来源下发，记录带完成时间，可按问卷与时间筛选后导出；
   训练记录与问卷记录写同一份本机文件，用 `app` 字段区分。
 - 未完成：0.9.31 的实机验证（帧/s、SUS 目视作答）；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。
@@ -87,7 +86,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/ux-plan.md](docs/ux-plan.md) — UX/UI 现状评估、运动编排与四带控制台计划
 - [docs/introduction.md](docs/introduction.md) — 系统名、口号与三档总介绍（起草版）
 - [docs/copy-deck.md](docs/copy-deck.md) — 患者侧/技术员侧文案对照与术语决定
-- [docs/manual.md](docs/manual.md) — 操作手册：床边流程、观察要点、故障处置（交付物）
+- [docs/manual-v2/manual.md](docs/manual-v2/manual.md) — 操作说明书 v2：两个应用面、连接、分段会话、问卷归档与班前检查（交付物）
 - [docs/guide.qmd](docs/guide.qmd) / [docs/quiet-shore-guide.pdf](docs/quiet-shore-guide.pdf) — 使用说明 PDF：目的、上机流程、SUS、故障（交付物）
 - [docs/voice-script.md](docs/voice-script.md) — 引导语音脚本（27 句）、控制端触发与 TTS 生成规范
 - [TODO.md](TODO.md) — 迭代演进与重构路线

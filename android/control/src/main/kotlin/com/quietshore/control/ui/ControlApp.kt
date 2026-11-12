@@ -136,8 +136,6 @@ fun ControlApp(viewModel: ControlViewModel) {
         },
         actions = ControlActions(
             onStartTraining = viewModel::enterTraining,
-            onExitScene = viewModel::exitScene,
-            onExitSystem = viewModel::exitSystem,
             onAppSelect = viewModel::selectApp,
             onSceneSelect = viewModel::selectScene,
             onSceneApply = viewModel::applyScene,

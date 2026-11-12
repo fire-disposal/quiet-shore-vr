@@ -215,26 +215,28 @@ fun BatteryField(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // One face for the whole reading: the label is set from the same
+            // tabular, semibold template as the number beside it.
+            val fieldStyle = MaterialTheme.typography.bodyLarge.tabularFigures()
+                .copy(lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 text = PREFIX,
-                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp, fontWeight = FontWeight.Medium),
-                color = QuietPalette.InkSecondary,
+                style = fieldStyle,
+                color = QuietPalette.Ink,
                 maxLines = 1
             )
             Text(
                 text = "${label}电量:",
-                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp, fontWeight = FontWeight.Medium),
-                color = QuietPalette.InkSecondary,
+                style = fieldStyle,
+                color = QuietPalette.Ink,
                 maxLines = 1
             )
             if (known) {
-                // The number is the reading: semibold, tabular, ink. The label
-                // beside it stays regular and secondary, so the eye sorts
-                // "what is it" from "how much" without a divider.
+                // The number is the reading: the same face as its label, so
+                // the line reads as one field rather than two type tiers.
                 Text(
                     text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
-                    style = MaterialTheme.typography.bodyLarge.tabularFigures()
-                        .copy(lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+                    style = fieldStyle,
                     color = QuietPalette.Ink,
                     maxLines = 1
                 )
@@ -243,8 +245,8 @@ fun BatteryField(
                 // bar's empty track, and this line is a reading, not a status.
                 Text(
                     text = "---",
-                    style = MaterialTheme.typography.bodyLarge.tabularFigures().copy(lineHeight = 22.sp),
-                    color = QuietPalette.InkSecondary,
+                    style = fieldStyle,
+                    color = QuietPalette.Ink,
                     maxLines = 1
                 )
             }

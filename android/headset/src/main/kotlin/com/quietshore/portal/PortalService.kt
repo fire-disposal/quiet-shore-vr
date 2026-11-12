@@ -140,6 +140,8 @@ class PortalService : Service() {
         const val PAGE_OFFLINE_MS = 2000L
         /** Stop-fade breathing room before the console comes forward. */
         const val SESSION_RETURN_MS = 2000L
+        /** A short control break (tablet 断开) returns home after this grace. */
+        const val CONTROL_RETURN_MS = 5000L
         /** Change-driven flags, with this heartbeat so a reconnect catches up. */
         const val FLAGS_HEARTBEAT_MS = 1000L
         const val NO_STORE = "no-store, no-cache, must-revalidate"
@@ -211,6 +213,13 @@ class PortalService : Service() {
     private val entryRetry = EntryRetry(autoTapAvailable = { TapService.isEnabled(this) })
     private val entryWatch = Runnable { onEntryDeadline() }
 
+    /**
+     * A control break is not necessarily the end: the tablet may reconnect
+     * within a few seconds. Only after the grace period does the headset leave
+     * the page for its own console.
+     */
+    private val controlReturnWatch = Runnable { PortalActions.showConsole(this) }
+
     @Volatile
     private var bluetooth: BluetoothControl? = null
 
@@ -277,6 +286,12 @@ class PortalService : Service() {
                             // （页面端幂等），不重复投递；视角俯仰目标按契约保持
                             // 最后值，不回正。
                             dispatchControl(POSTURE_STOP)
+                            // A short break may be a reconnect; give it 5 s
+                            // before leaving the page for the console.
+                            mainHandler.removeCallbacks(controlReturnWatch)
+                            mainHandler.postDelayed(controlReturnWatch, CONTROL_RETURN_MS)
+                        } else {
+                            mainHandler.removeCallbacks(controlReturnWatch)
                         }
                         publishControlMessage()
                     }
@@ -311,6 +326,7 @@ class PortalService : Service() {
         running = false
         PortalActions.onLaunched = null
         mainHandler.removeCallbacks(entryWatch)
+        mainHandler.removeCallbacks(controlReturnWatch)
         unregisterBattery()
         val bluetooth = bluetooth
         bluetooth?.stop()
@@ -1072,7 +1088,6 @@ class PortalService : Service() {
     private fun isHostCommand(command: String): Boolean =
         command == "enter" ||
             command == "exit" ||
-            command == "home" ||
             command.startsWith(ControlProtocol.SCENE_PREFIX)
 
     private fun dispatchControl(raw: String): Boolean {
@@ -1094,7 +1109,6 @@ class PortalService : Service() {
         var queued = false
         var broadcastStatus = true
         when {
-            command == "home" -> PortalActions.home(this)
             // SUS lives in the page now: only the WebXR surface can offer gaze
             // selection, so these commands are forwarded instead of handled here.
             command == "enter" -> {

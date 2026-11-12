@@ -6,10 +6,6 @@ import com.quietshore.control.model.MirrorMode
 data class ControlActions(
     /** Opens the training page on the headset (the patient still confirms once). */
     val onStartTraining: () -> Unit,
-    /** Leaves the browser scene and comes back to the console app. */
-    val onExitScene: () -> Unit,
-    /** Ends the session and returns the headset to the system launcher. */
-    val onExitSystem: () -> Unit,
     /** Switches the product face; the top bar follows the headset's report. */
     val onAppSelect: (String) -> Unit,
     /** Marks a scene as the operator's next choice; nothing is sent yet. */

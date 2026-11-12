@@ -55,7 +55,6 @@ object ControlProtocol {
 
     /** Host-level commands are executed by the headset service, not the page. */
     const val ENTER: String = "enter"
-    const val HOME: String = "home"
 
     /** Operator answers the current SUS item when the patient cannot. */
     const val SUS_SHOW: String = "sus:show:"
@@ -117,7 +116,7 @@ object ControlProtocol {
         "float:level:0-3",
         "scene:<id>",
         "anim:duration:4000-20000", "posture:rise", "posture:lower", "posture:stop",
-        "home", "sus:open", "sus:close",
+        "sus:open", "sus:close",
         "sus:show:1-10", "sus:answer:1-5", "sus:voice:on|off",
         "view:anim:up|down|recenter", "view:stop",
         "voice:play:<id>", "voice:seq:start|imagine|relax|close", "voice:stop",
@@ -390,7 +389,6 @@ object ControlProtocol {
             normalized == "exit" ||
             normalized == "stop" ||
             normalized == "calibrate" ||
-            normalized == "home" ||
             normalized == "audio:on" ||
             normalized == "audio:off" ||
             normalized == "audio:toggle" ||

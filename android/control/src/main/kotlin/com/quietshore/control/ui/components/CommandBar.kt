@@ -16,13 +16,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CutCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,8 +83,6 @@ fun CommandBar(
     onOpenInfo: () -> Unit,
     onAppSelect: (String) -> Unit,
     onDisconnect: () -> Unit,
-    onExitScene: () -> Unit,
-    onExitSystem: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
@@ -169,16 +165,6 @@ fun CommandBar(
 
             GuideKey(onClick = onOpenInfo)
 
-            Spacer(Modifier.width(8.dp))
-
-            OverflowMenu(
-                connected = connected,
-                inSession = state.control.session,
-                onDisconnect = onDisconnect,
-                onExitScene = onExitScene,
-                onExitSystem = onExitSystem
-            )
-
             Spacer(Modifier.width(16.dp))
             // The bar's right end is the way out of the link: 断开连接. The
             // emergency stop is gone from the product; a session ends through
@@ -234,6 +220,7 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
     Box {
         Row(
             modifier = Modifier
+                .width(216.dp)
                 .height(44.dp)
                 .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
                 .border(
@@ -248,20 +235,22 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
                     role = Role.Button,
                     onClick = { open = true }
                 )
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // No chevron: the full name sits in a hairline box, and the whole
+            // box is the hit target.
             Text(
                 text = AppCatalog.label(app),
-                style = MaterialTheme.typography.titleSmall,
-                color = if (enabled) QuietPalette.Ink else QuietPalette.Disabled,
-                maxLines = 1
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = "▾",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.InkSecondary
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = QuietPalette.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
         }
         DropdownMenu(
@@ -399,117 +388,6 @@ private fun barLinkLabel(phase: BlePhase, stale: Boolean): String = when (phase)
     BlePhase.ERROR -> "连接失败"
     else -> "未连接"
 }
-
-/**
- * The four low-frequency words, behind one key.
- *
- * They are shaped (a hairline box with a cut corner), because the acceptance
- * rule is that a word cannot be a button. 说明 opens the guide; 断开 releases
- * the headset; 退出场景 and 退出系统 are the two doors out.
- */
-@Composable
-private fun OverflowMenu(
-    connected: Boolean,
-    inSession: Boolean,
-    onDisconnect: () -> Unit,
-    onExitScene: () -> Unit,
-    onExitSystem: () -> Unit
-) {
-    var open by remember { mutableStateOf(false) }
-    // 退出系统 is the one irreversible door: during a session it ends the
-    // session first, so it asks once. Idle it just leaves. The stop never
-    // takes this path — it is not in this menu.
-    var confirmingExit by remember { mutableStateOf(false) }
-    Box {
-        // Low-frequency exits stay behind one wordless key; the guide has its
-        // own ice `i` beside it, because `i` means the current app's guide.
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
-                .border(
-                    1.dp,
-                    QuietPalette.Hairline,
-                    androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    role = Role.Button,
-                    onClick = { open = true }
-                )
-                .semantics { contentDescription = "更多" },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "⋯",
-                style = MaterialTheme.typography.titleMedium,
-                color = QuietPalette.Ink
-            )
-        }
-        if (confirmingExit) {
-            AlertDialog(
-                onDismissRequest = { confirmingExit = false },
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(0.dp),
-                containerColor = QuietPalette.Board,
-                title = {
-                    Text("退出系统？", style = MaterialTheme.typography.titleLarge)
-                },
-                text = {
-                    Text(
-                        text = "会先结束当前会话，再让头显回到桌面。患者仍在佩戴时不要这样做。",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        confirmingExit = false
-                        onExitSystem()
-                    }) {
-                        Text("退出", color = QuietPalette.Danger)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmingExit = false }) {
-                        Text("取消", color = QuietPalette.InkSecondary)
-                    }
-                }
-            )
-        }
-        DropdownMenu(
-            expanded = open,
-            onDismissRequest = { open = false },
-            containerColor = QuietPalette.Board
-        ) {
-            MenuWord("断开", enabled = connected) { open = false; onDisconnect() }
-            MenuWord("退出场景") { open = false; onExitScene() }
-            MenuWord("退出系统") {
-                open = false
-                if (inSession) confirmingExit = true else onExitSystem()
-            }
-        }
-    }
-}
-
-@Composable
-private fun MenuWord(
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    DropdownMenuItem(
-        text = {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (enabled) QuietPalette.Ink else QuietPalette.Disabled
-            )
-        },
-        enabled = enabled,
-        onClick = onClick
-    )
-}
-
 
 /**
  * A secondary word in a row that already has a shape: it keeps its own 56 dp

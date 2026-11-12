@@ -25,7 +25,6 @@ class PortalReceiver : BroadcastReceiver() {
             }
 
             PortalActions.ACTION_ALLAPPS -> PortalActions.allApps(context)
-            PortalActions.ACTION_HOME -> PortalActions.home(context)
         }
     }
 }
