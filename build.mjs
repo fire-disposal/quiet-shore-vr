@@ -76,7 +76,7 @@ const mirrorJs = fs.readFileSync(path.join(dist, 'mirror.js'), 'utf8')
 const mirrorPage = [
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">',
   '<meta name="viewport" content="width=device-width,initial-scale=1">',
-  '<title>静岸 场景镜像</title></head><body>',
+  '<title>静岸沉浸式床边场景训练系统 · 场景镜像</title></head><body>',
   '<script>',
   mirrorJs,
   '</script></body></html>'

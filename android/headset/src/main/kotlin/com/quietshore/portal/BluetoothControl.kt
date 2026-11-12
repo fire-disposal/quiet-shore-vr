@@ -83,6 +83,8 @@ internal class BluetoothControl(
         const val ADVERTISE_CHECK_MS = 8_000L
         /** Give the controller time to leave before advertising again. */
         const val ADVERTISE_RESUME_MS = 400L
+        /** Grace before advertising without a service-added confirmation. */
+        const val SERVICE_READY_TIMEOUT_MS = 2_000L
 
         /** Bounded dedupe window: enough for every realistic retry burst. */
         const val SEQ_MEMO_DEPTH = 32
@@ -154,6 +156,9 @@ internal class BluetoothControl(
     /** True between startAdvertising and the stack stopping it. */
     @Volatile
     private var advertising = false
+    /** True once the stack confirms the service table is registered. */
+    @Volatile
+    private var serviceReady = false
     private var receiverRegistered = false
 
     val state: String
@@ -173,6 +178,29 @@ internal class BluetoothControl(
     }
 
     /**
+     * A stack that never reports `onServiceAdded` must not leave the headset
+     * invisible: advertise anyway after a short grace period.
+     */
+    private val serviceReadyFallback = Runnable {
+        if (!started || serviceReady) {
+            return@Runnable
+        }
+        Log.w(TAG, "no onServiceAdded after ${SERVICE_READY_TIMEOUT_MS}ms; advertising anyway")
+        serviceReady = true
+        startAdvertising()
+    }
+
+    /** Advertising waits for the stack to register the service table. */
+    private fun advertiseWhenReady() {
+        if (serviceReady) {
+            startAdvertising()
+            return
+        }
+        watchdogHandler.removeCallbacks(serviceReadyFallback)
+        watchdogHandler.postDelayed(serviceReadyFallback, SERVICE_READY_TIMEOUT_MS)
+    }
+
+    /**
      * Advertising is the only way a new tablet can find this headset. Some
      * stacks stop connectable advertising as soon as a link exists and do not
      * tell the app, so keep probing while no tablet is connected.
@@ -184,8 +212,12 @@ internal class BluetoothControl(
             }
             if (server == null) {
                 scheduleStartRetry()
-            } else if (!advertising && connected.isEmpty()) {
-                startAdvertising()
+            } else if (serviceReady && connected.isEmpty()) {
+                // Re-assert instead of trusting `advertising`: a stack that
+                // silently stops connectable advertising leaves the flag true,
+                // and the headset then turns undiscoverable with no error.
+                // ALREADY_STARTED is handled as success, so this is idempotent.
+                startAdvertising(force = true)
             }
             watchdogHandler.postDelayed(this, ADVERTISE_CHECK_MS)
         }
@@ -228,7 +260,7 @@ internal class BluetoothControl(
      */
     private fun startInternal() {
         if (server != null) {
-            startAdvertising()
+            advertiseWhenReady()
             return
         }
         try {
@@ -240,10 +272,10 @@ internal class BluetoothControl(
                 scheduleStartRetry()
                 return
             }
-            if (!adapter.isMultipleAdvertisementSupported) {
-                setState("ble-peripheral-unsupported")
-                return
-            }
+            // No `isMultipleAdvertisementSupported` gate: that flag reports the
+            // *multi*-advertisement feature, and several headsets advertise one
+            // instance while returning false. A truly unsupported stack answers
+            // ADVERTISE_FAILED_FEATURE_UNSUPPORTED, which the callback reports.
             try {
                 adapter.setName(ControlProtocol.deviceName)
             } catch (ignored: RuntimeException) {
@@ -304,7 +336,11 @@ internal class BluetoothControl(
                 return
             }
 
-            startAdvertising()
+            // The service table is registered asynchronously. Advertising first
+            // makes the headset discoverable with an empty table: the tablet
+            // connects, finds no required characteristic and drops in the same
+            // second, which reads as "the apps cannot connect".
+            advertiseWhenReady()
             watchdogHandler.removeCallbacks(advertiseWatchdog)
             watchdogHandler.postDelayed(advertiseWatchdog, ADVERTISE_CHECK_MS)
         } catch (error: RuntimeException) {
@@ -315,8 +351,8 @@ internal class BluetoothControl(
         }
     }
 
-    private fun startAdvertising() {
-        if (!started || advertising) {
+    private fun startAdvertising(force: Boolean = false) {
+        if (!started || (advertising && !force)) {
             return
         }
         val advertiser = advertiser ?: adapter?.bluetoothLeAdvertiser
@@ -391,6 +427,8 @@ internal class BluetoothControl(
         watchdogHandler.removeCallbacks(advertiseRetry)
         watchdogHandler.removeCallbacks(advertiseWatchdog)
         watchdogHandler.removeCallbacks(controllerWatchdog)
+        watchdogHandler.removeCallbacks(serviceReadyFallback)
+        serviceReady = false
         try {
             advertiser?.stopAdvertising(advertiseCallback)
         } catch (ignored: RuntimeException) {
@@ -476,6 +514,9 @@ internal class BluetoothControl(
     }
 
     private fun setState(value: String) {
+        if (lifecycleState == value) {
+            return
+        }
         lifecycleState = value
         listener.onStateChanged(value)
     }
@@ -811,6 +852,33 @@ internal class BluetoothControl(
     }
 
     private val callback = object : BluetoothGattServerCallback() {
+
+        /**
+         * The service table lands asynchronously. Advertising before this point
+         * makes the headset discoverable with nothing to discover: the tablet
+         * connects, misses a required characteristic and drops at once.
+         */
+        override fun onServiceAdded(status: Int, service: BluetoothGattService) {
+            if (service.uuid != ControlProtocol.serviceUuid) {
+                return
+            }
+            watchdogHandler.post {
+                if (!started) {
+                    return@post
+                }
+                watchdogHandler.removeCallbacks(serviceReadyFallback)
+                if (status != BluetoothGatt.GATT_SUCCESS) {
+                    Log.w(TAG, "GATT service registration failed: $status")
+                    setState("gatt-add-service-failed")
+                    teardownGatt()
+                    scheduleStartRetry()
+                    return@post
+                }
+                serviceReady = true
+                startAdvertising()
+            }
+        }
+
     override fun onMtuChanged(device: BluetoothDevice, negotiatedMtu: Int) {
         mtu = negotiatedMtu.coerceAtLeast(23)
     }
@@ -929,6 +997,12 @@ internal class BluetoothControl(
                 return
             }
             advertising = false
+            if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED) {
+                // Nothing to retry: this stack cannot advertise at all.
+                setState("ble-peripheral-unsupported")
+                Log.w(TAG, "BLE advertising unsupported")
+                return
+            }
             setState("advertise-failed:$errorCode")
             Log.w(TAG, "BLE advertise failed: $errorCode")
             if (started && connected.isEmpty()) {

@@ -1,51 +1,78 @@
 package com.quietshore.portal
 
 import com.quietshore.control.protocol.ControlProtocol
+import com.quietshore.control.protocol.LaunchState
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
 /**
- * One-shot launch intent handed from the console/notification to the loopback
- * server. The Web page receives it as an injected bootstrap object, not as
- * business parameters in the URL.
+ * The one record of what the next page launch uses.
+ *
+ * The page is rebuilt from scratch on every launch (a fresh URL key forces a
+ * new document), so anything the operator picked at runtime only survives if it
+ * is captured here. There is deliberately **one** mutable copy of the scene —
+ * [sceneState] — and callers may only change it through [chooseScene]; nobody
+ * hands `enter` a scene of their own, because that was how three different
+ * snapshots took turns overwriting each other.
  */
 internal object PortalSession {
+
+    /** Single owner of the scene choice; also carries its revision counter. */
+    private val sceneState = LaunchState()
+
     @Volatile
     private var options: LaunchOptions = LaunchOptions()
 
-    @Volatile
-    var revision: Long = 0
-        private set
+    /** Scene the next launch boots with. Always a valid id. */
+    val scene: String get() = sceneState.scene
 
-    fun set(next: LaunchOptions) {
-        options = next
-        revision += 1
+    /** Revision of the current choice; bumps only on an accepted change. */
+    val revision: Long get() = sceneState.revision
+
+    /**
+     * Applies the operator's pick.
+     *
+     * @return true when the call changed the choice, so the caller persists to
+     * disk exactly once and can log a single line per real decision.
+     */
+    fun chooseScene(id: String): Boolean = synchronized(this) {
+        if (!sceneState.choose(id)) {
+            return false
+        }
+        options = options.copy(scene = sceneState.scene)
+        true
     }
 
-    fun snapshot(): LaunchOptions = options
+    /**
+     * Replaces the launch inputs. The scene inside [next] is routed through the
+     * same single owner, so a caller cannot install a second copy of it.
+     */
+    fun set(next: LaunchOptions) = synchronized(this) {
+        options = next
+        sceneState.choose(next.scene)
+    }
 
-    fun toJson(): JSONObject = JSONObject().apply {
+    fun snapshot(): LaunchOptions = synchronized(this) { options.copy(scene = sceneState.scene) }
+
+    fun toJson(): JSONObject = synchronized(this) {
         val current = options
-        // The page loads this scene; the tablet owns the choice, the headset
-        // only carries it into the launch.
-        put(
-            "scene",
-            current.scene.takeIf { it in ControlProtocol.SCENE_IDS }
-                ?: ControlProtocol.DEFAULT_SCENE
-        )
-        put("skipCalibration", current.skipCalibration)
-        put("showHud", current.showHud)
-        // Sanitize here too: the page must never receive an unusable eye height
-        // from a stale prefs file or a launch intent built elsewhere.
-        val eyeHeight = current.eyeHeight
-            .takeIf {
-                it.isFinite() &&
-                    it >= HeadsetSettings.EYE_HEIGHT_MIN &&
-                    it <= HeadsetSettings.EYE_HEIGHT_MAX
-            }
-            ?: ControlProtocol.EYE_HEIGHT_DEFAULT
-        // Two decimals keep the JSON readable (1.35, not 1.350000023841858).
-        put("eyeHeight", (eyeHeight * 100f).roundToInt() / 100.0)
-        put("revision", revision)
+        JSONObject().apply {
+            // The scene is read from the owner, never from a caller's copy.
+            put("scene", sceneState.scene)
+            put("skipCalibration", current.skipCalibration)
+            put("showHud", current.showHud)
+            // Sanitize here too: the page must never receive an unusable eye
+            // height from a stale prefs file or a launch intent built elsewhere.
+            val eyeHeight = current.eyeHeight
+                .takeIf {
+                    it.isFinite() &&
+                        it >= HeadsetSettings.EYE_HEIGHT_MIN &&
+                        it <= HeadsetSettings.EYE_HEIGHT_MAX
+                }
+                ?: ControlProtocol.EYE_HEIGHT_DEFAULT
+            // Two decimals keep the JSON readable (1.35, not 1.350000023841858).
+            put("eyeHeight", (eyeHeight * 100f).roundToInt() / 100.0)
+            put("revision", sceneState.revision)
+        }
     }
 }

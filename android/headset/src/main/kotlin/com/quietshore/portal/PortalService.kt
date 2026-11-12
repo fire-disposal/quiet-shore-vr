@@ -5,7 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -43,6 +47,7 @@ import java.util.concurrent.locks.ReentrantLock
  *   GET /ws?since=<seq>   RFC 6455，仅文本帧，JSON，单帧上限 8 KiB。
  *     服务端 -> 页面
  *       {"type":"ready","seq":N,"control":bool,"controller":string|null}
+ *       {"type":"battery","data":{"level":0..100,"charging":bool}}
  *       {"type":"cmd","seq":N,"command":"...","continuous":bool}
  *       {"type":"control","control":bool,"controller":string|null}
  *     页面 -> 服务端
@@ -57,7 +62,7 @@ import java.util.concurrent.locks.ReentrantLock
  *   每 15 s ping 一次，30 s 没收到 pong 即关闭通道。
  *
  * 其余 HTTP 路由只用于诊断/静态资源：
- *   GET  /status       {bluetooth,control,controller,...,pendingSeq}
+ *   GET  /status       {bluetooth,control,controller,...,pendingSeq,entry}
  *   GET  /bootstrap    页面启动数据
  *   GET  /capabilities 允许的命令列表
  *   POST /command      本地调试：投递一条白名单命令
@@ -161,6 +166,8 @@ class PortalService : Service() {
 
     @Volatile
     private var lastState: ControlState = ControlState()
+    /** Last scene the page reported that disagreed with the launch record. */
+    private var lastSceneMismatch: String? = null
 
     @Volatile
     private var serverSocket: ServerSocket? = null
@@ -193,14 +200,56 @@ class PortalService : Service() {
     @Volatile
     private var controlMode = false
 
+    /**
+     * Entry supervision: one launch, at most two relaunches. The timer lives on
+     * [mainHandler]; the policy itself is Android-free and unit-checked.
+     */
+    private val entryRetry = EntryRetry()
+    private val entryWatch = Runnable { onEntryDeadline() }
+
     @Volatile
     private var bluetooth: BluetoothControl? = null
 
     @Volatile
     private var notificationManager: NotificationManager? = null
 
+    /**
+     * Headset battery as the Android system last reported it. Null until the
+     * first sticky read lands, and the only copy anyone reads: `/status`,
+     * `/bootstrap` and the WebSocket `battery` message all render this.
+     */
+    @Volatile
+    private var battery: Battery? = null
+
+    /**
+     * Change-driven, so the platform's changed intents do not reach the page
+     * more than once per real transition. The lock keeps two threads from
+     * publishing the same transition twice.
+     */
+    private val batteryLock = Any()
+
+    /** Receives [Intent.ACTION_BATTERY_CHANGED]; registered in [onCreate]. */
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            intent?.let(::applyBatteryIntent)
+        }
+    }
+
+    private var batteryRegistered = false
+
     override fun onCreate() {
         super.onCreate()
+        // Seed the launch record before anything can serve a page: a reload
+        // that never goes through `enter` must still boot the operator's scene.
+        PortalSession.set(HeadsetSettings.read(this).toLaunchOptions())
+        // Every launch — console, tablet or this service's own retry — is
+        // reported here, so entry supervision has exactly one source.
+        PortalActions.onLaunched = { at, retry -> mainHandler.post { acceptLaunch(at, retry) } }
+        // Until the page reports, "the scene" means the one the next launch
+        // will use. Without this the first state frame claimed a constructor
+        // default (washroom) while the launch record said something else, and
+        // the tablet showed a scene that was never going to boot.
+        lastState = lastState.copy(scene = PortalSession.scene)
         notificationManager = getSystemService(NotificationManager::class.java)
         createChannel()
         bluetooth = BluetoothControl(
@@ -236,6 +285,7 @@ class PortalService : Service() {
         )
         bluetooth?.start()
         startForeground(NOTIFICATION_ID, buildNotification())
+        registerBattery()
         startServer()
     }
 
@@ -252,6 +302,9 @@ class PortalService : Service() {
 
     override fun onDestroy() {
         running = false
+        PortalActions.onLaunched = null
+        mainHandler.removeCallbacks(entryWatch)
+        unregisterBattery()
         val bluetooth = bluetooth
         bluetooth?.stop()
         this.bluetooth = null
@@ -494,6 +547,9 @@ class PortalService : Service() {
                 return false
             }
             sink.queue.offer(FrameKind.SNAPSHOT, textFrame(readyJson(sink.since)))
+            // Second frame on every connection: the page can paint the gauge
+            // without waiting for a transition the headset may never reach.
+            battery?.let { sink.queue.offer(FrameKind.SNAPSHOT, textFrame(batteryJson(it))) }
             wsSinks.add(sink)
             return true
         } finally {
@@ -765,6 +821,101 @@ class PortalService : Service() {
     private fun textFrame(json: JSONObject): ByteArray =
         WsFrameCodec.encode(WsFrameCodec.OP_TEXT, json.toString().toByteArray(StandardCharsets.UTF_8))
 
+    // ---------------------------------------------------------------------
+    // Headset battery
+    // ---------------------------------------------------------------------
+
+    /**
+     * Subscribes to the sticky battery broadcast: registering also delivers the
+     * current value immediately, so the cache is populated before the first
+     * page can connect. `registerReceiver` needs no permission, and the
+     * `RECEIVER_NOT_EXPORTED` requirement only exists from API 33 — this APK
+     * targets 33 and runs on 27, where the two-argument call is the only form.
+     */
+    private fun registerBattery() {
+        if (batteryRegistered) {
+            return
+        }
+        try {
+            registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryRegistered = true
+        } catch (error: RuntimeException) {
+            // A platform that refuses the receiver still gets the one-shot read.
+            Log.w(TAG, "battery receiver unavailable: ${error.message}")
+        }
+        readBattery()
+    }
+
+    private fun unregisterBattery() {
+        if (!batteryRegistered) {
+            return
+        }
+        batteryRegistered = false
+        try {
+            unregisterReceiver(batteryReceiver)
+        } catch (ignored: RuntimeException) {
+            // Already gone.
+        }
+    }
+
+    /** One-shot sticky read; the fallback when no broadcast is in flight. */
+    private fun readBattery() {
+        try {
+            @Suppress("DEPRECATION")
+            applyBatteryIntent(registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)))
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "battery read failed: ${error.message}")
+        }
+    }
+
+    /**
+     * Caches a battery intent and publishes only a real transition (level or
+     * charging), so the platform's frequent change broadcasts cost the page
+     * nothing.
+     */
+    private fun applyBatteryIntent(intent: Intent?) {
+        if (intent == null) {
+            return
+        }
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        if (level < 0 || scale <= 0) {
+            return
+        }
+        val percent = (level * 100 / scale).coerceIn(0, 100)
+        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == BatteryManager.BATTERY_STATUS_FULL
+        val next = Battery(percent, charging)
+        val changed = synchronized(batteryLock) {
+            if (battery == next) {
+                return
+            }
+            battery = next
+            true
+        }
+        if (changed) {
+            Log.i(TAG, "battery ${next.level}% charging=${next.charging}")
+            publishBattery(next)
+        }
+    }
+
+    /**
+     * Same broadcast path as `control`: no command, no seq, safe for a joining
+     * page because [registerWsSink] already queued the current value.
+     */
+    private fun publishBattery(state: Battery) {
+        if (!hasWsSinks()) {
+            return
+        }
+        publishFrame(FrameKind.STATE, textFrame(batteryJson(state)))
+    }
+
+    private fun batteryJson(state: Battery): JSONObject = JSONObject().apply {
+        put("type", "battery")
+        put("data", state.toJson())
+    }
+
     /** Parses the `since` query parameter; anything unusable means [SINCE_DEFAULT]. */
     private fun parseSince(query: String): Int {
         if (query.isEmpty()) {
@@ -885,11 +1036,28 @@ class PortalService : Service() {
             // SUS lives in the page now: only the WebXR surface can offer gaze
             // selection, so these commands are forwarded instead of handled here.
             command == "enter" -> {
-                if (!PortalActions.enter(this, HeadsetSettings.read(this).toLaunchOptions())) {
+                if (!PortalActions.enter(this)) {
                     return false
                 }
             }
             command == "status" -> Unit
+            command.startsWith(ControlProtocol.SCENE_PREFIX) -> {
+                // One owner for the scene: the session record decides, and the
+                // disk is written only when that decision actually changed.
+                // A page that is already open still switches now, so the
+                // picture and the next launch can never disagree.
+                val scene = command.removePrefix(ControlProtocol.SCENE_PREFIX)
+                if (PortalSession.chooseScene(scene)) {
+                    HeadsetSettings.saveScene(this, scene)
+                    // Publish immediately so the other tablet screens and the
+                    // mirror follow, and keep the reported scene equal to the
+                    // launch record while no page is running to correct it.
+                    lastState = lastState.copy(scene = PortalSession.scene)
+                    publishFlags(lastState, null)
+                    Log.i(TAG, "scene persisted: ${PortalSession.scene} (rev ${PortalSession.revision})")
+                }
+                queued = true
+            }
             else -> queued = true
         }
         if (queued) {
@@ -953,6 +1121,19 @@ class PortalService : Service() {
         body.put("viewAnim", state.viewAnim.wire)
         body.put("scene", state.scene)
         body.put("pendingSeq", controlSeq.get())
+        // Entry supervision readback: "waiting" is the state an operator has to
+        // act on (the patient has not pressed); "idle" means a session started
+        // or nothing is being watched.
+        body.put(
+            "entry",
+            JSONObject().apply {
+                put("phase", entryRetry.phase.name.lowercase(java.util.Locale.US))
+                put("retries", entryRetry.retries)
+            }
+        )
+        // Diagnosed from the tablet and the console; the page reads the same
+        // value from the WebSocket `battery` message instead.
+        body.put("battery", battery?.toJson() ?: JSONObject.NULL)
         return jsonResponse(body)
     }
 
@@ -1003,6 +1184,10 @@ class PortalService : Service() {
             }, SESSION_RETURN_MS)
         }
         lastSessionRunning = running
+        // Entry supervision reads the same fact the console does: a session
+        // ends the wait; a page that is up without one starts the press clock.
+        entryRetry.pageState(System.currentTimeMillis(), running)
+        scheduleEntryCheck()
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
         fun vec(name: String): Float =
@@ -1038,12 +1223,76 @@ class PortalService : Service() {
             worldZ = json.optJSONObject("worldT")?.optDouble("z", 0.0)?.toFloat() ?: 0f
         )
         lastState = state
+        // Watchdog for the bug this replaced: if the page is running a scene
+        // other than the one the launch record owns, say so with both ids —
+        // once per change, so a stuck link cannot flood the log.
+        if (state.scene != PortalSession.scene) {
+            if (state.scene != lastSceneMismatch) {
+                lastSceneMismatch = state.scene
+                Log.w(
+                    TAG,
+                    "page scene ${state.scene} != launch scene ${PortalSession.scene}"
+                )
+            }
+        } else {
+            lastSceneMismatch = null
+        }
         bluetooth?.publishState(state)
         publishFlags(state, json.optJSONObject("caps"))
     }
 
+    // ---------------------------------------------------------------------
+    // Entry supervision
+    // ---------------------------------------------------------------------
+
+    /**
+     * A launch was handed to the browser.
+     *
+     * `retry` 0 is the operator's own press and starts a fresh allowance; a
+     * non-zero value is this service relaunching, so the count must survive.
+     */
+    private fun acceptLaunch(now: Long, retry: Int) {
+        entryRetry.launch(now, fresh = retry == 0)
+        if (retry == 0) {
+            Log.i(TAG, "entry supervised")
+        } else {
+            Log.i(TAG, "entry supervised: relaunch #$retry")
+        }
+        scheduleEntryCheck()
+    }
+
+    /** Keep exactly one timer, at whatever deadline the policy now holds. */
+    private fun scheduleEntryCheck() {
+        mainHandler.removeCallbacks(entryWatch)
+        val at = entryRetry.checkAt
+        if (at < 0L) {
+            return
+        }
+        mainHandler.postDelayed(entryWatch, maxOf(0L, at - System.currentTimeMillis()))
+    }
+
+    private fun onEntryDeadline() {
+        when (entryRetry.onDeadline(System.currentTimeMillis())) {
+            EntryRetry.Decision.RELAUNCH -> {
+                // Either the page is up and the patient never pressed, or the
+                // cold start dropped the intent. Both are fixed the same way:
+                // hand the browser a fresh document, which it places in front
+                // of the head again, and put the hint in front of the patient.
+                Log.w(TAG, "entry did not start a session; relaunching")
+                PortalActions.enter(this, retry = entryRetry.retries)
+            }
+            EntryRetry.Decision.GIVE_UP -> {
+                Log.w(TAG, "entry gave up after ${entryRetry.retries} relaunches")
+            }
+            EntryRetry.Decision.HOLD -> Unit
+        }
+        scheduleEntryCheck()
+    }
+
     /** Last flags document published on the JSON channel, and when. */
+    @Volatile
     private var lastFlagsJson: String = ""
+    @Volatile
     private var lastFlagsAt: Long = 0L
 
     /**
@@ -1327,6 +1576,17 @@ class PortalService : Service() {
         /** Overrides the default no-store policy; voice clips are immutable. */
         val cacheControl: String = NO_STORE
     )
+
+    /**
+     * One battery reading. A data class so the change check is field equality,
+     * not a hand-written comparison that can drift.
+     */
+    private data class Battery(val level: Int, val charging: Boolean) {
+        fun toJson(): JSONObject = JSONObject().apply {
+            put("level", level)
+            put("charging", charging)
+        }
+    }
 
     /**
      * 一个 WebSocket 订阅者。[queue] 只在持有 [lock] 时访问；写入 socket 一律

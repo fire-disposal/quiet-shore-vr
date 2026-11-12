@@ -58,16 +58,32 @@ internal data class HeadsetSettings(
             )
         }
 
-        fun save(context: Context, settings: HeadsetSettings) {
+        /**
+         * Console toggles. Deliberately does **not** write the scene key: the
+         * tablet owns the scene, and a console screen that saved its load-time
+         * snapshot here used to put the old scene back.
+         */
+        fun saveConsolePrefs(context: Context, settings: HeadsetSettings) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
-                .putString(KEY_SCENE, settings.sceneId)
                 .putBoolean(KEY_SKIP, settings.skipCalibration)
                 .putBoolean(KEY_HUD, settings.showHud)
                 .putFloat(
                     KEY_EYE_HEIGHT,
                     settings.eyeHeight.takeIf { isValidEyeHeight(it) } ?: DEFAULT_EYE_HEIGHT
                 )
+                .apply()
+        }
+
+        /**
+         * The operator's scene pick. Only the scene-command path writes this
+         * key; unknown ids are refused rather than stored.
+         */
+        fun saveScene(context: Context, sceneId: String) {
+            val valid = sceneId.takeIf { it in ControlProtocol.SCENE_IDS } ?: return
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SCENE, valid)
                 .apply()
         }
     }

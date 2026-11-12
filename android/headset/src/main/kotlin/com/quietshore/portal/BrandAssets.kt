@@ -14,10 +14,9 @@ import android.graphics.drawable.Icon
  * platform as bitmaps.
  */
 internal object BrandAssets {
-    val ACCENT: Int = 0xFF8F4634.toInt()
-    private val TEAL: Int = 0xFF7FC8B8.toInt()
-    private val SURFACE: Int = 0xFF12211E.toInt()
-    private val BORDER: Int = 0xFF2E4A45.toInt()
+    val ACCENT: Int = 0xFF7DE6FF.toInt()
+    private val INK: Int = 0xFF161616.toInt()
+    private val PAPER: Int = 0xFFF4F4F2.toInt()
 
     fun smallIcon(): Icon = Icon.createWithBitmap(bitmap(96, silhouette = true))
 
@@ -33,31 +32,21 @@ internal object BrandAssets {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         if (!silhouette) {
-            paint.color = SURFACE
-            canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), size * 0.24f, size * 0.24f, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = size * 0.018f
-            paint.color = BORDER
-            val inset = size * 0.02f
-            canvas.drawRoundRect(
-                RectF(inset, inset, size - inset, size - inset),
-                size * 0.23f,
-                size * 0.23f,
-                paint
-            )
+            paint.color = PAPER
+            canvas.drawRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), paint)
         }
 
         val cx = size * 0.5f
         val cy = size * 0.41f
         val radius = size * 0.155f
         paint.style = Paint.Style.FILL
-        paint.color = if (silhouette) Color.WHITE else ACCENT
+        paint.color = if (silhouette) Color.WHITE else INK
         canvas.drawCircle(cx, cy, radius, paint)
 
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = size * 0.055f
         paint.strokeCap = Paint.Cap.ROUND
-        paint.color = if (silhouette) Color.WHITE else TEAL
+        paint.color = if (silhouette) Color.WHITE else ACCENT
         val wave = Path()
         val y = size * 0.67f
         val left = size * 0.22f
@@ -74,7 +63,7 @@ internal object BrandAssets {
         canvas.drawPath(wave, paint)
 
         paint.strokeWidth = size * 0.032f
-        paint.color = if (silhouette) Color.WHITE else BORDER
+        paint.color = if (silhouette) Color.WHITE else INK
         val lower = Path()
         val y2 = size * 0.79f
         lower.moveTo(left, y2)
@@ -110,12 +99,7 @@ internal object BrandAssets {
                     for (col in 0..1) {
                         val x = left + col * (cell + gap)
                         val y = left + row * (cell + gap)
-                        canvas.drawRoundRect(
-                            RectF(x, y, x + cell, y + cell),
-                            cell * 0.28f,
-                            cell * 0.28f,
-                            paint
-                        )
+                        canvas.drawRect(RectF(x, y, x + cell, y + cell), paint)
                     }
                 }
             }

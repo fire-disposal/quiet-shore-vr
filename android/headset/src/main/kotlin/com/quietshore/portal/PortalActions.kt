@@ -72,6 +72,17 @@ internal object PortalActions {
     @Volatile
     private var lastEnterAt = 0L
 
+    /**
+     * Called with (epoch millis, retry count) once a launch is committed.
+     *
+     * [PortalService] sets this while it runs: the launcher cannot watch its own
+     * launch (it lives for one function call), and the service is the only
+     * holder that can see the page's state and relaunch. Null when no service
+     * is up, in which case nothing supervises the launch.
+     */
+    @Volatile
+    var onLaunched: ((Long, Int) -> Unit)? = null
+
     /** 幂等：服务已在跑时系统只会再走一次 onStartCommand。 */
     fun startServer(context: Context) {
         context.startForegroundService(Intent(context, PortalService::class.java))
@@ -89,7 +100,16 @@ internal object PortalActions {
         false
     }
 
-    fun enter(context: Context, options: LaunchOptions = LaunchOptions()): Boolean {
+    /**
+     * Opens the training page.
+     *
+     * The launch never takes its scene from the caller: it reads
+     * [PortalSession], the single record of the operator's choice. Callers may
+     * only override the calibration flag, which is a per-launch intent, not
+     * state. That asymmetry is deliberate — a scene argument here is exactly
+     * how an older snapshot used to win.
+     */
+    fun enter(context: Context, skipCalibrationOverride: Boolean? = null, retry: Int = 0): Boolean {
         val app = applicationContext(context)
         if (!isFirefoxAvailable(app)) {
             toast(app, "未检测到 Firefox Reality，训练无法工作")
@@ -100,9 +120,19 @@ internal object PortalActions {
             return false
         }
         lastEnterAt = now
-        PortalSession.set(options)
+        val base = PortalSession.snapshot()
+        PortalSession.set(
+            if (skipCalibrationOverride == null) {
+                base
+            } else {
+                base.copy(skipCalibration = skipCalibrationOverride)
+            }
+        )
         startServer(context)
-        val url = buildUrl(options)
+        val url = buildUrl(retry)
+        // The service supervises what happens next: it is the only holder that
+        // outlives this call and can relaunch when the page never gets a press.
+        onLaunched?.invoke(now, retry)
 
         // Firefox may be warm from the previous demo. Wait until the loopback
         // server actually accepts connections before handing it the URL;
@@ -150,11 +180,16 @@ internal object PortalActions {
         return false
     }
 
-    private fun buildUrl(options: LaunchOptions): String {
+    private fun buildUrl(retry: Int = 0): String {
         // Business configuration travels through PortalSession and is injected
-        // by PortalService. The URL only carries a cache-busting key.
+        // by PortalService. The URL carries a cache-busting key, and the
+        // service's relaunch count so the page can tell the patient what to do
+        // differently instead of showing the same silent invitation again.
         val builder = Uri.parse(URL).buildUpon()
         builder.appendQueryParameter("t", System.currentTimeMillis().toString())
+        if (retry > 0) {
+            builder.appendQueryParameter("retry", retry.toString())
+        }
         return builder.build().toString()
     }
 

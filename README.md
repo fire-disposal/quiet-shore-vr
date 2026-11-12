@@ -2,9 +2,9 @@
 
 静岸是一套床边的沉浸式场景体验：在躺卧的体位下，获得近似站立时的视野与感受。节奏由技术员掌握，患者按一次头显上的按钮确认开始，随时可以说停。
 
-**状态**：v0.9.64（四场景 `shore` / `ward` / `washroom` / `lightwell`，按躺姿眼高重新构图；状态帧 v13；控制端只有一套运动学：体位 / 起伏 / 视线；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
+**状态**：v1.0.0（四场景 `shore` / `ward` / `washroom` / `lightwell`，按躺姿眼高重新构图；状态帧 v13；控制端只有一套运动学：体位 / 起伏 / 视线；双端 debug 签名，实机联调中）；**入口**：https://qs.205716.xyz；**仓库**：[fire-disposal/quiet-shore-vr](https://github.com/fire-disposal/quiet-shore-vr)
 
-**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-0.9.64.apk`、`artifacts/flash/quiet-shore-control-0.9.64.apk`，校验见同目录 `SHA256SUMS.txt`。
+**烧录包**（同版本，必须一起升级）：`artifacts/flash/quiet-shore-headset-1.0.0.apk`、`artifacts/flash/quiet-shore-control-1.0.0.apk`，校验见同目录 `SHA256SUMS.txt`。
 
 ## 本质
 
@@ -73,6 +73,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state 编解码
 - [docs/state-v11.md](docs/state-v11.md) — state 帧的字段定义与协议推演（当前实现见 `ControlProtocol.encodeState`，v12 40 字节）
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
+- [docs/ui-system.md](docs/ui-system.md) — 界面系统：变体卡、固定规则、三个表面的层级与字号
 - [docs/ux-plan.md](docs/ux-plan.md) — UX/UI 现状评估、运动编排与四带控制台计划
 - [docs/introduction.md](docs/introduction.md) — 系统名、口号与三档总介绍（起草版）
 - [docs/copy-deck.md](docs/copy-deck.md) — 患者侧/技术员侧文案对照与术语决定

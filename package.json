@@ -1,9 +1,9 @@
 {
   "name": "quiet-shore-vr",
-  "version": "0.8.11",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "静岸 · Quiet Shore VR — WebXR training app for PICO G2 4K",
+  "description": "静岸沉浸式床边场景训练系统 — WebXR 床边场景训练（PICO G2 4K）",
   "scripts": {
     "dev": "node build.mjs --serve",
     "build": "node build.mjs",

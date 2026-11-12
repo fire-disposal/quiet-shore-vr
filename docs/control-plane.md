@@ -232,6 +232,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 
 ```text
 {"type":"ready","seq":N,"control":bool,"controller":string|null}
+{"type":"battery","data":{"level":62,"charging":false}}
 {"type":"cmd","seq":N,"command":"float:level:2","continuous":false}
 {"type":"cmd","seq":N,"command":"posture:rise"}
 {"type":"control","control":bool,"controller":string|null}
@@ -246,6 +247,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 ```
 
 - 连接建立先发 `ready`，随后补发 `seq > since` 的命令；`since` 缺失按 `-1`。
+- `battery` 是头显自己的电量（`ACTION_BATTERY_CHANGED` 粘性值），`ready` 之后立即发一条，`level` 或 `charging` 真正变化时再发；`charging` 为 true 时也包含“已充满且接着电源”。`/status` 里有同名对象，壳层刚启动、还没拿到粘性值时为 `null`。入口页目前**不**显示它——电量栏在 APK 控制台首页。
 - 命令保留到页面 `ack`（≤64 条）；`view:anim:*` 只实时投递，不跨重连重放。
 - 每个订阅者队列有界（96）；连续帧合并，满时按 continuous → ready/control → discrete 顺序淘汰，离散命令不会先被丢。
 - 服务端每 15 s 发 ping，30 s 无 pong 关闭；页面断线后以指数退避重连并带 `since=lastSeq`。
