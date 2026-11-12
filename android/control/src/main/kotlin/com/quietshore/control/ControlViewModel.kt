@@ -434,6 +434,19 @@ class ControlViewModel(application: Application) :
         sendCommand("sus:show:$n")
     }
 
+    /**
+     * The two facts the operator records after the headset is off.
+     *
+     * They travel to the page because the ledger lives there (it is the only
+     * place that saw the whole session, link or no link).
+     */
+    fun recordOutcome(kind: String, yes: Boolean) {
+        if (kind != "attempt" && kind != "success") {
+            return
+        }
+        sendCommand("record:outcome:$kind:${if (yes) "yes" else "no"}")
+    }
+
     fun susAnswer(value: Int) {
         val v = value.coerceIn(1, 5)
         val index = _uiState.value.susIndex

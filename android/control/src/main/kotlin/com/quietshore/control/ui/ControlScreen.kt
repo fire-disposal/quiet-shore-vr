@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -221,6 +222,95 @@ private fun susBadge(state: ControlUiState): String? {
     if (state.sessionElapsedMs <= 0L) return null
     val missing = state.susAnswers.count { it == 0 }
     return if (missing in 1..9) "$missing 待答" else null
+}
+
+/**
+ * The bedside question, asked once after a session that actually ran.
+ *
+ * Two facts, separately answerable, because "tried and failed" and "did not
+ * try" are different clinical results — collapsing them loses the only signal
+ * that the therapy is being attempted at all. The answer travels to the page,
+ * which owns the ledger.
+ */
+@Composable
+private fun OutcomePrompt(state: ControlUiState, actions: ControlActions) {
+    if (state.sessionElapsedMs <= 0L || state.control.session) {
+        return
+    }
+    var answered by remember(state.sessionElapsedMs) { mutableStateOf(false) }
+    var attempted by remember(state.sessionElapsedMs) { mutableStateOf<Boolean?>(null) }
+    var succeeded by remember(state.sessionElapsedMs) { mutableStateOf<Boolean?>(null) }
+    SectionHead(title = "本次结果", note = "取下头显后记录")
+    Panel(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(QuietSpace.Panel)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "在床上排尿",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = QuietPalette.Ink
+                    )
+                    Text(
+                        text = when {
+                            succeeded == true -> "已记录：成功"
+                            attempted == false -> "已记录：没有尝试"
+                            attempted == true -> "已记录：尝试了"
+                            else -> "患者取下头显后，按实际回答"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = QuietPalette.InkSecondary
+                    )
+                }
+                BarWordKey(
+                    label = "试了",
+                    onClick = {
+                        attempted = true
+                        answered = true
+                        actions.onOutcome("attempt", true)
+                    },
+                    enabled = !answered
+                )
+                Spacer(Modifier.width(12.dp))
+                BarWordKey(
+                    label = "没试",
+                    onClick = {
+                        attempted = false
+                        answered = true
+                        actions.onOutcome("attempt", false)
+                    },
+                    enabled = !answered
+                )
+            }
+            if (attempted == true) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "是否成功",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = QuietPalette.InkSecondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    BarWordKey(
+                        label = "成功",
+                        onClick = {
+                            succeeded = true
+                            actions.onOutcome("success", true)
+                        },
+                        enabled = succeeded != true
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    BarWordKey(
+                        label = "未成功",
+                        onClick = {
+                            succeeded = false
+                            actions.onOutcome("success", false)
+                        },
+                        enabled = succeeded == null
+                    )
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +625,10 @@ private fun ScenePage(
                 actions = actions,
                 phase = phase
             )
+            Spacer(Modifier.height(QuietSpace.Section))
+            // The question comes first: it is about the session that just
+            // ended, and the bench below is about the next one.
+            OutcomePrompt(state = state, actions = actions)
             Spacer(Modifier.height(QuietSpace.Section))
             SectionHead(
                 title = "01 场景",

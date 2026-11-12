@@ -11,6 +11,14 @@
  * Kept deliberately small: seven fields, no free text, no personal data.
  */
 
+/** One stretch of a session spent in one scene. */
+export interface SessionSegment {
+  /** Scene id, as the page knows it. */
+  scene: string;
+  /** Whole seconds spent in it. */
+  seconds: number;
+}
+
 export interface SessionSummary {
   /** Epoch milliseconds when the session ended. */
   at: number;
@@ -26,6 +34,34 @@ export interface SessionSummary {
   stop: string;
   /** Calibration confidence the session started with, 0..100. */
   confidence: number;
+  /**
+   * Highest posture correction reached, 0..1.
+   *
+   * This is the therapy's dose: the mother goal is the pitch offset that lets a
+   * supine patient imagine standing, so "how far did the view get lifted" is the
+   * one number that says whether a session did anything at all.
+   */
+  peakMix: number;
+  /** Highest up-gaze applied, in degrees (`peakMix` in angle terms). */
+  peakUpGazeDeg: number;
+  /** Every stretch of the session, in order, one entry per scene. */
+  segments: SessionSegment[];
+  /** What the patient reported afterwards; null until the technician says. */
+  outcome: SessionOutcome | null;
+}
+
+/**
+ * The bedside question the operator asks after the headset comes off.
+ *
+ * Two facts, because they mean different things: an attempt that failed is a
+ * different result from no attempt, and collapsing them loses the only signal
+ * the therapy is being tried at all.
+ */
+export interface SessionOutcome {
+  /** 1 tried, 0 did not try, null not answered. */
+  attempted: boolean | null;
+  /** 1 succeeded, 0 did not, null not answered or not attempted. */
+  succeeded: boolean | null;
 }
 
 export const SESSION_LOG_KEY = 'qs:sessions:v1';
@@ -40,6 +76,9 @@ export interface SessionInput {
   mix: number;
   stop: string;
   confidence: number;
+  peakMix: number;
+  peakUpGazeDeg: number;
+  segments: readonly SessionSegment[];
 }
 
 /** Normalise one finished session into the stored shape. */
@@ -53,8 +92,33 @@ export function summarize(input: SessionInput): SessionSummary {
     level: Math.round(clamp(input.level, 0, 3)),
     mix: Number(clamp(input.mix, 0, 1).toFixed(3)),
     stop: typeof input.stop === 'string' ? input.stop : '',
-    confidence: Math.round(clamp(input.confidence, 0, 100))
+    confidence: Math.round(clamp(input.confidence, 0, 100)),
+    peakMix: Number(clamp(input.peakMix, 0, 1).toFixed(3)),
+    peakUpGazeDeg: Math.round(clamp(input.peakUpGazeDeg, 0, 180)),
+    segments: summarizeSegments(input.segments),
+    outcome: null
   };
+}
+
+/** Keep the segments that carry time, in order, seconds rounded. */
+function summarizeSegments(list: readonly SessionSegment[]): SessionSegment[] {
+  const out: SessionSegment[] = [];
+  for (const span of Array.isArray(list) ? list : []) {
+    if (!span || typeof span.scene !== 'string') {
+      continue;
+    }
+    const seconds = Math.max(0, Math.round(span.seconds));
+    if (seconds <= 0) {
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (last && last.scene === span.scene) {
+      last.seconds += seconds;
+      continue;
+    }
+    out.push({ scene: span.scene, seconds });
+  }
+  return out;
 }
 
 /** Append, keeping only the newest `cap` entries. Never mutates the input. */
@@ -80,7 +144,10 @@ function isSummary(value: unknown): value is SessionSummary {
     typeof entry.level === 'number' &&
     typeof entry.mix === 'number' &&
     typeof entry.stop === 'string' &&
-    typeof entry.confidence === 'number'
+    typeof entry.confidence === 'number' &&
+    typeof entry.peakMix === 'number' &&
+    typeof entry.peakUpGazeDeg === 'number' &&
+    Array.isArray(entry.segments)
   );
 }
 
@@ -134,6 +201,38 @@ export function recordSession(
   const next = appendSummary(readSummaries(storage), summarize(input));
   writeSummaries(storage, next);
   return next;
+}
+
+/**
+ * Attach the bedside answer to the newest entry.
+ *
+ * The technician answers on the tablet after the headset comes off, so the
+ * answer arrives *after* the session was written; this is the only mutation the
+ * log allows — one field on the last row, never a rewrite of the history.
+ */
+export function annotateOutcome(
+  storage: Storage | null,
+  patch: Partial<SessionOutcome>
+): SessionSummary[] {
+  const list = readSummaries(storage);
+  const last = list[list.length - 1];
+  if (!last) {
+    return list;
+  }
+  const previous: SessionOutcome = last.outcome ?? { attempted: null, succeeded: null };
+  const next: SessionOutcome = {
+    attempted: patch.attempted !== undefined ? patch.attempted : previous.attempted,
+    succeeded: patch.succeeded !== undefined ? patch.succeeded : previous.succeeded
+  };
+  // "Succeeded" without "attempted" is not a state a person can be in: success
+  // wins over a later "did not try", which can only be a mis-tap.
+  if (next.succeeded === true) {
+    next.attempted = true;
+  }
+  const updated: SessionSummary = { ...last, outcome: next };
+  const nextList = [...list.slice(0, -1), updated];
+  writeSummaries(storage, nextList);
+  return nextList;
 }
 
 /** The browser's durable store, or null where access is blocked. */

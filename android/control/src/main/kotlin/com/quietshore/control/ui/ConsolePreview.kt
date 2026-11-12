@@ -36,11 +36,13 @@ fun ConsolePreview(
     withPose: Boolean = false,
     /** `--ez drift true` makes the local choice disagree with the frame. */
     withDrift: Boolean = false,
+    /** `--ez elapsed true`: a session just ended, so its question is up. */
+    withElapsed: Boolean = false,
     /** `--es tapped washroom` pretends that card was just pressed. */
     tapped: String? = null,
     modifier: Modifier = Modifier
 ) {
-    val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped)
+    val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped, withElapsed)
     var showGuide by remember { mutableStateOf(false) }
     val noop: () -> Unit = {}
     val actions = ControlActions(
@@ -78,7 +80,8 @@ fun ConsolePreview(
         onVoiceSet = {},
         onSusShow = {},
         onSusAnswer = {},
-        onSusExport = noop
+        onSusExport = noop,
+        onOutcome = { _, _ -> }
     )
     Box(
         modifier
@@ -103,7 +106,8 @@ fun fixtureState(
     batteryLevel: Int?,
     withPose: Boolean = false,
     withDrift: Boolean = false,
-    tapped: String? = null
+    tapped: String? = null,
+    withElapsed: Boolean = false
 ): ControlUiState {
     val base = ControlUiState(
         phase = BlePhase.READY,
@@ -158,7 +162,10 @@ fun fixtureState(
         ConsoleFixture.Entry -> base.copy(startPending = true)
         ConsoleFixture.Idle -> base.copy(
             sceneIntent = drift,
-            control = ControlState(scene = "shore", floatLevel = 1)
+            control = ControlState(scene = "shore", floatLevel = 1),
+            // `--ez elapsed true`: the state just after a session, which is the
+            // only time the bedside question is on screen.
+            sessionElapsedMs = if (withElapsed) 252_000L else 0L
         )
     }
 }

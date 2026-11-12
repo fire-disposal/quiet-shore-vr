@@ -149,12 +149,23 @@ export class TextTexture {
     // it: the surfaces scale the mesh by this texture's aspect, so a clipped
     // texture means text drawn under the card.
     const nextHeight = Math.max(48, Math.ceil(totalHeight + paddingPx * 2));
-    if (canvas.height !== nextHeight) {
+    // Grow, never shrink.
+    //
+    // Shrinking the canvas after a shorter body was the source of the "text
+    // drawn twice" the field reported on the question card: the GPU texture had
+    // been allocated at the taller size, and a re-upload at a smaller size left
+    // the tail of the previous, longer text visible under the new lines. Only
+    // ever growing keeps the allocation in step with what was drawn, and the
+    // extra transparent rows cost nothing — the mesh is scaled by the aspect.
+    if (nextHeight > canvas.height) {
       canvas.height = nextHeight;
       ctx.font = `${weight} ${sizePx}px ${theme.fontFamily}`;
       ctx.fillStyle = color;
       ctx.textBaseline = 'middle';
       this.aspect = canvas.height / canvas.width;
+      // A resized canvas is a new texture allocation: without this the upload
+      // keeps the old dimensions for one frame.
+      this.texture.needsUpdate = true;
     }
     const startY = (canvas.height - totalHeight) / 2 + lineHeightPx / 2;
     ctx.textAlign = align === 'center' ? 'center' : 'left';

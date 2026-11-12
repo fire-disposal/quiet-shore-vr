@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  annotateOutcome,
   SESSION_LOG_CAP,
   SESSION_LOG_KEY,
   appendSummary,
@@ -25,7 +26,19 @@ function memoryStorage(): Storage {
 }
 
 function entry(at: number): SessionSummary {
-  return { at, scene: 'shore', seconds: 60, level: 2, mix: 0.5, stop: 'patient', confidence: 80 };
+  return {
+    at,
+    scene: 'shore',
+    seconds: 60,
+    level: 2,
+    mix: 0.5,
+    stop: 'patient',
+    confidence: 80,
+    peakMix: 0.62,
+    peakUpGazeDeg: 24,
+    segments: [{ scene: 'shore', seconds: 60 }],
+    outcome: null
+  };
 }
 
 describe('session log', () => {
@@ -37,7 +50,14 @@ describe('session log', () => {
       level: 9,
       mix: 1.7,
       stop: 'technician',
-      confidence: -4
+      confidence: -4,
+      peakMix: 2,
+      peakUpGazeDeg: 300,
+      segments: [
+        { scene: 'shore', seconds: 20 },
+        { scene: 'shore', seconds: 10 },
+        { scene: 'washroom', seconds: 31.4 }
+      ]
     });
     expect(summary).toEqual({
       at: 1001,
@@ -46,7 +66,16 @@ describe('session log', () => {
       level: 3,
       mix: 1,
       stop: 'technician',
-      confidence: 0
+      confidence: 0,
+      // The dose is clamped to what the rig can produce, and adjacent spans of
+      // the same scene are folded: the ledger records dwell, not UI events.
+      peakMix: 1,
+      peakUpGazeDeg: 180,
+      segments: [
+        { scene: 'shore', seconds: 30 },
+        { scene: 'washroom', seconds: 31 }
+      ],
+      outcome: null
     });
     expect(Number.isFinite(summarize({ ...summary, at: Number.NaN }).at)).toBe(true);
   });
@@ -88,5 +117,44 @@ describe('session log', () => {
       stop: 'patient',
       confidence: 50
     })).toHaveLength(1);
+  });
+
+  it('annotates only the newest entry, and success implies an attempt', () => {
+    const storage = memoryStorage();
+    recordSession(storage, {
+      at: 10,
+      scene: 'shore',
+      seconds: 30,
+      level: 1,
+      mix: 0.4,
+      stop: 'technician',
+      confidence: 100,
+      peakMix: 0.4,
+      peakUpGazeDeg: 12,
+      segments: [{ scene: 'shore', seconds: 30 }]
+    });
+    recordSession(storage, {
+      at: 20,
+      scene: 'washroom',
+      seconds: 40,
+      level: 2,
+      mix: 0.7,
+      stop: 'patient',
+      confidence: 100,
+      peakMix: 0.7,
+      peakUpGazeDeg: 20,
+      segments: [{ scene: 'washroom', seconds: 40 }]
+    });
+    let list = annotateOutcome(storage, { succeeded: true });
+    expect(list[0]?.outcome).toBeNull();
+    expect(list[1]?.outcome).toEqual({ attempted: true, succeeded: true });
+    // A later "did not try" cannot coexist with a recorded success.
+    list = annotateOutcome(storage, { attempted: false });
+    expect(list[1]?.outcome).toEqual({ attempted: true, succeeded: true });
+  });
+
+  it('keeps working when there is nothing to annotate', () => {
+    const storage = memoryStorage();
+    expect(annotateOutcome(storage, { attempted: true })).toEqual([]);
   });
 });

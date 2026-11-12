@@ -122,7 +122,10 @@ object ControlProtocol {
         "view:anim:up|down|recenter", "view:stop",
         "voice:play:<id>", "voice:seq:start|imagine|relax|close", "voice:stop",
         "voice:volume:0-100", "voice:mix:duck:0-18",
-        "voice:set:male|female", "voice:subtitle:on|off"
+        "voice:set:male|female", "voice:subtitle:on|off",
+        // The bedside answer to "did this session help", recorded on the page's
+        // ledger after the headset is off. Two facts, each yes or no.
+        "record:outcome:attempt|success:yes|no"
     )
 
     const val STATUS_CONNECTED: String = "CONNECTED"
@@ -351,9 +354,17 @@ object ControlProtocol {
         return value.takeIf { it.isFinite() && abs(it) <= limitDeg }
     }
 
+    /** `record:outcome:attempt|success:yes|no` — the post-session question. */
+    private fun isOutcomeCommand(command: String): Boolean =
+        command.startsWith("record:outcome:") &&
+            command.removePrefix("record:outcome:") in setOf(
+                "attempt:yes", "attempt:no", "success:yes", "success:no"
+            )
+
     fun isAllowedCommand(command: String): Boolean {
         val normalized = normalize(command) ?: return false
-        return normalized == "enter" ||
+        return isOutcomeCommand(normalized) ||
+            normalized == "enter" ||
             normalized == "exit" ||
             normalized == "stop" ||
             normalized == "calibrate" ||

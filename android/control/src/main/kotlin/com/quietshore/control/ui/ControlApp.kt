@@ -167,6 +167,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onSusShow = viewModel::susShow,
             onSusAnswer = viewModel::susAnswer,
             onSusExport = viewModel::exportSus,
+            onOutcome = viewModel::recordOutcome,
             onDisconnect = viewModel::disconnect,
             onReconnect = viewModel::reconnect,
             onLeave = viewModel::leaveControl

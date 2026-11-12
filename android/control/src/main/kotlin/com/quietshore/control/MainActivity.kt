@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
                         batteryLevel = intent.getIntExtra("battery", -1)
                             .takeIf { it in 0..100 },                        withPose = intent.getBooleanExtra("pose", false),
                         withDrift = intent.getBooleanExtra("drift", false),
+                        withElapsed = intent.getBooleanExtra("elapsed", false),
                         tapped = intent.getStringExtra("tapped")
                     )
                 } else {

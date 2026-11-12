@@ -35,6 +35,7 @@ import { degrees, metres } from '../core/units';
 import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import {
+  annotateOutcome,
   recordSession,
   readSummaries,
   sessionStorageSafe,
@@ -142,6 +143,16 @@ export class QuietShoreApp {
   private sceneRestMix: 0 | 1 = 0;
   /** How much of the frame's buoyancy this scene wants as a heave, 0..1. */
   private sceneHeaveScale = 0;
+
+  // ---- the therapy's dose, measured while it runs -------------------------
+  /** Highest posture correction reached this session, 0..1. */
+  private peakMix = 0;
+  /** Highest up-gaze applied this session, in degrees. */
+  private peakUpGazeDeg = 0;
+  /** Time spent in each scene, in order; the ledger's per-segment dwell. */
+  private segments: { scene: string; seconds: number }[] = [];
+  /** When the current segment started, `performance.now()`; 0 = none. */
+  private segmentStartedAt = 0;
   /** Scenes are built once, off the critical path (see `preloadScenes`). */
   private scenesPreloaded = false;
   /** The page's own ledger of finished sessions (see `session-log.ts`). */
@@ -836,6 +847,10 @@ export class QuietShoreApp {
     this.lifecycle = reduceSession(this.lifecycle, event);
     if (previous === 'calibrating' && isActive(this.lifecycle)) {
       this.sessionStartedAt = performance.now();
+      this.peakMix = 0;
+      this.peakUpGazeDeg = 0;
+      this.segments = [];
+      this.segmentStartedAt = this.sessionStartedAt;
     }
     if (this.lifecycle.phase !== 'stopping' || previous === 'stopping') {
       return;
@@ -849,6 +864,7 @@ export class QuietShoreApp {
     // cleared: the tablet only sees 1 Hz frames, and a dropped link would
     // otherwise erase the only record of how long this lasted.
     if (this.sessionStartedAt > 0) {
+      this.closeSegment(performance.now());
       this.sessions = recordSession(sessionStorageSafe(), {
         at: Date.now(),
         scene: this.sceneId,
@@ -856,7 +872,10 @@ export class QuietShoreApp {
         level: this.floating.getLevel(),
         mix: this.world.state().mix,
         stop: this.lifecycle.stopReason ?? 'unknown',
-        confidence: this.comfort?.isCalibrated() ? 100 : 0
+        confidence: this.comfort?.isCalibrated() ? 100 : 0,
+        peakMix: this.peakMix,
+        peakUpGazeDeg: this.peakUpGazeDeg,
+        segments: this.segments
       });
     }
     this.sessionStartedAt = 0;
@@ -1076,9 +1095,13 @@ export class QuietShoreApp {
   private switchSceneLive(definition: SceneDefinition): void {
     const previousLevel = this.floating.getLevel();
     const previousRestMix = this.sceneRestMix;
+    // A switch ends the dwell in the old scene: the ledger's segments are what
+    // the session actually spent, not what was selected.
+    this.closeSegment(performance.now());
     this.stopSceneAudio();
     this.handle = this.host.load(definition, { keepPrevious: true });
     this.sceneId = definition.id;
+    this.segmentStartedAt = performance.now();
     this.applySceneDefinition(definition);
     // A scene with a lower comfort ceiling must not inherit a higher level; the
     // envelope eases down by itself, so the heave never steps.
@@ -1460,6 +1483,16 @@ export class QuietShoreApp {
   }
 
   private handleRemoteCommand(raw: string): void {
+    // The bedside question is answered on the tablet after the headset is off,
+    // so it arrives as a command rather than as part of the session itself.
+    const outcome = /^record:outcome:(attempt|success):(yes|no)$/.exec(raw);
+    if (outcome) {
+      const which = outcome[1] === 'attempt' ? 'attempted' : 'succeeded';
+      const value = outcome[2] === 'yes';
+      this.sessions = annotateOutcome(sessionStorageSafe(), { [which]: value });
+      this.start.setStatus(value ? '已记录：是' : '已记录：否', 'ok');
+      return;
+    }
     const command = parseRemoteCommand(raw);
     if (!command) {
       return;
@@ -1986,8 +2019,32 @@ export class QuietShoreApp {
    * it is sent at ≤10 Hz, and a field-by-field mutation of a reused object was
    * 40 lines of assignments whose only benefit was avoiding one allocation.
    */
+  /** Fold the current frame's dose into the session peaks and segment spans. */
+  private sampleDose(worldMix: number, upGazeDeg: number): void {
+    if (this.sessionStartedAt <= 0) {
+      return;
+    }
+    this.peakMix = Math.max(this.peakMix, worldMix);
+    this.peakUpGazeDeg = Math.max(this.peakUpGazeDeg, Math.abs(upGazeDeg));
+  }
+
+  /** Close the current segment span at [now]; a scene change opens a new one. */
+  private closeSegment(now: number): void {
+    if (this.segmentStartedAt <= 0) {
+      return;
+    }
+    const seconds = (now - this.segmentStartedAt) / 1000;
+    if (seconds > 0.5) {
+      this.segments.push({ scene: this.sceneId, seconds });
+    }
+    this.segmentStartedAt = 0;
+  }
+
   private captureSnapshot(): SceneSnapshot {
     const world = this.world.state();
+    // The dose is sampled here because this runs at the state-frame cadence and
+    // both quantities are ramps measured in seconds, not frame spikes.
+    this.sampleDose(world.mix, degrees(this.viewMotion.getUpGazeDeg()));
     const motion = this.floating.getState();
     const comfort = this.comfort;
     const shell = this.shell;

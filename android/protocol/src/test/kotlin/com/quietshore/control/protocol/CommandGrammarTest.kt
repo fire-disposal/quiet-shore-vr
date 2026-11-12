@@ -58,7 +58,9 @@ class CommandGrammarTest {
             "sus:open", "sus:close", "sus:show:4", "sus:answer:2", "sus:voice:off",
             "view:anim:up", "view:anim:recenter", "view:stop",
             "voice:play:v-enter-1", "voice:stop", "voice:volume:80", "voice:subtitle:on",
-            "voice:set:female"
+            "voice:set:female",
+            "record:outcome:attempt:yes", "record:outcome:attempt:no",
+            "record:outcome:success:yes", "record:outcome:success:no"
         )) {
             assertTrue(ControlProtocol.isAllowedCommand(raw), raw)
         }
@@ -81,6 +83,9 @@ class CommandGrammarTest {
             "settings:hud:on",
             "sus:next",
             "sus:answer:01",
+            "record:outcome:attempt:maybe",
+            "record:outcome:mood:yes",
+            "record:outcome:",
         )) {
             assertFalse(ControlProtocol.isAllowedCommand(raw), raw)
         }

@@ -57,4 +57,6 @@ data class ControlActions(
     val onSusAnswer: (Int) -> Unit,
     /** SUS: share the archived sheets as JSON through the system chooser. */
     val onSusExport: () -> Unit,
+    /** Bedside answer: "attempt" | "success", yes/no. */
+    val onOutcome: (String, Boolean) -> Unit,
 )
