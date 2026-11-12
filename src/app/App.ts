@@ -10,6 +10,7 @@ import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneDefinition, SceneHandle } from '../core/scene/contract';
 import { getSceneDefinition, SCENE, SCENES } from '../scenes/registry';
+import { catalogEntries } from '../scenes/catalog';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
@@ -845,7 +846,10 @@ export class QuietShoreApp {
   private dispatch(event: SessionEvent): void {
     const previous = this.lifecycle.phase;
     this.lifecycle = reduceSession(this.lifecycle, event);
-    if (previous === 'calibrating' && isActive(this.lifecycle)) {
+    // Only the first calibration of a session starts its clock and ledger.
+    // A mid-session recalibration is the operator's correction, not a new
+    // exercise: it must not reset elapsed time, peaks or segments.
+    if (previous === 'calibrating' && isActive(this.lifecycle) && this.sessionStartedAt === 0) {
       this.sessionStartedAt = performance.now();
       this.peakMix = 0;
       this.peakUpGazeDeg = 0;
@@ -1051,6 +1055,13 @@ export class QuietShoreApp {
     const definition = getSceneDefinition(id);
     if (!definition) {
       this.refuse('未知场景');
+      return;
+    }
+    if (!this.previewing && !this.session) {
+      // The portal's entry page is not a place to browse scenes: the patient
+      // must be inside the preparation room first. The tablet gates its list
+      // on the same fact; this is the wire-level backstop.
+      this.refuse('请先进入 VR，再选择正式场景');
       return;
     }
     if (this.capturePending) {
@@ -1675,6 +1686,11 @@ export class QuietShoreApp {
   private handleLinkStatus(status: 'open' | 'closed'): void {
     const wasOnline = this.linkOnline;
     this.linkOnline = status === 'open';
+    if (this.linkOnline && !wasOnline) {
+      // Every connection gets the catalogue: the tablet may have been open
+      // before this page loaded, and a stale list is worse than none.
+      this.link.sendCatalog(catalogEntries());
+    }
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
     // Only the fact, and only when it matters. "正在重连" is the system

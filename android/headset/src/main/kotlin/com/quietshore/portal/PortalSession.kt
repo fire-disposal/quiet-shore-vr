@@ -35,8 +35,8 @@ internal object PortalSession {
      * @return true when the call changed the choice, so the caller persists to
      * disk exactly once and can log a single line per real decision.
      */
-    fun chooseScene(id: String): Boolean = synchronized(this) {
-        if (!sceneState.choose(id)) {
+    fun chooseScene(id: String, knownIds: Set<String>): Boolean = synchronized(this) {
+        if (!sceneState.choose(id, knownIds)) {
             return false
         }
         options = options.copy(scene = sceneState.scene)
@@ -47,9 +47,9 @@ internal object PortalSession {
      * Replaces the launch inputs. The scene inside [next] is routed through the
      * same single owner, so a caller cannot install a second copy of it.
      */
-    fun set(next: LaunchOptions) = synchronized(this) {
+    fun set(next: LaunchOptions, knownIds: Set<String>) = synchronized(this) {
         options = next
-        sceneState.choose(next.scene)
+        sceneState.choose(next.scene, knownIds)
     }
 
     fun snapshot(): LaunchOptions = synchronized(this) { options.copy(scene = sceneState.scene) }

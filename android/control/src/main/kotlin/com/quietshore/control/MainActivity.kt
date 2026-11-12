@@ -52,10 +52,18 @@ class MainActivity : ComponentActivity() {
                     ConsolePreview(
                         fixture = fixture,
                         batteryLevel = intent.getIntExtra("battery", -1)
-                            .takeIf { it in 0..100 },                        withPose = intent.getBooleanExtra("pose", false),
+                            .takeIf { it in 0..100 },
+                        withMirror = intent.getBooleanExtra("mirror", false),
+                        withPose = intent.getBooleanExtra("pose", false),
                         withDrift = intent.getBooleanExtra("drift", false),
                         withElapsed = intent.getBooleanExtra("elapsed", false),
-                        tapped = intent.getStringExtra("tapped")
+                        tapped = intent.getStringExtra("tapped"),
+                        // `--es catalog '{"scenes":[...]}'` proves the cards
+                        // come from the document, not from the local table.
+                        catalog = intent.getStringExtra("catalog"),
+                        // `--es current prep` renders the built-in room as the
+                        // loaded scene, including its mirror.
+                        current = intent.getStringExtra("current")
                     )
                 } else {
                     val controlViewModel: ControlViewModel = viewModel()

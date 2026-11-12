@@ -34,8 +34,9 @@ class LaunchStateTest {
     @Test
     fun `an accepted change bumps the revision once`() {
         val state = LaunchState()
-        assertTrue(state.choose("lightwell"))
-        assertEquals("lightwell", state.scene)
+        assertTrue(state.choose("shore"))
+        assertEquals("shore", state.scene)
+        assertEquals("prep", ControlProtocol.DEFAULT_SCENE)
         assertEquals(1L, state.revision)
 
         assertTrue(state.choose("ward"))
@@ -55,5 +56,15 @@ class LaunchStateTest {
     fun `the initial value is sanitised`() {
         assertEquals(ControlProtocol.DEFAULT_SCENE, LaunchState("nope").scene)
         assertEquals("ward", LaunchState("ward").scene)
+    }
+
+    @Test
+    fun `a scene announced by the page is accepted without a table change`() {
+        val announced = setOf("washroom", "shore", "garden")
+        val state = LaunchState("washroom", announced)
+        assertTrue(state.choose("garden", announced))
+        assertEquals("garden", state.scene)
+        // The built-in table still rejects it when no catalogue says otherwise.
+        assertFalse(state.choose("garden"))
     }
 }

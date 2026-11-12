@@ -84,11 +84,6 @@ class PortalActivity : Activity() {
             "我需要先学习很多内容才能开始使用这个系统。"
         )
 
-        /** Tagline per scene; names come from `ControlProtocol.SCENE_LABELS`. */
-        val SCENE_TAGLINES = mapOf(
-            "washroom" to "墙面干净，光线柔和",
-            "shore" to "云、水面与一条日光"
-        )
         val SCENE_TINT = 0xFF6F8B7A.toInt()
     }
 
@@ -103,6 +98,8 @@ class PortalActivity : Activity() {
     private var settings = HeadsetSettings()
     private var homeStatusCard: View? = null
     private var homeStatusMac: TextView? = null
+    private var homeSceneName: TextView? = null
+    private var homeSceneTagline: TextView? = null
     private var batteryCardView: View? = null
     private var batteryLabel: TextView? = null
     private var batteryValue: TextView? = null
@@ -382,6 +379,8 @@ class PortalActivity : Activity() {
     private fun renderPage() {
         homeStatusCard = null
         homeStatusMac = null
+        homeSceneName = null
+        homeSceneTagline = null
         batteryCardView = null
         batteryLabel = null
         batteryValue = null
@@ -442,12 +441,15 @@ class PortalActivity : Activity() {
             }
         )
         val sceneId = HeadsetSettings.read(this).sceneId
-        val sceneName = ControlProtocol.SCENE_LABELS[sceneId] ?: ControlProtocol.DEFAULT_SCENE
-        val sceneTagline = SCENE_TAGLINES[sceneId] ?: ""
-        sceneCard.addView(label(sceneName, 30f, TEXT, Typeface.BOLD))
-        sceneCard.addView(label(sceneTagline, 15f, MUTED, Typeface.NORMAL).apply {
-            setPadding(0, dp(6), 0, 0)
-        })
+        val catalogScene = PageCatalog.scene(this, sceneId)
+        val sceneName = catalogScene?.nameZh
+            ?: ControlProtocol.SCENE_LABELS[sceneId]
+            ?: sceneId
+        homeSceneName = label(sceneName, 30f, TEXT, Typeface.BOLD)
+        homeSceneTagline = label(catalogScene?.taglineZh.orEmpty(), 15f, MUTED, Typeface.NORMAL)
+            .apply { setPadding(0, dp(6), 0, 0) }
+        sceneCard.addView(homeSceneName)
+        sceneCard.addView(homeSceneTagline)
         page.addView(sceneCard)
 
         val status = sectionCard().apply { visibility = View.GONE }
@@ -799,6 +801,14 @@ class PortalActivity : Activity() {
         val control = PortalStatus.isControlActive()
         homeStatusCard?.visibility = if (control) View.VISIBLE else View.GONE
         homeStatusMac?.text = "蓝牙地址  ${PortalStatus.controllerAddress() ?: "—"}"
+        // A catalogue announcement or a scene command changes this card while
+        // it is already on screen; rebuilding the whole page would flicker.
+        val sceneId = HeadsetSettings.read(this).sceneId
+        val scene = PageCatalog.scene(this, sceneId)
+        homeSceneName?.text = scene?.nameZh
+            ?: ControlProtocol.SCENE_LABELS[sceneId]
+            ?: sceneId
+        homeSceneTagline?.text = scene?.taglineZh.orEmpty()
     }
 
     /** Writes the battery bar from the last sticky broadcast; hides when unknown. */

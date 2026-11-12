@@ -17,6 +17,7 @@ android/build/
 android/*/build/
 android/local.properties
 android/headset/src/main/assets/index.html
+android/headset/src/main/assets/catalog.json
 android/control/src/main/assets/mirror.html
 
 # voice pipeline: key material stays local

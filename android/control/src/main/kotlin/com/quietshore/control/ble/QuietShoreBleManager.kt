@@ -8,6 +8,7 @@ import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.protocol.JsonAssembler
+import com.quietshore.control.protocol.SceneCatalogDocument
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import java.nio.charset.StandardCharsets
@@ -51,6 +52,22 @@ class QuietShoreBleManager(
     private var jsonCharacteristic: BluetoothGattCharacteristic? = null
     /** Partials of the chunked JSON channel; cleared on every new connection. */
     private val jsonAssembler = JsonAssembler()
+
+    /**
+     * Catalogue order, as the page announced it. The state frame carries only a
+     * 4-bit index, so this is what resolves it; the built-in table is the
+     * fallback before the first catalogue lands.
+     */
+    @Volatile
+    private var sceneIds: List<String> = ControlProtocol.SCENE_IDS
+
+    /**
+     * The last scene the JSON channel named. An index outside [sceneIds] (a
+     * catalogue that has not arrived, or an old page) must not flip the UI back
+     * to the first scene for one frame.
+     */
+    @Volatile
+    private var lastSceneName: String = ControlProtocol.DEFAULT_SCENE
 
     /** Set once per connection so `CONNECTION_PRIORITY_HIGH` is not re-sent. */
     private var highPriorityRequested = false
@@ -99,7 +116,8 @@ class QuietShoreBleManager(
             }
             setNotificationCallback(state).with { _, data ->
                 data.value?.let { bytes ->
-                    ControlProtocol.decodeState(bytes)?.let(events::onControlState)
+                    ControlProtocol.decodeState(bytes, sceneIds, lastSceneName)
+                        ?.let(events::onControlState)
                 }
             }
             jsonCharacteristic?.let { characteristic ->
@@ -111,7 +129,21 @@ class QuietShoreBleManager(
                             val json = String(document, StandardCharsets.UTF_8)
                             try {
                                 val root = org.json.JSONObject(json)
-                                events.onJson(root.optString("t"), root.optJSONObject("d")?.toString() ?: json)
+                                val topic = root.optString("t")
+                                val data = root.optJSONObject("d")?.toString() ?: json
+                                // Both facts are needed before the next state
+                                // frame: the catalogue resolves the index, and
+                                // the flags document names the scene when it
+                                // cannot. The UI re-parses the same documents.
+                                when (topic) {
+                                    "catalog" -> SceneCatalogDocument.parse(data)
+                                        ?.let { scenes -> sceneIds = scenes.map { it.id } }
+                                    "flags" -> root.optJSONObject("d")
+                                        ?.optString("scene")
+                                        ?.takeIf { it.isNotEmpty() }
+                                        ?.let { lastSceneName = it }
+                                }
+                                events.onJson(topic, data)
                             } catch (error: org.json.JSONException) {
                                 // A malformed document is ignored; the next one supersedes it.
                             }

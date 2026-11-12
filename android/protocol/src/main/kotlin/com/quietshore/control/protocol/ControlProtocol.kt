@@ -36,9 +36,9 @@ object ControlProtocol {
     const val deviceName: String = "QuietShore"
     /** Six floats: x, y, z, yaw, pitch, roll. The mirror needs the roll too. */
     const val telemetryBytes: Int = 24
-    /** v13 frame size; fits a 30-byte MTU, so no chunking on the state path. */
+    /** v14 frame size; fits a 30-byte MTU, so no chunking on the state path. */
     const val stateMaxBytes: Int = 28
-    const val stateVersion: Int = 13
+    const val stateVersion: Int = 14
     /** i16 quaternion scale: components live in [-1, 1]. */
     const val QUAT_SCALE: Int = 32767
 
@@ -361,7 +361,15 @@ object ControlProtocol {
                 "attempt:yes", "attempt:no", "success:yes", "success:no"
             )
 
-    fun isAllowedCommand(command: String): Boolean {
+    /**
+     * [sceneIds] is the live catalogue the page announced. The built-in table
+     * is only the fallback for a link that has not carried a catalogue yet; it
+     * is not the source of truth, and a new scene needs no change here.
+     */
+    fun isAllowedCommand(
+        command: String,
+        sceneIds: Set<String> = SCENE_LABELS.keys
+    ): Boolean {
         val normalized = normalize(command) ?: return false
         return isOutcomeCommand(normalized) ||
             normalized == "enter" ||
@@ -375,7 +383,7 @@ object ControlProtocol {
             (normalized.startsWith(FLOAT_LEVEL) &&
                 normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
             (normalized.startsWith(SCENE_PREFIX) &&
-                normalized.removePrefix(SCENE_PREFIX) in SCENE_LABELS) ||
+                normalized.removePrefix(SCENE_PREFIX) in sceneIds) ||
             (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
             (normalized.startsWith(ANIM_DURATION) &&
                 normalized.removePrefix(ANIM_DURATION).toIntOrNull() in 4000..20000) ||
@@ -443,11 +451,11 @@ object ControlProtocol {
     }
 
     /**
-     * 28-byte state frame (v13), little endian:
+     * 28-byte state frame (v14), little endian:
      *
      * | byte | field |
      * | --- | --- |
-     * | 0 | version (13) |
+     * | 0 | version (14) |
      * | 1 | flags: session, calibrating, audio muted, moving, hold, voice auto, 2 spare |
      * | 2 | scene index 4b | float level 2b | view anim 2b |
      * | 3 | applied eye height (cm) |
@@ -472,7 +480,9 @@ object ControlProtocol {
         state: ControlState,
         nowMs: Int = 0,
         seq: Int = 0,
-        target: ByteArray = ByteArray(stateMaxBytes)
+        target: ByteArray = ByteArray(stateMaxBytes),
+        /** Live catalogue order; the built-in table is only the fallback. */
+        sceneIds: List<String> = SCENE_IDS
     ): ByteArray {
         var flags = 0
         if (state.session) flags = flags or 1
@@ -482,7 +492,7 @@ object ControlProtocol {
         if (state.hold) flags = flags or 16
         if (state.voiceAuto) flags = flags or 32
 
-        val packed = (sceneIndex(state.scene) and 0xF) or
+        val packed = (sceneIndex(state.scene, sceneIds) and 0xF) or
             ((state.floatLevel.coerceIn(0, 3) and 0x3) shl 4) or
             ((state.viewAnim.code and 0x3) shl 6)
 
@@ -547,8 +557,19 @@ object ControlProtocol {
         return chunks
     }
 
-    /** Only the v13 shape exists: the frame is not backward compatible. */
-    fun decodeState(bytes: ByteArray): ControlState? {
+    /**
+     * Only the v14 shape exists: the frame is not backward compatible.
+     *
+     * [sceneIds] is the catalogue in the order the page announced it; an index
+     * outside it resolves to [fallbackScene], which the tablet sets to the last
+     * scene the JSON channel named. [fallbackScene]'s default keeps the v1
+     * behaviour for an old tablet or a catalogue that has not arrived yet.
+     */
+    fun decodeState(
+        bytes: ByteArray,
+        sceneIds: List<String> = SCENE_IDS,
+        fallbackScene: String = DEFAULT_SCENE
+    ): ControlState? {
         if (bytes.size != stateMaxBytes) return null
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if ((buffer.get().toInt() and 0xFF) != stateVersion) return null
@@ -577,7 +598,7 @@ object ControlProtocol {
             moving = flags and 8 != 0,
             hold = flags and 16 != 0,
             voiceAuto = flags and 32 != 0,
-            scene = SCENE_IDS.getOrElse(packed and 0xF) { DEFAULT_SCENE },
+            scene = sceneIds.getOrElse(packed and 0xF) { fallbackScene },
             floatLevel = (packed shr 4) and 0x3,
             viewAnim = ViewAnim.fromCode((packed shr 6) and 0x3),
             eyeHeight = eyeHeight,
@@ -600,20 +621,27 @@ object ControlProtocol {
     }
 
     /**
-     * Shipped scenes. Index order is the wire contract for state byte 11:
-     * append only, never reorder, or an old tablet reads the wrong scene.
+     * Fallback scene order for a link whose page has not announced a catalogue
+     * yet. The live catalogue is authoritative; this table must still be
+     * append-only, because it is what an old tablet decodes the frame with.
      */
-    val SCENE_IDS: List<String> = listOf("washroom", "shore", "lightwell", "ward")
+    val SCENE_IDS: List<String> = listOf("washroom", "shore", "ward", "prep")
 
-    /** Default when the operator has not chosen: the standing washroom. */
-    const val DEFAULT_SCENE: String = "washroom"
+    /** Default when the operator has not chosen: the neutral preparation room. */
+    const val DEFAULT_SCENE: String = "prep"
+
+    /**
+     * Built-in surfaces that are never offered as a scene choice. The live
+     * catalogue carries the same flag; this is the pre-catalogue fallback.
+     */
+    val SPECIAL_SCENES: Set<String> = setOf(DEFAULT_SCENE)
 
     /** Operator-facing labels. The tablet renders this list; keep ids in sync. */
     val SCENE_LABELS: Map<String, String> = linkedMapOf(
         "washroom" to "洁净立便间",
         "shore" to "仰望湖面",
-        "lightwell" to "光井",
-        "ward" to "病房"
+        "ward" to "病房",
+        "prep" to "准备间"
     )
 
     /**
@@ -625,12 +653,12 @@ object ControlProtocol {
     val SCENE_BLURBS: Map<String, String> = linkedMapOf(
         "washroom" to "起身视角：0.85 米外的立便器与木隔屏；躺下只见天花板的一盏筒灯。",
         "shore" to "躺卧视角：水面在身下缓缓起伏，云在头顶漂移，地平线稳定。",
-        "lightwell" to "躺卧视角：6 米见方的竖井，壁上灯架缓缓上行（约 33 秒一组），幅度随起伏走。",
-        "ward" to "仰卧视角：被面轻褶、窗上百叶、监护仪滚动的波形，头顶两盏嵌灯。"
+        "ward" to "仰卧视角：被面轻褶、窗上百叶、监护仪滚动的波形，头顶两盏嵌灯。",
+        "prep" to "空旷的灰色房间：没有陈设，只有头顶一块柔光。"
     )
 
-    private fun sceneIndex(name: String): Int {
-        val index = SCENE_IDS.indexOf(name)
+    private fun sceneIndex(name: String, sceneIds: List<String>): Int {
+        val index = sceneIds.indexOf(name)
         return if (index < 0) 255 else index
     }
 

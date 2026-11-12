@@ -10,8 +10,10 @@ data class ControlActions(
     val onExitScene: () -> Unit,
     /** Ends the session and returns the headset to the system launcher. */
     val onExitSystem: () -> Unit,
-    /** Scene choice, sent before a session; the headset stores it for the launch. */
+    /** Marks a scene as the operator's next choice; nothing is sent yet. */
     val onSceneSelect: (String) -> Unit,
+    /** Applies the marked scene: the page switches (or enters it) now. */
+    val onSceneApply: () -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
     val onAnimDuration: (Int) -> Unit,
     /** Gaze dwell selection (SUS answers and spatial targets). Default on. */

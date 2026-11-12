@@ -2,6 +2,7 @@ import * as esbuild from 'esbuild';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 const serve = process.argv.includes('--serve');
@@ -35,6 +36,41 @@ await esbuild.build({
   entryPoints: [path.join(src, 'styles.css')],
   outfile: path.join(dist, 'styles.css')
 });
+
+// The scene catalogue is derived from the registry, never written twice. The
+// headset APK ships this file so its home card and its command validation work
+// before the page has ever connected; the tablet receives the same list live
+// on the JSON channel.
+const catalogOut = path.join(dist, '.catalog-build.cjs');
+try {
+  await esbuild.build({
+    ...common,
+    stdin: {
+      contents:
+        "import { catalogEntries } from './src/scenes/catalog';\n" +
+        'export const catalog = catalogEntries();\n',
+      resolveDir: root,
+      sourcefile: 'catalog-entry.ts',
+      loader: 'ts'
+    },
+    outfile: catalogOut,
+    format: 'cjs',
+    platform: 'node',
+    // Three belongs to the running page; the catalogue only needs ids and text.
+    external: ['three'],
+    sourcemap: false,
+    minify: false,
+    logLevel: 'warning'
+  });
+  const { catalog } = createRequire(import.meta.url)(catalogOut);
+  fs.writeFileSync(
+    path.join(dist, 'catalog.json'),
+    JSON.stringify({ scenes: catalog }, null, 2) + '\n'
+  );
+  console.log(`catalog.json ${catalog.length} scenes`);
+} finally {
+  fs.rmSync(catalogOut, { force: true });
+}
 
 const template = fs.readFileSync(path.join(src, 'index.html'), 'utf8');
 const version = crypto.createHash('sha1')

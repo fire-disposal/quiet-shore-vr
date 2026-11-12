@@ -47,8 +47,9 @@ internal data class HeadsetSettings(
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val eyeHeight = prefs.getFloat(KEY_EYE_HEIGHT, DEFAULT_EYE_HEIGHT)
                 .takeIf { isValidEyeHeight(it) } ?: DEFAULT_EYE_HEIGHT
+            // The catalogue, not the built-in table, decides what is a scene.
             val scene = prefs.getString(KEY_SCENE, null)
-                ?.takeIf { it in ControlProtocol.SCENE_IDS }
+                ?.takeIf { it in PageCatalog.idSet(context) }
                 ?: ControlProtocol.DEFAULT_SCENE
             return HeadsetSettings(
                 sceneId = scene,
@@ -80,7 +81,7 @@ internal data class HeadsetSettings(
          * key; unknown ids are refused rather than stored.
          */
         fun saveScene(context: Context, sceneId: String) {
-            val valid = sceneId.takeIf { it in ControlProtocol.SCENE_IDS } ?: return
+            val valid = sceneId.takeIf { it in PageCatalog.idSet(context) } ?: return
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putString(KEY_SCENE, valid)

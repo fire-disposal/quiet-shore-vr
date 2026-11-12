@@ -15,10 +15,14 @@ package com.quietshore.control.protocol
  * not a second decision), and bumps [revision] so a reader can tell one
  * accepted decision from the next.
  */
-class LaunchState(scene: String = ControlProtocol.DEFAULT_SCENE) {
+class LaunchState(
+    scene: String = ControlProtocol.DEFAULT_SCENE,
+    /** Live catalogue ids; the built-in table is the pre-catalogue fallback. */
+    private val knownScenes: Set<String> = ControlProtocol.SCENE_IDS.toSet()
+) {
 
-    /** Current choice; always one of [ControlProtocol.SCENE_IDS]. */
-    var scene: String = known(scene) ?: ControlProtocol.DEFAULT_SCENE
+    /** Current choice; always one of [knownScenes]. */
+    var scene: String = known(scene, knownScenes) ?: ControlProtocol.DEFAULT_SCENE
         private set
 
     /** Increases with every accepted change; equal revisions mean equal state. */
@@ -31,8 +35,8 @@ class LaunchState(scene: String = ControlProtocol.DEFAULT_SCENE) {
      * @return true only when [id] is a known scene *and* differs from the
      * current one, so callers can skip a redundant disk write.
      */
-    fun choose(id: String): Boolean {
-        val next = known(id) ?: return false
+    fun choose(id: String, knownIds: Set<String> = knownScenes): Boolean {
+        val next = known(id, knownIds) ?: return false
         if (next == scene) {
             return false
         }
@@ -42,8 +46,10 @@ class LaunchState(scene: String = ControlProtocol.DEFAULT_SCENE) {
     }
 
     companion object {
-        /** Known scene id, or null. The only place the wire table is consulted. */
-        fun known(id: String?): String? =
-            id?.trim()?.takeIf { it in ControlProtocol.SCENE_IDS }
+        /** Known scene id, or null. The only place the scene table is consulted. */
+        fun known(
+            id: String?,
+            knownIds: Set<String> = ControlProtocol.SCENE_IDS.toSet()
+        ): String? = id?.trim()?.takeIf { it in knownIds }
     }
 }

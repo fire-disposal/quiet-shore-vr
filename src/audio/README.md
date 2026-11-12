@@ -52,7 +52,6 @@ the centre does not cancel and no extra assets are needed.
 | --- | --- | --- | --- |
 | shore | lake | 0.8 | open water: the widest field we ship |
 | washroom | stream | 0.35 | a small tiled room, sound stays close |
-| lightwell | — | — | silent: the shaft should be one's own breathing |
 
 The engine keeps one bed at a time: a track, volume or width change crossfades
 the old bed out over the scene's `fadeMs` while the new one fades in, and a

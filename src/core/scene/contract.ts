@@ -62,6 +62,12 @@ export interface SceneSummary {
   description: LocalizedText;
   /** Ambience owned by the scene; absent means the scene is silent. */
   audio?: SceneAudio;
+  /**
+   * Built-in infrastructure rather than an operator-facing room. The
+   * preparation space is the only one: it is the session's first surface, not
+   * a card in the scene picker.
+   */
+  readonly special?: boolean;
 }
 
 export interface SceneDefinition extends SceneSummary {

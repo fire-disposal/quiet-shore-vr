@@ -5,17 +5,18 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * The scene tables are the operator's only view of the shipped rooms. Ids drive
- * state byte 11 (append only), and the copy must cover exactly the same ids:
- * a blurb for a scene that does not exist is the drift that produced the
- * washroom's imaginary handrail.
+ * The built-in table is the fallback for a link with no catalogue yet. The
+ * page's registry is authoritative, but this order is what an old tablet
+ * decodes the frame with, so it is append-only, and the copy must cover
+ * exactly the same ids: a blurb for a scene that does not exist is the drift
+ * that produced the washroom's imaginary handrail.
  */
 class SceneTableTest {
 
     @Test
     fun `backlog order is the wire contract`() {
-        assertEquals(listOf("washroom", "shore", "lightwell", "ward"), ControlProtocol.SCENE_IDS)
-        assertEquals("washroom", ControlProtocol.DEFAULT_SCENE)
+        assertEquals(listOf("washroom", "shore", "ward", "prep"), ControlProtocol.SCENE_IDS)
+        assertEquals("prep", ControlProtocol.DEFAULT_SCENE)
     }
 
     @Test

@@ -121,13 +121,15 @@ internal object PortalActions {
         }
         lastEnterAt = now
         val base = PortalSession.snapshot()
-        PortalSession.set(
-            if (skipCalibrationOverride == null) {
-                base
-            } else {
-                base.copy(skipCalibration = skipCalibrationOverride)
-            }
-        )
+        // Every launch opens in the built-in preparation room. The operator
+        // records the posture there and then switches to a real scene; the
+        // last pick is remembered for the console card, not for the launch.
+        val launch = if (skipCalibrationOverride == null) {
+            base
+        } else {
+            base.copy(skipCalibration = skipCalibrationOverride)
+        }.copy(scene = ControlProtocol.DEFAULT_SCENE)
+        PortalSession.set(launch, PageCatalog.idSet(app))
         startServer(context)
         val url = buildUrl(retry)
         // The service supervises what happens next: it is the only holder that

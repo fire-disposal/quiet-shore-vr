@@ -10,11 +10,22 @@ import com.quietshore.control.protocol.ControlProtocol
  * does not have. This catalog only adds ordering and lookup.
  */
 object SceneCatalog {
-    data class Scene(val id: String, val name: String, val blurb: String)
+    data class Scene(
+        val id: String,
+        val name: String,
+        val blurb: String,
+        /** Built-in infrastructure; the picker leaves it out. */
+        val special: Boolean = false
+    )
 
     val ALL: List<Scene> = ControlProtocol.SCENE_IDS.mapNotNull { id ->
         val name = ControlProtocol.SCENE_LABELS[id] ?: return@mapNotNull null
-        Scene(id, name, ControlProtocol.SCENE_BLURBS[id].orEmpty())
+        Scene(
+            id = id,
+            name = name,
+            blurb = ControlProtocol.SCENE_BLURBS[id].orEmpty(),
+            special = id in ControlProtocol.SPECIAL_SCENES
+        )
     }
 
     fun scene(id: String): Scene? = ALL.firstOrNull { it.id == id }

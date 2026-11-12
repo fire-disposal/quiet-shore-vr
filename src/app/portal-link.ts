@@ -261,6 +261,17 @@ export class PortalLink {
    * The 20-byte state frame is frozen by the wire contract, so anything that is
    * not live telemetry travels on its own channel (`sus` today).
    */
+  /**
+   * The scene catalogue, pushed once per connection.
+   *
+   * The page owns it because the page is what actually builds scenes; the
+   * tablet and the headset app only render what they are told. Adding a scene
+   * is therefore one entry here, not a new id in three Kotlin maps.
+   */
+  sendCatalog(scenes: readonly unknown[]): void {
+    this.send({ type: 'catalog', data: { scenes } });
+  }
+
   sendSus(data: unknown): void {
     this.send({ type: 'sus', data });
   }

@@ -139,6 +139,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onExitScene = viewModel::exitScene,
             onExitSystem = viewModel::exitSystem,
             onSceneSelect = viewModel::selectScene,
+            onSceneApply = viewModel::applyScene,
             onAnimDuration = viewModel::setAnimDuration,
             onGazeDwellChange = viewModel::setGazeDwell,
             onSusVoiceChange = viewModel::setSusVoice,

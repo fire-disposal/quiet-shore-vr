@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * v13 state frame: 28 bytes, one posture scalar, no derivable duplicates.
+ * v14 state frame: 28 bytes, one posture scalar, no derivable duplicates.
  *
  * Every offset is pinned here because this array is the only thing the two
  * ends share; a test that merely round-trips would pass with the fields in any
@@ -20,7 +20,7 @@ class StateFrameTest {
         ((bytes[offset].toInt() and 0xFF) or ((bytes[offset + 1].toInt() and 0xFF) shl 8)).toShort().toInt()
 
     @Test
-    fun `v13 frame is 28 bytes with the documented offsets`() {
+    fun `v14 frame is 28 bytes with the documented offsets`() {
         val state = ControlState(
             session = true,
             calibrating = true,
@@ -28,7 +28,7 @@ class StateFrameTest {
             moving = true,
             hold = true,
             voiceAuto = true,
-            scene = ControlProtocol.SCENE_IDS[3],
+            scene = ControlProtocol.SCENE_IDS[2],
             floatLevel = 2,
             viewAnim = ViewAnim.PLAYING,
             eyeHeight = 0.71f,
@@ -49,11 +49,11 @@ class StateFrameTest {
         val bytes = ControlProtocol.encodeState(state, nowMs = 0x1234, seq = 0x0042)
 
         assertEquals(28, bytes.size)
-        assertEquals(13, bytes[0].toInt())
+        assertEquals(14, bytes[0].toInt())
         // session | calibrating | audio | moving | hold | voiceAuto
         assertEquals(1 or 2 or 4 or 8 or 16 or 32, bytes[1].toInt() and 0xFF)
-        // scene index 3 | level 2 << 4 | anim playing 1 << 6
-        assertEquals(3 or (2 shl 4) or (1 shl 6), bytes[2].toInt() and 0xFF)
+        // scene index 2 | level 2 << 4 | anim playing 1 << 6
+        assertEquals(2 or (2 shl 4) or (1 shl 6), bytes[2].toInt() and 0xFF)
         assertEquals(71, bytes[3].toInt() and 0xFF)
         assertEquals(125, bytes[4].toInt() and 0xFF)
         assertEquals(-32, bytes[5].toInt())

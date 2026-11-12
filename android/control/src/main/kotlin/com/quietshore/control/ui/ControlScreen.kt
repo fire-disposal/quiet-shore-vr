@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.SessionPhase
@@ -56,7 +57,6 @@ import com.quietshore.control.ui.components.Rule
 import com.quietshore.control.ui.components.SceneCardView
 import com.quietshore.control.ui.components.SceneChooser
 import com.quietshore.control.ui.components.SectionHead
-import com.quietshore.control.ui.components.SessionReadout
 import com.quietshore.control.ui.components.Stepper
 import com.quietshore.control.ui.components.StepLine
 import com.quietshore.control.ui.components.SusSheet
@@ -373,15 +373,17 @@ private fun SessionMain(
     phase: SessionPhase,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier.verticalScroll(rememberScrollState())) {
+    // The picture is the app surface; the gauges are a footnote. The mirror
+    // takes whatever height is left after them, instead of a fixed block with
+    // empty paper under it.
+    Column(modifier) {
         MirrorSlot(
             state = state,
             phase = phase,
-            onModeChange = actions.onMirrorModeChange
+            onModeChange = actions.onMirrorModeChange,
+            modifier = Modifier.weight(1f)
         )
-        Spacer(Modifier.height(16.dp))
-        SessionReadout(state = state, phase = phase)
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(24.dp))
         SectionHead(title = "患者当前姿态", note = "只读")
         Rule()
         PostureGauges(state = state)
@@ -404,16 +406,17 @@ private fun SessionColumn(
     onOpenVoice: () -> Unit
 ) {
     val ready = state.phase == BlePhase.READY
-    // A scene switch is live during training: the page swaps only the content,
-    // keeps the calibration frame and the gaze offset, clamps the buoyancy
-    // ceiling to the new scene and runs the posture change along the operator's
-    // ramp. It is reversible, so it needs no confirmation and no "switching"
-    // state of its own. Two windows stay closed because the page refuses there:
-    // recording the posture, and the ending fade.
-    val scenesEnabled = ready && (phase == SessionPhase.Running ||
-        phase == SessionPhase.Idle || phase == SessionPhase.Entry)
+    // The real scene list unlocks only once the patient is inside XR and the
+    // posture has been recorded: the preparation room is the first surface,
+    // and entering a real scene is the deliberate second step. After that a
+    // switch is live during training — the page swaps content under the kept
+    // calibration frame — so it needs no confirmation, only the apply key.
+    val scenesEnabled = ready && phase == SessionPhase.Running
     val level = state.control.floatLevel.coerceIn(0, 3)
     val selectedScene = state.sceneIntent.ifEmpty { state.control.scene }
+    val selectedName = state.selectableScenes
+        .firstOrNull { it.id == state.sceneIntent }
+        ?.name
 
     Column(modifier) {
         Column(
@@ -438,7 +441,7 @@ private fun SessionColumn(
                     // it. A second entry point here costs height the four
                     // live blocks below need.
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (scene in com.quietshore.control.model.SceneCatalog.ALL) {
+                        for (scene in state.selectableScenes) {
                             SceneCardView(
                                 scene = scene,
                                 current = scene.id == selectedScene,
@@ -450,15 +453,32 @@ private fun SessionColumn(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = when (phase) {
-                            SessionPhase.Calibrating -> "校准中，仅急停可用。"
-                            SessionPhase.Stopping -> "正在结束，结束后再切换。"
-                            else -> "点选后立即切换"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.InkSecondary
-                    )
+                    // Status and the one deliberate action share a line: more
+                    // controls must cost width here, not height in the app.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = when {
+                                phase == SessionPhase.Calibrating -> "标定中，完成后解锁场景。"
+                                phase == SessionPhase.Stopping -> "正在结束，结束后再切换。"
+                                phase != SessionPhase.Running -> "进入 VR 并完成标定后可选场景。"
+                                selectedName != null -> "已选「$selectedName」"
+                                state.inSpecialScene -> "准备间中：选择一个正式场景。"
+                                else -> "选中后点右侧切换。"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.InkSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Key(
+                            label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
+                            onClick = actions.onSceneApply,
+                            enabled = scenesEnabled && state.sceneIntentDiverges,
+                            height = TouchTarget
+                        )
+                    }
                 }
                 Rule()
                 Row(
@@ -531,7 +551,16 @@ private fun SessionColumn(
                         style = MaterialTheme.typography.titleSmall,
                         color = QuietPalette.Ink
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
+                    // The duration is part of the manual rise, not a setup
+                    // screen: it is chosen where the operator's hand is when
+                    // they decide to raise the patient.
+                    RiseDurationRow(
+                        selectedMs = state.animDurationMs,
+                        enabled = ready && state.caps.rise,
+                        onSelect = actions.onAnimDuration
+                    )
+                    Spacer(Modifier.height(12.dp))
                     // Recording the posture freezes every motion channel: the
                     // page is measuring where the body is, so moving it would
                     // record the movement instead. Only the stop stays live.
@@ -589,6 +618,29 @@ private fun SessionColumn(
 }
 
 /**
+ * The rise length, next to the key that starts the rise. Both the bench and
+ * the live posture block use it, so the choice always sits where the manual
+ * action is, never on a separate setup screen.
+ */
+@Composable
+private fun RiseDurationRow(
+    selectedMs: Int,
+    enabled: Boolean,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier.fillMaxWidth()) {
+        Text(
+            text = "起身时长",
+            style = MaterialTheme.typography.labelMedium,
+            color = QuietPalette.InkSecondary
+        )
+        Spacer(Modifier.height(8.dp))
+        DurationRow(selected = selectedMs, enabled = enabled, onSelect = onSelect)
+    }
+}
+
+/**
  * The end: red ink in a hairline box, never a fill. The ice block on this
  * screen belongs to the selected scene; the red block in the bar is the stop.
  */
@@ -617,6 +669,12 @@ private fun ScenePage(
     wide: Boolean
 ) {
     val ready = state.phase == BlePhase.READY
+    // The list unlocks only inside XR after the posture is recorded; before
+    // that the preparation room is the whole app surface.
+    val scenesEnabled = ready && phase == SessionPhase.Running
+    val selectedName = state.selectableScenes
+        .firstOrNull { it.id == state.sceneIntent }
+        ?.name
     val left = @Composable { modifier: Modifier ->
         Box(modifier) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -630,29 +688,41 @@ private fun ScenePage(
             // ended, and the bench below is about the next one.
             OutcomePrompt(state = state, actions = actions)
             Spacer(Modifier.height(QuietSpace.Section))
-            SectionHead(
-                title = "01 场景",
-                note = when (phase) {
-                    SessionPhase.Entry -> "切换会重开页面"
-                    SessionPhase.Calibrating -> "校准中，暂不可切换"
-                    else -> "点选后立即切换，会话中也可换"
-                }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                SectionHead(
+                    title = "01 场景",
+                    note = when {
+                        phase == SessionPhase.Calibrating -> "标定完成后解锁"
+                        phase == SessionPhase.Stopping -> "正在结束"
+                        !scenesEnabled -> "进入 VR 后解锁"
+                        selectedName != null -> "已选「$selectedName」"
+                        state.inSpecialScene -> "准备间中"
+                        else -> "选中后切换"
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                // One key next to the header: the extra control costs width,
+                // not a new row in the app's main area.
+                Key(
+                    label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
+                    onClick = actions.onSceneApply,
+                    enabled = scenesEnabled && state.sceneIntentDiverges,
+                    height = TouchTarget,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
             SceneChooser(
                 current = state.sceneIntent.ifEmpty { state.control.scene },
-                enabled = ready && phase.acceptsChanges,
+                enabled = scenesEnabled,
                 onSelect = actions.onSceneSelect,
-                playing = state.control.scene
+                playing = state.control.scene,
+                scenes = state.selectableScenes
             )
             Spacer(Modifier.height(QuietSpace.Section))
-            SectionHead(title = "02 起身时长", note = "患者从躺到坐的时长，越长越平缓")
-            DurationRow(
-                selected = state.animDurationMs,
-                enabled = ready,
-                onSelect = actions.onAnimDuration
-            )
-            Spacer(Modifier.height(QuietSpace.Section))
-            SectionHead(title = "体位与起伏", note = "会话中也可调整")
+            SectionHead(title = "体位与起伏", note = "时长随起身选择，会话中也可调整")
             Panel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(QuietSpace.Panel)) {
                     SwitchRow(
@@ -667,7 +737,13 @@ private fun ScenePage(
                         note = "画面缓慢升降，视野随之移动。"
                     )
                     Rule()
-                    KeyRow(Modifier.padding(top = 16.dp)) {
+                    RiseDurationRow(
+                        selectedMs = state.animDurationMs,
+                        enabled = ready,
+                        onSelect = actions.onAnimDuration,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                    KeyRow(Modifier.padding(top = 12.dp)) {
                         ActionKey(
                             label = "起身",
                             onClick = actions.onPostureRise,
@@ -798,24 +874,47 @@ private fun StandbySteps(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "启动后，患者按右侧按钮。",
+                text = "启动后，患者按一次；先进入准备间。",
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary
             )
             Spacer(Modifier.height(24.dp))
-            // The numbers live in the section headings on the left; this is one
-            // chain and it is counted once.
+            // The chain follows the room the patient is actually in: the
+            // start key is not the scene choice any more, and the scene list
+            // is not a pre-session step.
             StepLine("连接头显", if (ready) "已连接" else "未连接", ready)
             Spacer(Modifier.height(16.dp))
             StepLine(
-                "选场景",
-                if (state.control.scene.isEmpty()) "未选" else "已选",
-                state.control.scene.isNotEmpty()
+                "启动训练",
+                when (phase) {
+                    SessionPhase.Entry -> "等待患者按压"
+                    SessionPhase.Calibrating -> "准备间 · 记录中"
+                    SessionPhase.Running -> "已在准备间"
+                    else -> "按后进入准备间"
+                },
+                phase != SessionPhase.Idle
             )
             Spacer(Modifier.height(16.dp))
-            StepLine("设起身时长", "越长越平缓", true)
+            StepLine(
+                "记录起始体位",
+                when {
+                    phase == SessionPhase.Calibrating -> "进行中"
+                    !state.inSpecialScene -> "已记录"
+                    phase == SessionPhase.Running -> "待技术员"
+                    else -> "启动后"
+                },
+                phase == SessionPhase.Calibrating || !state.inSpecialScene
+            )
             Spacer(Modifier.height(16.dp))
-            StepLine("启动训练", "按后进入校准", phase == SessionPhase.Entry)
+            StepLine(
+                "进入正式场景",
+                when {
+                    !state.inSpecialScene -> "已进入"
+                    phase == SessionPhase.Running -> "标定后可选"
+                    else -> "标定后解锁"
+                },
+                !state.inSpecialScene
+            )
             Spacer(Modifier.height(24.dp))
             ActionKey(
                 label = when (phase) {

@@ -51,7 +51,7 @@ class CommandGrammarTest {
             "enter", "home", "exit", "stop", "calibrate",
             "audio:on", "audio:off", "audio:toggle",
             "float:level:0", "float:level:3",
-            "scene:washroom", "scene:shore", "scene:lightwell", "scene:ward",
+            "scene:washroom", "scene:shore", "scene:ward", "scene:prep",
             "anim:duration:4000", "anim:duration:20000",
             "posture:rise", "posture:lower", "posture:stop",
             "gaze:dwell:on", "gaze:dwell:off",

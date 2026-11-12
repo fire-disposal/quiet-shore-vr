@@ -49,21 +49,22 @@ describe('scene registry', () => {
     expect(eyes).toEqual({
       washroom: { standing: 1.7, lying: 0.66, viewer: 'standing' },
       shore: { standing: 1.7, lying: 0.08, viewer: 'supine' },
-      lightwell: { standing: 1.7, lying: 0.66, viewer: 'supine' },
-      ward: { standing: 1.7, lying: 0.71, viewer: 'supine' }
+      ward: { standing: 1.7, lying: 0.71, viewer: 'supine' },
+      prep: { standing: 1.7, lying: 0.66, viewer: 'supine' }
     });
   });
 
   it('ships the operator-selectable scenes in wire order', () => {
-    // Index order is the BLE state byte 11 contract: append only.
+    // The catalogue's order is the state frame's 4-bit index: append only.
     expect(SCENES.map((scene) => scene.id)).toEqual([
       'washroom',
       'shore',
-      'lightwell',
-      'ward'
+      'ward',
+      'prep'
     ]);
 
-    expect(SCENE.id).toBe('washroom');
+    // A session opens in the neutral preparation room, not in a real scene.
+    expect(SCENE.id).toBe('prep');
   });
 
   it('resolves every registered scene and nothing else', () => {
@@ -82,6 +83,26 @@ describe('scene registry', () => {
     }
   });
 
+  it('gives the preparation room a shell the mirror can cut away', () => {
+    // The mirror hides `-walls` meshes when its camera leaves the room. An
+    // unnamed shell turns the operator's overview into a closed grey box.
+    const { handle } = build('prep');
+    try {
+      const walls: THREE.Mesh[] = [];
+      handle.root.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh && /-walls$/.test(mesh.name)) {
+          walls.push(mesh);
+        }
+      });
+      expect(walls).toHaveLength(4);
+      expect(handle.root.getObjectByName('prep-floor')).toBeDefined();
+      expect(handle.root.getObjectByName('prep-light')).toBeDefined();
+    } finally {
+      handle.dispose();
+    }
+  });
+
   it('keeps the water bed to the two scenes that have water', () => {
     // The ward declares rain, not water; it is a room with a window, not a
     // body in a lake. The ambience rule below is about the open-water scenes.
@@ -95,8 +116,6 @@ describe('scene registry', () => {
       expect(width).toBeGreaterThan(0);
       expect(width).toBeLessThanOrEqual(1);
     }
-    // The light well is meant to be heard as one's own breathing.
-    expect(getSceneDefinition('lightwell')?.audio).toBeUndefined();
   });
 });
 
@@ -114,18 +133,16 @@ describe('scene capabilities', () => {
     }
   });
 
-  it('caps the strongest flow-driven scene below the global maximum', () => {
-    // The ceiling is the app's guard against the one combination we know is
-    // uncomfortable: vertical optic flow at full amplitude.
+  it('leaves every remaining scene at the global maximum', () => {
+    // `comfortLevel` stays on the contract for a scene that earns a lower cap;
+    // none of the shipped scenes now does, and the catalogue must say so.
     const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfortLevel ?? 3]));
-    expect(ceilings).toEqual({ washroom: 3, shore: 3, lightwell: 2, ward: 3 });
-
+    expect(ceilings).toEqual({ washroom: 3, shore: 3, ward: 3, prep: 3 });
   });
 
   it('hands each motion channel to the scene that needs it', () => {
     const washroom = build('washroom').handle;
     const shore = build('shore').handle;
-    const lightwell = build('lightwell').handle;
     try {
       // The room is static: no per-frame work beyond the patient's own motion.
       expect(washroom.applyBuoyancy).toBeUndefined();
@@ -133,13 +150,9 @@ describe('scene capabilities', () => {
       // The lake carries the buoyancy itself so the horizon stays level.
       expect(typeof shore.applyBuoyancy).toBe('function');
       expect(shore.setMotion).toBeUndefined();
-      // The well owns its own fall; the app only grants or withholds motion.
-      expect(typeof lightwell.setMotion).toBe('function');
-      expect(lightwell.applyBuoyancy).toBeUndefined();
     } finally {
       washroom.dispose();
       shore.dispose();
-      lightwell.dispose();
     }
   });
 
@@ -210,8 +223,8 @@ describe('scene capabilities', () => {
   });
 
   it('exposes no gaze targets and no camera of its own', () => {
-    for (const id of ['washroom', 'shore', 'lightwell', 'ward']) {
-      const { handle } = build(id);
+    for (const scene of SCENES) {
+      const { handle } = build(scene.id);
       try {
         // Selection in a scene would be a second interaction model; the only
         // gaze targets in the app belong to the SUS panel.
@@ -406,57 +419,6 @@ describe('scene budgets', () => {
     handle.dispose();
   });
 
-  it('moves the wall fixtures upward only while the session grants motion', () => {
-    const { handle } = build('lightwell');
-    const fixtures = handle.root.getObjectByName('lightwell-shelves') as THREE.InstancedMesh;
-    expect(fixtures).toBeDefined();
-    // Four wall planes, not a box: the box's own lid fought the sky cap.
-    expect((handle.root.getObjectByName('lightwell-walls') as THREE.InstancedMesh).count).toBe(4);
-    // No hoop can cross the camera plane: the tori are gone, and the fixtures
-    // are directional wall brackets, not rings.
-    expect(handle.root.getObjectByName('lightwell-rings')).toBeUndefined();
-    expect(handle.root.getObjectByName('lightwell-gussets')).toBeDefined();
-
-    const before = new THREE.Matrix4();
-    fixtures.getMatrixAt(0, before);
-    // Fixtures hang on a wall of the square shaft: the anchor sits on the
-    // 6 m section's skin (3 m from the axis), so the shelf touches the wall
-    // instead of floating out in the middle of the shaft.
-    const anchor = new THREE.Vector3().setFromMatrixPosition(before);
-    expect(Math.max(Math.abs(anchor.x), Math.abs(anchor.z))).toBeCloseTo(3, 1);
-    handle.update(0.5, 0.5);
-    const still = new THREE.Matrix4();
-    fixtures.getMatrixAt(0, still);
-    expect(still.equals(before)).toBe(true);
-
-    handle.setMotion?.(1);
-    let previousY = new THREE.Vector3().setFromMatrixPosition(before).y;
-    const offsets: number[] = [];
-    for (let i = 0; i < 60; i += 1) {
-      handle.update(1 / 30, 0.5 + i / 30);
-      fixtures.getMatrixAt(0, still);
-      const y = new THREE.Vector3().setFromMatrixPosition(still).y;
-      // Upward, never down (a wrap drops it by the band length once).
-      expect(y).toBeGreaterThanOrEqual(previousY - 40.1);
-      previousY = y;
-      offsets.push(y);
-    }
-    // The brackets are the only moving part now; the shaft itself is static.
-    expect(offsets[offsets.length - 1]).toBeGreaterThan(offsets[0]);
-
-    // Withdrawing the session permission brakes the fall to a full stop: the
-    // well must not keep drifting after the session it belongs to has ended.
-    handle.setMotion?.(0);
-    for (let i = 0; i < 60; i += 1) {
-      handle.update(1 / 30, 0.5 + 2 + i / 30);
-    }
-    const braked = new THREE.Matrix4();
-    fixtures.getMatrixAt(0, braked);
-    handle.update(1 / 30, 3.6);
-    fixtures.getMatrixAt(0, still);
-    expect(still.equals(braked)).toBe(true);
-    handle.dispose();
-  });
   it('disposes idempotently', () => {
     const { handle } = build('shore');
     expect(() => {

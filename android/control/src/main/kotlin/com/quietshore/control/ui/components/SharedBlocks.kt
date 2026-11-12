@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CutCornerShape
@@ -70,7 +71,14 @@ fun MirrorSlot(
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionHead(
                 title = "患者视野",
-                note = "镜像来自状态帧",
+                // The elapsed clock is the one datum the old readout card
+                // carried that nothing else does; it rides here instead of
+                // costing a whole block under the picture.
+                note = when {
+                    phase == SessionPhase.Calibrating -> "标定中 · 镜像来自状态帧"
+                    state.sessionElapsedMs > 0L -> "已运行 ${clock(state.sessionElapsedMs)}"
+                    else -> "镜像来自状态帧"
+                },
                 modifier = Modifier.weight(1f)
             )
             // The two cameras, inline: selection is an outline, never a fill.
@@ -91,7 +99,11 @@ fun MirrorSlot(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(MirrorHeight)
+                // The session column gives this slot a weight: the picture is
+                // the primary surface, and it should use the height the page
+                // has, not a fixed box with dead paper around it.
+                .weight(1f, fill = false)
+                .heightIn(min = MirrorHeight)
                 .padding(top = 12.dp)
                 .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
                 .background(if (hasFrame && loaded) QuietPalette.Ink else QuietPalette.Board)
@@ -102,6 +114,25 @@ fun MirrorSlot(
                     modifier = Modifier.fillMaxSize(),
                     onLoadedChange = { loaded = it }
                 )
+                // In the preparation room the picture is intentionally empty;
+                // the operator's next step is the one useful thing it can
+                // carry. A small overlay, never a panel.
+                if (state.inSpecialScene) {
+                    Text(
+                        text = when {
+                            state.control.calibrating -> "标定中 · 请患者保持不动"
+                            state.sessionElapsedMs > 0L -> "准备间 · 右侧选择正式场景"
+                            else -> "准备间 · 调整体位并记录起始朝向"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = QuietPalette.Ink,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(12.dp)
+                            .background(QuietPalette.Paper.copy(alpha = 0.92f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
             // Once the link is live, the picture is the only thing worth
             // showing: the page can paint before onPageFinished reports, so a
@@ -255,21 +286,8 @@ fun PostureGauges(state: ControlUiState, modifier: Modifier = Modifier) {
  * the clock's caption follows the same word.
  */
 @Composable
-fun SessionReadout(state: ControlUiState, phase: SessionPhase, modifier: Modifier = Modifier) {
-    MonitorPanel(
-        state = state,
-        running = phase == SessionPhase.Running,
-        headline = when (phase) {
-            SessionPhase.Calibrating -> "校准中"
-            SessionPhase.Stopping -> "正在结束"
-            else -> "训练中"
-        },
-        sessionWord = "",
-        clockWord = when (phase) {
-            SessionPhase.Calibrating -> "已过"
-            SessionPhase.Stopping -> "已结束"
-            else -> "已运行"
-        },
-        modifier = modifier
-    )
+/** mm:ss, capped at an hour so the figure never changes width. */
+fun clock(milliseconds: Long): String {
+    val totalSeconds = (milliseconds / 1000).coerceIn(0, 3599)
+    return String.format(java.util.Locale.US, "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
 }

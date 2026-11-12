@@ -14,7 +14,9 @@ import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.ScannedHeadset
+import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.protocol.ControlProtocol
+import com.quietshore.control.protocol.SceneCatalogDocument
 import com.quietshore.control.data.SusStore
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.SusResult
@@ -294,20 +296,56 @@ class ControlViewModel(application: Application) :
     }
 
     /**
-     * Scene choice, sent before a session. The headset stores it as the launch
-     * parameter, so picking a scene and pressing 启动 is the whole loop.
+     * Selectable scene ids: the page's catalogue minus the built-in
+     * preparation room. Before the first catalogue the fallback table is all
+     * we have; once the page has spoken, only its list is real.
+     */
+    private fun selectableSceneIds(current: ControlUiState): Set<String> {
+        val announced = current.scenes
+            .filterNot { it.special }
+            .mapTo(HashSet()) { it.id }
+        return if (announced.isEmpty()) {
+            ControlProtocol.SCENE_LABELS.keys - ControlProtocol.SPECIAL_SCENES
+        } else {
+            announced
+        }
+    }
+
+    /**
+     * Marks a scene as the operator's next choice. Nothing is sent: a single
+     * card press must not be the switch, because entering a real scene is the
+     * deliberate second step of the session.
      */
     fun selectScene(id: String) {
         val scene = id.lowercase(java.util.Locale.US)
-        if (scene !in ControlProtocol.SCENE_LABELS) {
+        if (scene !in selectableSceneIds(_uiState.value)) {
             return
         }
         // The intent is recorded here and nowhere else: `control.scene` keeps
-        // the headset's report, so the two can be compared. The page applies
-        // the command and answers with `state.control.scene`; a mark drawn
-        // ahead of that frame would claim a scene the patient may never see.
+        // the headset's report, so the two can be compared. A mark drawn ahead
+        // of that frame would claim a scene the patient may never see.
         _uiState.update { it.copy(sceneIntent = scene) }
-        sendCommand(ControlProtocol.SCENE_PREFIX + scene)
+    }
+
+    /**
+     * Applies the marked scene. The page switches content under the recorded
+     * calibration, which is the whole point of the preparation room; before
+     * that calibration there is nothing to preserve, so the command waits for
+     * the patient to be inside XR and past the posture capture.
+     */
+    fun applyScene() {
+        val current = _uiState.value
+        val target = current.sceneIntent
+        if (target.isEmpty() ||
+            target == current.control.scene ||
+            target !in selectableSceneIds(current) ||
+            !current.control.session ||
+            current.control.calibrating ||
+            current.stopRequested
+        ) {
+            return
+        }
+        sendCommand(ControlProtocol.SCENE_PREFIX + target)
     }
 
     /** Leaves the browser scene and returns the headset to its console app. */
@@ -631,10 +669,29 @@ class ControlViewModel(application: Application) :
     override fun onJson(topic: String, data: String) {
         when (topic) {
             "sus" -> handleSus(data)
+            "catalog" -> handleCatalog(data)
             "flags" -> applyFlags(data)
             // Unknown topics are ignored: a newer headset may publish more.
             else -> Unit
         }
+    }
+
+    /**
+     * The scene list, as the page announced it. The parser refuses a damaged
+     * document whole: a partly read list would reorder the indices the state
+     * frame's scene nibble resolves against.
+     */
+    private fun handleCatalog(data: String) {
+        val document = SceneCatalogDocument.parse(data) ?: return
+        val scenes = document.map { scene ->
+            SceneCatalog.Scene(
+                id = scene.id,
+                name = scene.nameZh,
+                blurb = scene.taglineZh,
+                special = scene.special
+            )
+        }
+        _uiState.update { it.copy(scenes = scenes) }
     }
 
     /**

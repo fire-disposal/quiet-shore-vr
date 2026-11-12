@@ -39,6 +39,16 @@ val syncWebAsset = tasks.register<Copy>("syncWebAsset") {
     outputs.upToDateWhen { false }
 }
 
+// The scene catalogue is generated from the page's registry, so the headset's
+// home card and its scene-command allowlist are correct before the page has
+// ever connected, and adding a scene still costs no Kotlin change.
+val syncCatalogAsset = tasks.register<Copy>("syncCatalogAsset") {
+    val repoRoot = rootProject.projectDir.parentFile
+    from(repoRoot.resolve("dist/catalog.json"))
+    into(layout.projectDirectory.dir("src/main/assets"))
+    outputs.upToDateWhen { false }
+}
+
 // Sync (not Copy) so a cue deleted from voice/ disappears from the APK too.
 val syncVoiceAssets = tasks.register<Sync>("syncVoiceAssets") {
     val repoRoot = rootProject.projectDir.parentFile
@@ -50,5 +60,5 @@ val syncVoiceAssets = tasks.register<Sync>("syncVoiceAssets") {
 }
 
 tasks.named("preBuild") {
-    dependsOn(syncWebAsset, syncVoiceAssets)
+    dependsOn(syncWebAsset, syncCatalogAsset, syncVoiceAssets)
 }

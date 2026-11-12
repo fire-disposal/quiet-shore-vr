@@ -45,6 +45,7 @@ export function defineScene(
   return {
     ...summary,
     posture,
+    special: summary.special === true,
     comfortLevel: summary.comfortLevel,
     heaveScale: summary.heaveScale,
     build(): SceneHandle {

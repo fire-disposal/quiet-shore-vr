@@ -14,6 +14,11 @@ java {
 }
 
 dependencies {
+    // Android ships org.json; compiling here against the same package keeps the
+    // protocol module free of Android types while letting it parse the JSON
+    // channel's one shared document. Runtime comes from the platform.
+    compileOnly("com.vaadin.external.google:android-json:0.0.20131108.vaadin1")
+    testImplementation("com.vaadin.external.google:android-json:0.0.20131108.vaadin1")
     testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
 }

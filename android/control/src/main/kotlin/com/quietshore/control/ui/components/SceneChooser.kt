@@ -48,13 +48,15 @@ fun SceneChooser(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     /** The headset's own report, drawn as the small "playing" mark. */
-    playing: String? = null
+    playing: String? = null,
+    /** What the page announced; the local table is only a fallback. */
+    scenes: List<SceneCatalog.Scene> = SceneCatalog.ALL
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        for (scene in SceneCatalog.ALL) {
+        for (scene in scenes) {
             Box(Modifier.weight(1f)) {
                 SceneCardView(
                     scene = scene,
@@ -135,7 +137,10 @@ fun SceneCardView(
                 },
                 fontWeight = if (current) FontWeight.Medium else null,
                 color = if (enabled || current) QuietPalette.Ink else QuietPalette.Disabled,
-                maxLines = 1,
+                // A fifth scene narrows every card; the name may take a second
+                // line rather than becoming an ellipsis the operator cannot
+                // resolve against the patient's view.
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }

@@ -241,7 +241,10 @@ class PortalService : Service() {
         super.onCreate()
         // Seed the launch record before anything can serve a page: a reload
         // that never goes through `enter` must still boot the operator's scene.
-        PortalSession.set(HeadsetSettings.read(this).toLaunchOptions())
+        PortalSession.set(
+            HeadsetSettings.read(this).toLaunchOptions(),
+            PageCatalog.idSet(this)
+        )
         // Every launch — console, tablet or this service's own retry — is
         // reported here, so entry supervision has exactly one source.
         PortalActions.onLaunched = { at, retry -> mainHandler.post { acceptLaunch(at, retry) } }
@@ -705,6 +708,24 @@ class PortalService : Service() {
             "sus" -> json.optJSONObject("data")?.let { data ->
                 bluetooth?.publishSus(data.toString())
             }
+            // The scene catalogue: the page owns it, both apps render it. It
+            // rides the same JSON channel as SUS, so adding a scene costs no
+            // protocol version.
+            "catalog" -> json.optJSONObject("data")?.let { data ->
+                val document = data.toString()
+                // The local copy feeds command validation and the home card
+                // before the page next connects; the relay feeds the tablet.
+                PageCatalog.update(this, document)
+                bluetooth?.publishJson(
+                    org.json.JSONObject().put("t", "catalog").put("d", data).toString()
+                )
+                // The console may be showing the home card right now.
+                try {
+                    sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
+                } catch (ignored: RuntimeException) {
+                    // No visible activity.
+                }
+            }
             // A refusal or one-off report from the page: the page knows why a
             // command did not take effect, the tablet is what the operator is
             // holding. Relayed verbatim on the JSON channel.
@@ -1031,7 +1052,7 @@ class PortalService : Service() {
 
     private fun dispatchControl(raw: String): Boolean {
         val command = ControlProtocol.normalize(raw) ?: return false
-        if (!ControlProtocol.isAllowedCommand(command)) {
+        if (!ControlProtocol.isAllowedCommand(command, PageCatalog.idSet(this))) {
             Log.w(TAG, "rejected command: $raw")
             return false
         }
@@ -1063,7 +1084,7 @@ class PortalService : Service() {
                 // A page that is already open still switches now, so the
                 // picture and the next launch can never disagree.
                 val scene = command.removePrefix(ControlProtocol.SCENE_PREFIX)
-                if (PortalSession.chooseScene(scene)) {
+                if (PortalSession.chooseScene(scene, PageCatalog.idSet(this))) {
                     HeadsetSettings.saveScene(this, scene)
                     // Publish immediately so the other tablet screens and the
                     // mirror follow, and keep the reported scene equal to the
@@ -1211,7 +1232,7 @@ class PortalService : Service() {
 
         val state = ControlState(
             scene = json.optString("scene", ControlState().scene)
-                .takeIf { it in ControlProtocol.SCENE_IDS } ?: ControlState().scene,
+                .takeIf { it in PageCatalog.idSet(this) } ?: ControlState().scene,
             session = json.optBoolean("session", false),
             calibrating = json.optBoolean("calibrating", false),
             moving = json.optBoolean("moving", false),

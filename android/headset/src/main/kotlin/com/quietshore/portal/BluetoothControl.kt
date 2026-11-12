@@ -526,7 +526,12 @@ internal class BluetoothControl(
     private fun encodeStateFrame(state: ControlState): ByteArray {
         val seq = stateSeq++ and 0xFFFF
         val now = (android.os.SystemClock.elapsedRealtime() and 0xFFFFL).toInt()
-        return ControlProtocol.encodeState(state, now, seq)
+        return ControlProtocol.encodeState(
+            state,
+            now,
+            seq,
+            sceneIds = PageCatalog.ids(appContext)
+        )
     }
 
     private fun notifyValue(

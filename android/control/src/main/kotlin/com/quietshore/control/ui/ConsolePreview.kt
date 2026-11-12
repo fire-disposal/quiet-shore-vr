@@ -13,7 +13,9 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.MotionCaps
+import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.protocol.ControlState
+import com.quietshore.control.protocol.SceneCatalogDocument
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.ui.theme.QuietPalette
 
@@ -32,6 +34,7 @@ fun ConsolePreview(
     fixture: ConsoleFixture,
     batteryLevel: Int? = null,
     /** `--ez mirror true` opens the mirror cover on launch, for design review. */
+    withMirror: Boolean = false,
     /** `--ez pose true` gives the fixture a live state frame. */
     withPose: Boolean = false,
     /** `--ez drift true` makes the local choice disagree with the frame. */
@@ -40,9 +43,29 @@ fun ConsolePreview(
     withElapsed: Boolean = false,
     /** `--es tapped washroom` pretends that card was just pressed. */
     tapped: String? = null,
+    /** `--es catalog '<json>'` replaces the local scene table with the wire one. */
+    catalog: String? = null,
+    /** `--es current prep` marks the built-in room as the loaded scene. */
+    current: String? = null,
     modifier: Modifier = Modifier
 ) {
     val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped, withElapsed)
+        .let { base ->
+            if (current.isNullOrBlank()) {
+                base
+            } else {
+                base.copy(
+                    sceneIntent = "",
+                    control = base.control.copy(scene = current)
+                )
+            }
+        }
+        .let { base ->
+            val scenes = catalog?.let(SceneCatalogDocument::parse)?.map {
+                SceneCatalog.Scene(it.id, it.nameZh, it.taglineZh, it.special)
+            }
+            if (scenes.isNullOrEmpty()) base else base.copy(scenes = scenes)
+        }
     var showGuide by remember { mutableStateOf(false) }
     val noop: () -> Unit = {}
     val actions = ControlActions(
@@ -50,6 +73,7 @@ fun ConsolePreview(
         onExitScene = noop,
         onExitSystem = noop,
         onSceneSelect = {},
+        onSceneApply = noop,
         onAnimDuration = {},
         onGazeDwellChange = {},
         onSusVoiceChange = {},
@@ -95,6 +119,7 @@ fun ConsolePreview(
                 state = state,
                 actions = actions,
                 onOpenInfo = { showGuide = true },
+                startWithMirrorOpen = withMirror
             )
         }
     }

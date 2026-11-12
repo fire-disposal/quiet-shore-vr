@@ -135,9 +135,28 @@ data class ControlUiState(
     val battery: Battery? = null,
 
     /** Headsets advertised since the scan started, newest first. */
-    val scanResults: List<ScannedHeadset> = emptyList()
+    val scanResults: List<ScannedHeadset> = emptyList(),
+
+    /**
+     * The scene catalogue, as the page announced it.
+     *
+     * Empty until the first `catalog` document arrives; the UI then renders this
+     * list instead of a local table, so adding a scene is one entry in the
+     * page's registry and nothing in Kotlin.
+     */
+    val scenes: List<SceneCatalog.Scene> = emptyList()
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
+
+    /** Cards the operator may choose; the built-in preparation room is not one. */
+    val selectableScenes: List<SceneCatalog.Scene>
+        get() = (scenes.ifEmpty { SceneCatalog.ALL }).filterNot { it.special }
+
+    /** True while the page is still in the built-in preparation space. */
+    val inSpecialScene: Boolean
+        get() = (scenes.ifEmpty { SceneCatalog.ALL })
+            .firstOrNull { it.id == control.scene }
+            ?.special == true
 
     /** True when the operator's choice has not been confirmed by the headset. */
     val sceneIntentDiverges: Boolean

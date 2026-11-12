@@ -34,7 +34,7 @@
 - 每步落一个提交，带验证证据；不能验证的部分如实标注“需真机”。
 ```
 
-goal 进度：**第 1 项已完成**（`37b09bf`）；第 2 项进行中（见 §4）；第 3 项未开始。
+goal 进度：**第 1 项已完成**（`37b09bf`）；**第 2 项已完成**（场景目录单一来源、内置准备间、Kotlin 零改动的占位场景验证）；第 3 项未开始。本轮另按现场反馈砍掉光井、把起身时长并入操作区、重排会话页空间。
 
 ---
 
@@ -53,6 +53,11 @@ goal 进度：**第 1 项已完成**（`37b09bf`）；第 2 项进行中（见 �
 | 急停 | **已废弃**；停止会话用 `结束`，设备脱手用 `断开连接`；协议 `stop` 命令保留（结束/断链共用） |
 | 顶栏布局 | `[信号] 状态 设备号 │ 两条电量条 │ [当前应用 ▾] │ (i) │ [断开连接]` |
 | `i` 的语义 | 打开**当前应用**的说明书；不设全局说明书入口（`docs/apps.md`） |
+| 光井 | **已砍**（2026-11-12）；实现、注册表与文案删除，状态帧升到 v14 |
+| 准备间 | **内置特殊场景**（`prep`，空灰房间）：进 VR 的第一站，**不出现在场景卡列表**；镜像正常工作 |
+| 场景解锁 | 患者进入 XR 并完成标定后，正式场景卡才可点；点卡只标记，再按 `进入正式场景/切换场景` 才发命令 |
+| 起身时长 | 从独立「02」块移入按「起身」的位置（场景页与会话操作区各一份），不再占独立段落 |
+| 会话页空间 | 主区域给镜像；「训练中」大卡片删除，只留标题行的已运行时间与姿态读数 |
 
 ---
 
@@ -64,12 +69,15 @@ goal 进度：**第 1 项已完成**（`37b09bf`）；第 2 项进行中（见 �
 | 2 | 校准由技术员显式触发（患者按下后等待「记录起始体位」） | ✅ `18b1e34` |
 | 3 | 台账记 `peakMix` / `peakUpGazeDeg` / 每段停留 + 床边自评（尝试/成功） | ✅ `37b09bf` |
 | 4 | 题面文字重绘残留（画布缩小导致纹理残留） | ✅ `src/ui/spatial/text.ts` 只增不减 |
-| 5 | 场景目录外置为单一来源（加场景 Kotlin 零改动） | 🚧 见 §4 |
+| 5 | 场景目录外置为单一来源（加场景 Kotlin 零改动） | ✅ 页面 `catalogEntries` → `dist/catalog.json` → BLE JSON；平板/头显只渲染收到的目录 |
 | 6 | 会话按段编排（单段默认 = v1 行为）+「第 n/N 段 · 剩余时间」 | ⬜ 树 G / G2 |
 | 7 | 应用层级：顶栏应用选择器（`i` 左边，电量左让位）、下拉切换、VR 同步 | ⬜ 树 H / H1–H3 |
 | 8 | `i` 指向当前应用的说明书 | ⬜ 树 H / H2（`GuideScreen` 现为 598 行全局字面量，需按 app 取内容） |
 | 9 | 问卷产品线：题目配置化加载、作答存储、控制侧按次查看（含时间）、按问卷与时间筛选导出 | ⬜ 树 H / H4；未动 |
 | 10 | 更长流程、在控制下依次体验场景；FxR 窗口面向、减少手动点击 | ⬜ 与第 6 项同源；窗口朝向需真机 |
+| 11 | 内置准备间：空灰房间、镜像可用、患者先适应，标定后再进入正式场景 | ✅ 本轮；真机待验 |
+| 12 | 场景选择两步化 + 标定后才解锁；校准随时可重做且不清零台账 | ✅ 本轮；模拟器截图 |
+| 13 | 光井下架、起身时长并入操作区、会话页去掉「训练中」大卡 | ✅ 本轮 |
 
 真机卡住的三项（本批无设备）：场景切换实机验证、控制台占高复核、`dispatchGesture`
 落在 FxR 的 2D 面板。脚本已备：`scripts/device-regression.sh`。
@@ -78,26 +86,37 @@ goal 进度：**第 1 项已完成**（`37b09bf`）；第 2 项进行中（见 �
 
 ## 4 代码现状与"在飞"的事
 
-- 分支 `main`，最近提交：`14361dd`（docs/apps）、`37b09bf`（台账+自评）、`18b1e34`（显式校准）。
-- **在飞（未完成）**：需求 5。已做：页面在链路建立时下发 `catalog`（`PortalLink.sendCatalog`，
-  `App.handleLinkStatus` 里调用）→ 头显 `PortalService` 用 JSON 通道转发 `{"t":"catalog"}` →
-  平板 `ControlViewModel.handleCatalog` 解出 `ControlUiState.scenes`；`SceneChooser` 已参数化
-  `scenes: List<SceneCatalog.Scene> = SceneCatalog.ALL`。**未做：`ControlScreen.kt:641` 的
-  `SceneChooser(...)` 还没传 `scenes = state.scenes`**；`PortalActivity` 的入口卡仍是硬编码两份文案。
-- 校验现状：`tsc` 干净；TS 测试 236 项通过；`:protocol:test` 与 `:control:testDebugUnitTest` 通过。
+- 分支 `main`；本轮提交见 `git log`（目录单一来源 / 准备间与流程 / 光井下架与布局）。
+- **场景目录**：`src/scenes/registry.ts` 是唯一来源 → `catalogEntries()` → `dist/catalog.json`
+  （`build.mjs` 生成）与链路 JSON。头显 APK 由 Gradle 把 `catalog.json` 打进 assets；
+  平板 `QuietShoreBleManager` 在解码前缓存目录顺序；`SceneCatalogDocument` 是两端唯一的解析器。
+- **准备间**：`src/scenes/prep/index.ts`（`special: true`，注册表末尾，状态帧索引 3）；
+  每次 `PortalActions.enter` 都把启动场景重置为 `prep`；平板 `selectableScenes` 过滤特殊场景。
+- **两步切场景**：`ControlViewModel.selectScene` 只写 `sceneIntent`，`applyScene` 才发
+  `scene:<id>`；`ControlUiState.selectableScenes` / `inSpecialScene` 决定解锁与文案。
+- **校准**：`App.dispatch` 只在第一次 `calibrating → running` 时开表；会话中重校准不清零。
+- **镜像**：`prep` 的四面墙命名为 `prep-walls`，镜像全景会切开；镜像页本身在
+  `dist/mirror.html`，平板通过 `MirrorView` 注入状态。
+- **布局**：会话页删除 `MonitorPanel`（原「训练中」大卡），已运行时间移到镜像标题行；
+  会话页左列不再滚动，镜像用 `weight(1f)` 吃掉剩余高度；起身时长在场景页和会话操作区
+  都紧邻「起身」。
+- 校验现状：`npm run verify` 通过（TS 239 项，`tsc` 干净，构建 + standalone）；
+  `:protocol:test`、`:control:testDebugUnitTest`、`:control:assembleDebug`、
+  `:headset:assembleDebug` 全绿。
 
 ### 本轮次的验证命令
 
 ```bash
 cd /home/firedisposal/dev/quiet-shore-vr
-npm run check && npm test                      # 236 项
-./android/gradlew -p android --offline :control:assembleDebug
-(cd android && ./gradlew --offline :protocol:test :control:testDebugUnitTest)
+npm run verify                                 # 239 项 + tsc + build + standalone
+(cd android && ./gradlew --offline :protocol:test :control:testDebugUnitTest \
+  :control:assembleDebug :headset:assembleDebug)
 # 模拟器（唯一可用设备）
 adb -s emulator-5554 install -r android/control/build/outputs/apk/debug/control-debug.apk
 adb -s emulator-5554 shell am force-stop com.quietshore.control
 adb -s emulator-5554 shell am start -W -n com.quietshore.control/.MainActivity \
-  --es preview idle|entry|calibrating|running|stopping [--ez elapsed true] [--ei battery 12]
+  --es preview idle|entry|calibrating|running|stopping [--ez pose true] [--ez mirror true] \
+  [--es current prep] [--es catalog '<json>'] [--es tapped washroom]
 adb -s emulator-5554 exec-out screencap -p > /tmp/out.png
 ```
 
@@ -122,7 +141,7 @@ adb -s emulator-5554 exec-out screencap -p > /tmp/out.png
 
 ## 6 建议的下一步顺序
 
-1. 收口需求 5（一处调用点 + 一轮构建/测试），让"加场景只改一处"成立；
-2. H1 + H2：应用选择器与 `i` 指向当前应用说明书（问卷的入口依赖它们）；
-3. 需求 6：分段编排（与母目标最相关：渐进适应比场景数量重要）；
+1. H1 + H2：应用选择器与 `i` 指向当前应用说明书（问卷的入口依赖它们）；
+2. 需求 6：分段编排（与母目标最相关：渐进适应比场景数量重要）；
+3. 准备间实机验证：切换是否保留校准帧、镜像在空房间里的构图、窗口朝向；
 4. H4：问卷产品线（工作量最大，不阻塞训练主线）。

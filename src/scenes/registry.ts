@@ -1,5 +1,5 @@
 import type { SceneDefinition } from '../core/scene/contract';
-import { lightwellScene } from './lightwell/index';
+import { prepScene } from './prep/index';
 import { shoreScene } from './shore/index';
 import { wardScene } from './ward/index';
 import { washroomScene } from './washroom/index';
@@ -10,18 +10,24 @@ import { washroomScene } from './washroom/index';
  * The choice belongs to the operator, never to the patient: the tablet sends
  * `scene:<id>` over BLE, the headset stores it as the launch parameter and
  * forwards it to the page, and the page only accepts it outside a session.
- * Scene ids must stay in sync with `ControlProtocol.SCENE_IDS`, whose index
- * order is the wire contract for state byte 11 (append only).
+ * This registry is the catalogue's source; its order is the state frame's
+ * 4-bit index, so entries are append-only. Neither Android app keeps a second
+ * table of ids, copy or caps.
  */
 export const SCENES: readonly SceneDefinition[] = [
   washroomScene,
   shoreScene,
-  lightwellScene,
-  wardScene
+  wardScene,
+  // Appended, never inserted: the state frame's 4-bit index is this order.
+  prepScene
 ];
 
-/** Default when nothing was chosen: the standing washroom. */
-export const SCENE: SceneDefinition = washroomScene;
+/**
+ * Default when nothing was chosen: the preparation room. A session starts with
+ * the patient getting used to the headset in an empty grey space; the operator
+ * records the posture there and only then selects a real scene.
+ */
+export const SCENE: SceneDefinition = prepScene;
 
 export function getSceneDefinition(id: string): SceneDefinition | undefined {
   for (let i = 0; i < SCENES.length; i += 1) {
