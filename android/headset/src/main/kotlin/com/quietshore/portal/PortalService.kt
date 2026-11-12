@@ -1312,6 +1312,9 @@ class PortalService : Service() {
             put("moving", state.moving)
             put("hold", state.hold)
             put("voiceAuto", state.voiceAuto)
+            // The tablet reads the headset's own battery from here: it talks
+            // BLE, and the WS `battery` frame only reaches the page.
+            put("battery", battery?.toJson() ?: JSONObject.NULL)
         }.toString()
         val now = System.currentTimeMillis()
         if (doc == lastFlagsJson && now - lastFlagsAt < FLAGS_HEARTBEAT_MS) {
