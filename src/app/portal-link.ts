@@ -196,6 +196,9 @@ export function planControlDispatch(
  * is no fallback transport: a closed socket halts operator motion until the
  * link is back.
  */
+/** Headset battery, 0–100 plus whether it is charging. */
+export type BatteryHandler = (level: number, charging: boolean) => void;
+
 export class PortalLink {
   private socket: WebSocket | null = null;
   private retryTimer: number | null = null;
@@ -217,7 +220,9 @@ export class PortalLink {
     /** True while motion outside the state payload (sit-up) is running. */
     private readonly isMotionActive: () => boolean,
     /** Connection faults are surfaced so the page can tell the operator. */
-    private readonly onLinkStatus: LinkStatusHandler = () => void 0
+    private readonly onLinkStatus: LinkStatusHandler = () => void 0,
+    /** The headset's own battery, pushed by the portal on every change. */
+    private readonly onBattery: BatteryHandler = () => void 0
   ) {}
 
   start(): void {
@@ -396,6 +401,16 @@ export class PortalLink {
         replay: 'replay' in message && message.replay === true
       });
       this.scheduleFlush();
+      return;
+    }
+    if (type === 'battery') {
+      const data = 'data' in message ? message.data : undefined;
+      const level = data && typeof data === 'object' && 'level' in data ? data.level : undefined;
+      const charging =
+        data && typeof data === 'object' && 'charging' in data ? data.charging === true : false;
+      if (typeof level === 'number' && Number.isFinite(level)) {
+        this.onBattery(Math.round(level), charging);
+      }
       return;
     }
     if (type === 'ready' || type === 'control') {

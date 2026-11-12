@@ -312,7 +312,8 @@ export class QuietShoreApp {
         this.world.isRising() ||
         isActive(this.lifecycle) ||
         this.viewMotion.getStateName() !== 'idle',
-      (status) => this.handleLinkStatus(status)
+      (status) => this.handleLinkStatus(status),
+      (level, charging) => this.start.setBattery(level, charging)
     );
     // View motion is a system capability: it owns the orientation, presets,
     // hold and reset. The sink adapter is the only place the patient-centric

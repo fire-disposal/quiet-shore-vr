@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -78,6 +79,7 @@ fun CommandBar(
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
+    val pad = com.quietshore.control.ui.rememberPadBattery()
 
     Column(
         modifier = modifier
@@ -118,17 +120,40 @@ fun CommandBar(
                             maxLines = 1
                         )
                     }
-                    if (state.battery != null) {
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = "电量 ${state.battery.level}%",
-                            style = MaterialTheme.typography.bodyMedium.tabularFigures(),
-                            color = if (state.battery.low) QuietPalette.Ink else QuietPalette.InkSecondary,
-                            maxLines = 1
-                        )
-                    }
                 }
             }
+
+            Spacer(Modifier.weight(1f))
+
+            // Both batteries sit together at the right, just before the menu:
+            // they are telemetry about the two devices, not part of the link
+            // label. Two lines, always in the same order, both named.
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                state.battery?.let { headset ->
+                    Text(
+                        text = "头显 ${headset.level}%${if (headset.charging) " ⚡" else ""}",
+                        style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                        color = if (headset.low) QuietPalette.Ink else QuietPalette.InkSecondary,
+                        maxLines = 1
+                    )
+                }
+                pad?.let { padBattery ->
+                    Text(
+                        text = "平板 ${padBattery.level}%${if (padBattery.charging) " ⚡" else ""}",
+                        style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                        color = if (padBattery.level <= 20 && !padBattery.charging) {
+                            QuietPalette.Ink
+                        } else {
+                            QuietPalette.InkSecondary
+                        },
+                        maxLines = 1
+                    )
+                }
+            }
+            Spacer(Modifier.width(16.dp))
 
             OverflowMenu(
                 connected = connected,
