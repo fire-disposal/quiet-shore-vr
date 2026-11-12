@@ -21,6 +21,7 @@ import java.util.Base64
  * java -cp "$KOTLINC_JARS" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
  *   android/headset/src/main/kotlin/com/quietshore/portal/ControlLog.kt \
  *   android/headset/src/main/kotlin/com/quietshore/portal/WsFrameCodec.kt \
+ *   android/headset/src/main/kotlin/com/quietshore/portal/EntryRetry.kt \
  *   android/protocol/src/main/kotlin/com/quietshore/control/protocol/ControlProtocol.kt \
  *   android/headset/src/test/kotlin/com/quietshore/portal/ControlChannelCheck.kt \
  *   -d /tmp/control-check
@@ -41,6 +42,55 @@ private fun checkEquals(name: String, expected: Any?, actual: Any?) {
         failures++
         println("FAIL $name: expected <$expected> got <$actual>")
     }
+}
+
+/**
+ * Entry supervision: a launch that never becomes a session must be relaunched,
+ * but a session that has ended must never look like a patient who never pressed.
+ */
+private fun retryChecks() {
+    val policy = EntryRetry(pageWaitMs = 1000, pressWaitMs = 500, maxRetries = 2)
+
+    // Nothing is watched before a launch, and a stale timer decides nothing.
+    checkEquals("idle policy holds", EntryRetry.Decision.HOLD, policy.onDeadline(0))
+    checkEquals("idle has no deadline", -1L, policy.checkAt)
+
+    // The page never appears: relaunch, and keep the allowance across retries.
+    policy.launch(10_000, fresh = true)
+    checkEquals("page deadline armed", 11_000L, policy.checkAt)
+    checkEquals("early timer holds", EntryRetry.Decision.HOLD, policy.onDeadline(10_500))
+    checkEquals("missed page relaunches", EntryRetry.Decision.RELAUNCH, policy.onDeadline(11_000))
+    checkEquals("one relaunch spent", 1, policy.retries)
+    policy.launch(11_000, fresh = false)
+    checkEquals("a relaunch keeps the count", 1, policy.retries)
+    checkEquals("second miss relaunches", EntryRetry.Decision.RELAUNCH, policy.onDeadline(12_000))
+    policy.launch(12_000, fresh = false)
+    checkEquals("allowance exhausted", EntryRetry.Decision.GIVE_UP, policy.onDeadline(13_000))
+    checkEquals("giving up stops the timer", -1L, policy.checkAt)
+
+    // The page is up but the patient never presses.
+    val press = EntryRetry(pageWaitMs = 1000, pressWaitMs = 500, maxRetries = 2)
+    press.launch(20_000, fresh = true)
+    press.pageState(20_200, session = false)
+    checkEquals("press clock armed", 20_700L, press.checkAt)
+    checkEquals("waiting for the press", EntryRetry.Phase.WAITING_SESSION, press.phase)
+    checkEquals("press timeout relaunches", EntryRetry.Decision.RELAUNCH, press.onDeadline(20_700))
+
+    // A session ends supervision for good.
+    val live = EntryRetry(pageWaitMs = 1000, pressWaitMs = 500, maxRetries = 2)
+    live.launch(30_000, fresh = true)
+    live.pageState(30_100, session = true)
+    checkEquals("session ends supervision", EntryRetry.Phase.IDLE, live.phase)
+    checkEquals("no timer after a session", -1L, live.checkAt)
+    checkEquals(
+        "a finished session is never relaunched",
+        EntryRetry.Decision.HOLD,
+        live.onDeadline(99_000)
+    )
+
+    // The operator's next launch starts a fresh allowance.
+    live.launch(100_000, fresh = true)
+    checkEquals("fresh launch resets retries", 0, live.retries)
 }
 
 private fun retentionChecks() {
@@ -326,6 +376,7 @@ fun main() {
     queueChecks()
     codecChecks()
     protocolGrammarChecks()
+    retryChecks()
     if (failures > 0) {
         throw AssertionError("$failures control-channel checks failed")
     }

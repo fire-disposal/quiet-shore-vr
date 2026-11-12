@@ -22,11 +22,34 @@ export interface SpatialSurfaceOptions {
   titlePx?: number;
   bodyPx?: number;
   /**
+   * Header texture height as a multiple of `titlePx`. The surface's 1.35
+   * default leaves a tall empty box that pushes the body down a card's worth.
+   */
+  titleEm?: number;
+  /**
    * Resolution of the body texture. Glyph size on the card is bodyPx/texture
    * width, so raising both keeps the text crisp at a larger physical size.
    */
   bodyTexturePx?: number;
   renderOrder?: number;
+  /**
+   * Place header and body by explicit vertical anchors instead of stacking
+   * them from the top. A card that must hold fixed rows below the body (a
+   * dwell strip) cannot let the body's line count move those rows.
+   */
+  layout?: SpatialSurfaceLayout;
+}
+
+/** Card-local metres, measured from the centre of the panel. */
+export interface SpatialSurfaceLayout {
+  /** Top of the header text box. */
+  headerTop: number;
+  /** Space between the header box and the first body line. */
+  headerGap: number;
+  /** Bottom of the body's *single-line* block: two lines grow upwards. */
+  bodyBottom: number;
+  lineHeight: number;
+  bodyColor: string;
 }
 
 function createPanelTexture(widthMeters: number, heightMeters: number, theme: SpatialTheme): THREE.CanvasTexture {
@@ -95,7 +118,7 @@ export class SpatialSurface {
   > &
     Pick<
       SpatialSurfaceOptions,
-      'title' | 'body' | 'titlePx' | 'bodyPx' | 'bodyTexturePx'
+      'title' | 'body' | 'titlePx' | 'titleEm' | 'bodyPx' | 'bodyTexturePx' | 'layout'
     >;
   private readonly panelTexture: THREE.CanvasTexture;
   private readonly panelGeometry: THREE.PlaneGeometry;
@@ -118,8 +141,10 @@ export class SpatialSurface {
       title: options.title,
       body: options.body,
       titlePx: options.titlePx,
+      titleEm: options.titleEm,
       bodyPx: options.bodyPx,
-      bodyTexturePx: options.bodyTexturePx
+      bodyTexturePx: options.bodyTexturePx,
+      layout: options.layout
     };
     this.object.name = 'spatial-surface';
 
@@ -150,7 +175,7 @@ export class SpatialSurface {
       this.title = new TextTexture({
         theme: this.options.theme,
         sizePx: this.options.titlePx ?? this.options.theme.titlePx,
-        heightPx: Math.round((this.options.titlePx ?? this.options.theme.titlePx) * 1.35),
+        heightPx: Math.round((this.options.titlePx ?? this.options.theme.titlePx) * (this.options.titleEm ?? 1.35)),
         weight: 650,
         align: 'left'
       });
@@ -162,6 +187,7 @@ export class SpatialSurface {
   }
 
   setBody(text: string): void {
+    const layout = this.options.layout;
     if (!this.body) {
       const texturePx = this.options.bodyTexturePx ?? 512;
       this.body = new TextTexture({
@@ -169,10 +195,10 @@ export class SpatialSurface {
         widthPx: texturePx,
         heightPx: texturePx / 2,
         sizePx: this.options.bodyPx ?? this.options.theme.bodyPx,
-        weight: 400,
-        color: this.options.theme.muted,
+        weight: layout ? 650 : 400,
+        color: layout ? layout.bodyColor : this.options.theme.muted,
         align: 'left',
-        lineHeight: 1.18
+        lineHeight: layout ? layout.lineHeight : 1.18
       });
       this.bodyMesh = createTextMesh(this.body.texture, 0.1, 0.1, this.options.renderOrder + 2);
       this.object.add(this.bodyMesh);
@@ -207,7 +233,40 @@ export class SpatialSurface {
   private layout(): void {
     const { width, height } = this.options;
     const padding = 0.05;
+    const anchors = this.options.layout;
     let cursor = height / 2 - padding;
+
+    if (anchors && this.title && this.titleMesh) {
+      const textWidth = width - padding * 2;
+      const headerHeight = textWidth * this.title.aspect;
+      this.titleMesh.scale.set(textWidth, headerHeight, 1);
+      this.titleMesh.position.set(
+        -width / 2 + padding + textWidth / 2,
+        anchors.headerTop - headerHeight / 2,
+        0.006
+      );
+
+      // The body may arrive after the title (a card built from its header
+      // first), so this branch places whatever exists and never stacks.
+      if (!this.body || !this.bodyMesh) {
+        return;
+      }
+      // The bottom of a one-line block is the anchor; a second line grows up
+      // into the gap under the header instead of pushing towards the answers.
+      const bodyPx = this.options.bodyPx ?? this.options.theme.bodyPx;
+      const lineHeightM = (bodyPx * anchors.lineHeight) / (this.options.bodyTexturePx ?? 512);
+      const headerBottom = anchors.headerTop - headerHeight;
+      const capacity = headerBottom - anchors.headerGap - anchors.bodyBottom;
+      if (capacity <= 0) {
+        throw new Error('surface layout: no room for the body under the header');
+      }
+      // Exactly the body's own height, capped at the room between header and
+      // rows: squeezing it would scale the glyphs off their 60 px design.
+      const blockHeight = Math.min(capacity, this.body.aspect * textWidth);
+      this.bodyMesh.scale.set(textWidth, blockHeight, 1);
+      this.bodyMesh.position.set(-width / 2 + padding + textWidth / 2, anchors.bodyBottom + blockHeight / 2, 0.006);
+      return;
+    }
 
     if (this.title && this.titleMesh) {
       const titleWidth = width - padding * 2;

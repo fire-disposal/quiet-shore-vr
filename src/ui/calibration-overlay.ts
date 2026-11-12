@@ -35,10 +35,16 @@ const CANVAS_H = 432;
 const PLANE_W = 0.8;
 const PLANE_H = (PLANE_W * CANVAS_H) / CANVAS_W;
 
-const TITLE = '记录起始朝向';
+const TITLE = '记录起始体位';
+/**
+ * The card asks for nothing the patient cannot already do. Calibration only
+ * measures the posture the head is holding, so naming a direction to look at
+ * was a requirement the system did not have — and one a supine patient cannot
+ * satisfy anyway.
+ */
 const BODY = [
-  '保持现在的姿势，看向前方。',
-  '将以您面向的方向生成场景。',
+  '保持现在的姿势就好，不用特意看向哪里。',
+  '场景会按您此刻的体位对齐。',
   '请保持不动。'
 ];
 

@@ -6,12 +6,19 @@ import {
   WATER_EYE_M,
   eyeYAt,
   lyingEyeY,
+  restMixOf,
   type ScenePosture
 } from '../src/core/anatomy';
 
-const bed: ScenePosture = { standingEyeY: 1.7, supine: 'mattress' };
-const bedWithPillow: ScenePosture = { standingEyeY: 1.7, supine: 'mattress', pillow: true };
-const water: ScenePosture = { standingEyeY: 1.7, supine: 'water' };
+const bed: ScenePosture = { standingEyeY: 1.7, supine: 'mattress', viewer: 'supine' };
+const bedWithPillow: ScenePosture = {
+  standingEyeY: 1.7,
+  supine: 'mattress',
+  pillow: true,
+  viewer: 'supine'
+};
+const water: ScenePosture = { standingEyeY: 1.7, supine: 'water', viewer: 'supine' };
+const room: ScenePosture = { standingEyeY: 1.7, supine: 'mattress', viewer: 'standing' };
 
 describe('anatomy', () => {
   it('derives the lying eye from the support, never from a typed number', () => {
@@ -37,6 +44,21 @@ describe('anatomy', () => {
     // push the patient down; the scenes must keep standing above lying.
     for (const posture of [bed, bedWithPillow, water]) {
       expect(eyeYAt(posture, 1)).toBeGreaterThan(eyeYAt(posture, 0));
+    }
+  });
+
+  it('rests a scene in the correction its art was drawn for', () => {
+    // Supine art (sky overhead) rests uncorrected; a room drawn from a standing
+    // eye rests corrected, or its first frame is a room on the ceiling.
+    expect(restMixOf(bed)).toBe(0);
+    expect(restMixOf(water)).toBe(0);
+    expect(restMixOf(room)).toBe(1);
+    // The rest correction is one of the two ends the eye height already uses.
+    for (const posture of [bed, water, room]) {
+      expect(eyeYAt(posture, restMixOf(posture))).toBeCloseTo(
+        restMixOf(posture) === 1 ? posture.standingEyeY : lyingEyeY(posture),
+        6
+      );
     }
   });
 });

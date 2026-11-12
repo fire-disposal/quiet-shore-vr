@@ -67,7 +67,7 @@ export const shoreScene = defineScene(
   },
   // Drawn for a body on its back on the water: the surface is content y=0 and
   // the eye that sees the dawn sits at 1.70 m once the body stands up out of it.
-  { standingEyeY: 1.7, supine: 'water' },
+  { standingEyeY: 1.7, supine: 'water', viewer: 'supine' },
   function () {
     const root = new THREE.Group();
     root.name = 'shore';

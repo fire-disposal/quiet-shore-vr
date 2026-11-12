@@ -5,7 +5,7 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 92005,
+      "totalMs": 90520,
       "files": [
         {
           "id": "v-wear-1",
@@ -29,10 +29,10 @@
           "id": "v-cal-1",
           "group": "引导",
           "file": "male/v-cal-1.mp3",
-          "ms": 6287,
-          "bytes": 38252,
-          "sha256": "c022088ef34ea1e195e5d40caae9de894f9059d8ce6c7a24020e69ce120c545a",
-          "textHash": "ab6dfd1fdf63d51b"
+          "ms": 4617,
+          "bytes": 28316,
+          "sha256": "0df746425b0bab84ef8681d29908199fb72ea2a51b6be742d0407cad635d55f9",
+          "textHash": "29421b1a28505960"
         },
         {
           "id": "v-cal-2",
@@ -74,19 +74,19 @@
           "id": "v-relax-1",
           "group": "引导",
           "file": "male/v-relax-1.mp3",
-          "ms": 3993,
-          "bytes": 24572,
-          "sha256": "22a3e2ab6039776d22fc955a70da558118001aa421bf316f6edcb9358fc4f2aa",
-          "textHash": "9059e4dcce660cba"
+          "ms": 4179,
+          "bytes": 25724,
+          "sha256": "521202752634b399e8c3be7e0de202d815c4244292426fa95cc77bb146d14bfa",
+          "textHash": "594756f7b034b850"
         },
         {
           "id": "v-relax-2",
           "group": "引导",
           "file": "male/v-relax-2.mp3",
-          "ms": 6718,
+          "ms": 6717,
           "bytes": 40844,
-          "sha256": "ee5c149bfef806fa081fc8794d18d9440b73613326e2eb1adfdb8e6a7cdaa294",
-          "textHash": "21f2f91871b81a24"
+          "sha256": "2740233ffaa7455099e837d2705faa9629f7dc45e11ea958d414225325851048",
+          "textHash": "ff871140539a4880"
         },
         {
           "id": "v-close-1",
@@ -237,7 +237,7 @@
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 103000,
+      "totalMs": 100936,
       "files": [
         {
           "id": "v-wear-1",
@@ -261,10 +261,10 @@
           "id": "v-cal-1",
           "group": "引导",
           "file": "female/v-cal-1.mp3",
-          "ms": 7142,
-          "bytes": 43436,
-          "sha256": "a32f454cdcb1ac23ea87cc270c125a3d7739cf352a91ac5b5361e478b07e2236",
-          "textHash": "ab6dfd1fdf63d51b"
+          "ms": 5277,
+          "bytes": 32204,
+          "sha256": "39bb41946f0d9cf925c4cff4d2904d8dfd415373199120ac48b304c4dbf94ca7",
+          "textHash": "29421b1a28505960"
         },
         {
           "id": "v-cal-2",
@@ -306,19 +306,19 @@
           "id": "v-relax-1",
           "group": "引导",
           "file": "female/v-relax-1.mp3",
-          "ms": 4192,
+          "ms": 4183,
           "bytes": 25724,
-          "sha256": "235acd05aa3ecf246cecfbe60fb6fab8a6a656d34cce0e083acdf2f47ed5c621",
-          "textHash": "9059e4dcce660cba"
+          "sha256": "6df757cad3ac069bc24eb8926154ab9c080db817d99fad4eec309e13554c75c2",
+          "textHash": "594756f7b034b850"
         },
         {
           "id": "v-relax-2",
           "group": "引导",
           "file": "female/v-relax-2.mp3",
-          "ms": 7556,
-          "bytes": 45884,
-          "sha256": "6a2e09dd6a37ba5419cac28f89e4add24c49ca0d43626100b62b802084425717",
-          "textHash": "21f2f91871b81a24"
+          "ms": 7366,
+          "bytes": 44732,
+          "sha256": "0eae89c542b32f5fad6e1bf111dcb6a0e343da95850bc47541198453f07536a9",
+          "textHash": "ff871140539a4880"
         },
         {
           "id": "v-close-1",
@@ -467,5 +467,5 @@
       ]
     }
   },
-  "generatedAt": "2026-10-27T16:02:35+08:00"
+  "generatedAt": "2026-11-12T16:52:38+08:00"
 }

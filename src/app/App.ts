@@ -9,7 +9,7 @@ import {
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
 import type { SceneHandle } from '../core/scene/contract';
-import { getSceneDefinition, SCENE } from '../scenes/registry';
+import { getSceneDefinition, SCENE, SCENES } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { SpatialInput } from '../ui/spatial/input';
 import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
@@ -30,7 +30,7 @@ import {
 } from '../audio/audio';
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
 import { FLOAT_MAX_LEVEL } from '../core/xr/float';
-import { lyingEyeY } from '../core/anatomy';
+import { lyingEyeY, restMixOf } from '../core/anatomy';
 import { degrees, metres } from '../core/units';
 import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
@@ -118,6 +118,8 @@ export class QuietShoreApp {
   private eyeHeight: number;
   /** Lying eye of the loaded scene; the rise is measured from it. */
   private sceneLyingEyeY = 0;
+  /** Correction the loaded scene rests in (0 supine, 1 standing). */
+  private sceneRestMix: 0 | 1 = 0;
 
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
@@ -381,6 +383,12 @@ export class QuietShoreApp {
     this.loadScene();
     this.bind();
     this.start.setStatus(this.strings.checking);
+    // A relaunched entry means the last one sat unconfirmed: say what to do
+    // differently instead of showing the same silent invitation again. The
+    // press must land on the browser's window, so the instruction names it.
+    if (this.config.entryRetry > 0) {
+      this.start.setEntryHint('没有等到确认。请看向画面中央，再按一下按钮。');
+    }
     this.updateHud(performance.now());
   }
 
@@ -609,9 +617,11 @@ export class QuietShoreApp {
     // interpolates between them.
     this.sceneComfortLevel = definition.comfortLevel ?? FLOAT_MAX_LEVEL;
     this.sceneLyingEyeY = lyingEyeY(definition.posture);
+    this.sceneRestMix = restMixOf(definition.posture);
     this.world.setScene({
       lyingEyeY: this.sceneLyingEyeY,
-      standingEyeY: this.eyeHeight
+      standingEyeY: this.eyeHeight,
+      restMix: this.sceneRestMix
     });
     this.world.apply();
     this.floating.reset();
@@ -624,7 +634,13 @@ export class QuietShoreApp {
       this.camera.rotation.set(SUPINE_GAZE_RAD, 0, 0, 'YXZ');
     }
     preloadSceneAudio(definition.audio);
-    this.start.setScene(definition.name[this.config.lang]);
+    // Registry order is the ordinal the entry field prints: the same order the
+    // operator's scene list uses, so "03 / 04" means the same thing on both.
+    this.start.setScene(
+      definition.name[this.config.lang],
+      SCENES.indexOf(definition) + 1,
+      SCENES.length
+    );
   }
 
   private disposeScene(): void {
@@ -791,7 +807,6 @@ export class QuietShoreApp {
         scene: this.scene,
         theme: DEFAULT_SPATIAL_THEME,
         input: this.input,
-        stringsDwellHint: this.strings.dwellHint,
         onAnswer: (index, value) => {
           this.susAnswers[index] = value;
           this.report(`SUS ${index + 1} = ${value}`);
@@ -1022,7 +1037,7 @@ export class QuietShoreApp {
     if (!result || !result.ok || !result.quaternion) {
       // A wobbly countdown still has to produce a world frame: take the pose
       // the patient is holding right now and move on.
-      this.calibrationOverlay?.setHint('使用当前朝向');
+      this.calibrationOverlay?.setHint('使用当前体位');
       this.applyCalibration(this.headPose.quaternion);
       return;
     }
@@ -1095,6 +1110,12 @@ export class QuietShoreApp {
    * one thing a supine patient cannot brace for.
    */
   private scheduleAutoRise(): void {
+    // A standing scene already rests corrected: the cue would announce a turn
+    // that never happens, and the rise would be a no-op. Supine scenes keep it
+    // — that ramp is the whole "you are standing" performance.
+    if (this.sceneRestMix >= 1) {
+      return;
+    }
     const token = ++this.autoRiseToken;
     const cancelled = (): boolean => token !== this.autoRiseToken || !this.session;
 
@@ -1380,7 +1401,8 @@ export class QuietShoreApp {
     this.eyeHeight = next;
     this.world.setScene({
       lyingEyeY: this.sceneLyingEyeY,
-      standingEyeY: next
+      standingEyeY: next,
+      restMix: this.sceneRestMix
     });
     this.start.setStatus(`站立足高 ${next.toFixed(2)} m`, 'ok');
   }
@@ -1430,7 +1452,7 @@ export class QuietShoreApp {
     this.linkOnline = status === 'open';
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
-    this.start.setHint(status === 'open' ? '已连接控制端' : '控制端未连接（等待重连）');
+    this.start.setHint(status === 'open' ? '控制端已连接' : '控制端未连接，正在重连');
     if (status === 'open' || !wasOnline) {
       return;
     }
@@ -1476,6 +1498,10 @@ export class QuietShoreApp {
     }
     if (this.capturePending) {
       this.start.setStatus('校准中无法调整姿态', 'error');
+      return;
+    }
+    if (rising && this.sceneRestMix >= 1) {
+      this.start.setStatus('本场景已是站立视角', 'ok');
       return;
     }
     this.world.rise(rising ? 1 : 0);
@@ -1660,33 +1686,31 @@ export class QuietShoreApp {
       return;
     }
     const state = this.captureSnapshot();
+    // One short phrase per fact, joined by a hair space dot: the bar is a
+    // status line, not a table. "体位" is the patient-facing word for the
+    // recorded posture; "校准" belongs to the operator side
+    // (docs/copy-deck.md).
     const calibrationState = state.calibrating
-      ? '校准中'
+      ? '记录中'
       : state.calibrated
-        ? '校准✓'
-        : '未校准';
-    const mode = this.xr.isPresenting
-      ? 'XR'
-      : this.previewing
-        ? '预览'
-        : '待机';
+        ? '体位已记录'
+        : '体位未记录';
+    const mode = this.xr.isPresenting ? '头显' : this.previewing ? '预览' : '待机';
     // Actual render stats, including both XR eyes. Design-time scene counts
     // hid the real per-frame load and the double-eye render in XR.
     const render = this.renderer.info.render;
     const budget = this.renderMonitor.snapshot();
-    const triangles = `${(render.triangles / 1000).toFixed(1)}k△`;
-    const draws = `${render.calls}dc`;
     const summary = [
       mode,
       this.host.definition?.name[this.config.lang] ?? SCENE.name[this.config.lang],
       calibrationState,
       '1.25x',
-      triangles,
-      draws,
+      `${(render.triangles / 1000).toFixed(1)}k 面`,
+      `${render.calls} 批次`,
       `p95 ${budget.p95Ms.toFixed(0)}ms`,
       `t×${this.clockSurvey.ratio.toFixed(2)}`,
       this.sceneBedOn ? '水声开' : '水声关'
-    ].join('  ');
+    ].join(' · ');
     this.hud.setStats(this.fps, summary);
   }
 

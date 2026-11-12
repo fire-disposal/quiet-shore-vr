@@ -52,12 +52,16 @@ export interface WorldRuntimeApi {
    * A new scene: both eye heights come from its `posture` — the lying one is
    * derived by `core/anatomy.ts`, the standing one is the art's authoring
    * height. The placement follows from them and the current mix.
+   *
+   * `restMix` is the correction the scene's art was drawn for (see
+   * `core/anatomy.restMixOf`): a supine scene rests uncorrected, a standing
+   * scene rests corrected. Absent means 0, the historical behaviour.
    */
-  setScene(eyes: { lyingEyeY: number; standingEyeY: number }): void;
+  setScene(eyes: { lyingEyeY: number; standingEyeY: number; restMix?: number }): void;
   /**
    * Adopt the orientation the patient is holding as the calibration frame, and
-   * start **uncorrected**: the ceiling stays the real ceiling until the rise
-   * animation is asked for.
+   * land on the scene's rest correction: the ceiling stays the real ceiling for
+   * a supine scene, a standing room is already upright when it appears.
    */
   calibrate(
     orientation: { x: number; y: number; z: number; w: number },
@@ -89,6 +93,8 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   /** Eye heights for the current scene; the lying one comes from anatomy. */
   let lyingEyeY = 0;
   let standingEyeY = 0;
+  /** Correction the loaded scene's art was drawn for: 0 supine, 1 standing. */
+  let restMix = 0;
   /** Applied eye height: the lying height with `mix` of the rise folded in. */
   let eyeY = 0;
   let offsetY = 0;
@@ -148,15 +154,17 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (!comfortApi.calibrate(pose)) {
       return false;
     }
-    // Enter the session the way the room actually looks and stay there. The
-    // ramp is the operator's alone: an automatic 8 s rise fought the 起身 /
-    // 停止 buttons (a stop pressed inside it froze a half-corrected world) and
-    // made "起身" look dead because the world had already risen by itself.
-    pushMix(0);
+    // Enter the session in the correction the art was drawn for and stay
+    // there. The ramp is the operator's alone: an automatic 8 s rise fought the
+    // 起身 / 停止 buttons (a stop pressed inside it froze a half-corrected
+    // world) and made "起身" look dead because the world had already risen by
+    // itself. A standing scene therefore *rests* at 1 instead of being ramped
+    // there, so its first visible frame is already upright.
+    pushMix(restMix);
     ready = true;
     apply();
-    from = 0;
-    target = 0;
+    from = restMix;
+    target = restMix;
     elapsedMs = 0;
     moving = false;
     return true;
@@ -246,6 +254,14 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     setScene: (eyes) => {
       lyingEyeY = Number.isFinite(eyes.lyingEyeY) ? eyes.lyingEyeY : 0;
       standingEyeY = Number.isFinite(eyes.standingEyeY) ? eyes.standingEyeY : lyingEyeY;
+      restMix = eyes.restMix === 1 ? 1 : 0;
+      // With no calibration the mix has no frame to rotate: its only meaning is
+      // where the art sits, so place it at the eye it was drawn from. That is
+      // what the 2D preview shows, and it matches the first frame a session
+      // will take (calibration pushes `restMix` again, from the measured pose).
+      if (!ready) {
+        mix = restMix;
+      }
       apply();
     },
     calibrate,

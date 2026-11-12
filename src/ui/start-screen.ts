@@ -33,7 +33,13 @@ export class StartScreen {
   private readonly enter = element<HTMLButtonElement>('enter');
   private readonly enterLabel = optional<HTMLElement>('enter-label');
   private readonly scene = element<HTMLElement>('launch-scene');
+  private readonly sceneField = optional<HTMLElement>('launch-index')?.closest<HTMLElement>('.entry-field') ?? null;
+  private readonly sceneIndex = optional<HTMLElement>('launch-index');
+  private readonly sceneTotal = optional<HTMLElement>('launch-total');
   private readonly hint = optional<HTMLElement>('enter-hint');
+  /** A hint that speaks for this launch and must survive transient reports. */
+  private stickyHint = '';
+  private transientHint = '';
   private readonly core = this.enter.closest('.entry-core');
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
@@ -96,8 +102,24 @@ export class StartScreen {
     this.status.hidden = text.length === 0;
   }
 
-  setScene(name: string): void {
+  /**
+   * The scene is the operator's choice, so the page only states it: the name
+   * in the top rule, the ordinal beside it. Without an ordinal (no registry
+   * match yet) the field row hides rather than printing a made-up number.
+   */
+  setScene(name: string, index?: number, total?: number): void {
     this.scene.textContent = name;
+    const known =
+      typeof index === 'number' && typeof total === 'number' && index >= 1 && total >= 1;
+    if (this.sceneIndex) {
+      this.sceneIndex.textContent = known ? String(index).padStart(2, '0') : '';
+    }
+    if (this.sceneTotal) {
+      this.sceneTotal.textContent = known ? String(total).padStart(2, '0') : '';
+    }
+    if (this.sceneField) {
+      this.sceneField.hidden = !known;
+    }
   }
 
   setEnterEnabled(enabled: boolean): void {
@@ -122,6 +144,8 @@ export class StartScreen {
     this.start.hidden = false;
     this.stageElement.hidden = true;
     this.setEnded(false);
+    // The invitation is back: whatever this launch said about the entry is done.
+    this.setEntryHint('');
   }
 
   /**
@@ -132,9 +156,9 @@ export class StartScreen {
     this.start.hidden = false;
     this.stageElement.hidden = true;
     this.setEnded(true);
-    if (this.hint) {
-      this.hint.textContent = '训练已结束。请保持现在的姿势，等待工作人员。';
-    }
+    // The label already says the training ended; the hint is the one thing
+    // left to do, which is nothing.
+    this.setEntryHint('请保持现在的姿势，等待工作人员。');
   }
 
   private setEnded(ended: boolean): void {
@@ -143,10 +167,42 @@ export class StartScreen {
     this.setEnterLabel(ended ? '训练已结束' : ENTER_LABEL);
   }
 
+  /**
+   * A report the page can lose (link state, a failed clip). It yields to an
+   * entry hint, which is the one line the patient has to act on.
+   */
   setHint(text: string): void {
-    if (this.hint) {
-      this.hint.textContent = text;
+    this.transientHint = text;
+    this.renderHint();
+  }
+
+  /**
+   * A hint that speaks for the whole launch — the shell relaunched this entry
+   * because the last one was never confirmed, or the training has just ended.
+   * It outranks [setHint] until the entry screen is invited again.
+   */
+  setEntryHint(text: string): void {
+    this.stickyHint = text;
+    this.renderHint();
+  }
+
+  private renderHint(): void {
+    if (!this.hint) {
+      return;
     }
+    const text = this.stickyHint || this.transientHint;
+    this.hint.textContent = text;
+    // A sticky hint outranks reports, and it is the line the patient acts on,
+    // so it is the one in full text.
+    if (this.stickyHint) {
+      this.hint.dataset.sticky = 'true';
+    } else {
+      delete this.hint.dataset.sticky;
+    }
+    // A hint that stays rendered as an empty line would push the entry target
+    // around between launches; the element exists only while it has something
+    // to say.
+    this.hint.hidden = text.length === 0;
   }
 
   private setEnterLabel(text: string): void {

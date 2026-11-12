@@ -56,6 +56,25 @@ describe('comfort frame', () => {
     expect(group.quaternion.angleTo(head)).toBeLessThan(1e-4);
   });
 
+  it('the uncorrected frame is heading only, whatever the capture pose', () => {
+    // Nothing in the calibration asks the patient to look at anything: two
+    // captures with the same heading and different pitch produce the same
+    // uncorrected frame, because the pitch is measured, not commanded.
+    const upright = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, 0.7, 0, 'YXZ'));
+    const supine = new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.45, 0.7, 0.05, 'YXZ'));
+    const a = build(upright);
+    const b = build(supine);
+    expect(a.group.quaternion.angleTo(b.group.quaternion)).toBeLessThan(1e-6);
+    expect(a.group.position.distanceTo(b.group.position)).toBeLessThan(1e-6);
+
+    // And the correction each capture would rise by is its own posture, so the
+    // corrected frame is exactly where the head was — no declared pitch.
+    a.comfort.setCorrectionMix(1);
+    b.comfort.setCorrectionMix(1);
+    expect(a.group.quaternion.angleTo(upright)).toBeLessThan(1e-4);
+    expect(b.group.quaternion.angleTo(supine)).toBeLessThan(1e-4);
+  });
+
   it('a half mix is halfway around the correction, never past it', () => {
     const { comfort, group } = build(SUPINE);
     comfort.setCorrectionMix(0.5);

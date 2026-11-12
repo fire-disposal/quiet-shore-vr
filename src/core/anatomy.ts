@@ -43,6 +43,17 @@ export const WATER_EYE_M = 0.08;
 export type SupineSupport = 'mattress' | 'water';
 
 /**
+ * The body the art was drawn around.
+ *
+ * `supine` scenes look up at their sky and are drawn from a lying eye, so they
+ * rest with the world alive as gravity says (`mix` 0). `standing` scenes are
+ * drawn from a 1.7 m eye, and their first frame must already be the corrected
+ * one (`mix` 1) — a standing room shown uncorrected is a room rotated onto the
+ * ceiling until the operator happens to press 起身.
+ */
+export type SceneViewer = 'supine' | 'standing';
+
+/**
  * A scene's posture statement: the height its art was drawn from, and what the
  * patient lies on while the scene is up. The lying height is derived, never
  * hand-written, so two scenes can never disagree about a mattress again.
@@ -54,6 +65,8 @@ export interface ScenePosture {
   readonly supine: SupineSupport;
   /** Head on a pillow (adds [PILLOW_LIFT_M]). */
   readonly pillow?: boolean;
+  /** Which body the art assumes; decides the correction the world rests in. */
+  readonly viewer: SceneViewer;
 }
 
 /** Derived eye height for a posture, metres above the scene's floor line. */
@@ -70,4 +83,13 @@ export function eyeYAt(posture: ScenePosture, mix: number): number {
   const t = Number.isFinite(mix) ? Math.min(1, Math.max(0, mix)) : 0;
   const lying = lyingEyeY(posture);
   return lying + (posture.standingEyeY - lying) * t;
+}
+
+/**
+ * The correction a scene rests in, and therefore the first frame the patient
+ * sees once calibration lands. Only the scene knows this: the calibration
+ * measures where the head is, not which way the art was drawn.
+ */
+export function restMixOf(posture: ScenePosture): 0 | 1 {
+  return posture.viewer === 'standing' ? 1 : 0;
 }

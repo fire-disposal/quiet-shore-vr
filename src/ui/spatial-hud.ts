@@ -5,6 +5,25 @@ import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
 import type { HeadPose } from '../core/xr/types';
 
 /**
+ * The bar is read once to confirm the session is live, so it carries one small
+ * bold number and one muted line: no card, no rounding, hairline rules only.
+ * The plane is 1.18 m wide at 1.5 m, so 27 px of canvas is about 3.1 mm of type.
+ */
+const FPS_PX = 27;
+const SUMMARY_PX = 24;
+/** Heavier strokes weld closed at this size; the frame rate is tabular. */
+const FPS_FONT = 'ui-monospace, "DejaVu Sans Mono", "Liberation Mono", monospace';
+/** Patient-facing type is sans and bold; the theme's serif stays for surfaces. */
+const SANS_FONT = '"Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", sans-serif';
+const PILL_PAD = 4;
+const INSET_X = 26;
+/** 2 px on a 2048-wide canvas renders a 1 px rule at about 1 mm at 1.5 m. */
+const RULE_PX = 2;
+const DIVIDER_GAP = 18;
+/** Room the summary may use; anything past it is cut, never rescaled. */
+const SUMMARY_GAP = 24;
+
+/**
  * A compact, head-locked info bar above the center of the view. It replaces
  * the old DOM debug panel: FPS plus a one-line scene/quality/resource summary.
  * It follows the head with a small damping so it stays glued to the upper
@@ -36,8 +55,8 @@ export class SpatialHud {
     scene.add(this.anchor.object);
 
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 1024;
-    this.canvas.height = 128;
+    this.canvas.width = 2048;
+    this.canvas.height = 256;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
       throw new Error('2D canvas context unavailable');
@@ -95,40 +114,34 @@ export class SpatialHud {
     const height = this.canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    const radius = 30;
-    const pad = 4;
+    // A near-white fill, one hairline border and nothing else: a card with a
+    // radius, a shadow or a gradient reads as furniture and costs head motion.
     ctx.beginPath();
-    ctx.moveTo(pad + radius, pad);
-    ctx.arcTo(width - pad, pad, width - pad, height - pad, radius);
-    ctx.arcTo(width - pad, height - pad, pad, height - pad, radius);
-    ctx.arcTo(pad, height - pad, pad, pad, radius);
-    ctx.arcTo(pad, pad, width - pad, pad, radius);
-    ctx.closePath();
+    ctx.rect(PILL_PAD, PILL_PAD, width - PILL_PAD * 2, height - PILL_PAD * 2);
     ctx.fillStyle = 'rgba(247, 243, 234, 0.94)';
     ctx.fill();
+    // Stroked on the path edge: half falls outside the rect and is clipped, so
+    // a 2 px stroke lands as a 1 px hairline.
     ctx.lineWidth = 2;
     ctx.strokeStyle = this.theme.border;
     ctx.stroke();
 
+    const midY = height / 2;
+    const baseline = midY + 1;
     ctx.textBaseline = 'middle';
-    ctx.font = `650 31px ${this.theme.fontFamily}`;
-    const fpsText = `FPS ${this.fps < 0 ? '--' : this.fps}`;
-    ctx.fillStyle = this.theme.accent;
-    ctx.fillText(fpsText, 30, height / 2 + 1);
+    ctx.font = `700 ${FPS_PX}px ${FPS_FONT}`;
+    const fpsText = this.fps < 0 ? '--' : `${this.fps}`;
+    ctx.fillStyle = this.theme.text;
+    ctx.fillText(fpsText, INSET_X, baseline);
     const fpsWidth = ctx.measureText(fpsText).width;
 
-    const separatorX = 30 + fpsWidth + 22;
+    const ruleX = Math.round(INSET_X + fpsWidth + DIVIDER_GAP);
     ctx.fillStyle = this.theme.border;
-    ctx.fillRect(separatorX, 32, 2, height - 64);
+    ctx.fillRect(ruleX, Math.round(height * 0.24), RULE_PX, Math.round(height * 0.52));
 
-    ctx.font = `500 28px ${this.theme.fontFamily}`;
+    ctx.font = `650 ${SUMMARY_PX}px ${SANS_FONT}`;
     ctx.fillStyle = this.theme.muted;
-    ctx.fillText(
-      this.summary,
-      separatorX + 22,
-      height / 2 + 1,
-      width - separatorX - 52
-    );
+    ctx.fillText(this.summary, ruleX + DIVIDER_GAP, baseline, width - ruleX - INSET_X - SUMMARY_GAP);
   }
 
   dispose(): void {

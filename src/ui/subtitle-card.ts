@@ -20,12 +20,32 @@ import type { HeadPose } from '../core/xr/types';
 
 const CARD_WIDTH = 1.16;
 const CARD_HEIGHT = 0.42;
-const TEXT_PX = 30;
-/** Three lines fits the longest shipped cue (~62 characters) at 30 px. */
+/**
+ * Quiet reading size: at 1.35 m the plane is 1024 px ≈ 1.527 m wide, so 26 px
+ * is about 4.2 cm per glyph — eight glyphs narrower than the old 30 px. The
+ * card carries the spoken line, not a headline.
+ */
+const TEXT_PX = 26;
+/**
+ * 1.6 rather than 1.4: Chinese has no ascender/descender to separate lines, so
+ * the lines need the extra air to read as a paragraph instead of a block.
+ */
+const LINE_HEIGHT = 1.6;
+/** Three lines fits the longest shipped cue (~62 characters) at 26 px. */
 const MAX_LINES = 3;
+/** Patient-facing type is sans and bold; the theme's serif stays for surfaces. */
+const SANS_FONT = '"Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", sans-serif';
+/** Text column in canvas pixels: the card's 1024 px less 48 px of side padding. */
+const TEXT_WIDTH_PX = 1024 - 96;
+/** Glyphs per line, for the backstop that keeps a runaway cue inside the card. */
+const GLYPHS_PER_LINE = Math.floor(TEXT_WIDTH_PX / TEXT_PX);
+const MAX_CHARS = MAX_LINES * GLYPHS_PER_LINE;
 
 /** CJK glyphs and full-width marks are their own break opportunities. */
 const CJK = /[\u2E80-\u9FFF\u3000-\u303F\uFF00-\uFFEF]/;
+/** A line may not begin with closing punctuation, nor end with opening it. */
+const NO_LINE_START = /^[，。、；：？！）」』】》〉…·]$/;
+const NO_LINE_END = /^[（「『【《〈]$/;
 
 export class SubtitleCard {
   private readonly anchor: SpatialAnchor;
@@ -34,11 +54,13 @@ export class SubtitleCard {
   private readonly texture: THREE.CanvasTexture;
   private readonly geometry: THREE.PlaneGeometry;
   private readonly material: THREE.MeshBasicMaterial;
-  private readonly theme: SpatialTheme;
   private text: string | null = null;
 
-  constructor(scene: THREE.Scene, theme: SpatialTheme = DEFAULT_SPATIAL_THEME) {
-    this.theme = theme;
+  /**
+   * `theme` is accepted for symmetry with the other spatial UI and ignored: the
+   * subtitle line uses the accent-free palette below, not the card theme.
+   */
+  constructor(scene: THREE.Scene, _theme: SpatialTheme = DEFAULT_SPATIAL_THEME) {
     this.anchor = new SpatialAnchor({
       mode: 'head-locked',
       distance: 1.35,
@@ -80,7 +102,9 @@ export class SubtitleCard {
 
   /** `null` hides the card: the line finished or nothing is speaking. */
   setLine(text: string | null): void {
-    const next = text && text.trim().length > 0 ? text.trim() : null;
+    const next = text && text.trim().length > 0
+      ? this.fitSentences(this.densify(text.trim()))
+      : null;
     if (next === this.text) {
       return;
     }
@@ -103,46 +127,100 @@ export class SubtitleCard {
     return this.text !== null;
   }
 
+  /**
+   * A spoken line with no break of its own becomes one dense block. Split it
+   * into sentences, one per line, while a line is still worth reading on its
+   * own — a short tail would rather share a line than hang under a full one.
+   */
+  private densify(text: string): string {
+    if (text.includes('\n') || Array.from(text).length <= GLYPHS_PER_LINE) {
+      return text;
+    }
+    const sentences = text.match(/[^。！？]+[。！？]?/g);
+    if (!sentences || sentences.length <= 1) {
+      return text;
+    }
+    return sentences
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0)
+      .join('\n');
+  }
+
+  /**
+   * Elide the middle of anything longer than the card can hold. The end of a
+   * cue ("……可以告诉我。") is the part that matters, so the head is cut first.
+   */
+  private fitSentences(text: string): string {
+    const chars = Array.from(text);
+    if (chars.length <= MAX_CHARS) {
+      return text;
+    }
+    const head = Math.floor(MAX_CHARS * 0.4);
+    const tail = MAX_CHARS - head - 1;
+    return `${chars.slice(0, head).join('')}…${chars.slice(chars.length - tail).join('')}`;
+  }
+
   private wrap(text: string): { lines: string[]; truncated: boolean } {
     const ctx = this.ctx;
     const maxWidth = this.canvas.width - 96;
     const lines: string[] = [];
-    let current = '';
-    const tokens: string[] = [];
-    let word = '';
-    for (const char of Array.from(text)) {
-      if (CJK.test(char) || char === ' ') {
-        if (word.length > 0) {
-          tokens.push(word);
-          word = '';
-        }
-        tokens.push(char);
-      } else {
-        word += char;
-      }
-    }
-    if (word.length > 0) {
-      tokens.push(word);
-    }
+    const paragraphs = text.split('\n');
     let truncated = false;
-    for (const token of tokens) {
-      const candidate = current + token;
-      if (ctx.measureText(candidate).width <= maxWidth || current.length === 0) {
-        current = candidate;
+    // A paragraph boundary is a real break: two sentences each keep their own
+    // line rather than one line ending mid-sentence.
+    for (let p = 0; p < paragraphs.length; p += 1) {
+      const paragraph = paragraphs[p];
+      if (paragraph.length === 0) {
         continue;
       }
-      if (lines.length === MAX_LINES - 1) {
-        // Filled every line: mark the cut instead of dropping a lone glyph
-        // onto a fourth line.
-        truncated = true;
-        current = current.replace(/\s+$/, '');
+      let current = '';
+      const tokens: string[] = [];
+      let word = '';
+      for (const char of Array.from(paragraph)) {
+        if (CJK.test(char) || char === ' ') {
+          if (word.length > 0) {
+            tokens.push(word);
+            word = '';
+          }
+          tokens.push(char);
+        } else {
+          word += char;
+        }
+      }
+      if (word.length > 0) {
+        tokens.push(word);
+      }
+      for (const token of tokens) {
+        const candidate = current + token;
+        const fits = ctx.measureText(candidate).width <= maxWidth;
+        // Keep closing punctuation off the start of a line and opening marks
+        // off its end, unless the line would otherwise be a single glyph.
+        const legalBreak = NO_LINE_START.test(token)
+          ? true
+          : !NO_LINE_END.test(current.slice(-1));
+        if (fits || current.length === 0 || !legalBreak) {
+          current = candidate;
+          continue;
+        }
+        if (lines.length === MAX_LINES - 1) {
+          // Filled every line: mark the cut instead of dropping a lone glyph
+          // onto a fourth line.
+          truncated = true;
+          current = current.replace(/\s+$/, '');
+          break;
+        }
+        lines.push(current.replace(/\s+$/, ''));
+        current = token.replace(/^\s+/, '');
+      }
+      if (truncated) {
         break;
       }
-      lines.push(current.replace(/\s+$/, ''));
-      current = token.replace(/^\s+/, '');
+      if (current.length > 0 && lines.length < MAX_LINES) {
+        lines.push(current.replace(/\s+$/, ''));
+      }
     }
-    if (current.length > 0 && lines.length < MAX_LINES) {
-      lines.push(truncated ? `${current}…` : current);
+    if (truncated && lines.length > 0) {
+      lines[lines.length - 1] = `${lines[lines.length - 1].replace(/\s+$/, '')}…`;
     }
     return { lines, truncated };
   }
@@ -153,28 +231,24 @@ export class SubtitleCard {
     const height = this.canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    ctx.font = `500 ${TEXT_PX}px ${this.theme.fontFamily}`;
+    ctx.font = `700 ${TEXT_PX}px ${SANS_FONT}`;
     ctx.textBaseline = 'middle';
     const { lines } = this.wrap(text);
 
-    const radius = 34;
-    const pad = 6;
+    // A flat scrim, not a card: the scene stays visible behind the line and
+    // nothing here competes with it for attention.
+    const pad = 4;
     ctx.beginPath();
-    ctx.moveTo(pad + radius, pad);
-    ctx.arcTo(width - pad, pad, width - pad, height - pad, radius);
-    ctx.arcTo(width - pad, height - pad, pad, height - pad, radius);
-    ctx.arcTo(pad, height - pad, pad, pad, radius);
-    ctx.arcTo(pad, pad, width - pad, pad, radius);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(20, 24, 22, 0.62)';
+    ctx.rect(pad, pad, width - pad * 2, height - pad * 2);
+    ctx.fillStyle = 'rgba(20, 24, 22, 0.5)';
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(247, 243, 234, 0.22)';
+    ctx.strokeStyle = 'rgba(247, 243, 234, 0.18)';
     ctx.stroke();
 
     ctx.fillStyle = '#F6F1E6';
     ctx.textAlign = 'center';
-    const lineHeight = TEXT_PX * 1.4;
+    const lineHeight = TEXT_PX * LINE_HEIGHT;
     const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2;
     for (let i = 0; i < lines.length; i += 1) {
       ctx.fillText(lines[i], width / 2, startY + i * lineHeight, width - 96);

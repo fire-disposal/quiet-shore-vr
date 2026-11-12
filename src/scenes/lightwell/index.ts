@@ -397,7 +397,7 @@ export const lightwellScene = defineScene(
     comfortLevel: 2
   },
   // The band centres on 1.70 m: that is where the eye belongs once standing.
-  { standingEyeY: 1.7, supine: 'mattress' },
+  { standingEyeY: 1.7, supine: 'mattress', viewer: 'supine' },
   function () {
     const parts = createLightWell();
     const settings: SceneSettings = {

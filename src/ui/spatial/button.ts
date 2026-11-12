@@ -37,7 +37,8 @@ function drawButton(
   theme: SpatialTheme,
   focused: boolean,
   pressed: boolean,
-  enabled: boolean
+  enabled: boolean,
+  chosen: boolean
 ): void {
   ctx.clearRect(0, 0, width, height);
   const pad = 3;
@@ -47,16 +48,19 @@ function drawButton(
     ctx.fillStyle = 'rgba(40, 54, 51, 0.9)';
   } else if (focused) {
     ctx.fillStyle = pressed ? '#7d3c2d' : theme.accent;
+  } else if (chosen) {
+    // The recorded answer: a small accent fill, no extra words.
+    ctx.fillStyle = theme.accent;
   } else {
     ctx.fillStyle = pressed ? '#e8ded0' : theme.panelStrong;
   }
   ctx.fill();
 
   ctx.lineWidth = focused ? 3 : 1.5;
-  ctx.strokeStyle = !enabled ? theme.muted : focused ? theme.focus : theme.border;
+  ctx.strokeStyle = !enabled ? theme.muted : focused || chosen ? theme.focus : theme.border;
   ctx.stroke();
 
-  ctx.fillStyle = !enabled ? theme.muted : focused ? theme.accentText : theme.text;
+  ctx.fillStyle = !enabled ? theme.muted : focused || chosen ? theme.accentText : theme.text;
   // Type follows the button's own height, not a fixed pixel size: a 0.13 m
   // button on a 512x128 canvas drew its label at a third of the height, which
   // read as a tiny caption inside a large card.
@@ -89,6 +93,7 @@ export class SpatialButton {
   private focused = false;
   private pressed = false;
   private enabled = true;
+  private chosen = false;
   private progress = 0;
   private pressTimer = 0;
 
@@ -149,6 +154,7 @@ export class SpatialButton {
       layer: 'ui',
       dwellTime: options.dwellTime ?? 0,
       progressDisplay: 'self',
+      enabled: true,
       onFocus: (focused: boolean) => this.setFocused(focused),
       onProgress: (progress: number) => this.setProgress(progress),
       onSelect: () => this.activate()
@@ -172,6 +178,18 @@ export class SpatialButton {
       return;
     }
     this.enabled = enabled;
+    // `enabled` is what the input layer reads; a disabled button must not be
+    // registered as a target at all, or a gaze on it stalls with no feedback.
+    this.interactable.enabled = enabled;
+    this.draw();
+  }
+
+  /** The recorded answer: accent fill, no extra words on the card. */
+  setChosen(chosen: boolean): void {
+    if (chosen === this.chosen) {
+      return;
+    }
+    this.chosen = chosen;
     this.draw();
   }
 
@@ -227,7 +245,8 @@ export class SpatialButton {
       this.theme,
       this.focused,
       this.pressed,
-      this.enabled
+      this.enabled,
+      this.chosen
     );
     this.texture.needsUpdate = true;
   }

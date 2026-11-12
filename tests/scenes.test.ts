@@ -41,15 +41,16 @@ describe('scene registry', () => {
         scene.id,
         {
           standing: scene.posture.standingEyeY,
-          lying: Number(lyingEyeY(scene.posture).toFixed(2))
+          lying: Number(lyingEyeY(scene.posture).toFixed(2)),
+          viewer: scene.posture.viewer
         }
       ])
     );
     expect(eyes).toEqual({
-      washroom: { standing: 1.7, lying: 0.66 },
-      shore: { standing: 1.7, lying: 0.08 },
-      lightwell: { standing: 1.7, lying: 0.66 },
-      ward: { standing: 1.7, lying: 0.71 }
+      washroom: { standing: 1.7, lying: 0.66, viewer: 'standing' },
+      shore: { standing: 1.7, lying: 0.08, viewer: 'supine' },
+      lightwell: { standing: 1.7, lying: 0.66, viewer: 'supine' },
+      ward: { standing: 1.7, lying: 0.71, viewer: 'supine' }
     });
   });
 

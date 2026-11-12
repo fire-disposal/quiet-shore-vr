@@ -220,7 +220,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 | --- | --- | --- |
 | GET | `/ws?since=<seq>` | RFC 6455 控制通道；同源 `http://127.0.0.1:8130`，仅文本帧、JSON、≤8 KiB，无分片/二进制 |
 | GET / HEAD | `/`、`/index.html` | `text/html`，APK `assets/index.html` |
-| GET / HEAD | `/status` | 蓝牙、接管、`pendingSeq`、当前 state 摘要 |
+| GET / HEAD | `/status` | 蓝牙、接管、`pendingSeq`、当前 state 摘要、`entry:{phase,retries}`（入口监督） |
 | GET / HEAD | `/capabilities` | 命令清单与当前控制权 |
 | POST | `/command` | 本地诊断/调试用的命令注入；非白名单返回 400 |
 
@@ -267,6 +267,21 @@ PING / RELEASE / CLAIM   # 存活与租约
 `PortalActivity` 的“进入训练”通过显式 Intent 打开 `org.mozilla.vrbrowser/.VRBrowserActivity`，URL 为 `http://127.0.0.1:8130/?t=<时间戳>`。时间戳避免 Firefox 复用旧文档；拉起前会探测 `:8130` 是否可连接，避免 Firefox 冷启动把请求丢掉。未安装 Firefox Reality 时只做提示，不劫持默认浏览器。控制台另有“全部应用”和“返回桌面”；后者打开系统 HOME 设置，由用户确认。
 
 `PortalService` 是 `START_STICKY` 前台服务。服务重启后会重新读取 APK 内的 `assets/index.html`，重新广播 BLE，并清空控制者。
+
+### 6.1 入口监督（EntryRetry）
+
+WebXR 的会话必须由头显内的一次可信手势开启，壳层无法代办；那一次按压只能落在 Firefox Reality 的 2D 窗口上，所以“按了没反应”的成因只有两个：冷启动丢了 `ACTION_VIEW`，或患者没有看向窗口。壳层用两条时限兜住它们：
+
+| 阶段 | 时限 | 触发 | 结果 |
+| --- | --- | --- | --- |
+| 已拉起，页面未上线 | 25 s | 页面没有 state 帧 | 重新拉起（`?t=` 换新，`retry=N`） |
+| 页面上线，未进会话 | 20 s | state 帧 `session=false` | 同上 |
+| 会话已上报 | — | `session=true` | 监督结束，之后的空闲页不再触发重拉 |
+| 连续重拉 | 2 次 | 上述时限到期 | `GIVE_UP`，日志留痕，等人工处置 |
+
+- 页面侧读取 `?retry=N`，在入口页显示“请看向画面中央，再按一次头显右侧的按钮”；
+- 时限与判定在 `portal/EntryRetry.kt`（纯 Kotlin，无 Android 依赖；`ControlChannelCheck` 里有 `retryChecks()` 覆盖）；
+- 拉起来源（控制台按钮 / 平板 `enter` / 监督自身）统一经 `PortalActions.onLaunched` 报告给服务，计数只由监督自己持有。
 
 ## 7. 平板控制台流程
 

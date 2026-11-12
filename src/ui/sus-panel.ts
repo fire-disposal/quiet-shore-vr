@@ -34,6 +34,19 @@ const SUS_STATEMENTS: readonly string[] = [
 
 const OPTION_LABELS = ['很不同意', '不同意', '一般', '同意', '很同意'];
 
+/** `SUS n/10` was internal jargon; the patient reads a position, not a name. */
+const SUS_HEADERS = ['第 {n} 题，共十题', '最后一步', '谢谢您'] as const;
+
+/**
+ * The only guidance on the sheet. The dwell ring and the button's own bar show
+ * the dwell, so a second sentence about holding the gaze only repeats it.
+ */
+const SUS_GUIDE = '看向一个选项，停住。';
+
+const SUS_FINISH_BODY = '十道题都答完了。\n看向「完成」，就结束。';
+
+const SUS_THANKS_BODY = '可以摘下头显了。\n有感受请告诉工作人员。';
+
 /** Answer slots; the operator can also fill them from the tablet. */
 export type SusAnswers = (number | null)[];
 
@@ -70,7 +83,6 @@ export interface SusPanelOptions {
   scene: THREE.Scene;
   theme: SpatialTheme;
   input: SpatialInput;
-  stringsDwellHint: string;
   onAnswer?: (index: number, value: number) => void;
   onClose?: () => void;
   /**
@@ -104,27 +116,66 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
   root.name = 'sus-panel';
   anchor.object.add(root);
 
-  // The card carries only the statement; the answer row sits below it. With a
-  // full-height card the buttons landed on top of the body text.
-  // One card holds everything: title, statement, the five-point row and the
-  // pager. The reserved bottom band is what keeps the statement off the
-  // controls instead of floating buttons outside the panel.
+  // One card holds the header, the statement, the five-option row and the
+  // pager. It used to be a fixed 1.02 m slab sized for a three-line statement;
+  // with the guidance cut to one line every body is at most two, so the card
+  // is sized to that and every row is placed relative to its height.
+  const CARD_WIDTH = 1.5;
+  const CARD_TOP = 0.4;
+  const BOTTOM_PAD = 0.045;
+  const OPTION_HALF = 0.065;
+  const PAGER_HALF = 0.055;
+  // Header box: 26 px on a 512 px texture across 1.4 m ≈ 2.6 cm of type, so the
+  // texture height is cut to 1.05 em instead of the surface's 1.35.
+  const HEADER_PX = 26;
+  const HEADER_EM = 1.05;
+  const HEADER_TOP = CARD_TOP - 0.03;
+  const HEADER_GAP = 0.045;
+  /**
+   * 60 px across the 1.4 m text column is ~8.2 cm per glyph at the 1.2 m panel
+   * distance. Checked against every shipped statement plus the guidance line:
+   * the longest pair needs three lines (23 cm) and the card has 26 cm, so the
+   * statement keeps the size it had rather than shrinking to save a line.
+   */
+  const BODY_PX = 60;
+  const BODY_LINE_HEIGHT = 1.3;
+  /**
+   * Rows stack upwards from the bottom: pager, 3 cm of air that keeps a gaze on
+   * the answers off "下一题", the answer row, 3 cm of air, then the two-line
+   * statement. The card's bottom follows from that stack, so the rows and the
+   * card cannot drift apart.
+   */
+  const PAGER_Y = -0.255;
+  const OPTION_Y = PAGER_Y + PAGER_HALF + 0.03 + OPTION_HALF;
+  const BODY_BOTTOM = OPTION_Y + OPTION_HALF + 0.03;
+  const CARD_BOTTOM = PAGER_Y - PAGER_HALF - BOTTOM_PAD;
+  const CARD_HEIGHT = CARD_TOP - CARD_BOTTOM;
+
   const surface = new SpatialSurface({
-    // Wider and taller than the old card: the statement is now ~12 cm per glyph
-    // at 1.2 m, which needs three lines for the longest item.
-    width: 1.5,
-    height: 1.02,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
     theme,
-    title: 'SUS 1/10',
-    body: SUS_STATEMENTS[0],
+    // The body is not passed here: `SUS_HEADERS[0]` needs the page number, and
+    // drawing the first statement twice only made the card's height depend on
+    // whichever text landed in it first.
     renderOrder: 1300,
-    reserveBottom: 0.3,
-    // A big statement, a small caption: the card is read at 1.2 m and the
-    // statement is the only thing the patient has to parse. The "SUS 5/10"
-    // counter is furniture, so it shrank; the statement grew.
-    titlePx: 26,
-    bodyPx: 88,
-    bodyTexturePx: 1024
+    // Every row below the statement is placed by hand, so the surface keeps no
+    // reserved band of its own.
+    reserveBottom: 0,
+    titlePx: HEADER_PX,
+    titleEm: HEADER_EM,
+    bodyPx: BODY_PX,
+    bodyTexturePx: 1024,
+    // Header and body are placed from their own anchors: the surface's own
+    // stacking put the statement where the answer row now sits, and the row no
+    // longer moves with the body's line count.
+    layout: {
+      headerTop: HEADER_TOP,
+      headerGap: HEADER_GAP,
+      bodyBottom: BODY_BOTTOM,
+      lineHeight: BODY_LINE_HEIGHT,
+      bodyColor: theme.text
+    }
   });
   root.add(surface.object);
 
@@ -150,7 +201,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       renderOrder: 1310,
       dwellTime: SUS_DWELL_SECONDS
     });
-    button.object.position.set(-0.496 + index * 0.248, -0.22, 0.002);
+    button.object.position.set(-0.496 + index * 0.248, OPTION_Y, 0.002);
     button.onSelect = () => record(index + 1);
     root.add(button.object);
     return button;
@@ -164,7 +215,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     renderOrder: 1310,
     dwellTime: SUS_DWELL_SECONDS
   });
-  prevButton.object.position.set(-0.22, -0.36, 0.002);
+  prevButton.object.position.set(-0.22, PAGER_Y, 0.002);
   prevButton.onSelect = () => move(-1);
   root.add(prevButton.object);
 
@@ -176,7 +227,7 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     renderOrder: 1310,
     dwellTime: SUS_DWELL_SECONDS
   });
-  nextButton.object.position.set(0.22, -0.36, 0.002);
+  nextButton.object.position.set(0.22, PAGER_Y, 0.002);
   nextButton.onSelect = () => move(1);
   root.add(nextButton.object);
 
@@ -197,7 +248,14 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     }
     const targets =
       phase === 'questions'
-        ? [...optionButtons, prevButton, nextButton]
+        ? [
+            // A disabled pager is still hit-testable, and the gaze strip is
+            // wide: registering it lets a look at the left edge answer the
+            // next question.
+            ...optionButtons,
+            ...(prevButton.interactable.enabled ? [prevButton] : []),
+            nextButton
+          ]
         : phase === 'finish'
           ? [nextButton]
           : [];
@@ -221,12 +279,12 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     if (phase !== 'questions') {
       return;
     }
-    surface.setTitle(`SUS ${page + 1}/${SUS_STATEMENTS.length}`);
-    const chosen = answers[page];
+    surface.setTitle(SUS_HEADERS[0].replace('{n}', String(page + 1)));
+    const answered = answers[page] !== null;
+    // The statement carries the one guidance line. The answer buttons show the
+    // dwell themselves, so a chosen answer only needs a colour, not a line.
     surface.setBody(
-      chosen === null
-        ? SUS_STATEMENTS[page]
-        : `${SUS_STATEMENTS[page]}\n已选：${OPTION_LABELS[chosen - 1]}`
+      answered ? SUS_STATEMENTS[page] : `${SUS_STATEMENTS[page]}\n${SUS_GUIDE}`
     );
     const atStart = page === 0;
     const atEnd = page === SUS_STATEMENTS.length - 1;
@@ -235,8 +293,10 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     // target. Disabling it here left "完成" inert — nothing to dwell on.
     nextButton.setEnabled(true);
     nextButton.setLabel(atEnd ? '完成' : '下一题');
-    for (const button of optionButtons) {
+    for (let i = 0; i < optionButtons.length; i += 1) {
+      const button = optionButtons[i];
       button.object.visible = true;
+      button.setChosen(answered && answers[page] === i + 1);
     }
     prevButton.object.visible = true;
     nextButton.object.visible = true;
@@ -253,8 +313,8 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       return;
     }
     phase = 'finish';
-    surface.setTitle('最后一步');
-    surface.setBody('十道题都答完了。\n再看向下面的「完成」，我们就结束。');
+    surface.setTitle(SUS_HEADERS[1]);
+    surface.setBody(SUS_FINISH_BODY);
     for (const button of optionButtons) {
       button.object.visible = false;
     }
@@ -270,8 +330,8 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       return;
     }
     phase = 'thanks';
-    surface.setTitle('谢谢您');
-    surface.setBody('可以摘下头显了。\n如果有任何感受或建议，\n请告诉身边的工作人员。');
+    surface.setTitle(SUS_HEADERS[2]);
+    surface.setBody(SUS_THANKS_BODY);
     nextButton.object.visible = false;
     registerTargets();
     options.onFinish?.();

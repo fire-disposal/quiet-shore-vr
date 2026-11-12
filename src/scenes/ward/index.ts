@@ -44,7 +44,7 @@ export const wardScene = defineScene(
   },
   // Drawn for a body on its back in the bed: mattress 0.55 m plus a head on a
   // pillow, which is what `core/anatomy.ts` derives as the lying eye.
-  { standingEyeY: 1.7, supine: 'mattress', pillow: true },
+  { standingEyeY: 1.7, supine: 'mattress', pillow: true, viewer: 'supine' },
   function () {
     const room = createRoom();
     const settings: SceneSettings = {

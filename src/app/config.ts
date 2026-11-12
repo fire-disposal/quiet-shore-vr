@@ -40,6 +40,14 @@ export interface AppConfig {
   showPerf: boolean;
   eyeHeight: number;
   lang: 'zh' | 'en';
+  /**
+   * How many times the shell has already relaunched this entry.
+   *
+   * `0` is the operator's own launch; anything else means the page sat on its
+   * entry screen without a press long enough for the portal to hand it a fresh
+   * window, so the page must tell the patient what to do differently.
+   */
+  entryRetry: number;
   /** Buoyancy profile from `?float=a|b|c`; the in-room choice overrides it. */
   /**
    * Buoyancy level 0..3 from `?level=N`.
@@ -58,6 +66,12 @@ function readFloatLevel(raw: string | null): number {
   return Math.min(3, Math.max(0, parsed));
 }
 
+/** Relaunch count from the shell; anything unusable means the first launch. */
+function readEntryRetry(raw: string | null): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(9, parsed) : 0;
+}
+
 export function readConfig(search: string): AppConfig {
   const params = new URLSearchParams(search);
   const bootstrap: Bootstrap = window.__QS_BOOTSTRAP__ ?? {};
@@ -68,6 +82,7 @@ export function readConfig(search: string): AppConfig {
     showPerf: bootstrap.showHud ?? (params.get('hud') === '1' || params.get('debug') === '1'),
     eyeHeight: readEyeHeight(bootstrap.eyeHeight),
     lang,
+    entryRetry: readEntryRetry(params.get('retry')),
     floatLevel: readFloatLevel(params.get('level'))
   };
 }

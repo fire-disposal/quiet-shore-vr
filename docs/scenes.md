@@ -26,7 +26,7 @@ flowchart TB
 | 用 `applyBuoyancy({amountM, swayDeg, axis})` 决定搬哪一层 | 改 `content.position`（那是应用的） |
 | 声明 `budget` 并在 `tests/scenes.test.ts` 里被断言 | 申请共享资源（没有跨场景注册表，释放按场景自足） |
 
-`posture` 是场景对应用中最重要的一个声明：站立眼高（美术作者用的视点）＋身下支撑物（床 / 水面 / 是否垫枕）。
+`posture` 是场景对应用中最重要的一个声明：站立眼高（美术作者用的视点）＋身下支撑物（床 / 水面 / 是否垫枕）＋`viewer`（这幅画按仰卧还是站立的眼睛画，决定世界静止时的修正量：`standing` 的场景第一帧就是站立视角，`supine` 的场景从真实天花板开始）。
 躺姿眼高由 `src/core/anatomy.ts` 按 1.70 m 男性推导；画面偏移随 `mix` 从 `-躺姿眼高` 过渡到 `-站姿眼高`（见 `docs/animation.md`）。
 
 ## 2 场景档案

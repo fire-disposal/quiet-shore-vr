@@ -107,6 +107,29 @@ describe('world runtime', () => {
     expect(h.runtime.state().moving).toBe(false);
   });
 
+  it('rests a standing scene in the corrected frame', () => {
+    const h = harness();
+    // The washroom's declaration: drawn from a 1.7 m eye, so its first frame
+    // must already be the corrected one.
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7, restMix: 1 });
+    h.runtime.calibrate(SUPINE, POSITION);
+
+    expect(h.runtime.state().mix).toBe(1);
+    expect(h.runtime.state().target).toBe(1);
+    expect(h.runtime.state().moving).toBe(false);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+    expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
+
+    // There is nothing left to rise to; lying back is still the operator's.
+    expect(h.runtime.rise(1)).toBe(true);
+    expect(h.runtime.isRising()).toBe(false);
+    h.runtime.setDuration(4000);
+    expect(h.runtime.rise(0)).toBe(true);
+    h.run(4.5);
+    expect(h.runtime.state().mix).toBe(0);
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.66, 6);
+  });
+
   it('stopping mid-ramp freezes the correction where it is', () => {
     const h = harness();
     h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
@@ -203,6 +226,20 @@ describe('world runtime', () => {
     expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
     h.runtime.setScene({ lyingEyeY: 0.45, standingEyeY: 0.45 });
     expect(h.lastOffset()).toBeCloseTo(-0.45, 6);
+  });
+
+  it('places a standing scene at its authored eye before any calibration', () => {
+    const h = harness();
+    // The 2D preview has no head pose to calibrate from, but the mix still has
+    // to put the art where the scene was drawn: a standing room is seen from
+    // 1.7 m, not from the bed.
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7, restMix: 1 });
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+    expect(h.lastOffset()).toBeCloseTo(-1.7, 6);
+
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7, restMix: 0 });
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.66, 6);
+    expect(h.lastOffset()).toBeCloseTo(-0.66, 6);
   });
 
   it('clearing the base releases the calibration freeze', () => {

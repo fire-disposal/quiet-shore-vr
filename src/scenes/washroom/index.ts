@@ -36,7 +36,9 @@ export const washroomScene = defineScene(
   },
   // Standing scale: the floor is at content y=0 and the art is drawn from an
   // eye at 1.70 m. The lying height (bed) is derived by `core/anatomy.ts`.
-  { standingEyeY: 1.7, supine: 'mattress' },
+  // `viewer` makes the first frame the standing one: an uncorrected washroom
+  // is a room rotated onto the ceiling.
+  { standingEyeY: 1.7, supine: 'mattress', viewer: 'standing' },
   function () {
     const room = createRoom();
     const settings: SceneSettings = {
