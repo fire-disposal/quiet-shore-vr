@@ -154,15 +154,14 @@ fun BatteryField(
                 maxLines = 1
             )
             Spacer(Modifier.weight(1f))
-            // The state tags sit at the right end, so the reading stays a
-            // reading and the state is one word in brackets. Order is fixed:
-            // low charge first, then charging.
-            if (level <= 20) {
-                ChargeTag(label = "低电量", ink = BatteryInk.ChargeNow)
-            }
-            if (charging && level < 100) {
-                if (level <= 20) Spacer(Modifier.width(8.dp))
-                ChargeTag(label = "充电中", ink = BatteryInk.Enough)
+            // One state word at the right end, never two: charging wins over
+            // low charge, because "energy is going in" is the more useful fact
+            // about a pad at 12 % on a cable. Unplug it and the word flips.
+            when {
+                charging && level < 100 ->
+                    ChargeTag(label = "充电中", ink = BatteryInk.Enough)
+                level <= 20 ->
+                    ChargeTag(label = "低电量", ink = BatteryInk.ChargeNow)
             }
         } else {
             // No number at all: "未连接" is a state, a dash is an empty gauge.
