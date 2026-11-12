@@ -74,15 +74,16 @@ fun PairingScreen(
             AppBar(onOpenInfo = onOpenInfo)
 
             if (wide) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(QuietSpace.Page),
-                    horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
+                    verticalArrangement = Arrangement.spacedBy(QuietSpace.Section)
                 ) {
                     PairingIntro(
                         compact = compact,
-                        modifier = Modifier.weight(1f)
+                        horizontal = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     PairingCard(
                         state = state,
@@ -97,9 +98,7 @@ fun PairingScreen(
                         onOpenSettings = onOpenSettings,
                         scrollable = true,
                         maxHeight = cardMaxHeight,
-                        modifier = Modifier
-                            .weight(1f)
-                            .widthIn(max = 560.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             } else {
@@ -167,6 +166,7 @@ private fun AppBar(onOpenInfo: () -> Unit) {
 @Composable
 private fun PairingIntro(
     compact: Boolean,
+    horizontal: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(modifier) {
@@ -196,26 +196,54 @@ private fun PairingIntro(
             "点“搜索头显”",
             "等“已连接”"
         )
-        for ((index, step) in steps.withIndex()) {
+        // Wide screens put the three steps side by side across the width; a
+        // left column with the action on the right left half the screen empty.
+        if (horizontal) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = if (compact) 6.dp else 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
             ) {
-                Text(
-                    text = String.format(java.util.Locale.US, "%02d", index + 1),
-                    style = MaterialTheme.typography.titleSmall.tabularFigures(),
-                    color = QuietPalette.InkSecondary,
-                    modifier = Modifier.width(44.dp)
-                )
-                Text(
-                    text = step,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.Ink
-                )
+                steps.forEachIndexed { index, step ->
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = String.format(java.util.Locale.US, "%02d", index + 1),
+                            style = MaterialTheme.typography.titleSmall.tabularFigures(),
+                            color = QuietPalette.InkSecondary,
+                            modifier = Modifier.width(44.dp)
+                        )
+                        Text(
+                            text = step,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = QuietPalette.Ink
+                        )
+                    }
+                }
             }
-            Rule()
+        } else {
+            for ((index, step) in steps.withIndex()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = if (compact) 6.dp else 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = String.format(java.util.Locale.US, "%02d", index + 1),
+                        style = MaterialTheme.typography.titleSmall.tabularFigures(),
+                        color = QuietPalette.InkSecondary,
+                        modifier = Modifier.width(44.dp)
+                    )
+                    Text(
+                        text = step,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = QuietPalette.Ink
+                    )
+                }
+                Rule()
+            }
         }
         Spacer(Modifier.height(16.dp))
         Text(
