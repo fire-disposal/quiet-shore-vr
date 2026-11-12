@@ -76,6 +76,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/v2-architecture.md](docs/v2-architecture.md) — v2 代码架构：先删后加的四项结构性欠账与它们的顺序
 - [docs/v2-roadmap.md](docs/v2-roadmap.md) — v2 路线：场景流程加长（阶段时间线）、场景质量、会话中切换的依赖顺序
 - [docs/scene-switch.md](docs/scene-switch.md) — 会话中切换场景：现状（已能跑）与重设计要定的事
+- [docs/handoff-next.md](docs/handoff-next.md) — **新开会话从这里开始**：goal 原文、已定决策、最新需求与代码现状
 - [docs/releases.md](docs/releases.md) — 发布归档：v1.0.0 是旧界面的收尾（含校验值），界面重做后进入 v2.0
 - [docs/ux-tree.md](docs/ux-tree.md) — UX 树：会话状态机、触发权限表、四个面的层级与组件清单
 - [docs/ui-acceptance.md](docs/ui-acceptance.md) — 界面验收：五个面的判据与复现命令（`scripts/tablet-shots.sh`）
