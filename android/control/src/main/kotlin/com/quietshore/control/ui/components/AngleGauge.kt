@@ -59,12 +59,9 @@ fun AngleGauge(
         verticalAlignment = Alignment.CenterVertically
     ) {
         AngleDial(pose = pose, fresh = fresh)
+        // No header word: the two rows are already labelled, and "朝向" over
+        // them was a third name for the same reading.
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = if (fresh) "朝向" else "朝向 · 未更新",
-                style = MaterialTheme.typography.labelSmall,
-                color = QuietPalette.TextSecondary
-            )
             Text(
                 text = angleLine("偏航", pose?.let { degrees(it.yaw) }, fresh),
                 style = MaterialTheme.typography.bodySmall.tabularFigures(),

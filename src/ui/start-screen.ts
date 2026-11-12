@@ -28,6 +28,7 @@ export class StartScreen {
   private readonly target = new InstructionTarget({ onPress: () => this.press() });
   private readonly state = new StateRow();
   private readonly hint = new HintLine();
+  private readonly battery = element<HTMLElement>('headset-battery');
   private readonly pictures = new DevicePictogram();
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
@@ -120,5 +121,21 @@ export class StartScreen {
   /** A sentence that speaks for the whole launch; outranks [setHint]. */
   setEntryHint(text: string): void {
     this.hint.setSticky(text);
+  }
+
+  /**
+   * The headset's own battery, from the portal's push.
+   *
+   * Shown on this screen and nowhere else: once the session runs, the patient
+   * is in the scene and the operator reads the same number on the tablet. A
+   * 15% warning is the only thing added — below that the operator should know
+   * before the device dies mid-session.
+   */
+  setBattery(level: number, charging: boolean): void {
+    const percent = Math.max(0, Math.min(100, Math.round(level)));
+    const low = percent <= 15 && !charging;
+    this.battery.hidden = false;
+    this.battery.textContent = `头显电量 ${percent}%${charging ? ' · 充电中' : ''}`;
+    this.battery.dataset.low = low ? 'true' : 'false';
   }
 }

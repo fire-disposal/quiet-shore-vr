@@ -1,7 +1,7 @@
 ---
 title: "静岸 · Quiet Shore VR"
-subtitle: "使用说明 —— 给上机的人（v0.9.60）"
-date: "2026-10-27"
+subtitle: "使用说明 —— 给上机的人（v1.0.0）"
+date: "2026-11-12"
 lang: zh-CN
 format:
   typst:

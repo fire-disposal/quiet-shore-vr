@@ -117,7 +117,7 @@ fun VoicePanel(
                     )
                 }
                 Text(
-                    text = nextLine?.let { "下一句 · ${it.group}" } ?: "已是最后一句",
+                    text = nextLine?.let { "下一句：${it.group}" } ?: "已是最后一句",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary,
                     modifier = Modifier.padding(top = 8.dp)
@@ -271,7 +271,7 @@ fun VoicePanel(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = "${lines.size} 句 · ${if (open) "收起" else "展开"}",
+                            text = "${lines.size} 句，${if (open) "收起" else "展开"}",
                             style = MaterialTheme.typography.bodySmall.tabularFigures(),
                             color = QuietPalette.TextSecondary
                         )

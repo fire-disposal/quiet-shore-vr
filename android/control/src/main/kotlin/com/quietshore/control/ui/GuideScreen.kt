@@ -125,7 +125,7 @@ private val STEPS: List<Step> = listOf(
         "«02 起身时长»选 ‹6/8/10/12 秒›", null),
     Step(4, "启动", "点«启动训练»",
         "患者按一次右侧按钮", "‹20 秒›未按将重开页面"),
-    Step(5, "调整", "强度 · 语音 · 体位",
+    Step(5, "调整", "强度、语音、体位",
         "用右侧操作区逐项调整", "体位偏了点«校准»"),
     Step(6, "结束", "可补答 SUS",
         "点«结束»，等淡出", "结束后补答 SUS")
@@ -325,7 +325,7 @@ private fun Positioning() {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "六步流程 · 八种状态 · 六类故障",
+            text = "六步流程、八种状态、六类故障",
             style = MaterialTheme.typography.bodyLarge,
             color = QuietPalette.InkSecondary
         )

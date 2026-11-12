@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CutCornerShape
@@ -28,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
@@ -46,7 +51,6 @@ import com.quietshore.control.ui.components.Key
 import com.quietshore.control.ui.components.KeyKind
 import com.quietshore.control.ui.components.KeyRow
 import com.quietshore.control.ui.components.LoadingDots
-import com.quietshore.control.ui.components.MirrorCover
 import com.quietshore.control.ui.components.MonitorPanel
 import com.quietshore.control.ui.components.NoticeRow
 import com.quietshore.control.ui.components.Panel
@@ -128,13 +132,16 @@ fun ControlScreen(
     val sessionLayout = phase.inSession
     // The mirror is on demand: it answers "what is the patient looking at",
     // which is a question asked, not a panel that sits on screen all session.
-    var mirrorOpen by rememberSaveable { mutableStateOf(startWithMirrorOpen) }
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(QuietPalette.Paper)
             .safeDrawingPadding()
+            // Same fix the guide page needed: `tappableElement` (the system
+            // taskbar's tappable band) is not in safeDrawing, so the last rows
+            // could render underneath it.
+            .padding(bottom = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding())
     ) {
         // 1000 dp is where the mirror and the action column both fit at a size
         // worth reading; below it the page becomes one column in the same order.
@@ -182,7 +189,6 @@ fun ControlScreen(
                             modifier = Modifier
                                 .width(ActionColumnWidth)
                                 .fillMaxHeight(),
-                            onOpenMirror = { mirrorOpen = true }
                         )
                     } else {
                         StandbyMain(
@@ -229,7 +235,6 @@ fun ControlScreen(
                             phase = phase,
                             modifier = Modifier,
                             fill = false,
-                            onOpenMirror = { mirrorOpen = true }
                         )
                     } else {
                         StandbyMain(
@@ -248,16 +253,9 @@ fun ControlScreen(
                     }
                 }
             }
-                if (mirrorOpen) {
-                    MirrorCover(
-                        state = state,
-                        onModeChange = actions.onMirrorModeChange,
-                        onClose = { mirrorOpen = false }
-                    )
-                }
-            }
         }
     }
+}
 }
 
 // ---------------------------------------------------------------------------
@@ -497,34 +495,27 @@ private fun DurationRow(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit
 private fun VoiceSummary(state: ControlUiState, actions: ControlActions) {
     val line = state.voiceLine
     SectionHead(title = "语音", note = "患者听到的提示语")
-    Panel(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(QuietSpace.Panel),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = line?.text ?: "未播放",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (line != null) QuietPalette.Ink else QuietPalette.InkSecondary,
-                    maxLines = 2
-                )
-                if (line != null) {
-                    Text(
-                        text = line.group,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.InkSecondary
-                    )
-                }
-            }
-            Spacer(Modifier.width(16.dp))
-            ActionKey(
-                label = "下一句",
-                onClick = { actions.onVoicePlay(nextVoiceId(state)) },
-                tone = ActionTone.Secondary,
-                enabled = state.phase == BlePhase.READY
-            )
-        }
+    // One row, not a card: preparation has one primary action (启动训练) and
+    // this section's only job is to open the cue list. Playing one line early
+    // lives in that panel, and in the session's voice row.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = line?.text ?: "未播放",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (line != null) QuietPalette.Ink else QuietPalette.InkSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(16.dp))
+        BarWordKey(
+            label = "全部语音",
+            onClick = actions.onVoiceOpen,
+            enabled = state.phase == BlePhase.READY
+        )
     }
 }
 
@@ -550,6 +541,13 @@ private fun SessionMain(
     scrollable: Boolean = true
 ) {
     Column(if (scrollable) modifier.verticalScroll(rememberScrollState()) else modifier) {
+        Spacer(Modifier.height(28.dp))
+        // The patient sees something: show it. A live mirror outranks a dial,
+        // because it is the only thing on this screen that can disagree with
+        // the scene you think you loaded.
+        SectionHead(title = "患者视野", note = "镜像来自状态帧")
+        Rule()
+        MirrorSlot(state = state, phase = phase)
         MonitorPanel(
             state = state,
             running = phase == SessionPhase.Running,
@@ -571,6 +569,7 @@ private fun SessionMain(
                 else -> "已运行"
             }
         )
+
         Spacer(Modifier.height(28.dp))
         // Same shape as every other block on the page: title, hairline, content
         // on the paper. No second white card inside the white panel.
@@ -596,43 +595,66 @@ private fun SessionMain(
  */
 private val MirrorHeight = 340.dp
 
-/** The patient's view, in a frame marked with the one cut corner. */
+/**
+ * The renderer: the patient's picture when there is one, a placeholder that
+ * says why when there is not.
+ *
+ * A session screen with an empty box is the old failure this replaces. The
+ * placeholder is paper, not an illustration and not an accent: "no picture" is
+ * information, not an alert.
+ */
 @Composable
-private fun MirrorPanel(state: ControlUiState, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        SectionHead(title = "患者视野", note = "镜像，只读")
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(MirrorHeight)
-                .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
-                .background(QuietPalette.Ink)
-        ) {
+private fun MirrorSlot(state: ControlUiState, phase: SessionPhase) {
+    val hasFrame = state.phase == BlePhase.READY && state.pose != null && !state.poseStale
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(MirrorHeight)
+            .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
+            .background(if (hasFrame) QuietPalette.Ink else QuietPalette.Board)
+    ) {
+        if (hasFrame) {
             com.quietshore.control.ui.components.MirrorView(
                 state = state,
                 modifier = Modifier.fillMaxSize()
             )
-            if (state.phase != BlePhase.READY) {
+        } else {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val title = if (phase == SessionPhase.Entry) "患者尚未进入场景" else "镜像未连接"
+                val note = if (phase == SessionPhase.Entry) {
+                    "头显在入口页，等待患者按压。"
+                } else {
+                    "头显未连接，或未收到状态帧。"
+                }
                 Text(
-                    text = "链路断开，镜像暂停。",
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = QuietPalette.Ink
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = note,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.Paper,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .background(QuietPalette.Ink)
-                        .padding(24.dp)
+                    color = QuietPalette.InkSecondary
                 )
             }
         }
     }
 }
 
+// ---------------------------------------------------------------------------
+// Link state
+// ---------------------------------------------------------------------------
+
 /**
- * Right: the four things that are live during a session, in the order the hand
- * reaches for them — scene, strength, voice, posture — then the end.
- *
- * Every key here acts on the running session. Anything that would only apply
- * *before* a session is not on this column.
+ * The link, when it needs saying: a banner above the content, never a dialog.
+ * Ice while it is a wait the operator can sit out; red never appears here —
+ * red belongs to a deletion.
  */
 @Composable
 private fun SessionActions(
@@ -642,7 +664,6 @@ private fun SessionActions(
     modifier: Modifier = Modifier,
     /** In the stacked layout the column takes its content height, not the screen's. */
     fill: Boolean = true,
-    onOpenMirror: () -> Unit = {}
 ) {
     val ready = state.phase == BlePhase.READY
     // During a session the scene is fixed: the page only accepts `scene:<id>`
@@ -651,6 +672,17 @@ private fun SessionActions(
     val scenesEnabled = false
     val level = state.control.floatLevel.coerceIn(0, 3)
     Column(modifier) {
+        // Keys that can grow live in a scroller so a taller type scale or a
+        // longer label can never push the stop out of reach; 结束 stays below
+        // it, pinned to the foot of the column.
+        Box(
+            Modifier.then(if (fill) Modifier.weight(1f) else Modifier)
+        ) {
+        Column(
+            Modifier.then(
+                if (fill) Modifier.fillMaxSize().verticalScroll(rememberScrollState()) else Modifier
+            )
+        ) {
         Panel(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp)) {
                 Text(
@@ -801,37 +833,39 @@ private fun SessionActions(
                         enabled = ready && state.caps.stop && phase.acceptsChanges
                     )
                 }
-                // Re-recording the start posture stays available mid-session,
-                // but at the secondary tier: a correction, not the thing the
-                // hand reaches for while the patient is moving. The word alone
-                // carries it — a sentence saying "re-record if it drifted"
-                // explains what the operator already knows.
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BarWordKey(
-                        label = "校准",
-                        onClick = actions.onRecalibrate,
-                        enabled = ready && phase == SessionPhase.Running
-                    )
-                }
             }
-            Rule()
-            // The patient's view lives here as one word: a cover opened on
-            // demand, never a permanent half of the session screen. No sentence
-            // in front of it — the label is the whole instruction.
-            Row(
-                modifier = Modifier
+        }
+        }
+        // The panels scroll under a fade: a row cut at the edge would read as a
+        // broken layout, the fade reads as "there is more".
+        if (fill) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BarWordKey(label = "患者视野", onClick = onOpenMirror)
-            }
+                    .height(40.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(QuietPalette.Board.copy(alpha = 0f), QuietPalette.Board)
+                        )
+                    )
+            )
+        }
+        }
+        // Corrections stay reachable without hunting: one row, outside the
+        // scroller, directly above the stop.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp, start = 20.dp, end = 20.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BarWordKey(
+                label = "校准",
+                onClick = actions.onRecalibrate,
+                enabled = ready && phase == SessionPhase.Running
+            )
         }
         Spacer(Modifier.height(16.dp))
         EndKey(

@@ -41,11 +41,7 @@ class MainActivity : ComponentActivity() {
                     ConsolePreview(
                         fixture = fixture,
                         batteryLevel = intent.getIntExtra("battery", -1)
-                            .takeIf { it in 0..100 },
-                        // `--ez mirror true` / `--ez pose true`: review the cover
-                        // and its empty state without a headset to feed it.
-                        openMirror = intent.getBooleanExtra("mirror", false),
-                        withPose = intent.getBooleanExtra("pose", false),
+                            .takeIf { it in 0..100 },                        withPose = intent.getBooleanExtra("pose", false),
                         withDrift = intent.getBooleanExtra("drift", false)
                     )
                 } else {

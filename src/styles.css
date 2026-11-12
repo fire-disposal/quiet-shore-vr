@@ -31,9 +31,11 @@
    * 字号阶梯：3 档，比例约 1.5–1.6。
    * copy 在 40→60（1024→1920）之间，两窗口都宽于最长指令 11 字，指令恒为一行。
    */
-  --fs-copy: clamp(40px, 4.5vw, 54px);
-  --fs-body: clamp(18px, 1.65vw, 24px);
-  --fs-label: clamp(13px, .95vw, 16px);
+  /* The headset's panel is 4K but the optics are not: nothing smaller than
+     18 px survives the lens, and the reader may not have good vision. */
+  --fs-copy: clamp(40px, 4.2vw, 52px);
+  --fs-body: clamp(24px, 2.1vw, 30px);
+  --fs-label: clamp(22px, 1.65vw, 26px);
 
   /*
    * 间距阶梯：4 档，比例 1.6，全部 clamp 在两个目标视口之间连续。
@@ -91,9 +93,12 @@ html, body {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  /* The sentence on the left, the drawing it describes on the right. Equal
+     columns: after the plumbing lines left, the drawing is what the page is
+     about, so it gets half the width and grows to use it. */
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   align-items: center;
-  gap: clamp(24px, 5vw, 88px);
+  gap: clamp(32px, 6vw, 120px);
   padding-block: var(--sp-3);
 }
 /* One column, three bands: the sentence, its supporting fact, then the two
@@ -157,6 +162,15 @@ html, body {
 /* The two entry gestures are the object of the instruction: as wide as the
    sentence's rule, so the picture reads as the diagram of that one button.
    Sized in em off --fs-body: one number scales both drawings. */
+/* The drawing column: the two ways to press, then the one fact about the
+   link. Stacked and centred so the eye lands on the pictures first. */
+.entry-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(20px, 3.2vh, 40px);
+  min-width: 0;
+}
 .entry-pictures {
   display: flex;
   align-items: center;
@@ -174,7 +188,7 @@ html, body {
    1024. One stroke width, one vertical extent — neither is a leftover. */
 .headset-guide { display: flex; }
 .headset-guide svg {
-  width: 8em;
+  width: 11em;
   height: auto;
   overflow: visible;
 }
@@ -237,6 +251,9 @@ html, body {
 .entry-state {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-1);
   margin: 0;
 }
@@ -276,7 +293,22 @@ html, body {
   flex: 0 0 auto;
   padding-top: var(--sp-2);
   border-top: 1px solid var(--line);
+  /* The footer sentence is read through the lens too, so it gets the label
+     tier instead of the browser's 16 px default. */
+  font-size: var(--fs-label);
+  line-height: 1.35;
 }
+.entry-battery {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+/* Below 15% and not charging: the one place the page raises its voice, and it
+   is the accent, not red — red belongs to the stop. */
+.entry-battery[data-low="true"] { color: var(--text); }
+
 .entry-note {
   margin: 0;
   color: var(--faint);

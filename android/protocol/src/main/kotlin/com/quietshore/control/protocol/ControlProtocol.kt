@@ -78,7 +78,15 @@ object ControlProtocol {
     /** Buoyancy intensity: `float:level:<0-3>` (0 = off). */
     const val FLOAT_LEVEL: String = "float:level:"
 
-    /** Scene switch: `scene:<id>`, only accepted before a session starts. */
+    /**
+     * Scene switch: `scene:<id>`, accepted before or during a session.
+     *
+     * Mid-session the page swaps content only (`App.switchSceneLive`): the
+     * calibration frame, view offset and buoyancy keep running, the intensity
+     * ceiling is clamped to the new scene, and a posture change rides the
+     * operator's usual ramp. Refused while the posture card is capturing and
+     * while a stop fade owns the world.
+     */
     const val SCENE_PREFIX: String = "scene:"
 
     /** Posture ramp length: `anim:duration:<4000-20000>` milliseconds. */

@@ -1,6 +1,6 @@
 {
   "name": "quiet-shore-vr",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "静岸沉浸式床边场景训练系统 — WebXR 床边场景训练（PICO G2 4K）",

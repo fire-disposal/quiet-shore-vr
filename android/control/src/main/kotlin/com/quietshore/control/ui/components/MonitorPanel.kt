@@ -99,7 +99,7 @@ fun MonitorPanel(
                     color = QuietPalette.InkSecondary
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Figure(
                     value = elapsed,
@@ -124,7 +124,7 @@ fun MonitorPanel(
                     modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             Meter(fraction = animated, active = running)
         }
     }
@@ -155,10 +155,12 @@ private fun Figure(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = value,
+                // A glance, not a wall of numerals: the clock answers "how long"
+                // at a glance, the other two are a check, not a reading.
                 style = if (primary) {
-                    MaterialTheme.typography.displayLarge
+                    MaterialTheme.typography.headlineLarge
                 } else {
-                    MaterialTheme.typography.displaySmall
+                    MaterialTheme.typography.headlineSmall
                 },
                 color = QuietPalette.Ink,
                 maxLines = 1

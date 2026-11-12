@@ -1,9 +1,9 @@
 package com.quietshore.control.ui.components
 
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.BatteryManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,18 +15,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.quietshore.control.model.Battery
 import com.quietshore.control.ui.theme.QuietPalette
+import com.quietshore.control.ui.theme.rememberMotionEnabled
 
 /**
  * Device charge, in the convention every battery indicator already uses.
@@ -38,12 +41,17 @@ import com.quietshore.control.ui.theme.QuietPalette
  * named this exception explicitly, so when a later pass "tightens the palette",
  * this file is the one that must be left alone.
  *
- * | charge   | colour   | meaning   |
- * | -------- | -------- | --------- |
- * | > 40 %   | green    | enough    |
- * | 20–40 %  | amber    | watch it  |
- * | ≤ 20 %   | red      | charge now|
- * | charging | green + 「充电」, no bolt icon |
+ * | charge   | colour   | meaning    |
+ * | -------- | -------- | ---------- |
+ * | > 40 %   | green    | enough     |
+ * | 20–40 %  | amber    | watch it   |
+ * | ≤ 20 %   | red      | charge now |
+ * | charging | green + a static hatch, and the word 「充电」; no bolt icon |
+ *
+ * Charging is a *state*, not an event, so it is drawn as one: a fixed 45°
+ * hatch over the green fill, not a loop. The only motion is the two the skill
+ * allows — a 280 ms mech retune when the number changes, and one 280 ms wipe
+ * when a cable goes in — and both stop when the system asks for less motion.
  */
 object BatteryInk {
     /** Enough. */
@@ -64,30 +72,94 @@ object BatteryInk {
     }
 }
 
-/** The bar's width is fixed so two readings never shift as percentages change. */
+/** Fixed track width so two readings never shift as percentages change. */
 private val BarWidth = 96.dp
 private val BarHeight = 6.dp
 
-/** A 6 dp rule under the reading: grey track, charge-coloured fill. */
+/** The one motion curve on this file: mech, short, no overshoot. */
+private val Mech = CubicBezierEasing(0.7f, 0f, 0.2f, 1f)
+private const val CHARGE_MS = 280
+
+/**
+ * The bar: grey track, coloured fill, and — while charging — the static hatch
+ * that says "energy is coming in" without a single frame of animation.
+ */
 @Composable
-private fun ChargeBar(level: Int, color: Color) {
+private fun ChargeBar(level: Int, color: Color, charging: Boolean) {
+    val enabled = rememberMotionEnabled()
+    val target = level.coerceIn(0, 100) / 100f
+    // A change of value retunes; it does not jump. Same curve in both states.
+    val fill by animateFloatAsState(
+        targetValue = target,
+        animationSpec = tween(if (enabled) CHARGE_MS else 0, easing = Mech),
+        label = "charge-fill"
+    )
+
+    // One wipe when the cable goes in, then still. A keyed Animatable restarts
+    // on the false→true edge and is left at rest afterwards.
+    val wipe = remember { Animatable(1f) }
+    var wasCharging by remember { mutableStateOf(charging) }
+    LaunchedEffect(charging) {
+        if (charging && !wasCharging && enabled) {
+            wipe.snapTo(0f)
+            wipe.animateTo(1f, tween(CHARGE_MS, easing = Mech))
+        } else {
+            wipe.snapTo(1f)
+        }
+        wasCharging = charging
+    }
+
     Box(
         Modifier
             .width(BarWidth)
             .height(BarHeight)
             .background(QuietPalette.Hairline)
+            .clipToBounds()
     ) {
         Box(
             Modifier
                 .height(BarHeight)
-                .width(BarWidth * level.coerceIn(0, 100) / 100f)
+                .width(BarWidth * fill)
                 .background(color)
+                .drawWithContent {
+                    drawContent()
+                    // Static 45° hatch: 1.5 dp lines every 9.2 dp. The skill's
+                    // "in progress" mark — and it costs nothing per frame,
+                    // because it never changes between frames.
+                    if (charging) {
+                        val step = 9.2.dp.toPx()
+                        val stroke = 1.5.dp.toPx()
+                        val light = Color.White.copy(alpha = 0.55f)
+                        var x = -size.height
+                        while (x < size.width + size.height) {
+                            drawLine(
+                                color = light,
+                                start = Offset(x, size.height),
+                                end = Offset(x + size.height, 0f),
+                                strokeWidth = stroke
+                            )
+                            x += step
+                        }
+                    }
+                }
+                // The wipe: one bright pass across the fill, then still.
+                .drawWithContent {
+                    drawContent()
+                    val edge = size.width * wipe.value
+                    if (edge > 0f && wipe.value < 1f) {
+                        drawRect(
+                            color = Color.White.copy(alpha = 0.35f),
+                            topLeft = Offset.Zero,
+                            size = Size(edge, size.height)
+                        )
+                    }
+                }
         )
     }
 }
 
 /**
- * One device's charge: name and percentage on the two ends of a fixed bar,
+ * One device's charge: name and percentage at the two ends of a fixed bar,
  * charging written as a word after the figure rather than as an icon.
  */
 @Composable
@@ -99,7 +171,7 @@ fun BatteryReading(
 ) {
     val known = level in 0..100
     val ink = if (known) BatteryInk.of(level, charging) else QuietPalette.InkSecondary
-    Column(modifier.defaultMinSize(minHeight = 48.dp)) {
+    Column(modifier.defaultMinSize(minHeight = 44.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = label,
@@ -123,41 +195,11 @@ fun BatteryReading(
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
-        ChargeBar(level = if (known) level else 0, color = ink)
-    }
-}
-
-/** The tablet's own charge, read from the sticky battery broadcast. */
-@Composable
-fun rememberTabletBattery(): Battery? {
-    val context = LocalContext.current
-    var reading by remember { mutableStateOf(readBattery(context)) }
-    DisposableEffect(context) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                readBattery(context)?.let { reading = it }
-            }
-        }
-        context.registerReceiver(
-            receiver,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        Spacer(Modifier.height(5.dp))
+        ChargeBar(
+            level = if (known) level else 0,
+            color = ink,
+            charging = charging && known
         )
-        onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
-    return reading
-}
-
-private fun readBattery(context: Context): Battery? {
-    val manager = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-        ?: return null
-    val level = manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-    if (level !in 0..100) return null
-    val status = context.registerReceiver(
-        null,
-        IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-    )?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-    val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-        status == BatteryManager.BATTERY_STATUS_FULL
-    return Battery(level = level, charging = charging)
 }

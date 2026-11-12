@@ -34,6 +34,12 @@ import { lyingEyeY, restMixOf } from '../core/anatomy';
 import { degrees, metres } from '../core/units';
 import { visualUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
+import {
+  recordSession,
+  readSummaries,
+  sessionStorageSafe,
+  type SessionSummary
+} from './session-log';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { planMotion, type MotionPlan } from './motion-plan';
 import { parseRemoteCommand } from './commands';
@@ -122,6 +128,8 @@ export class QuietShoreApp {
   private sceneRestMix: 0 | 1 = 0;
   /** Scenes are built once, off the critical path (see `preloadScenes`). */
   private scenesPreloaded = false;
+  /** The page's own ledger of finished sessions (see `session-log.ts`). */
+  private sessions: SessionSummary[] = [];
 
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
@@ -304,7 +312,8 @@ export class QuietShoreApp {
         this.world.isRising() ||
         isActive(this.lifecycle) ||
         this.viewMotion.getStateName() !== 'idle',
-      (status) => this.handleLinkStatus(status)
+      (status) => this.handleLinkStatus(status),
+      (level, charging) => this.start.setBattery(level, charging)
     );
     // View motion is a system capability: it owns the orientation, presets,
     // hold and reset. The sink adapter is the only place the patient-centric
@@ -420,6 +429,10 @@ export class QuietShoreApp {
         },
         /** Scenes built and waiting, so a switch cannot build on the frame. */
         parked: () => this.host.preloaded,
+        /** The last few finished sessions, newest last. */
+        sessions: () => readSummaries(sessionStorageSafe()),
+        /** In-memory copy from this page load (storage may be refused). */
+        sessionsThisLoad: () => this.sessions,
         /** Desktop check: load a scene in the 2D preview. */
         scene: (id: string) => {
           if (!this.previewing && !this.xr.isPresenting) {
@@ -700,7 +713,9 @@ export class QuietShoreApp {
 
   private async detectXR(): Promise<void> {
     if (!navigator.xr) {
-      this.start.setStatus(this.strings.noXR, 'error');
+      // No sentence: naming the browser is plumbing the operator cannot act on
+      // from here. The enter key simply stays closed.
+      this.start.setStatus('');
       this.start.setEnterEnabled(false);
       return;
     }
@@ -710,7 +725,7 @@ export class QuietShoreApp {
       if (supported) {
         this.start.setStatus('');
       } else {
-        this.start.setStatus(this.strings.xrUnsupported, 'error');
+        this.start.setStatus('');
       }
     } catch {
       this.start.setStatus(this.strings.xrFailed, 'error');
@@ -723,7 +738,6 @@ export class QuietShoreApp {
       return;
     }
     if (!navigator.xr) {
-      this.start.setStatus(this.strings.noXR, 'error');
       return;
     }
     this.enterPending = true;
@@ -806,6 +820,20 @@ export class QuietShoreApp {
     this.voice.stop();
     // Any stop — including one during calibration — takes the overlay with it.
     this.calibrationOverlay?.hide();
+    // A session that actually ran leaves one line behind, before the clock is
+    // cleared: the tablet only sees 1 Hz frames, and a dropped link would
+    // otherwise erase the only record of how long this lasted.
+    if (this.sessionStartedAt > 0) {
+      this.sessions = recordSession(sessionStorageSafe(), {
+        at: Date.now(),
+        scene: this.sceneId,
+        seconds: (performance.now() - this.sessionStartedAt) / 1000,
+        level: this.floating.getLevel(),
+        mix: this.world.state().mix,
+        stop: this.lifecycle.stopReason ?? 'unknown',
+        confidence: this.comfort?.isCalibrated() ? 100 : 0
+      });
+    }
     this.sessionStartedAt = 0;
     window.setTimeout(() => this.dispatch({ type: 'faded' }), STOP_FADE_MS);
   }
@@ -1554,7 +1582,9 @@ export class QuietShoreApp {
     this.linkOnline = status === 'open';
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.
-    this.start.setHint(status === 'open' ? '平板已连接' : '平板未连接，正在重连');
+    // Only the fact, and only when it matters. "正在重连" is the system
+    // narrating itself; the tablet either answers or it does not.
+    this.start.setHint(status === 'open' ? '' : '平板未连接');
     if (status === 'open' || !wasOnline) {
       return;
     }

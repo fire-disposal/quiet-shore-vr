@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,7 +43,10 @@ import com.quietshore.control.ui.theme.QuietPalette
 val CommandBarHeight = 88.dp
 
 /** Where the stop sits on the bar's second line, and how wide it is. */
-val StopWidth = 208.dp
+val StopWidth = 168.dp
+
+/** 48 dp still clears the touch target; 56 competed with the traffic in the bar. */
+val StopHeight = 48.dp
 
 /**
  * The top app bar — an app bar, not a web header.
@@ -76,7 +80,7 @@ fun CommandBar(
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
-    val tablet = rememberTabletBattery() ?: Battery(level = -1, charging = false)
+    val pad = com.quietshore.control.ui.rememberPadBattery()
 
     Column(
         modifier = modifier
@@ -120,21 +124,30 @@ fun CommandBar(
                 }
             }
 
-            // Two charges, side by side, in the device convention: headset
-            // first (it is the one on the patient), tablet second. A headset
-            // that has not reported yet shows a dash, never a 0 %.
-            BatteryReading(
-                label = "头显",
-                level = state.battery?.level ?: -1,
-                charging = state.battery?.charging ?: false
-            )
-            Spacer(Modifier.width(20.dp))
-            BatteryReading(
-                label = "平板",
-                level = tablet.level,
-                charging = tablet.charging
-            )
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.weight(1f))
+
+            // Both charges at the right, before the menu: they are telemetry
+            // about two devices, not part of the link label. Two bars, always
+            // in the same order, both named — in the battery convention
+            // (green / amber / red), which is deliberately outside the
+            // interface palette; see BatteryReading.
+            Column(
+                modifier = Modifier.width(168.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                BatteryReading(
+                    label = "头显",
+                    level = state.battery?.level ?: -1,
+                    charging = state.battery?.charging ?: false
+                )
+                BatteryReading(
+                    label = "平板",
+                    level = pad?.level ?: -1,
+                    charging = pad?.charging ?: false
+                )
+            }
+            Spacer(Modifier.width(16.dp))
 
             OverflowMenu(
                 connected = connected,
@@ -276,7 +289,7 @@ private fun StopKey(enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .width(StopWidth)
-            .height(56.dp)
+            .height(StopHeight)
             .clip(shape)
             .background(if (enabled) QuietPalette.Danger else QuietPalette.Board)
             // Disabled keeps its silhouette: a red hairline and second ink, so

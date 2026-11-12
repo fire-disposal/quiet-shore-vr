@@ -139,23 +139,21 @@ fun SceneCardView(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (showBlurb) {
+        if (showBlurb || playing) {
             Spacer(Modifier.height(6.dp))
+            // One line of supporting text, never two blocks: when the headset
+            // is playing this scene, that fact replaces the blurb — the chosen
+            // scene's description is the least useful thing on the card then.
             Text(
-                text = scene.blurb.ifEmpty { " " },
+                text = when {
+                    playing -> "头显正在播放"
+                    showBlurb -> scene.blurb.ifEmpty { " " }
+                    else -> " "
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.InkSecondary,
+                color = if (playing) QuietPalette.Ink else QuietPalette.InkSecondary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (playing) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "头显正在播放",
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.Ink,
-                maxLines = 1
             )
         }
     }
