@@ -229,7 +229,7 @@ fun BatteryField(
 }
 
 /** Height of one charge bar. Tall enough to hold its own words centred. */
-private val ChargeBarHeight = 28.dp
+private val ChargeBarHeight = 26.dp
 
 /** One bracketed word at the right end: `[低电量]`, `[充电中]`. Ink only. */
 @Composable
