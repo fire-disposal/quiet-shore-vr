@@ -73,6 +73,7 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/rotation-contract.md](docs/rotation-contract.md) — 姿态角度契约与 state 编解码
 - [docs/state-v11.md](docs/state-v11.md) — state 帧的字段定义与协议推演（当前实现见 `ControlProtocol.encodeState`，v12 40 字节）
 - [docs/pico-g2.md](docs/pico-g2.md) — PICO G2 4K 硬件能力与踩坑记录
+- [docs/v2-architecture.md](docs/v2-architecture.md) — v2 代码架构：先删后加的四项结构性欠账与它们的顺序
 - [docs/v2-roadmap.md](docs/v2-roadmap.md) — v2 路线：场景流程加长（阶段时间线）、场景质量、会话中切换的依赖顺序
 - [docs/scene-switch.md](docs/scene-switch.md) — 会话中切换场景：现状（已能跑）与重设计要定的事
 - [docs/releases.md](docs/releases.md) — 发布归档：v1.0.0 是旧界面的收尾（含校验值），界面重做后进入 v2.0
