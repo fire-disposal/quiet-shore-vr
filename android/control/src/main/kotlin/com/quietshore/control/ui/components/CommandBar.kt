@@ -41,7 +41,10 @@ import com.quietshore.control.ui.theme.QuietPalette
 val CommandBarHeight = 88.dp
 
 /** Where the stop sits on the bar's second line, and how wide it is. */
-val StopWidth = 208.dp
+val StopWidth = 168.dp
+
+/** 48 dp still clears the touch target; 56 competed with the traffic in the bar. */
+val StopHeight = 48.dp
 
 /**
  * The top app bar — an app bar, not a web header.
@@ -267,7 +270,7 @@ private fun StopKey(enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .width(StopWidth)
-            .height(56.dp)
+            .height(StopHeight)
             .clip(shape)
             .background(if (enabled) QuietPalette.Danger else QuietPalette.Board)
             // Disabled keeps its silhouette: a red hairline and second ink, so

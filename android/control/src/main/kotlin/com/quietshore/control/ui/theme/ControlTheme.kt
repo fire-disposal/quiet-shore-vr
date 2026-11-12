@@ -65,7 +65,14 @@ object QuietPalette {
     val OnIce = Color(0xFF161616)
 
     /** The stop, and the confirm on an irreversible exit. */
-    val Danger = Color(0xFFA2261C)
+    /**
+     * The stop's red: bright, not dark. A stop here is not a red-alert action —
+     * the patient can say stop at any time and the operator's hand is on the
+     * tablet — so the key earns attention by being the only red on the page,
+     * not by being a slab of maroon. White type on #E53935 clears the 3:1 bar
+     * for bold ≥16 sp, which is why the label stays white and semibold.
+     */
+    val Danger = Color(0xFFE53935)
 
     // Names the earlier bar used; kept as aliases so call sites read the same
     // way they did when the bar was dark.
