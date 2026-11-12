@@ -8,7 +8,7 @@ import {
 } from '../core/xr/comfort';
 import type { HeadPose, XRManagerLike } from '../core/xr/types';
 import { SceneHost } from '../core/scene/host';
-import type { SceneHandle } from '../core/scene/contract';
+import type { SceneDefinition, SceneHandle } from '../core/scene/contract';
 import { getSceneDefinition, SCENE, SCENES } from '../scenes/registry';
 import { FramePipeline } from '../core/geometry/pipeline';
 import { SpatialInput } from '../ui/spatial/input';
@@ -120,6 +120,8 @@ export class QuietShoreApp {
   private sceneLyingEyeY = 0;
   /** Correction the loaded scene rests in (0 supine, 1 standing). */
   private sceneRestMix: 0 | 1 = 0;
+  /** Scenes are built once, off the critical path (see `preloadScenes`). */
+  private scenesPreloaded = false;
 
   private handle: SceneHandle | null = null;
   private comfort: ComfortApi | null = null;
@@ -399,6 +401,14 @@ export class QuietShoreApp {
     this.started = true;
     this.lastFrame = 0;
     this.link.start();
+    // Building all four scenes takes a few milliseconds each; do it while the
+    // entry screen is up so a later switch cannot hitch a frame.
+    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
+    if (typeof idle === 'function') {
+      idle(() => this.preloadScenes(), { timeout: 3000 });
+    } else {
+      window.setTimeout(() => this.preloadScenes(), 1200);
+    }
     // Cues are shipped with the page; a missing manifest leaves voice off, and
     // the entry screen says so instead of failing silently.
     if (typeof location !== 'undefined' && location.search.includes('debug')) {
@@ -596,6 +606,53 @@ export class QuietShoreApp {
     });
   }
 
+  /**
+   * The state a scene brings with it: its comfort ceiling, its two eye heights
+   * and the correction it rests in. One writer, so a scene loaded by any path
+   * (startup, operator command, live switch) lands in the same shape.
+   */
+  private applySceneDefinition(definition: SceneDefinition): void {
+    // Placement comes from the scene's `posture`: the lying height is derived
+    // by `core/anatomy.ts`, the standing height is the operator's setting (the
+    // art's own number is the fallback), and `world.apply()` — driven by mix —
+    // interpolates between them.
+    this.sceneComfortLevel = definition.comfortLevel ?? FLOAT_MAX_LEVEL;
+    this.sceneLyingEyeY = lyingEyeY(definition.posture);
+    this.sceneRestMix = restMixOf(definition.posture);
+    this.world.setScene({
+      lyingEyeY: this.sceneLyingEyeY,
+      standingEyeY: this.eyeHeight,
+      restMix: this.sceneRestMix
+    });
+    this.world.apply();
+    preloadSceneAudio(definition.audio);
+    this.start.setScene(
+      definition.name[this.config.lang],
+      SCENES.indexOf(definition) + 1,
+      SCENES.length
+    );
+  }
+
+  /**
+   * Build every scene once, while the page is idle.
+   *
+   * The operator may change scene mid-session; `build()` on the render thread
+   * is a guaranteed hitch (canvas textures, budgets, instancing). Preloading
+   * costs a few milliseconds of idle time and makes every switch a pointer
+   * swap.
+   */
+  private preloadScenes(): void {
+    if (this.scenesPreloaded) {
+      return;
+    }
+    this.scenesPreloaded = true;
+    for (const definition of SCENES) {
+      if (definition.id !== this.sceneId) {
+        this.host.preload(definition);
+      }
+    }
+  }
+
   private loadScene(): void {
     this.disposeScene();
     const definition = getSceneDefinition(this.sceneId) ?? SCENE;
@@ -611,19 +668,7 @@ export class QuietShoreApp {
       viewToWorld(this.viewMotion.getLookYawDeg(), this.viewMotion.getUpGazeDeg())
     );
     this.world.clearBase();
-    // Placement comes from the scene's `posture`: the lying height is derived
-    // by `core/anatomy.ts`, the standing height is the operator's setting (the
-    // art's own number is the fallback), and `world.apply()` — driven by mix —
-    // interpolates between them.
-    this.sceneComfortLevel = definition.comfortLevel ?? FLOAT_MAX_LEVEL;
-    this.sceneLyingEyeY = lyingEyeY(definition.posture);
-    this.sceneRestMix = restMixOf(definition.posture);
-    this.world.setScene({
-      lyingEyeY: this.sceneLyingEyeY,
-      standingEyeY: this.eyeHeight,
-      restMix: this.sceneRestMix
-    });
-    this.world.apply();
+    this.applySceneDefinition(definition);
     this.floating.reset();
     // The preview starts where the patient starts: lying on their back, looking
     // up. A level preview shows the *room's* underside (a urinal bowl from
@@ -924,11 +969,17 @@ export class QuietShoreApp {
       this.start.setStatus('未知场景', 'error');
       return;
     }
-    if (this.session) {
-      this.start.setStatus('训练中不可切换场景', 'error');
+    if (this.capturePending) {
+      // The card is teaching the patient to hold still; a world swap under it
+      // would undo that.
+      this.start.setStatus('记录体位时无法切换场景', 'error');
       return;
     }
     if (definition.id === this.sceneId && this.handle) {
+      return;
+    }
+    if (this.session && this.handle) {
+      this.switchSceneLive(definition);
       return;
     }
     this.sceneId = definition.id;
@@ -938,6 +989,34 @@ export class QuietShoreApp {
       this.start.showStage();
     }
     this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
+    this.link.sendStateNow();
+    this.updateHud(performance.now());
+  }
+
+  /**
+   * Change scene inside a running session.
+   *
+   * Only the content moves: the calibration frame, the view offset and the
+   * buoyancy keep running, so the patient never loses their place or has to be
+   * re-aimed. A scene whose art is drawn for a different posture changes the
+   * rest correction — that lands as the operator's usual ramp, never as a snap,
+   * because a 90° world rotation between two frames is the one thing a supine
+   * patient cannot brace for.
+   */
+  private switchSceneLive(definition: SceneDefinition): void {
+    const previousLevel = this.floating.getLevel();
+    this.stopSceneAudio();
+    this.handle = this.host.load(definition, { keepPrevious: true });
+    this.sceneId = definition.id;
+    this.applySceneDefinition(definition);
+    // A scene with a lower comfort ceiling must not inherit a higher level.
+    this.floating.setLevel(previousLevel, this.sceneComfortLevel);
+    this.floating.reset();
+    if (this.world.state().ready && this.world.state().mix !== this.sceneRestMix) {
+      this.world.rise(this.sceneRestMix);
+    }
+    this.startSceneAudio();
+    this.start.setStatus(`已切换：${definition.name[this.config.lang]}`, 'ok');
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
