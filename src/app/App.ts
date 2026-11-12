@@ -140,6 +140,8 @@ export class QuietShoreApp {
   private sceneLyingEyeY = 0;
   /** Correction the loaded scene rests in (0 supine, 1 standing). */
   private sceneRestMix: 0 | 1 = 0;
+  /** How much of the frame's buoyancy this scene wants as a heave, 0..1. */
+  private sceneHeaveScale = 0;
   /** Scenes are built once, off the critical path (see `preloadScenes`). */
   private scenesPreloaded = false;
   /** The page's own ledger of finished sessions (see `session-log.ts`). */
@@ -284,9 +286,9 @@ export class QuietShoreApp {
         return visualUpInContent(this.headPose.quaternion, this.parentQuaternion, out);
       },
       level: this.config.floatLevel,
-      // The big heave is the lake's 飘浮; the other scenes keep the breath
-      // swell only, so a tiled room or the shaft never sways like water.
-      heaveScale: () => (this.sceneId === 'shore' ? 1 : 0)
+      // The scene declares how much of the frame's buoyancy it wants as a
+      // heave; the app no longer keys on an id.
+      heaveScale: () => this.sceneHeaveScale
     });
     // The base pose owner sits on top of buoyancy: it decides which frame poses
     // the world and hands the frame's offset to the buoyancy module.
@@ -649,6 +651,7 @@ export class QuietShoreApp {
     // art's own number is the fallback), and `world.apply()` — driven by mix —
     // interpolates between them.
     this.sceneComfortLevel = definition.comfortLevel ?? FLOAT_MAX_LEVEL;
+    this.sceneHeaveScale = definition.heaveScale ?? 0;
     this.sceneLyingEyeY = lyingEyeY(definition.posture);
     this.sceneRestMix = restMixOf(definition.posture);
     this.world.setScene({

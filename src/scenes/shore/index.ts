@@ -54,6 +54,8 @@ const FOG_FAR = 135;
 export const shoreScene = defineScene(
   {
     id: 'shore',
+    // The lake is the one scene where the body should drift with the water.
+    heaveScale: 1,
     name: { zh: '仰望湖面', en: 'Looking Up at the Lake' },
     tagline: {
       zh: '云慢慢走，水面一点点亮起来，呼吸跟着慢下来。',

@@ -38,7 +38,7 @@ export interface SceneBuild {
  * scene). The lying height is derived from that statement, never passed in.
  */
 export function defineScene(
-  summary: SceneSummary & { comfortLevel?: number },
+  summary: SceneSummary & { comfortLevel?: number; heaveScale?: number },
   posture: ScenePosture,
   build: () => SceneBuild
 ): SceneDefinition {
@@ -46,6 +46,7 @@ export function defineScene(
     ...summary,
     posture,
     comfortLevel: summary.comfortLevel,
+    heaveScale: summary.heaveScale,
     build(): SceneHandle {
       const parts = build();
       const stats = measureObject(parts.root);
