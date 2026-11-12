@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.ui.theme.QuietPalette
 
@@ -75,6 +76,7 @@ fun CommandBar(
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
+    val tablet = rememberTabletBattery() ?: Battery(level = -1, charging = false)
 
     Column(
         modifier = modifier
@@ -115,17 +117,24 @@ fun CommandBar(
                             maxLines = 1
                         )
                     }
-                    if (state.battery != null) {
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = "电量 ${state.battery.level}%",
-                            style = MaterialTheme.typography.bodyMedium.tabularFigures(),
-                            color = if (state.battery.low) QuietPalette.Ink else QuietPalette.InkSecondary,
-                            maxLines = 1
-                        )
-                    }
                 }
             }
+
+            // Two charges, side by side, in the device convention: headset
+            // first (it is the one on the patient), tablet second. A headset
+            // that has not reported yet shows a dash, never a 0 %.
+            BatteryReading(
+                label = "头显",
+                level = state.battery?.level ?: -1,
+                charging = state.battery?.charging ?: false
+            )
+            Spacer(Modifier.width(20.dp))
+            BatteryReading(
+                label = "平板",
+                level = tablet.level,
+                charging = tablet.charging
+            )
+            Spacer(Modifier.width(24.dp))
 
             OverflowMenu(
                 connected = connected,
