@@ -40,6 +40,7 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.ScannedHeadset
 import com.quietshore.control.ui.components.Panel
+import com.quietshore.control.ui.components.RailRule
 import com.quietshore.control.ui.components.Rule
 import com.quietshore.control.ui.components.SectionHead
 import com.quietshore.control.ui.theme.QuietPalette
@@ -81,23 +82,28 @@ fun InitialPanel(
 
         if (wide) {
             Row(
-                Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section),
+                Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.Top
             ) {
+                // Flush left, like the guidance app's rail: the tab column is
+                // chrome, not a card floating inside the page.
                 InitialRail(
                     current = tab,
                     onSelect = { tab = it },
                     modifier = Modifier.fillMaxHeight()
                 )
+                RailRule()
                 Column(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
-                        .padding(top = 24.dp, end = 8.dp, bottom = QuietSpace.Page)
+                        .padding(
+                            start = QuietSpace.Page,
+                            end = QuietSpace.Section,
+                            top = 24.dp,
+                            bottom = QuietSpace.Page
+                        )
                 ) {
                     TabBody(tab)
                 }
@@ -107,7 +113,9 @@ fun InitialPanel(
                     onScan = onScan,
                     onStopScan = onStopScan,
                     onConnect = onConnect,
-                    modifier = Modifier.width(500.dp).padding(top = 24.dp)
+                    modifier = Modifier
+                        .width(500.dp)
+                        .padding(top = 24.dp, end = QuietSpace.Page)
                 )
             }
         } else {
