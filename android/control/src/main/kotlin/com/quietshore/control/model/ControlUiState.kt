@@ -42,6 +42,16 @@ enum class MirrorMode(val label: String) {
  * not outlast the exercise — so that is the only state that gets a mark, and it
  * gets ice, not red: nothing is broken, something needs charging.
  */
+/**
+ * One headset heard during a scan. The list is the only place a link can
+ * start: the operator picks, the app never guesses.
+ */
+data class ScannedHeadset(
+    val name: String,
+    val address: String,
+    val rssi: Int
+)
+
 data class Battery(val level: Int, val charging: Boolean) {
     val low: Boolean get() = level <= 20
     val full: Boolean get() = charging && level >= 100
@@ -122,7 +132,10 @@ data class ControlUiState(
     /** Capabilities reported by the headset's motion plan. */
     val caps: MotionCaps = MotionCaps(),
     /** Headset battery from its `flags` document; null until it is read. */
-    val battery: Battery? = null
+    val battery: Battery? = null,
+
+    /** Headsets advertised since the scan started, newest first. */
+    val scanResults: List<ScannedHeadset> = emptyList()
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 

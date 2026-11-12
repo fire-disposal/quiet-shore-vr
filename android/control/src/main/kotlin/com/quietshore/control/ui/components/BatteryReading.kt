@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -28,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ui.theme.QuietPalette
@@ -85,126 +87,92 @@ object BatteryInk {
     }
 }
 
-/** The one motion curve outside the sweep: mech, short, no overshoot. */
-private val Mech = CubicBezierEasing(0.7f, 0f, 0.2f, 1f)
-private const val TUNE_MS = 280
-
-/** Sweep: 1 s of travel, 1.4 s of rest, so one period is about 2.4 s. */
-private const val SWEEP_MS = 1000
-private const val HOLD_MS = 1400
-private const val BAND_DP = 24
-
 /**
- * One battery as a single bar: the label sits inside at the left end, the
- * figure inside at the right end, and the fill underneath *is* the reading —
- * there is no second column of text beside it.
+ * One bracketed word at the right end: `[低电量]`, `[充电中]`.
  *
- * [animateCharge] turns on the pad's sweep. It is a parameter rather than a
- * guess from [label], because the reason is about the device: the headset is
- * busy rendering Web3D and must not be asked to run our animation clock.
+ * Square, monospaced figures, never pressable — it is a state printed on the
+ * line, not a control, so it takes no shape and no cut corner.
  */
 @Composable
-fun BatteryBar(
-    label: String,
-    level: Int,
-    charging: Boolean,
-    modifier: Modifier = Modifier,
-    animateCharge: Boolean = false
-) {
-    val known = level in 0..100
-    val ink = if (known) BatteryInk.of(level, charging) else QuietPalette.InkSecondary
-    val fraction = if (known) level.coerceIn(0, 100) / 100f else 0f
-    val motion = rememberMotionEnabled()
-
-    // A change of charge retunes rather than jumping; same curve everywhere.
-    val fill by animateFloatAsState(
-        targetValue = fraction,
-        animationSpec = tween(if (motion) TUNE_MS else 0, easing = Mech),
-        label = "charge-fill"
+private fun ChargeTag(label: String, ink: Color) {
+    Text(
+        text = "[$label]",
+        style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+        color = ink,
+        maxLines = 1
     )
+}
 
-    // The sweep runs only while there is room left to fill: a full battery is
-    // not receiving anything, and a bar that keeps moving at 100 % would be
-    // the decorative loop the skill rules out.
-    val sweeping = animateCharge && charging && known && level < 100 && motion
-    val phase = if (sweeping) {
-        val transition = rememberInfiniteTransition(label = "charge-sweep")
-        transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(SWEEP_MS + HOLD_MS, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "charge-phase"
-        ).value
-    } else {
-        0f
-    }
+/** Colours, and nothing else: the bars are gone. */
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(if (animateCharge) 24.dp else 22.dp)
-            .background(QuietPalette.Hairline)
-            .clipToBounds()
-    ) {
-        val barWidth = maxWidth
-        val filled = barWidth * fill
-        // Track, then fill drawn with the sweep inside it. `drawBehind` keeps
-        // this to one rect per frame and allocates nothing else.
-        Box(
-            Modifier
-                .fillMaxHeight()
-                .width(filled)
-                .background(ink)
-                .drawBehind {
-                    if (!sweeping) return@drawBehind
-                    // 0 → 1 covers travel then hold: the band is on screen only
-                    // during the first 1000 ms of the 2400 ms period.
-                    val travel = (phase * (SWEEP_MS + HOLD_MS) / SWEEP_MS)
-                    if (travel > 1f) return@drawBehind
-                    val bandPx = BAND_DP.dp.toPx()
-                    val x = -bandPx + travel * (size.width + bandPx)
-                    val bright = lerp(ink, Color.White, 0.55f)
-                    drawRect(
-                        color = bright,
-                        topLeft = Offset(x, 0f),
-                        size = androidx.compose.ui.geometry.Size(bandPx, size.height)
-                    )
-                }
+/** One line: `//头显电量:48.9%` or `//头显未连接`. */
+private const val PREFIX = "//"
+
+/**
+ * The charge as a field, not a bar.
+ *
+ * ```text
+ *   //头显电量:48.9%
+ *   //平板电量:23.0% 充电
+ * ```
+ *
+ * The `//` is the console's field prefix: it says "this is telemetry", the
+ * same way a route reads `//STATE`. The figure is the only coloured part —
+ * green above 40 %, amber 20–40 %, red at or below 20 % — in the device
+ * convention rather than the interface palette. Charging adds a word and
+ * changes no colour, because a 12 % pad on a loose cable is still a 12 % pad.
+ * No data is written out in words (`//头显未连接`) instead of drawing an empty
+ * bar or a dash that could be read as zero.
+ */
+@Composable
+fun BatteryField(
+    label: String,
+    level: Int?,
+    charging: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val known = level != null && level in 0..100
+    val ink = if (known) BatteryInk.of(level!!, charging) else QuietPalette.InkSecondary
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = PREFIX,
+            style = MaterialTheme.typography.bodyMedium,
+            color = QuietPalette.InkSecondary,
+            maxLines = 1
         )
-
-        // The label sits over the fill and takes reverse ink; the figure sits
-        // at the far end, over the empty track, and takes ink. Both are inside
-        // the bar: there is no text column beside it.
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Text(
+            text = "${label}电量:",
+            style = MaterialTheme.typography.bodyMedium,
+            color = QuietPalette.InkSecondary,
+            maxLines = 1
+        )
+        if (known) {
             Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (fill > 0.10f) QuietPalette.Paper else QuietPalette.Ink,
+                text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
+                style = MaterialTheme.typography.bodyMedium.tabularFigures(),
+                color = ink,
                 maxLines = 1
             )
             Spacer(Modifier.weight(1f))
+            // The state tags sit at the right end, so the reading stays a
+            // reading and the state is one word in brackets. Order is fixed:
+            // low charge first, then charging.
+            if (level <= 20) {
+                ChargeTag(label = "低电量", ink = BatteryInk.ChargeNow)
+            }
+            if (charging && level < 100) {
+                if (level <= 20) Spacer(Modifier.width(8.dp))
+                ChargeTag(label = "充电中", ink = BatteryInk.Enough)
+            }
+        } else {
+            // No number at all: "未连接" is a state, a dash is an empty gauge.
+            Spacer(Modifier.weight(1f))
             Text(
-                text = if (known) "${level.coerceIn(0, 100)}%" else "—",
-                style = MaterialTheme.typography.labelMedium.tabularFigures(),
-                color = QuietPalette.Ink,
+                text = "未连接",
+                style = MaterialTheme.typography.bodyMedium,
+                color = QuietPalette.InkSecondary,
                 maxLines = 1
             )
-            if (charging && known) {
-                Text(
-                    text = " 充电",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = QuietPalette.Ink,
-                    maxLines = 1
-                )
-            }
         }
     }
 }

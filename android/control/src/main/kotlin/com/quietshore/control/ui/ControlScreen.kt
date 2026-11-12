@@ -125,8 +125,7 @@ fun ControlScreen(
                 onOpenInfo = onOpenInfo,
                 onDisconnect = actions.onDisconnect,
                 onExitScene = actions.onExitScene,
-                onExitSystem = actions.onExitSystem,
-                onEmergencyStop = actions.onEmergencyStop
+                onExitSystem = actions.onExitSystem
             )
             LinkBanners(state = state, event = event, actions = actions)
 
@@ -211,7 +210,7 @@ private fun SessionPage(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(QuietSpace.Section)
         ) {
-            SessionMain(state = state, phase = phase)
+            SessionMain(state = state, actions = actions, phase = phase)
             SessionColumn(
                 state = state,
                 actions = actions,
@@ -229,7 +228,7 @@ private fun SessionPage(
         horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
     ) {
         Box(Modifier.weight(1f).fillMaxHeight()) {
-            SessionMain(state = state, phase = phase)
+            SessionMain(state = state, actions = actions, phase = phase)
         }
         SessionColumn(
             state = state,
@@ -247,13 +246,17 @@ private fun SessionPage(
 @Composable
 private fun SessionMain(
     state: ControlUiState,
+    actions: ControlActions,
     phase: SessionPhase,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState())) {
-        SectionHead(title = "患者视野", note = "镜像来自状态帧")
-        Rule()
-        MirrorSlot(state = state, phase = phase)
+        MirrorSlot(
+            state = state,
+            phase = phase,
+            onModeChange = actions.onMirrorModeChange
+        )
+        Spacer(Modifier.height(16.dp))
         SessionReadout(state = state, phase = phase)
         Spacer(Modifier.height(28.dp))
         SectionHead(title = "患者当前姿态", note = "只读")
@@ -292,39 +295,35 @@ private fun SessionColumn(
     Column(modifier) {
         Column(
             Modifier.then(
-                if (fill) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier
+                if (fill) {
+                    Modifier.weight(1f).verticalScroll(rememberScrollState())
+                } else {
+                    Modifier
+                }
             )
         ) {
             Panel(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "场景",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = QuietPalette.InkSecondary
-                        )
-                        Spacer(Modifier.weight(1f))
-                        // The full cards, with blurbs, live on the scene page;
-                        // this column is two rows of two names.
-                        BarWordKey(label = "全部场景", onClick = onOpenScene)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        for (row in listOf(0, 2)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                for (scene in com.quietshore.control.model.SceneCatalog.ALL
-                                    .drop(row).take(2)) {
-                                    SceneCardView(
-                                        scene = scene,
-                                        current = scene.id == selectedScene,
-                                        enabled = scenesEnabled,
-                                        onSelect = actions.onSceneSelect,
-                                        modifier = Modifier.weight(1f),
-                                        showBlurb = false,
-                                        playing = scene.id == state.control.scene
-                                    )
-                                }
-                            }
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        text = "场景",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = QuietPalette.InkSecondary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    // One row of four names: the descriptions and the rise
+                    // length live on the scene page, and the tab bar reaches
+                    // it. A second entry point here costs height the four
+                    // live blocks below need.
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (scene in com.quietshore.control.model.SceneCatalog.ALL) {
+                            SceneCardView(
+                                scene = scene,
+                                current = scene.id == selectedScene,
+                                enabled = scenesEnabled,
+                                onSelect = actions.onSceneSelect,
+                                modifier = Modifier.weight(1f),
+                                showBlurb = false
+                            )
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -340,7 +339,7 @@ private fun SessionColumn(
                 }
                 Rule()
                 Row(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -367,7 +366,7 @@ private fun SessionColumn(
                 }
                 Rule()
                 Row(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -401,22 +400,15 @@ private fun SessionColumn(
                         enabled = ready && phase.acceptsChanges,
                         height = TouchTarget
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Key(
-                        label = "全部语音",
-                        onClick = onOpenVoice,
-                        enabled = ready && phase.acceptsChanges,
-                        height = TouchTarget
-                    )
                 }
                 Rule()
-                Column(Modifier.padding(20.dp)) {
+                Column(Modifier.padding(16.dp)) {
                     Text(
                         text = "体位",
                         style = MaterialTheme.typography.titleSmall,
                         color = QuietPalette.Ink
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     // Recording the posture freezes every motion channel: the
                     // page is measuring where the body is, so moving it would
                     // record the movement instead. Only the stop stays live.

@@ -15,9 +15,15 @@ import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ble.BlePhase
@@ -36,7 +42,7 @@ import com.quietshore.control.ui.theme.QuietPalette
  * itself to its content, and a mirror that shrank with the window would leave
  * the gauges floating in a gap.
  */
-val MirrorHeight = 340.dp
+val MirrorHeight = 300.dp
 
 /**
  * The renderer: the patient's picture when there is one, a placeholder that
@@ -50,42 +56,86 @@ val MirrorHeight = 340.dp
 fun MirrorSlot(
     state: ControlUiState,
     phase: SessionPhase,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The camera the mirror is using, and the way to change it. */
+    onModeChange: ((com.quietshore.control.model.MirrorMode) -> Unit)? = null
 ) {
     val hasFrame = state.phase == BlePhase.READY && state.pose != null && !state.poseStale
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(MirrorHeight)
-            .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
-            .background(if (hasFrame) QuietPalette.Ink else QuietPalette.Board)
-    ) {
-        if (hasFrame) {
-            MirrorView(state = state, modifier = Modifier.fillMaxSize())
-        } else {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val title = if (phase == SessionPhase.Entry) "患者尚未进入场景" else "镜像未连接"
-                val note = if (phase == SessionPhase.Entry) {
-                    "头显在入口页，等待患者按压。"
-                } else {
-                    "头显未连接，或未收到状态帧。"
+    // A WebView that has been told to load but has not finished is a black
+    // rectangle for a second or two. That second is not allowed to look like a
+    // failure, so the placeholder stays up until the page says it can draw.
+    var loaded by remember(state.mirrorMode) { mutableStateOf(false) }
+
+    Column(modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionHead(
+                title = "患者视野",
+                note = "镜像来自状态帧",
+                modifier = Modifier.weight(1f)
+            )
+            // The two cameras, inline: selection is an outline, never a fill.
+            // No second layer to open — the picture is already here.
+            if (onModeChange != null && hasFrame) {
+                for (mode in com.quietshore.control.model.MirrorMode.entries) {
+                    Key(
+                        label = mode.label,
+                        onClick = { onModeChange(mode) },
+                        kind = if (state.mirrorMode == mode) KeyKind.Selected else KeyKind.Outline,
+                        height = 48.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
                 }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = QuietPalette.Ink
+            }
+        }
+        Rule()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(MirrorHeight)
+                .padding(top = 12.dp)
+                .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
+                .background(if (hasFrame && loaded) QuietPalette.Ink else QuietPalette.Board)
+        ) {
+            if (hasFrame) {
+                MirrorView(
+                    state = state,
+                    modifier = Modifier.fillMaxSize(),
+                    onLoadedChange = { loaded = it }
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = note,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.InkSecondary
-                )
+            }
+            // Once the link is live, the picture is the only thing worth
+            // showing: the page can paint before onPageFinished reports, so a
+            // placeholder keyed on the load callback would sit on top of a
+            // working picture.
+            if (!hasFrame) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val title = when {
+                        !hasFrame && phase == SessionPhase.Entry -> "患者尚未进入场景"
+                        !hasFrame -> "镜像未连接"
+                        else -> "正在载入镜像"
+                    }
+                    val note = when {
+                        !hasFrame && phase == SessionPhase.Entry -> "头显在入口页，等待患者按压。"
+                        !hasFrame -> "头显未连接，或未收到状态帧。"
+                        else -> "画面就绪后自动替换。"
+                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = QuietPalette.Ink
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = note,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = QuietPalette.InkSecondary
+                    )
+                }
             }
         }
     }

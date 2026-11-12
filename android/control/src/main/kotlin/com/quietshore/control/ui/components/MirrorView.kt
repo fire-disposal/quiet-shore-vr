@@ -32,7 +32,9 @@ import org.json.JSONObject
 @Composable
 fun MirrorView(
     state: ControlUiState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Called true once the page has finished loading and can draw. */
+    onLoadedChange: (Boolean) -> Unit = {}
 ) {
     val webView = remember { mutableStateOf<WebView?>(null) }
     val latest by rememberUpdatedState(state)
@@ -130,6 +132,7 @@ fun MirrorView(
                     webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageFinished(view: android.webkit.WebView, url: String) {
                             fixHost()
+                            onLoadedChange(true)
                         }
                     }
                     settings.mediaPlaybackRequiresUserGesture = true

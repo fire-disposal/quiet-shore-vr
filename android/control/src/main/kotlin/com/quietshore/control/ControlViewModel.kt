@@ -13,6 +13,7 @@ import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.MirrorMode
+import com.quietshore.control.model.ScannedHeadset
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.data.SusStore
 import com.quietshore.control.protocol.ControlState
@@ -137,6 +138,7 @@ class ControlViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 scanAttempted = true,
+                scanResults = emptyList(),
                 reconnectAttempt = 0,
                 reconnectMax = 0
             )
@@ -727,6 +729,18 @@ class ControlViewModel(application: Application) :
         // shows a panel of disabled controls with no explanation.
         if (code != 0 || mtu < MIN_STATE_MTU) {
             error("蓝牙包长不足（MTU $mtu），头显状态可能收不到")
+        }
+    }
+
+    override fun onScanResult(name: String, address: String, rssi: Int) {
+        _uiState.update { current ->
+            // One row per address, refreshed in place; strongest first, so the
+            // headset on this bed stays at the top of the list.
+            val others = current.scanResults.filterNot { heard -> heard.address == address }
+            current.copy(
+                scanResults = (others + ScannedHeadset(name, address, rssi))
+                    .sortedByDescending { heard -> heard.rssi }
+            )
         }
     }
 
