@@ -176,7 +176,7 @@ fun BatteryField(
                 Modifier
                     .fillMaxWidth(fraction)
                     .fillMaxHeight()
-                    .background(BatteryInk.of(level!!, charging).copy(alpha = 0.52f))
+                    .background(BatteryInk.of(level!!, charging).copy(alpha = 0.22f))
                     .drawBehind {
                         val t = sweep ?: return@drawBehind
                         // 1 s sweep, then a 1.4 s rest: the pause is what keeps
@@ -219,16 +219,17 @@ fun BatteryField(
             // tabular, semibold template as the number beside it.
             val fieldStyle = MaterialTheme.typography.bodyLarge.tabularFigures()
                 .copy(lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+            val fieldColor = if (known) QuietPalette.Ink else QuietPalette.InkSecondary
             Text(
                 text = PREFIX,
                 style = fieldStyle,
-                color = QuietPalette.Ink,
+                color = fieldColor,
                 maxLines = 1
             )
             Text(
                 text = "${label}电量:",
                 style = fieldStyle,
-                color = QuietPalette.Ink,
+                color = fieldColor,
                 maxLines = 1
             )
             if (known) {
@@ -237,7 +238,7 @@ fun BatteryField(
                 Text(
                     text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
                     style = fieldStyle,
-                    color = QuietPalette.Ink,
+                    color = fieldColor,
                     maxLines = 1
                 )
             } else {
@@ -246,7 +247,7 @@ fun BatteryField(
                 Text(
                     text = "---",
                     style = fieldStyle,
-                    color = QuietPalette.Ink,
+                    color = fieldColor,
                     maxLines = 1
                 )
             }

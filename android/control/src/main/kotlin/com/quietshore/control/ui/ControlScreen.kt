@@ -831,12 +831,12 @@ private fun SegmentBand(
     ) {
         Text(
             text = buildString {
-                append("第 ${progress.index}/${progress.total} 段 · ")
+                append("第 ${progress.index}/${progress.total} 段 │ ")
                 append(name)
-                append(" · ")
+                append(" │ ")
                 append(if (remaining == null) "不限时" else "还剩 ${clock(remaining * 1000L)}")
                 if (progress.total > 1) {
-                    append(if (progress.auto) " · 自动" else " · 手动")
+                    append(if (progress.auto) " │ 自动" else " │ 手动")
                 }
             },
             style = MaterialTheme.typography.bodyMedium.tabularFigures(),
@@ -1149,44 +1149,46 @@ private fun StartBlock(
     phase: SessionPhase
 ) {
     val ready = state.phase == BlePhase.READY
-    Panel(Modifier.fillMaxWidth()) {
+    // A status line, not another board: the page already has one white work
+    // surface on the right, and this line is where the whole page begins.
+    Column(Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(QuietSpace.Panel),
+            modifier = Modifier.padding(vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = when (phase) {
-                        SessionPhase.Entry -> "已启动，等待按压"
-                        SessionPhase.Calibrating -> "校准中"
-                        SessionPhase.Running, SessionPhase.Stopping -> "训练中"
-                        else -> "准备本次训练"
-                    },
-                    style = MaterialTheme.typography.titleLarge,
-                    color = QuietPalette.Ink
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (!ready) {
-                        "头显未连接。返回配对页重连。"
-                    } else if (phase == SessionPhase.Entry) {
-                        "已过 ${clock(state.sessionElapsedMs)}。20 秒未按将重开页面。"
-                    } else if (phase.inSession) {
-                        "会话在会话页调整。"
-                    } else {
-                        "患者确认后开始训练。"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.InkSecondary
-                )
-            }
-            Spacer(Modifier.width(24.dp))
+            Text(
+                text = when (phase) {
+                    SessionPhase.Entry -> "已启动，等待按压"
+                    SessionPhase.Calibrating -> "校准中"
+                    SessionPhase.Running, SessionPhase.Stopping -> "训练中"
+                    else -> "准备本次训练"
+                },
+                style = MaterialTheme.typography.titleLarge,
+                color = QuietPalette.Ink
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                text = if (!ready) {
+                    "头显未连接。返回配对页重连。"
+                } else if (phase == SessionPhase.Entry) {
+                    "已过 ${clock(state.sessionElapsedMs)}。20 秒未按将重开页面。"
+                } else if (phase.inSession) {
+                    "会话在会话页调整。"
+                } else {
+                    "患者确认后开始训练。"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.InkSecondary,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(16.dp))
             // The start key lives once, at the foot of the chain on the right:
             // two identical ice blocks would be two primaries on one page.
             if (phase == SessionPhase.Entry) {
                 LoadingDots(color = QuietPalette.Ink)
             }
         }
+        Rule()
     }
 }
 

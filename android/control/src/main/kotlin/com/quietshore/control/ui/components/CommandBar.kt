@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -220,7 +223,7 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
     Box {
         Row(
             modifier = Modifier
-                .width(216.dp)
+                .width(232.dp)
                 .height(44.dp)
                 .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
                 .border(
@@ -240,18 +243,39 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
         ) {
             // No chevron: the full name sits in a hairline box, and the whole
             // box is the hit target.
-            Text(
-                text = AppCatalog.label(app),
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = QuietPalette.Ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = String.format(
+                        java.util.Locale.US,
+                        "%02d",
+                        AppCatalog.ALL.indexOfFirst { it.id == app }.coerceAtLeast(0) + 1
+                    ),
+                    style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                    color = QuietPalette.InkSecondary
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(18.dp)
+                        .background(QuietPalette.Hairline)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = AppCatalog.label(app),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = QuietPalette.Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
         DropdownMenu(
             expanded = open,
@@ -299,10 +323,11 @@ private fun GuideKey(onClick: () -> Unit) {
             .semantics { contentDescription = "当前应用说明" },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "i",
-            style = MaterialTheme.typography.titleMedium,
-            color = QuietPalette.Ink
+        Icon(
+            imageVector = Icons.Outlined.Description,
+            contentDescription = "当前应用说明",
+            tint = QuietPalette.Ink,
+            modifier = Modifier.size(22.dp)
         )
     }
 }
