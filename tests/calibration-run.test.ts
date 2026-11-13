@@ -96,3 +96,83 @@ describe('calibration window liveness', () => {
     expect(first.status).toBe('settling');
   });
 });
+
+/** HEAD rotated by `deg` about X: its deviation from HEAD is exactly `deg`. */
+function tiltPose(deg: number): typeof HEAD {
+  const half = (deg * Math.PI) / 360;
+  const s = HEAD.z;
+  const c = HEAD.w;
+  return {
+    x: c * Math.sin(half),
+    y: s * Math.sin(half),
+    z: s * Math.cos(half),
+    w: c * Math.cos(half)
+  };
+}
+
+describe('calibration window: manual trigger and the wander gate', () => {
+  it('a manual trigger opens the countdown without a settle hold', () => {
+    const run = createCalibrationRun();
+    run.start(0, true);
+    const first = step(run, HEAD, 0);
+    expect(first.status).toBe('countdown');
+    expect(first.progress).toBe(0);
+  });
+
+  it('a manual trigger finishes in the window length, not hold + window', () => {
+    const run = createCalibrationRun();
+    run.start(0, true);
+    let now = 0;
+    let last = step(run, HEAD, now);
+    while (last.status !== 'done' && now < 20_000) {
+      now += 1000 / 60;
+      last = step(run, HEAD, now);
+    }
+    expect(last.status).toBe('done');
+    expect(last.result?.ok).toBe(true);
+    expect(now).toBeLessThan(3_500);
+  });
+
+  it('a head that moves inside the window restarts it from there', () => {
+    const run = createCalibrationRun();
+    run.start(0, true);
+    step(run, HEAD, 0);
+    // Halfway through the window, a 20° move: past the loose gate.
+    const moved = step(run, tiltPose(20), 1_500);
+    expect(moved.status).toBe('countdown');
+    expect(moved.progress).toBe(0);
+    // Two seconds later the restarted window is still running.
+    expect(step(run, tiltPose(20), 3_500).status).toBe('countdown');
+    let now = 3_500;
+    let last = step(run, tiltPose(20), now);
+    while (last.status !== 'done' && now < 20_000) {
+      now += 16;
+      last = step(run, tiltPose(20), now);
+    }
+    // Lands three seconds after the move, not after the original open.
+    expect(now).toBeGreaterThan(4_300);
+    expect(now).toBeLessThan(4_700);
+    expect(last.result?.ok).toBe(true);
+  });
+
+  it('the gate is loose: 10° inside the window does not restart', () => {
+    const run = createCalibrationRun();
+    run.start(0, true);
+    step(run, HEAD, 0);
+    const moved = step(run, tiltPose(10), 1_500);
+    expect(moved.progress).toBeGreaterThan(0.4);
+  });
+
+  it('a settled window uses the same gate, not a second rule', () => {
+    const run = createCalibrationRun();
+    run.start(0);
+    let now = 0;
+    let last = step(run, HEAD, now);
+    while (last.status !== 'countdown' && now < 5_000) {
+      now += 16;
+      last = step(run, HEAD, now);
+    }
+    expect(last.status).toBe('countdown');
+    expect(step(run, tiltPose(20), now + 500).progress).toBe(0);
+  });
+});

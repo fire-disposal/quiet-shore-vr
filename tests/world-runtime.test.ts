@@ -254,6 +254,9 @@ describe('world runtime', () => {
     h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });
     h.runtime.calibrate(SUPINE, POSITION);
     expect(h.runtime.state().ready).toBe(true);
+    // Explicit: this test is about the freeze being released, not about the
+    // default ramp length.
+    h.runtime.setDuration(6000);
     expect(h.runtime.rise(1)).toBe(true);
     h.run(7);
     expect(h.runtime.state().mix).toBe(1);
@@ -270,5 +273,139 @@ describe('world runtime', () => {
     expect(h.comfort.reset).toHaveBeenCalled();
     expect(h.runtime.state().mix).toBe(0);
     expect(h.runtime.state().ready).toBe(false);
+  });
+});
+
+describe('end eye (the fully stood-up eye line)', () => {
+  it('is adopted by the next ramp, not by the command that set it', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.66, 6);
+
+    // Hot set while the patient lies still: nothing on screen may move.
+    expect(h.runtime.setStandingEyeY(1.9)).toBe(true);
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.66, 6);
+
+    h.runtime.setDuration(6000);
+    h.runtime.rise(1);
+    h.run(6.5);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.9, 6);
+  });
+
+  it('arrives blended across the ramp, never as a step', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(6000);
+    h.runtime.rise(1);
+    h.run(7);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+
+    // Raise the end eye, then lie back: the eye line has to move continuously
+    // from 1.7 even though the value it is heading for changed under it.
+    h.runtime.setStandingEyeY(2.2);
+    h.runtime.rise(0);
+    let previous = h.runtime.state().eyeY;
+    let worst = 0;
+    for (let i = 0; i < 400; i += 1) {
+      h.runtime.update(1 / 60);
+      const next = h.runtime.state().eyeY;
+      worst = Math.max(worst, Math.abs(next - previous));
+      previous = next;
+    }
+    // A 1.54 m fall over 6 s is under 5 mm per frame; a jump would be metres.
+    expect(worst).toBeLessThan(0.02);
+    expect(h.runtime.state().eyeY).toBeCloseTo(0.66, 6);
+  });
+
+  it('drops a deferred value when the scene is reloaded', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setStandingEyeY(2.2);
+    // A scene switch places the art from scratch: the new standing height came
+    // from the caller, so the deferred one must not survive it.
+    h.runtime.setScene({ lyingEyeY: 0.71, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
+    h.runtime.rise(1);
+    h.run(4.5);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+  });
+});
+
+describe('correction slider', () => {
+  it('takes over from a running ramp without a jump', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(10000);
+    h.runtime.rise(1);
+    h.run(1);
+    const frozen = h.runtime.state().mix;
+    expect(h.runtime.state().moving).toBe(true);
+
+    // The first sample of a drag is the manual override.
+    expect(h.runtime.setMixTarget(0.5)).toBe(true);
+    expect(h.runtime.state().mix).toBeCloseTo(frozen, 6);
+    expect(h.runtime.state().target).toBeCloseTo(0.5, 6);
+    expect(h.runtime.state().moving).toBe(true);
+  });
+
+  it('never steps, whatever the finger does', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setMixTarget(0);
+    let previous = h.runtime.state().mix;
+    let worst = 0;
+    // A finger that jumps between the ends every other frame.
+    for (let i = 0; i < 300; i += 1) {
+      h.runtime.setMixTarget(i % 2 === 0 ? 1 : 0);
+      h.runtime.update(1 / 60);
+      const next = h.runtime.state().mix;
+      worst = Math.max(worst, Math.abs(next - previous));
+      previous = next;
+    }
+    // The cap is 0.4 of full travel per second, so one frame is at most 0.0067.
+    expect(worst).toBeLessThanOrEqual(0.4 / 60 + 1e-9);
+  });
+
+  it('arrives, and the eye line arrives with it', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setMixTarget(1);
+    h.run(3.5);
+    expect(h.runtime.state().mix).toBeCloseTo(1, 5);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+    expect(h.runtime.state().moving).toBe(false);
+  });
+
+  it('a key ramp takes the correction back from the slider', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setMixTarget(0.3);
+    h.run(1.5);
+    const held = h.runtime.state().mix;
+    h.runtime.setDuration(6000);
+    h.runtime.rise(0);
+    h.run(6.5);
+    expect(h.runtime.state().mix).toBeCloseTo(0, 6);
+    expect(held).toBeGreaterThan(0.2);
+  });
+
+  it('stop freezes the slider where it is', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setMixTarget(1);
+    h.run(1);
+    const at = h.runtime.state().mix;
+    h.runtime.stopRise();
+    h.run(1);
+    expect(h.runtime.state().mix).toBeCloseTo(at, 6);
   });
 });

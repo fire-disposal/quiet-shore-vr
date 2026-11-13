@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
 import { Disposer } from '../shared/disposer';
-import { lyingEyeY } from '../../core/anatomy';
+import { createPlainRoom } from '../shared/plain-room';
+import { AUTHORED_EYE_Y } from '../../core/anatomy';
 
 /**
  * The questionnaire's own room.
@@ -44,75 +45,27 @@ export const surveyScene = defineScene(
   },
   // Read for a body on its back, like every other scene: the room is drawn
   // around the lying eye so the first frame is already a plausible ceiling.
-  { standingEyeY: 1.7, supine: 'mattress', viewer: 'supine' },
-  function () {
+  { standingEyeY: AUTHORED_EYE_Y, supine: 'mattress', viewer: 'supine' },
+  function ({ lyingEyeY: eyeY }) {
     const root = new THREE.Group();
     root.name = 'survey-room';
 
     const disposer = new Disposer();
-    const eyeY = lyingEyeY({ standingEyeY: 1.7, supine: 'mattress', viewer: 'supine' });
-    const floorY = -eyeY;
-    const ceilingY = floorY + ROOM_H;
-
-    const wallMaterial = new THREE.MeshStandardMaterial({
-      color: WALL,
-      roughness: 0.92,
-      metalness: 0
+    // The quietest thing the renderer can draw: six surfaces and one wash of
+    // light, with the shell's interior-face convention in `createPlainRoom`.
+    const room = createPlainRoom({
+      width: ROOM_W,
+      depth: ROOM_D,
+      height: ROOM_H,
+      floorY: -eyeY,
+      wallColor: WALL,
+      floorColor: FLOOR,
+      ceilingColor: CEILING,
+      roughness: [0.92, 0.95, 1],
+      panel: { size: 2.2, insetM: 0.02, color: WASH },
+      disposer
     });
-    const floorMaterial = new THREE.MeshStandardMaterial({
-      color: FLOOR,
-      roughness: 0.95,
-      metalness: 0
-    });
-    const ceilingMaterial = new THREE.MeshStandardMaterial({
-      color: CEILING,
-      roughness: 1,
-      metalness: 0
-    });
-    const washMaterial = new THREE.MeshBasicMaterial({ color: WASH });
-    disposer.add(wallMaterial, floorMaterial, ceilingMaterial, washMaterial);
-
-    const wallGeometry = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
-    const sideGeometry = new THREE.PlaneGeometry(ROOM_D, ROOM_H);
-    const floorGeometry = new THREE.PlaneGeometry(ROOM_W, ROOM_D);
-    const washGeometry = new THREE.PlaneGeometry(2.2, 2.2);
-    disposer.add(wallGeometry, sideGeometry, floorGeometry, washGeometry);
-
-    const front = new THREE.Mesh(wallGeometry, wallMaterial);
-    front.position.set(0, (floorY + ceilingY) / 2, -ROOM_D / 2);
-    root.add(front);
-
-    const back = new THREE.Mesh(wallGeometry, wallMaterial);
-    back.position.set(0, (floorY + ceilingY) / 2, ROOM_D / 2);
-    back.rotation.y = Math.PI;
-    root.add(back);
-
-    const left = new THREE.Mesh(sideGeometry, wallMaterial);
-    left.position.set(-ROOM_W / 2, (floorY + ceilingY) / 2, 0);
-    left.rotation.y = Math.PI / 2;
-    root.add(left);
-
-    const right = new THREE.Mesh(sideGeometry, wallMaterial);
-    right.position.set(ROOM_W / 2, (floorY + ceilingY) / 2, 0);
-    right.rotation.y = -Math.PI / 2;
-    root.add(right);
-
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.position.set(0, floorY, 0);
-    floor.rotation.x = -Math.PI / 2;
-    root.add(floor);
-
-    const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
-    ceiling.position.set(0, ceilingY, 0);
-    ceiling.rotation.x = Math.PI / 2;
-    root.add(ceiling);
-
-    // One wash of light, slightly off the head so the ceiling is not a flat
-    // rectangle: the only thing in the room that is not a surface.
-    const wash = new THREE.Mesh(washGeometry, washMaterial);
-    wash.position.set(0, ceilingY - 0.02, 0);
-    wash.rotation.x = Math.PI / 2;
-    root.add(wash);
+    root.add(room.root);
 
     const key = new THREE.DirectionalLight(0xffffff, 0.55);
     key.position.set(0.4, 2.2, 0.6);

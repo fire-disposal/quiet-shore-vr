@@ -135,21 +135,34 @@ describe('scene capabilities', () => {
     }
   });
 
-  it('leaves every remaining scene at the global maximum', () => {
-    // `comfortLevel` stays on the contract for a scene that earns a lower cap;
-    // none of the shipped scenes now does, and the catalogue must say so.
-    const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfortLevel ?? 3]));
-    expect(ceilings).toEqual({ washroom: 3, shore: 3, ward: 3, prep: 3, survey: 3 });
+  it('declares a ceiling only where a scene needs one', () => {
+    // `comfort` stays on the contract for a scene that earns a lower ceiling.
+    // The preparation room is the one that does — it declares no motion at all —
+    // and every other scene leaves the global maximum alone (`null`).
+    const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfort ?? null]));
+    expect(ceilings).toEqual({
+      washroom: null,
+      shore: null,
+      ward: null,
+      prep: 0,
+      survey: null
+    });
   });
 
-  it('hands each motion channel to the scene that needs it', () => {
+  it('leaves the buoyancy to the app and declares only what is sky', () => {
     const washroom = build('washroom').handle;
     const shore = build('shore').handle;
     try {
-      // The room is static: no per-frame work beyond the patient's own motion.
-      expect(washroom.controls.applyBuoyancy).toBeUndefined();
-      // The lake carries the buoyancy itself so the horizon stays level.
-      expect(typeof shore.controls.applyBuoyancy).toBe('function');
+      // One buoyancy implementation for every scene: a room has no backdrop,
+      // the lake puts its dome and clouds there and everything else moves.
+      expect(washroom.backdrop).toBeNull();
+      const backdrop = shore.backdrop;
+      expect(backdrop).not.toBeNull();
+      expect(backdrop!.getObjectByName('shore-dome')).toBeDefined();
+      expect(backdrop!.getObjectByName('shore-clouds')).toBeDefined();
+      // The near field moves, so it is not part of the sky.
+      expect(backdrop!.getObjectByName('shore-water')).toBeUndefined();
+      expect(shore.root.getObjectByName('shore-water')).toBeDefined();
     } finally {
       washroom.dispose();
       shore.dispose();
@@ -168,11 +181,6 @@ describe('scene capabilities', () => {
         // motion plan that may pass 0 mid-fade.
         expect(() => handle.controls.setMotion(-1)).not.toThrow();
         expect(() => handle.controls.setMotion(4)).not.toThrow();
-        if (handle.controls.applyBuoyancy) {
-          expect(() =>
-            handle.controls.applyBuoyancy!({ amountM: 0.02, axis: { x: 0, y: 1, z: 0 } })
-          ).not.toThrow();
-        }
       } finally {
         handle.dispose();
       }
@@ -205,8 +213,9 @@ describe('scene capabilities', () => {
   it('drifts the clouds one way, without moving the sheet', () => {
     const { handle } = build('shore');
     try {
-      const clouds = handle.root.getObjectByName('shore-cloud-sheet') as THREE.Mesh | undefined;
-      const group = handle.root.getObjectByName('shore-clouds') as THREE.Object3D | undefined;
+      const scene = handle.backdrop ?? handle.root;
+      const clouds = scene.getObjectByName('shore-cloud-sheet') as THREE.Mesh | undefined;
+      const group = scene.getObjectByName('shore-clouds') as THREE.Object3D | undefined;
       expect(clouds).toBeDefined();
       expect(group).toBeDefined();
 
@@ -433,7 +442,7 @@ describe('scene budgets', () => {
   it('builds a shoreline with a fog horizon and soft anchors', () => {
     const { handle } = build('shore');
     expect(handle.settings.fog).toBeInstanceOf(THREE.Fog);
-    expect(handle.root.getObjectByName('shore-dome')).toBeDefined();
+    expect((handle.backdrop ?? handle.root).getObjectByName('shore-dome')).toBeDefined();
     expect(handle.root.getObjectByName('shore-posts')).toBeDefined();
     expect(handle.root.getObjectByName('shore-reeds')).toBeDefined();
     expect(handle.root.getObjectByName('shore-treeline')).toBeDefined();

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readConfig } from '../src/app/config';
 
-describe('buoyancy level config', () => {
+describe('buoyancy config', () => {
   beforeEach(() => {
     // readConfig also reads the injected bootstrap object.
     vi.stubGlobal('window', {});
@@ -12,15 +12,15 @@ describe('buoyancy level config', () => {
   });
 
   it('defaults to the full envelope', () => {
-    // Level 1 (25 mm) read as "completely still" in the headset.
-    expect(readConfig('').floatLevel).toBe(3);
+    // A quarter of the envelope read as "completely still" in the headset.
+    expect(readConfig('').floatAmount).toBe(1);
   });
 
-  it('accepts 0..3 from the query string and clamps the rest', () => {
-    expect(readConfig('?level=0').floatLevel).toBe(0);
-    expect(readConfig('?level=2').floatLevel).toBe(2);
-    expect(readConfig('?level=9').floatLevel).toBe(3);
-    expect(readConfig('?level=-4').floatLevel).toBe(0);
-    expect(readConfig('?level=abc').floatLevel).toBe(3);
+  it('accepts a percentage from the query string and clamps the rest', () => {
+    expect(readConfig('?level=0').floatAmount).toBe(0);
+    expect(readConfig('?level=60').floatAmount).toBeCloseTo(0.6, 6);
+    expect(readConfig('?level=250').floatAmount).toBe(1);
+    expect(readConfig('?level=-4').floatAmount).toBe(0);
+    expect(readConfig('?level=abc').floatAmount).toBe(1);
   });
 });

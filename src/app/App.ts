@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { readConfig, type AppConfig } from './config';
+import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN, readConfig, type AppConfig } from './config';
 import { createRenderer } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
 import {
@@ -31,7 +31,6 @@ import {
   unlockAudio
 } from '../audio/audio';
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
-import { FLOAT_MAX_LEVEL } from '../core/xr/float';
 import { lyingEyeY, restMixOf } from '../core/anatomy';
 import { degrees, metres } from '../core/units';
 import { visualUpInContent } from '../core/xr/world-frame';
@@ -64,6 +63,8 @@ import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
 import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent, type SessionState } from './session';
 
 const MAX_DT = 0.25;
+/** The built-in neutral room; not a scene card, but a place to return to. */
+const PREP_SCENE_ID = 'prep';
 /** Calibration → the "imagine sitting up" cue. */
 const AUTO_RISE_CUE_MS = 6000;
 /** The cue ends → the world starts turning. */
@@ -75,6 +76,16 @@ const AUTO_RISE_GAP_MS = 2000;
 const SUPINE_GAZE_RAD = 1.35;
 /** Time from a stop to the fade-complete state; motion is frozen at once. */
 const STOP_FADE_MS = 1000;
+/**
+ * The curtain between two scenes: down, swap, up.
+ *
+ * A live content swap is the one moment the patient sees two rooms occupy the
+ * same place — the old one leaves and the new one arrives in the same frame.
+ * A quarter second of black is what a theatre does with the same problem, and
+ * it costs nothing: a plain DOM layer, not a second render pass.
+ */
+const SCENE_CUT_IN_MS = 220;
+const SCENE_CUT_OUT_MS = 320;
 /**
  * How long a session survives without its tablet.
  *
@@ -110,6 +121,8 @@ const CALIBRATION_MIN_VISIBLE_MS = 2500;
 
 export class QuietShoreApp {
   private readonly config: AppConfig;
+  /** The curtain: a full-screen black layer used only between scenes. */
+  private veil: HTMLDivElement | null = null;
   private readonly strings: Strings;
   private readonly start: StartScreen;
   private readonly camera: THREE.PerspectiveCamera;
@@ -161,7 +174,6 @@ export class QuietShoreApp {
   /** Correction the loaded scene rests in (0 supine, 1 standing). */
   private sceneRestMix: 0 | 1 = 0;
   /** How much of the frame's buoyancy this scene wants as a heave, 0..1. */
-  private sceneHeaveScale = 0;
 
   // ---- the therapy's dose, measured while it runs -------------------------
   /** Highest posture correction reached this session, 0..1. */
@@ -184,6 +196,12 @@ export class QuietShoreApp {
   private comfort: ComfortApi | null = null;
   private shell: WorldShellApi | null = null;
   private capturePending = false;
+  /**
+   * The running calibration window was opened by the operator, not by the
+   * session's own first recording: it skips the settle hold. Kept so the retry
+   * after a failed apply reopens the same kind of window.
+   */
+  private calibrationSkipsSettle = false;
   /** The calibration window; App renders it, the module owns the policy. */
   private readonly calibration = createCalibrationRun({
     holdMs: CALIBRATION_HOLD_MS,
@@ -208,8 +226,8 @@ export class QuietShoreApp {
   private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
-  /** Highest float level the loaded scene allows (its own comfort ceiling). */
-  private sceneComfortLevel = FLOAT_MAX_LEVEL;
+  /** Highest buoyancy the loaded scene allows, 0–1 (its own ceiling). */
+  private sceneComfort = 1;
   /** SUS answers live on the headset; the 20-byte state frame has no room. */
   private readonly susAnswers: (number | null)[] = new Array(10).fill(null);
   private readonly calibrationFrame = new THREE.Quaternion();
@@ -290,12 +308,28 @@ export class QuietShoreApp {
       0.05,
       500
     );
-    // The room is built around the standing eye at the origin; the preview
-    // camera starts inside it, not outside the front wall.
-    this.camera.position.set(0, this.eyeHeight, 0);
+    // The eye is the origin of this frame, not a height above it: the content is
+    // dropped by the applied eye height (`floating.setBaseOffset(-eyeY)`), so
+    // placing the camera at `eyeHeight` as well put it 3.4 m above the room's
+    // floor at `mix = 1` — above the washroom's own ceiling.
+    this.camera.position.set(0, 0, 0);
     this.camera.rotation.order = 'YXZ';
 
     this.renderer = createRenderer(this.start.stageElement);
+    // `prefers-reduced-motion` is respected: a patient who has asked for less
+    // motion gets the swap with no curtain rather than a flash.
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      this.veil = document.createElement('div');
+      this.veil.style.cssText = [
+        'position:fixed',
+        'inset:0',
+        'background:#000',
+        'opacity:0',
+        'pointer-events:none',
+        'z-index:20'
+      ].join(';');
+      document.body.appendChild(this.veil);
+    }
     // WebXRManager's public surface differs across Three typings; the narrow
     // interface is the only part this app uses.
     this.xr = this.renderer.xr as unknown as XRManagerLike;
@@ -323,10 +357,9 @@ export class QuietShoreApp {
         this.parentQuaternion.copy(shell.group.quaternion).multiply(shell.base.quaternion);
         return visualUpInContent(this.headPose.quaternion, this.parentQuaternion, out);
       },
-      level: this.config.floatLevel,
+      amount: this.config.floatAmount,
       // The scene declares how much of the frame's buoyancy it wants as a
       // heave; the app no longer keys on an id.
-      heaveScale: () => this.sceneHeaveScale
     });
     // The base pose owner sits on top of buoyancy: it decides which frame poses
     // the world and hands the frame's offset to the buoyancy module.
@@ -699,8 +732,7 @@ export class QuietShoreApp {
     // by `core/anatomy.ts`, the standing height is the operator's setting (the
     // art's own number is the fallback), and `world.apply()` — driven by mix —
     // interpolates between them.
-    this.sceneComfortLevel = definition.comfortLevel ?? FLOAT_MAX_LEVEL;
-    this.sceneHeaveScale = definition.heaveScale ?? 0;
+    this.sceneComfort = definition.comfort ?? 1;
     this.sceneLyingEyeY = lyingEyeY(definition.posture);
     this.sceneRestMix = restMixOf(definition.posture);
     this.world.setScene({
@@ -917,7 +949,7 @@ export class QuietShoreApp {
         at: Date.now(),
         scene: this.sceneId,
         seconds: (performance.now() - this.sessionStartedAt) / 1000,
-        level: this.floating.getLevel(),
+        level: this.floating.getAmount(),
         mix: this.world.state().mix,
         stop: this.lifecycle.stopReason ?? 'unknown',
         confidence: this.comfort?.isCalibrated() ? 100 : 0,
@@ -1133,18 +1165,20 @@ export class QuietShoreApp {
       return;
     }
     if (this.session && this.handle) {
-      this.switchSceneLive(definition);
+      this.behindCurtain(() => this.switchSceneLive(definition));
       return;
     }
-    this.sceneId = definition.id;
-    this.loadScene();
-    if (this.previewing) {
-      this.startSceneAudio();
-      this.start.showStage();
-    }
-    this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
-    this.link.sendStateNow();
-    this.updateHud(performance.now());
+    this.behindCurtain(() => {
+      this.sceneId = definition.id;
+      this.loadScene();
+      if (this.previewing) {
+        this.startSceneAudio();
+        this.start.showStage();
+      }
+      this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
+      this.link.sendStateNow();
+      this.updateHud(performance.now());
+    });
   }
 
   /**
@@ -1157,8 +1191,30 @@ export class QuietShoreApp {
    * because a 90° world rotation between two frames is the one thing a supine
    * patient cannot brace for.
    */
+  /**
+   * Run a scene change behind the curtain: fade to black, swap, fade back.
+   *
+   * The swap itself is untouched — it still happens in one synchronous call, so
+   * nothing can observe a half-loaded scene. Only the moment of change is
+   * covered.
+   */
+  private behindCurtain(swap: () => void): void {
+    const veil = this.veil;
+    if (!veil) {
+      swap();
+      return;
+    }
+    veil.style.transition = `opacity ${SCENE_CUT_IN_MS}ms linear`;
+    veil.style.opacity = '1';
+    window.setTimeout(() => {
+      swap();
+      veil.style.transition = `opacity ${SCENE_CUT_OUT_MS}ms linear`;
+      veil.style.opacity = '0';
+    }, SCENE_CUT_IN_MS);
+  }
+
   private switchSceneLive(definition: SceneDefinition): void {
-    const previousLevel = this.floating.getLevel();
+    const previousLevel = this.floating.getAmount();
     const previousRestMix = this.sceneRestMix;
     this.link.sendLog(this.activeApp, 'scene.switched', {
       from: this.host.definition?.id ?? '',
@@ -1168,13 +1224,21 @@ export class QuietShoreApp {
     // the session actually spent, not what was selected.
     this.closeSegment(performance.now());
     this.stopSceneAudio();
+    // The preparation room is a neutral place, not a scene: entering it ends the
+    // performance. A voice cue would be describing a room the patient is no
+    // longer in, and the room declares no motion, so the heave stops with it.
+    // The intensity readback shows the zero, so nothing is hidden.
+    if (definition.id === PREP_SCENE_ID) {
+      this.voice.stop();
+      this.floating.setAmount(0, this.floatCap());
+    }
     this.handle = this.host.load(definition, { keepPrevious: true });
     this.sceneId = definition.id;
     this.segmentStartedAt = performance.now();
     this.applySceneDefinition(definition);
     // A scene with a lower comfort ceiling must not inherit a higher level; the
     // envelope eases down by itself, so the heave never steps.
-    this.floating.setLevel(previousLevel, this.sceneComfortLevel);
+    this.floating.setAmount(previousLevel, this.sceneComfort);
     if (this.sceneRestMix !== previousRestMix) {
       // The correction ramps, so the heave's axis is about to travel with it:
       // zero the motion it would otherwise carry across the turn.
@@ -1245,7 +1309,7 @@ export class QuietShoreApp {
     this.link.sendStateNow();
   }
 
-  private beginCalibration(): void {
+  private beginCalibration(skipSettle = false): void {
     this.awaitingCalibration = false;
     if (!this.handle) {
       return;
@@ -1268,7 +1332,7 @@ export class QuietShoreApp {
       );
     }
     this.calibrationOverlay.show();
-    this.restartCalibration();
+    this.restartCalibration(skipSettle);
     this.link.sendStateNow();
   }
 
@@ -1277,11 +1341,12 @@ export class QuietShoreApp {
    * the bar fill, done. No key is required, because the physical button never
    * reaches a page in this browser's immersive mode.
    */
-  private restartCalibration(): void {
+  private restartCalibration(skipSettle = this.calibrationSkipsSettle): void {
+    this.calibrationSkipsSettle = skipSettle;
     this.calibStatus = 'settling';
     this.capturePending = true;
-    this.calibration.start(performance.now());
-    this.calibrationOverlay?.setHint('保持不动…');
+    this.calibration.start(performance.now(), skipSettle);
+    this.calibrationOverlay?.setHint(skipSettle ? '即将记录…' : '保持不动…');
     this.calibrationOverlay?.setProgress(0);
     this.start.setStatus('正在记录起始体位', 'ok');
   }
@@ -1513,16 +1578,21 @@ export class QuietShoreApp {
     this.updateHud(performance.now());
   }
 
+  /**
+   * The tablet's recalibrate: the operator asked for a fresh frame, so the
+   * window opens straight into the countdown. The settle hold exists to start
+   * the window on a still head, and the operator is watching that head.
+   */
   private recalibrate(): void {
     if (!this.session || !this.xr.isPresenting) {
       this.start.setStatus(this.strings.recalibrateNeedsSession, 'error');
       return;
     }
     if (this.lifecycle.phase === 'calibrating') {
-      this.restartCalibration();
+      this.restartCalibration(true);
       return;
     }
-    this.beginCalibration();
+    this.beginCalibration(true);
   }
 
   /**
@@ -1654,15 +1724,21 @@ export class QuietShoreApp {
         setAmbienceVolume(command.percent / 100);
         this.report(`水声音量 ${command.percent}%`, 'ok');
         return;
+      case 'floatBreath':
+        this.floating.setBreath(command.on);
+        this.report(command.on ? '起伏呼吸已开' : '起伏呼吸已关', 'ok');
+        this.link.sendStateNow();
+        return;
       case 'floatLevel': {
         const cap = this.floatCap();
-        const capped = this.floating.setLevel(command.level, cap);
+        const asked = command.percent / 100;
+        const applied = this.floating.setAmount(asked, cap);
         this.start.setStatus(
-          capped === command.level
-            ? `漂浮强度 ${command.level}/${FLOAT_MAX_LEVEL}`
-            : cap < FLOAT_MAX_LEVEL
-              ? `本段最高 ${cap} 级`
-              : `沉浸档最高 ${capped} 级（近场角速度上限）`,
+          applied === asked
+            ? `起伏 ${Math.round(applied * 100)}%`
+            : cap <= 0
+              ? '本场景无起伏'
+              : `本段最高 ${Math.round(cap * 100)}%`,
           'ok'
         );
         this.link.sendStateNow();
@@ -1747,6 +1823,20 @@ export class QuietShoreApp {
           command.state === 'toggle' ? !this.sceneBedOn : command.state === 'on'
         );
         return;
+      case 'postureMix':
+        // The first sample of a drag *is* the manual override: the hand owns
+        // the correction from here, so the scheduled rise and any view animation
+        // stop where they are, and the page's own rate cap takes over from there.
+        if (this.capturePending) {
+          this.refuse('记录体位时无法调整姿态');
+          return;
+        }
+        this.cancelAutoRise();
+        this.viewMotion.stop();
+        if (!this.world.setMixTarget(command.percent / 100)) {
+          this.refuse('起身需要先完成体位记录');
+        }
+        return;
       case 'posture':
         // The operator's ramp wins: drop any scheduled automatic rise.
         this.cancelAutoRise();
@@ -1786,13 +1876,19 @@ export class QuietShoreApp {
       this.refuse('记录体位时无法调整站立足高');
       return;
     }
+    if (!Number.isFinite(next) || next < EYE_HEIGHT_MIN || next > EYE_HEIGHT_MAX) {
+      this.refuse(`站立足高需在 ${EYE_HEIGHT_MIN.toFixed(1)}–${EYE_HEIGHT_MAX.toFixed(1)} m 之间`);
+      return;
+    }
+    // Hot, but deferred: the runtime adopts it when the next ramp starts and
+    // blends it across that ramp. Re-placing the art on the spot would be a
+    // vertical jump under a patient who is lying still.
     this.eyeHeight = next;
-    this.world.setScene({
-      lyingEyeY: this.sceneLyingEyeY,
-      standingEyeY: next,
-      restMix: this.sceneRestMix
-    });
-    this.start.setStatus(`站立足高 ${next.toFixed(2)} m`, 'ok');
+    this.world.setStandingEyeY(next);
+    this.start.setStatus(
+      `站立足高 ${next.toFixed(2)} m，下次调整体位时生效`,
+      'ok'
+    );
   }
 
   /** Rejected during calibration and whenever the patient is not in XR. */
@@ -1802,12 +1898,6 @@ export class QuietShoreApp {
    */
   private updateMotionPlan(): void {
     const world = this.world.state();
-    // The 2D preview shows the patient's own eye: with no headset presenting,
-    // the camera is the only thing that can stand in for it, and the eye now
-    // moves with the rise. (The operator's height setting only seeds it.)
-    if (!this.xr.isPresenting) {
-      this.camera.position.y = world.eyeY;
-    }
     this.plan = planMotion(
       {
         session: this.session !== null,
@@ -1819,7 +1909,7 @@ export class QuietShoreApp {
         correctionMoving: world.moving,
         // The loaded scene's buoyancy ceiling travels with the state so the
         // tablet's stepper clamps to the same number the page enforces.
-        floatMax: this.floatCap()
+        floatCap: this.floatCap()
       },
       this.plan ?? undefined
     );
@@ -2226,7 +2316,7 @@ export class QuietShoreApp {
 
   /** Buoyancy ceiling declared by the manually selected scene. */
   private floatCap(): number {
-    return this.sceneComfortLevel;
+    return this.sceneComfort;
   }
 
   /** Close the current scene dwell at [now]; a manual scene change opens another. */
@@ -2299,7 +2389,8 @@ export class QuietShoreApp {
       upGazeTargetDeg: degrees(this.viewMotion.getTargetUpGazeDeg()),
       viewAnim: this.viewMotion.getStateName(),
       floorOffset: metres(this.host.floor),
-      floatLevel: motion.level,
+      floatAmount: motion.amount,
+      floatBreath: motion.breath,
       // Applied motion, not the requested level: the mirror adds these verbatim.
       floatMm: motion.offsetM * 1000,
       sessionSec:
@@ -2321,7 +2412,7 @@ export class QuietShoreApp {
         float: false,
         view: false,
         blocked: '未开始会话',
-        floatMax: this.floatCap()
+        floatCap: this.floatCap()
       }
     });
     return snapshot;

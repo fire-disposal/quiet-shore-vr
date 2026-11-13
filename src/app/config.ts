@@ -16,8 +16,14 @@ declare global {
 }
 
 export const EYE_HEIGHT_DEFAULT = 1.7;
-export const EYE_HEIGHT_MIN = 1.2;
-export const EYE_HEIGHT_MAX = 1.9;
+/**
+ * The end eye line — where the eye is at `mix = 1`, i.e. fully stood up. Bounds
+ * are the extremes a body can plausibly be: under a metre is a child on the
+ * floor, over 2.4 m is a doorway, and either would put the art somewhere no
+ * room was drawn for.
+ */
+export const EYE_HEIGHT_MIN = 1.0;
+export const EYE_HEIGHT_MAX = 2.4;
 
 function readEyeHeight(value: unknown): number {
   const numeric = typeof value === 'number'
@@ -55,20 +61,21 @@ export interface AppConfig {
   entryRetry: number;
   /** Buoyancy profile from `?float=a|b|c`; the in-room choice overrides it. */
   /**
-   * Buoyancy level 0..3 from `?level=N`.
+   * Buoyancy as a fraction of the envelope, from `?level=<0-100>` (percent).
    *
    * Defaults to the full envelope: the heave is the scene's main self-motion
-   * cue, and at level 1 (25 mm) it read as "the world is completely still".
+   * cue, and a quarter of it read as "the world is completely still".
    */
-  floatLevel: number;
+  floatAmount: number;
 }
 
-function readFloatLevel(raw: string | null): number {
+/** `?level=` is a percentage on the same 0–100 scale the tablet speaks. */
+function readFloatAmount(raw: string | null): number {
   const parsed = Number.parseInt(raw ?? '', 10);
   if (!Number.isFinite(parsed)) {
-    return 3;
+    return 1;
   }
-  return Math.min(3, Math.max(0, parsed));
+  return Math.min(100, Math.max(0, parsed)) / 100;
 }
 
 /** Relaunch count from the shell; anything unusable means the first launch. */
@@ -90,6 +97,6 @@ export function readConfig(search: string): AppConfig {
     eyeHeight: readEyeHeight(bootstrap.eyeHeight),
     lang,
     entryRetry: readEntryRetry(params.get('retry')),
-    floatLevel: readFloatLevel(params.get('level'))
+    floatAmount: readFloatAmount(params.get('level'))
   };
 }

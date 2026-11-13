@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
-  FLOAT_MAX_LEVEL,
+  floatAmplitude,
   easeAmplitude,
-  floatAmplitudeForLevel,
+
   floatOffsetAt
 } from '../core/xr/float';
 import { buoyancyAllowed, type BuoyancyGate } from '../core/xr/buoyancy-frame';
@@ -34,19 +34,22 @@ export interface FloatingDeps {
   /** Scene host; owns the content group the offset is written to. */
   host: {
     setFloorOffset(y: number): void;
-    /** Content-space offset for the whole art, used when the scene has no split. */
+    /** Base offset for the sky: same frame, no bob. */
+    setBackdropOffset(y: number): void;
+    /** Content-space offset for the whole art. */
     setContentPosition(x: number, y: number, z: number): void;
   };
   handle(): SceneHandle | null;
   gate(): BuoyancyGate;
   /** Visual up in content space; the heave runs along it, whatever the frame. */
   axis(out: THREE.Vector3): THREE.Vector3;
-  /** 1 when the loaded scene takes the heave (the shore), 0 elsewhere. */
-  heaveScale?(): number;
 }
 
 export interface FloatingState {
-  level: number;
+  /** Intensity as a fraction of the full envelope, 0–1. */
+  amount: number;
+  /** The breathing switch, eased: 1 = the heave breathes, 0 = plain sine. */
+  breath: number;
   /** Eased amplitude in metres; 0 when settled. */
   amplitudeM: number;
   /** Applied heave, in metres. */
@@ -58,47 +61,50 @@ export interface FloatingState {
 export interface FloatingApi {
   /** Advance one frame; the only writer of the heave. */
   update(dt: number): void;
-  /** Clamped to the level range and the scene's own comfort ceiling. */
-  setLevel(level: number, sceneCap?: number): number;
+  /** Clamped to 0–1 and to the scene's own ceiling. */
+  setAmount(amount: number, sceneCap?: number): number;
+  /**
+   * The breathing switch: the slow swell of the heave and the millimetre
+   * wobble on top. Off keeps the same envelope and period as a plain sine, so
+   * the patient still floats — it just stops breathing.
+   */
+  setBreath(on: boolean): void;
+  getBreath(): boolean;
   /** The active frame moves the world; buoyancy keeps its own delta. */
   setBaseOffset(y: number): void;
   /** Zero the envelope and the applied motion (scene switch, session end). */
   reset(): void;
   getState(out?: FloatingState): FloatingState;
-  getLevel(): number;
+  getAmount(): number;
 }
 
 export function createFloating(
-  deps: FloatingDeps & { level?: number }
+  deps: FloatingDeps & { amount?: number; breath?: boolean }
 ): FloatingApi {
   const { host, handle, gate, axis } = deps;
   const up = new THREE.Vector3(0, 1, 0);
 
-  let level = clampLevel(deps.level ?? 1);
+  let amount = clampAmount(deps.amount ?? 1);
 
   let amplitudeM = 0;
+  /** Eased breathing switch, so toggling it never steps the amplitude. */
+  let breath = deps.breath === false ? 0 : 1;
+  let breathTarget = breath;
   /** Seconds of continuous drift; kept while fading so the phase never jumps. */
   let seconds = 0;
   let offsetM = 0;
   let baseOffset = 0;
 
-  function clampLevel(value: number): number {
-    if (!Number.isFinite(value)) {
-      return 0;
-    }
-    const rounded = Math.round(value);
-    return Math.min(FLOAT_MAX_LEVEL, Math.max(0, rounded));
+  function clampAmount(value: number): number {
+    return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
   }
 
   function apply(): void {
-    const scene = handle();
-    const applyBuoyancy = scene?.controls.applyBuoyancy;
     axis(up);
-    if (applyBuoyancy) {
-      host.setFloorOffset(baseOffset);
-      applyBuoyancy({ amountM: offsetM, axis: { x: up.x, y: up.y, z: up.z } });
-      return;
-    }
+    // The weather never moves: the backdrop takes the floor offset and stays
+    // put, whatever the scene is. There is one buoyancy implementation for
+    // every scene, and a scene's only say in it is which nodes are sky.
+    host.setBackdropOffset(baseOffset);
     // The frame owns the base Y; the heave is one vector along the visual up,
     // so a supine frame lifts the world in view instead of pushing it along the
     // gaze. The Y component must be scaled by the axis too — adding the full
@@ -112,10 +118,10 @@ export function createFloating(
 
   function update(dt: number): void {
     const allowed = buoyancyAllowed(gate());
-    const levelAmplitude = allowed ? floatAmplitudeForLevel(level) : 0;
-    const target = levelAmplitude * (deps.heaveScale?.() ?? 1);
+    const levelAmplitude = allowed ? floatAmplitude(amount) : 0;
+    const target = levelAmplitude;
     amplitudeM = easeAmplitude(amplitudeM, target, dt, FADE_TAU_S);
-    // A closed gate or level 0 settles exactly once, so an idle scene pays
+    // A closed gate or a zero amount settles exactly once, so an idle scene pays
     // nothing per frame.
     if (amplitudeM <= 0 && target === 0) {
       amplitudeM = 0;
@@ -126,18 +132,24 @@ export function createFloating(
       return;
     }
     seconds += dt;
-    offsetM = amplitudeM > 0 ? floatOffsetAt(seconds, amplitudeM) : 0;
+    // Same ease as the envelope: a switch is a fade, not a cut.
+    breath = easeAmplitude(breath, breathTarget, dt, FADE_TAU_S);
+    offsetM = amplitudeM > 0 ? floatOffsetAt(seconds, amplitudeM, breath) : 0;
     if (offsetM !== 0) {
       apply();
     }
   }
 
-  function setLevel(next: number, sceneCap = FLOAT_MAX_LEVEL): number {
-    level = clampLevel(next);
-    if (level > sceneCap) {
-      level = sceneCap;
+  function setBreath(on: boolean): void {
+    breathTarget = on ? 1 : 0;
+  }
+
+  function setAmount(next: number, sceneCap = 1): number {
+    amount = clampAmount(next);
+    if (amount > sceneCap) {
+      amount = sceneCap;
     }
-    return level;
+    return amount;
   }
 
   function setBaseOffset(next: number): void {
@@ -154,18 +166,22 @@ export function createFloating(
 
   return {
     update,
-    setLevel,
+    setAmount,
     setBaseOffset,
     reset,
-    getLevel: () => level,
+    getAmount: () => amount,
+    setBreath,
+    getBreath: () => breathTarget === 1,
     getState: (out) => {
       const state: FloatingState = out ?? {
-        level: 0,
+        amount: 1,
+        breath: 1,
         amplitudeM: 0,
         offsetM: 0,
         baseOffset: 0
       };
-      state.level = level;
+      state.amount = amount;
+      state.breath = breath;
       state.amplitudeM = amplitudeM;
       state.offsetM = offsetM;
       state.baseOffset = baseOffset;

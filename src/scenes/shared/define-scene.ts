@@ -1,6 +1,5 @@
 import type * as THREE from 'three';
 import type {
-  BuoyancyState,
   SceneDefinition,
   SceneHandle,
   SceneSettings,
@@ -8,7 +7,7 @@ import type {
 } from '../../core/scene/contract';
 import { SceneBudget, measureObject } from '../../core/geometry/budget';
 import { disposeObject3D } from '../../core/geometry/dispose';
-import type { ScenePosture } from '../../core/anatomy';
+import { lyingEyeY, type ScenePosture } from '../../core/anatomy';
 
 /**
  * What a scene builder actually has to produce. Everything else — the handle
@@ -21,9 +20,21 @@ export interface SceneBuild {
   update?: (dt: number, elapsed: number) => void;
   /** Only scenes that manufacture self-motion (the light well) implement this. */
   setMotion?: (scale: number) => void;
-  /** Scenes that place the buoyancy themselves instead of moving the content. */
-  applyBuoyancy?: (state: BuoyancyState) => void;
+  /** Geometry that belongs to the weather, not the world: it never bobs. */
+  backdrop?: THREE.Object3D;
   dispose: () => void;
+}
+
+/**
+ * The eye the art is drawn around, derived from the scene's own posture.
+ *
+ * Handed to the builder instead of letting each scene re-type its posture
+ * literal: two copies of `{ supine: 'mattress', pillow: … }` are two chances to
+ * disagree, and the floor line they set is what every prop is positioned from.
+ */
+export interface AuthoredEye {
+  /** Lying eye height, metres above the scene's own floor line. */
+  readonly lyingEyeY: number;
 }
 
 /**
@@ -35,24 +46,25 @@ export interface SceneBuild {
  *
  * `posture` is the scene's own statement about its eye; without it the frame
  * would have to guess (and it used to, with one global eye height for every
- * scene). The lying height is derived from that statement, never passed in.
+ * scene). The lying height is derived from that statement once, here, and
+ * handed to the builder — never re-typed inside a scene.
  */
 export function defineScene(
-  summary: SceneSummary & { comfortLevel?: number; heaveScale?: number },
+  summary: SceneSummary & { comfort?: number },
   posture: ScenePosture,
-  build: () => SceneBuild
+  build: (eye: AuthoredEye) => SceneBuild
 ): SceneDefinition {
   return {
     ...summary,
     posture,
     special: summary.special === true,
-    comfortLevel: summary.comfortLevel,
-    heaveScale: summary.heaveScale,
+    comfort: summary.comfort,
     build(): SceneHandle {
-      const parts = build();
+      const parts = build({ lyingEyeY: lyingEyeY(posture) });
       const stats = measureObject(parts.root);
       const handle: SceneHandle = {
         root: parts.root,
+        backdrop: parts.backdrop ?? null,
         settings: parts.settings,
         budget: new SceneBudget({
           geometries: stats.geometries,
@@ -67,13 +79,16 @@ export function defineScene(
         controls: {
           setMotion(scale: number): void {
             parts.setMotion?.(Math.min(1, Math.max(0, scale)));
-          },
-          ...(parts.applyBuoyancy ? { applyBuoyancy: parts.applyBuoyancy } : {})
+          }
         },
         dispose(): void {
           // The scene releases what it owns; anything left (instanced buffers,
           // textures a material still holds) is released here, once.
           parts.dispose();
+          if (parts.backdrop) {
+            disposeObject3D(parts.backdrop);
+            parts.backdrop.removeFromParent();
+          }
           disposeObject3D(parts.root);
           parts.settings.background = null;
           parts.settings.fog = null;

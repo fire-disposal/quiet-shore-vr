@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   FLOAT_AMPLITUDE_M,
-  FLOAT_MAX_LEVEL,
   FLOAT_PERIOD_S,
   easeAmplitude,
-  floatAmplitudeForLevel,
+  floatAmplitude,
   floatOffsetAt
 } from '../src/core/xr/float';
 
-const FULL = floatAmplitudeForLevel(FLOAT_MAX_LEVEL);
+const FULL = floatAmplitude(1);
 
 describe('float envelope', () => {
   it('ships one envelope sized for the near field', () => {
@@ -17,21 +16,18 @@ describe('float envelope', () => {
     expect(FLOAT_PERIOD_S).toBeGreaterThanOrEqual(6);
   });
 
-  it('levels map linearly onto the envelope', () => {
-    expect(floatAmplitudeForLevel(0)).toBe(0);
-    expect(floatAmplitudeForLevel(FLOAT_MAX_LEVEL)).toBeCloseTo(FLOAT_AMPLITUDE_M, 6);
-    expect(floatAmplitudeForLevel(1)).toBeCloseTo(FLOAT_AMPLITUDE_M / 3, 6);
-    expect(floatAmplitudeForLevel(2)).toBeCloseTo((FLOAT_AMPLITUDE_M * 2) / 3, 6);
+  it('maps the fraction linearly onto the envelope', () => {
+    expect(floatAmplitude(0)).toBe(0);
+    expect(floatAmplitude(1)).toBeCloseTo(FLOAT_AMPLITUDE_M, 6);
+    expect(floatAmplitude(0.4)).toBeCloseTo(FLOAT_AMPLITUDE_M * 0.4, 6);
+    // Continuous, with no steps left to round to: the operator's 47 % is 47 %.
+    expect(floatAmplitude(0.47)).toBeCloseTo(FLOAT_AMPLITUDE_M * 0.47, 6);
   });
 
-  it('rounds fractional levels instead of inventing new steps', () => {
-    expect(floatAmplitudeForLevel(1.4)).toBeCloseTo(floatAmplitudeForLevel(1), 6);
-    expect(floatAmplitudeForLevel(1.6)).toBeCloseTo(floatAmplitudeForLevel(2), 6);
-  });
-
-  it('clamps out-of-range levels instead of extrapolating', () => {
-    expect(floatAmplitudeForLevel(-2)).toBe(0);
-    expect(floatAmplitudeForLevel(99)).toBeCloseTo(FLOAT_AMPLITUDE_M, 6);
+  it('clamps out-of-range fractions instead of extrapolating', () => {
+    expect(floatAmplitude(-2)).toBe(0);
+    expect(floatAmplitude(99)).toBeCloseTo(FLOAT_AMPLITUDE_M, 6);
+    expect(floatAmplitude(Number.NaN)).toBe(0);
   });
 
   it('starts at zero and never leaves the envelope', () => {

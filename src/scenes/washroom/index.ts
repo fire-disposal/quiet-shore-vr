@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
+import { AUTHORED_EYE_Y } from '../../core/anatomy';
 import { createRoom } from './room';
 
 /**
@@ -38,7 +39,7 @@ export const washroomScene = defineScene(
   // eye at 1.70 m. The lying height (bed) is derived by `core/anatomy.ts`.
   // `viewer` makes the first frame the standing one: an uncorrected washroom
   // is a room rotated onto the ceiling.
-  { standingEyeY: 1.7, supine: 'mattress', viewer: 'standing' },
+  { standingEyeY: AUTHORED_EYE_Y, supine: 'mattress', viewer: 'standing' },
   function () {
     const room = createRoom();
     const settings: SceneSettings = {

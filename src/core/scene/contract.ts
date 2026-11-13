@@ -15,9 +15,9 @@ export interface SceneSettings {
 
 /**
  * App-computed buoyancy for one frame. The app owns the envelope (attack,
- * release, stop); a scene that implements `applyBuoyancy` only decides *where*
- * the motion goes, which is what keeps a horizon still while the foreground
- * breathes.
+ * release, stop) **and** where it goes; a scene only says which of its nodes
+ * belong to the backdrop. Kept as a shape because the transport and the mirror
+ * both read it.
  */
 export interface BuoyancyState {
   /** Offset in metres along `axis`, signed. */
@@ -34,13 +34,17 @@ export interface BuoyancyState {
 export interface SceneControls {
   /** Scale scene-authored motion, 0..1. Static scenes accept and ignore it. */
   setMotion(scale: number): void;
-  /** Optional scene-specific buoyancy placement; absent means move the whole content. */
-  applyBuoyancy?: (state: BuoyancyState) => void;
 }
 
 export interface SceneHandle {
   /** Everything the scene owns. Added under the host scene; never the host scene itself. */
   root: THREE.Object3D;
+  /**
+   * The part of the scene that must not move with the heave — sky, horizon,
+   * far layers. Added under the host's backdrop group, which takes the floor
+   * offset but never the bob.
+   */
+  backdrop: THREE.Object3D | null;
   settings: SceneSettings;
   update(dt: number, elapsed: number): void;
   /** The only scene-level control entry point used by the application. */
@@ -72,7 +76,7 @@ export interface SceneDefinition extends SceneSummary {
    * of the three and the one most likely to make someone queasy — so it caps
    * lower than the room or the lake. Absent means "the global maximum".
    */
-  comfortLevel?: number;
+  comfort?: number;
   /**
    * How much of the frame's buoyancy this scene wants as a full heave, 0..1.
    *
@@ -81,7 +85,6 @@ export interface SceneDefinition extends SceneSummary {
    * be `sceneId === 'shore'` inside the app — which meant every new scene had
    * to edit the app to say what it already knew about itself.
    */
-  heaveScale?: number;
   /**
    * Where the eye is for this scene: the height its art was authored from, and
    * what the patient's back rests on. The lying height is **derived** by

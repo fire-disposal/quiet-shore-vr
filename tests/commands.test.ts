@@ -3,20 +3,28 @@ import { parseRemoteCommand } from '../src/app/commands';
 
 describe('remote command grammar', () => {
   it('turns the float channel into typed commands', () => {
-    expect(parseRemoteCommand('float:level:2')).toEqual({ kind: 'floatLevel', level: 2 });
+    expect(parseRemoteCommand('float:level:60')).toEqual({ kind: 'floatLevel', percent: 60 });
     // The profile and breathing-layer presets were deleted: the only choice
     // left is on/off, expressed as level 3 / 0.
     expect(parseRemoteCommand('float:profile:c')?.kind).toBe('unknown');
-    expect(parseRemoteCommand('float:breath:off')?.kind).toBe('unknown');
+    expect(parseRemoteCommand('float:direction:down')?.kind).toBe('unknown');
+  });
+
+  it('takes the breathing switch as a named pair, nothing else', () => {
+    expect(parseRemoteCommand('float:breath:on')).toEqual({ kind: 'floatBreath', on: true });
+    expect(parseRemoteCommand('float:breath:off')).toEqual({ kind: 'floatBreath', on: false });
+    for (const raw of ['float:breath:1', 'float:breath', 'float:breath:']) {
+      expect(parseRemoteCommand(raw)?.kind).toBe('unknown');
+    }
   });
 
   it('rejects out-of-range or mistyped values whole', () => {
-    for (const raw of ['float:level:4', 'float:level:-1', 'float:level:1.5', 'float:level:x']) {
+    for (const raw of ['float:level:101', 'float:level:-1', 'float:level:1.5', 'float:level:x']) {
       expect(parseRemoteCommand(raw)).toEqual({ kind: 'invalid', message: '漂浮强度无效' });
     }
   });
 
-  it('keeps the eye height strict', () => {
+  it('keeps the end eye strict, inside the 1.0–2.4 m band', () => {
     expect(parseRemoteCommand('settings:eyeheight:1.55')).toEqual({
       kind: 'eyeHeight',
       meters: 1.55
@@ -25,10 +33,17 @@ describe('remote command grammar', () => {
       kind: 'eyeHeight',
       meters: 1.7
     });
+    // The whole band is expressible: a taller patient's end eye is not a typo.
+    expect(parseRemoteCommand('settings:eyeheight:2.4')).toEqual({
+      kind: 'eyeHeight',
+      meters: 2.4
+    });
     for (const raw of [
       'settings:eyeheight:1.',
-      'settings:eyeheight:2.0',
+      'settings:eyeheight:0.99',
+      'settings:eyeheight:2.41',
       'settings:eyeheight:11.7',
+      'settings:eyeheight:-1.6',
       'settings:eyeheight:1.7m',
       'settings:eyeheight:1,7'
     ]) {

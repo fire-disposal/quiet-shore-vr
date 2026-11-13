@@ -1,4 +1,9 @@
-import { createCalibrationSampler, type QuatSample, type SampleResult } from '../core/xr/calibration-sample';
+import {
+  createCalibrationSampler,
+  headingDeviationDeg,
+  type QuatSample,
+  type SampleResult
+} from '../core/xr/calibration-sample';
 
 /**
  * The calibration window as a state machine.
@@ -6,8 +11,15 @@ import { createCalibrationSampler, type QuatSample, type SampleResult } from '..
  * ```text
  * settle  --hold complete-->  countdown  --window elapses-->  done
  *   |                            |
- *   +-- moved: restart the hold  +-- deadline / no pose: done(null)
+ *   +-- moved: restart the hold  +-- wandered past the loose gate: restart the
+ *                                |   countdown from this pose
+ *                                +-- deadline / no pose: done(null)
  * ```
+ *
+ * A manual trigger (`skipSettle`) opens the countdown straight away: the
+ * operator is watching the head, and the settle gate is there to start the
+ * window on a still head, not to make them wait a second time. The wander gate
+ * inside the countdown is the same for both entries — one rule, one place.
  *
  * App used to carry six fields (phase, reference, stable time, countdown
  * start, shown time, last frame) and re-derive the card's progress from them
@@ -25,6 +37,14 @@ export interface CalibrationTiming {
   deadlineMs: number;
   /** Spread allowed inside the hold window before it restarts. */
   maxDeviationDeg: number;
+  /**
+   * Spread allowed inside the countdown before it restarts.
+   *
+   * Deliberately looser than [maxDeviationDeg]: the hold has to start on a
+   * still head, while a window only has to average one heading. This gate
+   * catches a real move, not breathing.
+   */
+  restartDeviationDeg: number;
   /** An unread pose (0,0,0,0) is given this long before we open anyway. */
   poseGraceMs: number;
 }
@@ -34,6 +54,7 @@ export const DEFAULT_CALIBRATION_TIMING: CalibrationTiming = {
   countdownMs: 3000,
   deadlineMs: 9000,
   maxDeviationDeg: 6,
+  restartDeviationDeg: 12,
   poseGraceMs: 1500
 };
 
@@ -48,8 +69,11 @@ export interface CalibrationStep {
 }
 
 export interface CalibrationRunApi {
-  /** Show the card from `nowMs`; resets the hold window and the sampler. */
-  start(nowMs: number): void;
+  /**
+   * Show the card from `nowMs`; resets the hold window and the sampler.
+   * `skipSettle` opens the sampling window immediately (manual trigger).
+   */
+  start(nowMs: number, skipSettle?: boolean): void;
   /** Feed one frame; idempotent once done. */
   update(pose: QuatSample, nowMs: number): CalibrationStep;
   isRunning(): boolean;
@@ -71,7 +95,15 @@ export function createCalibrationRun(
   let lastFrameAt = 0;
   let reference: QuatSample | null = null;
 
-  function start(nowMs: number): void {
+  /** Arm the averaging window; `pose` seeds the wander gate when known. */
+  function openWindow(nowMs: number, pose: QuatSample | null): void {
+    status = 'countdown';
+    countdownAt = nowMs;
+    reference = pose ? { x: pose.x, y: pose.y, z: pose.z, w: pose.w } : null;
+    sampler.start(nowMs);
+  }
+
+  function start(nowMs: number, skipSettle = false): void {
     status = 'settling';
     shownAt = nowMs;
     countdownAt = 0;
@@ -79,16 +111,18 @@ export function createCalibrationRun(
     lastFrameAt = 0;
     reference = null;
     sampler.reset();
+    if (skipSettle) {
+      // Manual trigger: no hold, no wait. The countdown's own gate restarts it
+      // if the patient moves, so nothing is lost by not gating the start.
+      openWindow(nowMs, null);
+    }
   }
 
   function settle(pose: QuatSample, nowMs: number): CalibrationStep {
     if (!reference) {
       reference = { x: pose.x, y: pose.y, z: pose.z, w: pose.w };
     }
-    const dot = Math.abs(
-      reference.x * pose.x + reference.y * pose.y + reference.z * pose.z + reference.w * pose.w
-    );
-    const deviation = (2 * Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+    const deviation = headingDeviationDeg(reference, pose);
     if (deviation > config.maxDeviationDeg) {
       // Moved: restart the window from the new pose instead of failing.
       reference = { x: pose.x, y: pose.y, z: pose.z, w: pose.w };
@@ -99,9 +133,7 @@ export function createCalibrationRun(
     lastFrameAt = nowMs;
 
     if (stableMs >= config.holdMs) {
-      status = 'countdown';
-      countdownAt = nowMs;
-      sampler.start(nowMs);
+      openWindow(nowMs, pose);
       return { status, progress: 0 };
     }
     return { status, progress: Math.min(1, stableMs / config.holdMs) };
@@ -130,6 +162,18 @@ export function createCalibrationRun(
     }
     if (status === 'settling') {
       return settle(pose, nowMs);
+    }
+
+    // Wander gate: a head that moved this far inside the window would smear two
+    // headings into one average. Restart from where it is now rather than
+    // failing the whole attempt. Same rule for a settled and a manual window.
+    if (read) {
+      if (!reference) {
+        reference = { x: pose.x, y: pose.y, z: pose.z, w: pose.w };
+      } else if (headingDeviationDeg(reference, pose) > config.restartDeviationDeg) {
+        openWindow(nowMs, pose);
+        return { status, progress: 0 };
+      }
     }
 
     const elapsed = nowMs - countdownAt;

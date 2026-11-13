@@ -14,6 +14,8 @@ import type { SceneDefinition, SceneHandle } from './contract';
  */
 export class SceneHost {
   readonly scene: THREE.Scene;
+  /** Geometry the heave must not move; takes the floor offset only. */
+  readonly backdrop: THREE.Group;
   readonly content: THREE.Group;
 
   private current: SceneHandle | null = null;
@@ -35,6 +37,9 @@ export class SceneHost {
 
   constructor(scene: THREE.Scene = new THREE.Scene()) {
     this.scene = scene;
+    this.backdrop = new THREE.Group();
+    this.backdrop.name = 'scene-backdrop';
+    this.scene.add(this.backdrop);
     this.content = new THREE.Group();
     this.content.name = 'scene-content';
     this.scene.add(this.content);
@@ -93,12 +98,18 @@ export class SceneHost {
 
     const previous = this.current;
     const previousDefinition = this.currentDefinition;
-    if (previous) previous.root.removeFromParent();
+    if (previous) {
+      previous.root.removeFromParent();
+      previous.backdrop?.removeFromParent();
+    }
 
     this.current = handle;
     this.currentDefinition = def;
     this.elapsed = 0;
     this.content.add(handle.root);
+    if (handle.backdrop) {
+      this.backdrop.add(handle.backdrop);
+    }
     this.scene.background = handle.settings.background;
     this.scene.fog = handle.settings.fog;
 
@@ -112,6 +123,11 @@ export class SceneHost {
     return handle;
   }
 
+  /** The floor offset for the backdrop: same base, no bob. */
+  setBackdropOffset(y: number): void {
+    this.backdrop.position.y = Number.isFinite(y) ? y : 0;
+  }
+
   /** Tear down the live scene and restore the host's original settings. */
   unload(): void {
     const previous = this.current;
@@ -121,6 +137,7 @@ export class SceneHost {
     // The caller may have wrapped the root in a comfort group and disposed
     // that wrapper already, so detach from whatever parent remains (or none).
     previous.root.removeFromParent();
+    previous.backdrop?.removeFromParent();
     try {
       previous.dispose();
     } finally {

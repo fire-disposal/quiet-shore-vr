@@ -1,4 +1,3 @@
-import { FLOAT_MAX_LEVEL } from '../core/xr/float';
 import { isViewPresetId, type ViewPresetId } from '../core/xr/view-motion';
 import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN } from './config';
 import { SUS_ITEMS } from './sus';
@@ -20,7 +19,10 @@ export type RemoteCommand =
   | { kind: 'viewStop' }
   | { kind: 'scene'; id: string }
   | { kind: 'voice'; command: string }
-  | { kind: 'floatLevel'; level: number }
+  /** `float:level:<0-100>`: the heave as a percentage of the envelope. */
+  | { kind: 'floatLevel'; percent: number }
+  /** `float:breath:on|off`: the organic texture on the heave. */
+  | { kind: 'floatBreath'; on: boolean }
   | { kind: 'riseDuration'; ms: number }
   | { kind: 'gazeDwell'; on: boolean }
   | { kind: 'susOpen' }
@@ -36,14 +38,26 @@ export type RemoteCommand =
   | { kind: 'audio'; state: 'on' | 'off' | 'toggle' }
   | { kind: 'audioVolume'; percent: number }
   | { kind: 'posture'; target: 'rise' | 'lower' | 'stop' }
+  | { kind: 'postureMix'; percent: number }
   | { kind: 'status' }
   | { kind: 'start' }
   /** Recognised prefix, invalid payload; the message is operator-facing. */
   | { kind: 'invalid'; message: string }
   | { kind: 'unknown' };
 
-/** Strict wire form for `settings:eyeheight:<m>`: no sign, exponent or padding. */
-export const EYE_HEIGHT_ARG = /^1\.\d{1,3}$/;
+/**
+ * Strict wire form for `settings:eyeheight:<m>`: plain decimal, no sign,
+ * exponent, padding or locale comma. One or two integer digits so the whole
+ * 1.0–2.4 m band is expressible; the band itself is checked in `parseEyeHeight`.
+ */
+export const EYE_HEIGHT_ARG = /^\d{1,2}(?:\.\d{1,3})?$/;
+
+/**
+ * Strict wire form for `posture:mix:<0-100>`: whole percent only. `07`, `1.5`,
+ * `101` and `-1` are rejected whole — a value the page would clamp is a value
+ * the tablet should never have sent.
+ */
+export const POSTURE_MIX_ARG = /^(?:100|[1-9]?\d)$/;
 /** Operator-selectable ramp range, in milliseconds. */
 export const RISE_MS_MIN = 4000;
 export const RISE_MS_MAX = 20000;
@@ -61,6 +75,13 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
 
   if (command.startsWith('settings:eyeheight:')) {
     return parseEyeHeight(command.slice('settings:eyeheight:'.length));
+  }
+  if (command.startsWith('posture:mix:')) {
+    const payload = command.slice('posture:mix:'.length);
+    if (!POSTURE_MIX_ARG.test(payload)) {
+      return { kind: 'invalid', message: `体位比例无效：${payload}` };
+    }
+    return { kind: 'postureMix', percent: Number(payload) };
   }
   if (command.startsWith('view:anim:')) {
     const payload = command.slice('view:anim:'.length);
@@ -83,11 +104,14 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   if (command.startsWith('voice:')) {
     return { kind: 'voice', command };
   }
+  if (command === 'float:breath:on' || command === 'float:breath:off') {
+    return { kind: 'floatBreath', on: command.endsWith(':on') };
+  }
   if (command.startsWith('float:level:')) {
     const payload = command.slice('float:level:'.length);
-    const level = Number(payload);
-    return Number.isInteger(level) && level >= 0 && level <= FLOAT_MAX_LEVEL
-      ? { kind: 'floatLevel', level }
+    const percent = Number(payload);
+    return Number.isInteger(percent) && percent >= 0 && percent <= 100
+      ? { kind: 'floatLevel', percent }
       : { kind: 'invalid', message: '漂浮强度无效' };
   }
   if (command.startsWith('anim:duration:')) {

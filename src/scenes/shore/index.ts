@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { BuoyancyState, SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
+import { AUTHORED_EYE_Y } from '../../core/anatomy';
 import { createDome } from './dome';
 import { createClouds } from './clouds';
 import { createWater } from './water';
@@ -55,7 +56,6 @@ export const shoreScene = defineScene(
   {
     id: 'shore',
     // The lake is the one scene where the body should drift with the water.
-    heaveScale: 1,
     name: { zh: '仰望湖面', en: 'Looking Up at the Lake' },
     tagline: {
       zh: '云慢慢走，水面一点点亮起来，呼吸跟着慢下来。',
@@ -69,7 +69,7 @@ export const shoreScene = defineScene(
   },
   // Drawn for a body on its back on the water: the surface is content y=0 and
   // the eye that sees the dawn sits at 1.70 m once the body stands up out of it.
-  { standingEyeY: 1.7, supine: 'water', viewer: 'supine' },
+  { standingEyeY: AUTHORED_EYE_Y, supine: 'water', viewer: 'supine' },
   function () {
     const root = new THREE.Group();
     root.name = 'shore';
@@ -84,7 +84,14 @@ export const shoreScene = defineScene(
     water.root.name = 'shore-water';
     shoreline.root.name = 'shore-shoreline';
     clouds.root.name = 'shore-clouds';
-    root.add(dome.mesh);
+    // The sky and the clouds are the backdrop: this scene no longer moves its
+    // own layers, it only says which ones are weather. The dome is 90 m away
+    // and the clouds 34 m, so at any amplitude the parallax they used to get
+    // was below the perception floor — one mechanism loses nothing visible.
+    const backdrop = new THREE.Group();
+    backdrop.name = 'shore-backdrop';
+    backdrop.add(dome.mesh);
+    backdrop.add(clouds.root);
     // The water sits in its own group so the lake's own swell and tilt can run
     // without fighting buoyancy, which owns `water.root.position`.
     const swell = new THREE.Group();
@@ -92,7 +99,6 @@ export const shoreScene = defineScene(
     swell.add(water.root);
     root.add(swell);
     root.add(shoreline.root);
-    root.add(clouds.root);
 
     const settings: SceneSettings = {
       background: new THREE.Color(FOG_COLOR),
@@ -103,6 +109,7 @@ export const shoreScene = defineScene(
 
     return {
       root,
+      backdrop,
       settings,
       update: function (dt: number): void {
         elapsed += dt;
@@ -112,22 +119,6 @@ export const shoreScene = defineScene(
         swell.position.y = Math.sin((elapsed * Math.PI * 2) / SWELL_PERIOD_S) * SWELL_M;
         swell.rotation.x = Math.sin((elapsed * Math.PI * 2) / SWELL_PITCH_PERIOD_S) * SWELL_TILT_RAD;
         swell.rotation.z = Math.sin((elapsed * Math.PI * 2) / SWELL_ROLL_PERIOD_S + 1.3) * SWELL_ROLL_RAD;
-      },
-      /**
-       * Depth-weighted buoyancy: the sky is the horizon and never moves, the
-       * deck drifts a little (parallax), the water and the near shore take the
-       * full amplitude. Sway goes to the same near layers, so the horizon line
-       * itself stays level.
-       */
-      applyBuoyancy: function (state: BuoyancyState): void {
-        const amount = Number.isFinite(state.amountM) ? state.amountM : 0;
-        // The heave runs along the patient's visual up, not the lake's: for a
-        // supine viewer those differ, and moving the near field along +Y would
-        // push it toward their face instead of lifting it.
-        const axis = state.axis ?? { x: 0, y: 1, z: 0 };
-        clouds.root.position.set(axis.x * amount * CLOUD_GAIN, axis.y * amount * CLOUD_GAIN, axis.z * amount * CLOUD_GAIN);
-        water.root.position.set(axis.x * amount, axis.y * amount, axis.z * amount);
-        shoreline.root.position.set(axis.x * amount, axis.y * amount, axis.z * amount);
       },
       dispose: function (): void {
         clouds.dispose();

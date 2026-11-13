@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLOAT_AMPLITUDE_M, FLOAT_MAX_LEVEL, FLOAT_PERIOD_S, floatAmplitudeForLevel } from '../src/core/xr/float';
+import { FLOAT_AMPLITUDE_M, FLOAT_PERIOD_S, floatAmplitude } from '../src/core/xr/float';
 
 /**
  * Perceptual envelope, checked arithmetically instead of by eye.
@@ -16,33 +16,33 @@ const DOME_M = 90;
  *  measured worst case plus margin (≈5.7 °/s), pending volunteer re-calibration. */
 const NEAR_CAP_DEG_PER_S = 5.7;
 
-function peakDegPerS(level: number, distance: number): number {
-  const amplitude = floatAmplitudeForLevel(level);
+function peakDegPerS(amount: number, distance: number): number {
+  const amplitude = floatAmplitude(amount);
   const speed = (2 * Math.PI * amplitude) / FLOAT_PERIOD_S;
   return ((speed / distance) * 180) / Math.PI;
 }
 
 describe('buoyancy perception envelope', () => {
-  it('keeps the nearest layer inside the comfort cap at every level', () => {
-    for (let level = 0; level <= FLOAT_MAX_LEVEL; level += 1) {
-      expect(peakDegPerS(level, NEAR_M)).toBeLessThanOrEqual(NEAR_CAP_DEG_PER_S);
+  it('keeps the nearest layer inside the comfort cap at every amount', () => {
+    for (let percent = 0; percent <= 100; percent += 5) {
+      expect(peakDegPerS(percent / 100, NEAR_M)).toBeLessThanOrEqual(NEAR_CAP_DEG_PER_S);
     }
   });
 
   it('is actually visible at the working level', () => {
     // Level 3: the shoreline must clear the ~0.5 °/s floor where vection starts
     // to be reported, with margin for a small scene.
-    expect(peakDegPerS(FLOAT_MAX_LEVEL, NEAR_M)).toBeGreaterThan(0.9);
+    expect(peakDegPerS(1, NEAR_M)).toBeGreaterThan(0.9);
     expect(peakDegPerS(2, NEAR_M)).toBeGreaterThan(0.5);
   });
 
   it('leaves the horizon effectively still', () => {
-    expect(peakDegPerS(FLOAT_MAX_LEVEL, DOME_M)).toBeLessThan(0.07);
-    expect(peakDegPerS(FLOAT_MAX_LEVEL, CLOUD_M)).toBeLessThan(0.18);
+    expect(peakDegPerS(1, DOME_M)).toBeLessThan(0.07);
+    expect(peakDegPerS(1, CLOUD_M)).toBeLessThan(0.18);
   });
 
   it('uses the envelope the operator asked for', () => {
-    expect(floatAmplitudeForLevel(FLOAT_MAX_LEVEL)).toBeCloseTo(FLOAT_AMPLITUDE_M, 6);
+    expect(floatAmplitude(1)).toBeCloseTo(FLOAT_AMPLITUDE_M, 6);
   });
 });
 

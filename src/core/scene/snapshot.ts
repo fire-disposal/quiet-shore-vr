@@ -42,7 +42,10 @@ export interface SceneSnapshotInput {
   readonly upGazeTargetDeg: Degrees;
   readonly viewAnim: ViewAnimState;
   readonly floorOffset: Metres;
-  readonly floatLevel: number;
+  /** The heave as a fraction of the envelope, 0–1. */
+  readonly floatAmount: number;
+  /** The breathing switch: 1 while the heave breathes, 0 for a plain sine. */
+  readonly floatBreath: number;
   /** Applied buoyancy offset, millimetres (signed). */
   readonly floatMm: number;
   readonly sessionSec: number;
@@ -79,7 +82,8 @@ export class SceneSnapshot {
   upGazeTargetDeg: Degrees = 0 as Degrees;
   viewAnim: ViewAnimState = 'idle';
   floorOffset: Metres = 0 as Metres;
-  floatLevel = 1;
+  floatAmount = 1;
+  floatBreath = 1;
   floatMm = 0;
   sessionSec = 0;
   /** Posture ramp length the page holds; the tablet displays this, not its click. */
@@ -95,7 +99,7 @@ export class SceneSnapshot {
     float: false,
     view: false,
     blocked: '未开始会话',
-    floatMax: 3
+    floatCap: 1
   };
 
   capture(input: SceneSnapshotInput): this {
@@ -123,7 +127,8 @@ export class SceneSnapshot {
     this.upGazeTargetDeg = input.upGazeTargetDeg;
     this.viewAnim = input.viewAnim;
     this.floorOffset = input.floorOffset;
-    this.floatLevel = input.floatLevel;
+    this.floatAmount = input.floatAmount;
+    this.floatBreath = input.floatBreath;
     this.floatMm = input.floatMm;
     this.sessionSec = input.sessionSec;
     this.rampMs = input.rampMs;

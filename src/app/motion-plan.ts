@@ -31,17 +31,18 @@ export interface MotionCapabilities {
    * The scene owns this ceiling, not the motion plan: it is carried here so a
    * remote stepper can clamp instead of sending a level the page will reduce.
    */
-  floatMax: number;
+  floatCap: number;
 }
 
 export interface MotionPlanInput {
   /** A session exists in the page's state machine. */
   session: boolean;
   /**
-   * Highest buoyancy level the loaded scene tolerates (1..3). Scene knowledge,
-   * carried through the plan so every consumer reads one number.
+   * Highest buoyancy the loaded scene tolerates, 0–1. Scene knowledge, carried
+   * through the plan so every consumer reads one number; 0 is a room that does
+   * not move.
    */
-  floatMax: number;
+  floatCap: number;
   /** The page is presenting in XR. */
   presenting: boolean;
   /** A calibration capture owns the world. */
@@ -89,17 +90,23 @@ export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
       float: false,
       view: false,
       blocked,
-      floatMax: input.floatMax
+      floatCap: Number.isFinite(input.floatCap) ? Math.min(1, Math.max(0, input.floatCap)) : 1
     };
   }
+  // A caller that says nothing about the ceiling means "no ceiling", not
+  // "no motion": the absence of a cap must not disable the control.
+  const askedCap = Number.isFinite(input.floatCap) ? input.floatCap : 1;
+  const floatCeiling = Math.min(1, Math.max(0, askedCap));
   return {
     rise: mix < 1 - CORRECTION_EPSILON_MIX,
     lie: mix > CORRECTION_EPSILON_MIX,
     stop: input.correctionMoving,
-    float: true,
+    // A ceiling of 0 is a room that does not move: the control is not offered
+    // at all, rather than offered and then refused.
+    float: floatCeiling > 0,
     view: true,
     blocked: '',
-    floatMax: input.floatMax
+    floatCap: floatCeiling
   };
 }
 

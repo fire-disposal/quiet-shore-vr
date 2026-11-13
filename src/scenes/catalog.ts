@@ -18,7 +18,7 @@ export interface SceneCatalogEntry {
   name: LocalizedText;
   tagline: LocalizedText;
   /** Highest buoyancy level this scene stays comfortable at; null = global max. */
-  comfortLevel: number | null;
+  comfort: number | null;
   /** True for the built-in preparation space, which is not an operator choice. */
   special: boolean;
 }
@@ -30,7 +30,7 @@ export function catalogEntries(
     id: scene.id,
     name: scene.name,
     tagline: scene.tagline,
-    comfortLevel: scene.comfortLevel ?? null,
+    comfort: scene.comfort ?? null,
     special: scene.special === true
   }));
 }

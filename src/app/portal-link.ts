@@ -37,7 +37,10 @@ export interface StateSnapshot {
   readonly eyeHeight: Metres;
   /** The one posture scalar: 0 lying, 1 standing. */
   readonly mix: Mix01;
-  readonly floatLevel: number;
+  /** The heave as a fraction of the envelope, 0–1. */
+  readonly floatAmount: number;
+  /** The breathing switch as a boolean: off means a plain sine. */
+  readonly breath: boolean;
   /** Applied buoyancy offset, millimetres. */
   readonly floatMm: number;
   /** Currently applied view angles, degrees. */
@@ -64,7 +67,8 @@ export interface StateSnapshot {
     view: boolean;
     blocked: string;
     /** Highest buoyancy level this scene allows (1..3), so a stepper can clamp. */
-    floatMax: number;
+    /** The loaded scene's own ceiling, 0–1. */
+    floatCap: number;
   }>;
 }
 
@@ -121,7 +125,8 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     moving: snapshot.correctionMoving || snapshot.viewAnim !== 'idle',
     eyeHeight: snapshot.eyeHeight,
     mix: snapshot.mix,
-    floatLevel: snapshot.floatLevel,
+    floatAmount: snapshot.floatAmount,
+    breath: snapshot.floatBreath >= 0.5,
     floatMm: snapshot.floatMm,
     viewPitch: snapshot.upGazeDeg,
     viewYaw: snapshot.lookYawDeg,
@@ -145,7 +150,7 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
       float: snapshot.caps.float,
       view: snapshot.caps.view,
       blocked: snapshot.caps.blocked,
-      floatMax: snapshot.caps.floatMax
+      floatCap: snapshot.caps.floatCap
     } satisfies StateSnapshot['caps']
   };
 }

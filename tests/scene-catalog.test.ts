@@ -37,11 +37,17 @@ describe('scene catalogue', () => {
       expect(entry.name.en.trim()).not.toBe('');
       expect(entry.tagline.zh.trim()).not.toBe('');
       expect(entry.tagline.en.trim()).not.toBe('');
-      expect(entry.comfortLevel === null || entry.comfortLevel >= 1).toBe(true);
+      // `0` is a real ceiling now: a room that does not move at all.
+      expect(entry.comfort === null || entry.comfort >= 0).toBe(true);
     }
-    // No shipped scene caps itself now; the field still has to survive the
-    // mapping, because the tablet and the headset read it for the ones that do.
-    expect(entries.every((entry) => entry.comfortLevel === null)).toBe(true);
+    // One shipped room caps itself at zero — the preparation room declares no
+    // motion — and every other scene leaves the global maximum alone. The field
+    // has to survive the mapping because the tablet and the headset read it.
+    expect(
+      entries.every((entry) =>
+        entry.id === 'prep' ? entry.comfort === 0 : entry.comfort === null
+      )
+    ).toBe(true);
     // The preparation room is built in: the picker filters it, the page and
     // the headset still need its name.
     // Two built-in rooms the operator never picks: the preparation space and

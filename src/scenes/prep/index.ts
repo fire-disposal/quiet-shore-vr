@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
+import { createPlainRoom } from '../shared/plain-room';
 import { Disposer } from '../shared/disposer';
-import { lyingEyeY } from '../../core/anatomy';
+import { AUTHORED_EYE_Y } from '../../core/anatomy';
 
 /**
  * The preparation room: an empty grey space, and nothing else.
@@ -22,8 +23,6 @@ import { lyingEyeY } from '../../core/anatomy';
 const ROOM_W = 6;
 const ROOM_D = 6;
 const ROOM_H = 2.7;
-const HALF_W = ROOM_W / 2;
-const HALF_D = ROOM_D / 2;
 
 const WALL = 0x8b8e90;
 const FLOOR = 0x6d7073;
@@ -35,6 +34,10 @@ export const prepScene = defineScene(
     id: 'prep',
     // Built-in: the first surface of a session, never a card in the picker.
     special: true,
+    // No motion, as the room's own description says — and declared, so the page
+    // refuses a level here and the tablet's control is disabled instead of the
+    // heave merely being switched off by the code that enters it.
+    comfort: 0,
     name: { zh: '准备间', en: 'Preparation Room' },
     tagline: {
       zh: '空旷的灰色空间，先熟悉一下头显。',
@@ -48,73 +51,29 @@ export const prepScene = defineScene(
   // The patient is supine, so the art is drawn from a lying eye: the floor is
   // 0.66 m below the origin and the ceiling 2.04 m above it. Starting in this
   // view means the headset is familiar before any correction is applied.
-  { standingEyeY: 1.7, supine: 'mattress', viewer: 'supine' },
-  function () {
+  { standingEyeY: AUTHORED_EYE_Y, supine: 'mattress', viewer: 'supine' },
+  function ({ lyingEyeY: eyeY }) {
     const root = new THREE.Group();
     root.name = 'prep';
     const disposer = new Disposer();
-    const eyeY = lyingEyeY({ standingEyeY: 1.7, supine: 'mattress', viewer: 'supine' });
-    const floorY = -eyeY;
-    const ceilingY = floorY + ROOM_H;
 
-    const wallMaterial = new THREE.MeshStandardMaterial({
-      color: WALL,
-      roughness: 1,
-      metalness: 0
+    // Six surfaces and one soft panel, directly above the bed: a place for the
+    // eye to rest that is not a feature of a room. The shell's own convention
+    // (interior faces, `prep-walls` named for the mirror's cutaway) lives in
+    // `createPlainRoom`.
+    const room = createPlainRoom({
+      width: ROOM_W,
+      depth: ROOM_D,
+      height: ROOM_H,
+      floorY: -eyeY,
+      wallColor: WALL,
+      floorColor: FLOOR,
+      ceilingColor: CEILING,
+      namePrefix: 'prep',
+      panel: { size: 1.4, insetM: 0.01, color: PANEL, name: 'prep-light' },
+      disposer
     });
-    const floorMaterial = new THREE.MeshStandardMaterial({
-      color: FLOOR,
-      roughness: 1,
-      metalness: 0
-    });
-    const ceilingMaterial = new THREE.MeshStandardMaterial({
-      color: CEILING,
-      roughness: 1,
-      metalness: 0
-    });
-    const panelMaterial = new THREE.MeshBasicMaterial({ color: PANEL });
-    disposer.add(wallMaterial, floorMaterial, ceilingMaterial, panelMaterial);
-
-    const wallGeometry = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
-    const sideGeometry = new THREE.PlaneGeometry(ROOM_D, ROOM_H);
-    const floorGeometry = new THREE.PlaneGeometry(ROOM_W, ROOM_D);
-    const panelGeometry = new THREE.PlaneGeometry(1.4, 1.4);
-    disposer.add(wallGeometry, sideGeometry, floorGeometry, panelGeometry);
-
-    // Interior faces only: each plane is turned towards the eye.
-    // The mirror hides meshes named `-walls` when its camera steps outside the
-    // room; an unnamed shell would leave the operator looking at a closed grey
-    // box with no patient in it.
-    const front = new THREE.Mesh(wallGeometry, wallMaterial);
-    front.name = 'prep-walls';
-    front.position.set(0, (floorY + ceilingY) / 2, -HALF_D);
-    const back = new THREE.Mesh(wallGeometry, wallMaterial);
-    back.name = 'prep-walls';
-    back.position.set(0, (floorY + ceilingY) / 2, HALF_D);
-    back.rotation.y = Math.PI;
-    const left = new THREE.Mesh(sideGeometry, wallMaterial);
-    left.name = 'prep-walls';
-    left.position.set(-HALF_W, (floorY + ceilingY) / 2, 0);
-    left.rotation.y = Math.PI / 2;
-    const right = new THREE.Mesh(sideGeometry, wallMaterial);
-    right.name = 'prep-walls';
-    right.position.set(HALF_W, (floorY + ceilingY) / 2, 0);
-    right.rotation.y = -Math.PI / 2;
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.name = 'prep-floor';
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, floorY, 0);
-    const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
-    ceiling.name = 'prep-ceiling';
-    ceiling.rotation.x = Math.PI / 2;
-    ceiling.position.set(0, ceilingY, 0);
-    // One soft panel, directly above the bed: a place for the eye to rest that
-    // is not a feature of a room.
-    const panel = new THREE.Mesh(panelGeometry, panelMaterial);
-    panel.name = 'prep-light';
-    panel.rotation.x = Math.PI / 2;
-    panel.position.set(0, ceilingY - 0.01, 0);
-    root.add(front, back, left, right, floor, ceiling, panel);
+    root.add(room.root);
 
     // No shadows, no textures. Ambient keeps the down-facing ceiling from
     // reading as a black void; the hemisphere adds just enough gradient that

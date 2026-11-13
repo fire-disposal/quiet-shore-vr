@@ -36,6 +36,17 @@ export const MATTRESS_TOP_M = 0.55;
 /** A pillow under the head lifts the eye a little further. */
 export const PILLOW_LIFT_M = 0.05;
 
+/**
+ * The eye height every scene's art is authored from, metres.
+ *
+ * This is a property of the **art**, not of a body: every room was drawn from
+ * one eye line, and re-drawing them per stature is not on the table. Scenes
+ * declare it as `posture.standingEyeY`; the operator's own setting
+ * (`config.EYE_HEIGHT_DEFAULT`) re-places the art through `eyeYAt()` and may
+ * disagree without breaking anything.
+ */
+export const AUTHORED_EYE_Y = 1.7;
+
 /** Floating on one's back: only the face clears the water. */
 export const WATER_EYE_M = 0.08;
 

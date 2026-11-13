@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { smootherstep } from '../core/xr/drivers/curve';
+import { createTrackState, stepTrack, type TrackLimits, type TrackState } from '../core/xr/drivers/track';
 import type { ComfortApi } from '../core/xr/comfort';
 import type { WorldShellApi } from '../core/xr/world-shell';
 import type { PoseLike } from '../core/xr/types';
@@ -43,8 +44,30 @@ export interface WorldRuntimeState {
   eyeY: number;
 }
 
-/** Manual ramp (the operator's rise / lie-back); settable 4–14 s. */
-const DEFAULT_RAMP_MS = 6000;
+/** Manual ramp (the operator's rise / lie-back), milliseconds. */
+const DEFAULT_RAMP_MS = 10000;
+
+/**
+ * Slider tracking for the correction itself.
+ *
+ * The same follower the view channel uses (`VIEW_TRACK_TAU_S` in
+ * `core/xr/view-motion`), deliberately: one follower, one feel under the hand.
+ * The speed cap is the loose end of the operator's own band — 2.5 s from
+ * ceiling to full correction — and the acceleration cap is what keeps the onset
+ * from tugging the world. Units are fractions of full travel per second.
+ */
+const MIX_TRACK_TAU_S = 0.25;
+const MIX_MAX_PER_S = 0.4;
+const MIX_ACCEL_MAX_PER_S2 = 1.6;
+const MIX_SNAP = 0.002;
+
+/** One limit set for both tracks: the mix, and the end eye it drags along. */
+const SLIDER_LIMITS: TrackLimits = {
+  tauS: MIX_TRACK_TAU_S,
+  maxDegPerS: MIX_MAX_PER_S,
+  maxDegPerS2: MIX_ACCEL_MAX_PER_S2,
+  snapDeg: MIX_SNAP
+};
 
 
 export interface WorldRuntimeApi {
@@ -78,8 +101,19 @@ export interface WorldRuntimeApi {
   hold(frozen: boolean): void;
   /** 1 = correct (face the wall), 0 = uncorrected (real ceiling). */
   rise(target: 0 | 1): boolean;
+  /**
+   * Operator slider target, 0–1. The first call freezes any timed ramp where it
+   * stands (the manual override) and the applied mix then follows under a speed
+   * and acceleration cap, so no drag can step the world.
+   */
+  setMixTarget(next: number): boolean;
   stopRise(): void;
   setDuration(ms: number): void;
+  /**
+   * Hot-set the end eye (where the eye is at `mix = 1`); adopted when the next
+   * ramp starts, so nothing on screen moves at the moment of the command.
+   */
+  setStandingEyeY(next: number): boolean;
   /** True while the correction ramp is moving; the cue and the cadence read this. */
   isRising(): boolean;
   /** Re-place the art from the current scene / eye height. */
@@ -92,7 +126,19 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
 
   /** Eye heights for the current scene; the lying one comes from anatomy. */
   let lyingEyeY = 0;
+  /** The end eye the running (or last) ramp lands on. */
   let standingEyeY = 0;
+  /** End eye where the running ramp started, and where it is now. */
+  let standingFrom = 0;
+  let standingNow = 0;
+  /** A hot-set end eye, adopted when the next ramp begins. */
+  let pendingStanding: number | null = null;
+  /** True while the operator's slider owns `mix`; a key command takes it back. */
+  let sliderDriven = false;
+  let sliderTarget = 0;
+  /** Where the slider has actually got to, and the end eye it drags along. */
+  let mixTrack = createTrackState(0);
+  let standingTrack = createTrackState(0);
   /** Correction the loaded scene's art was drawn for: 0 supine, 1 standing. */
   let restMix = 0;
   /** Applied eye height: the lying height with `mix` of the rise folded in. */
@@ -121,7 +167,7 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
    */
   function apply(): void {
     const t = Number.isFinite(mix) ? Math.min(1, Math.max(0, mix)) : 0;
-    eyeY = lyingEyeY + (standingEyeY - lyingEyeY) * t;
+    eyeY = lyingEyeY + (standingNow - lyingEyeY) * t;
     offsetY = Number.isFinite(eyeY) ? -eyeY : 0;
     setBaseOffset(offsetY);
   }
@@ -167,6 +213,12 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     target = restMix;
     elapsedMs = 0;
     moving = false;
+    sliderDriven = false;
+    sliderTarget = restMix;
+    mixTrack.value = restMix;
+    mixTrack.velocity = 0;
+    standingTrack.value = standingNow;
+    standingTrack.velocity = 0;
     return true;
   }
 
@@ -175,6 +227,12 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     // session: releasing the base releases the hold too.
     held = false;
     moving = false;
+    sliderDriven = false;
+    sliderTarget = 0;
+    mixTrack.value = 0;
+    mixTrack.velocity = 0;
+    standingTrack.value = 0;
+    standingTrack.velocity = 0;
     target = 0;
     from = 0;
     elapsedMs = 0;
@@ -188,11 +246,26 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (held) {
       return;
     }
+    if (sliderDriven) {
+      // The hand set a target; the world still moves on its own curve, capped
+      // and acceleration-limited, so no drag can teleport a patient's view.
+      standingNow = stepTrack(standingTrack, standingEyeY, dt, SLIDER_LIMITS);
+      const next = stepTrack(mixTrack, sliderTarget, dt, SLIDER_LIMITS);
+      if (next !== mix) {
+        pushMix(next);
+      }
+      return;
+    }
     if (moving) {
       elapsedMs += dt * 1000;
       const t = rampMs > 0 ? Math.min(1, elapsedMs / rampMs) : 1;
-      pushMix(from + (target - from) * smootherstep(t));
+      const eased = smootherstep(t);
+      // The end eye rides the same eased progress: a height set between ramps
+      // arrives with the walk instead of as a step under the patient.
+      standingNow = standingFrom + (standingEyeY - standingFrom) * eased;
+      pushMix(from + (target - from) * eased);
       if (t >= 1) {
+        standingNow = standingEyeY;
         pushMix(target);
         moving = false;
       }
@@ -211,11 +284,54 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     target = next;
     elapsedMs = 0;
     rampMs = durationMs;
+    // A key command takes the correction back from the slider, starting from
+    // what is applied, so the two inputs never write against each other.
+    sliderDriven = false;
+    // A hot-set end eye joins the ramp it is about to start.
+    standingFrom = standingNow;
+    if (pendingStanding !== null) {
+      standingEyeY = pendingStanding;
+      pendingStanding = null;
+    }
     moving = true;
     return true;
   }
 
+  /**
+   * Operator slider: the target is wherever the hand is, and the applied mix
+   * follows under the speed and acceleration caps above.
+   *
+   * The first call *is* the manual override — it stops any timed ramp where it
+   * stands, exactly like `posture:stop`, and takes the correction back from it.
+   */
+  function setMixTarget(next: number): boolean {
+    if (!ready || !Number.isFinite(next)) {
+      return false;
+    }
+    if (!sliderDriven) {
+      sliderDriven = true;
+      moving = false;
+      mixTrack.value = mix;
+      mixTrack.velocity = 0;
+      standingTrack.value = standingNow;
+      standingTrack.velocity = 0;
+      if (pendingStanding !== null) {
+        standingEyeY = pendingStanding;
+        pendingStanding = null;
+      }
+    }
+    sliderTarget = Math.min(1, Math.max(0, next));
+    return true;
+  }
+
   function stopRise(): void {
+    if (sliderDriven) {
+      // Freeze where the hand left it: the target becomes what is applied.
+      sliderTarget = mix;
+      mixTrack.value = mix;
+      mixTrack.velocity = 0;
+      return;
+    }
     if (!moving) {
       return;
     }
@@ -227,6 +343,36 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (Number.isFinite(ms) && ms > 0) {
       durationMs = ms;
     }
+  }
+
+  /**
+   * Hot-set the end eye, i.e. where the eye sits at `mix = 1` (fully stood up).
+   *
+   * Deferred to the next ramp on purpose: this height re-places the art, and
+   * doing that the moment the command lands would be a vertical jump under a
+   * patient who is not moving. Instead the value is adopted when the next rise
+   * or lie-back starts and blended across it, so nothing on screen steps.
+   */
+  function setStandingEyeY(next: number): boolean {
+    if (!Number.isFinite(next) || next <= 0) {
+      return false;
+    }
+    pendingStanding = next;
+    return true;
+  }
+
+  /**
+   * True while the correction is actually moving, whichever input owns it.
+   *
+   * The state-frame cadence and the mirror both key off this: a drag that left
+   * `moving` false would drop the readback to 1 Hz, and the operator's thumb
+   * would lag a second behind the world.
+   */
+  function movingNow(): boolean {
+    if (moving) {
+      return true;
+    }
+    return sliderDriven && Math.abs(sliderTarget - mix) > MIX_SNAP;
   }
 
   function state(out?: WorldRuntimeState): WorldRuntimeState {
@@ -241,8 +387,10 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
         eyeY: 0
       };
     result.mix = mix;
-    result.target = target;
-    result.moving = moving;
+    // Whichever input owns the correction: a readback of "where it is heading"
+    // is only honest if it names the live owner's target.
+    result.target = sliderDriven ? sliderTarget : target;
+    result.moving = movingNow();
     result.ready = ready;
     result.durationMs = durationMs;
     result.offsetY = offsetY;
@@ -254,6 +402,11 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     setScene: (eyes) => {
       lyingEyeY = Number.isFinite(eyes.lyingEyeY) ? eyes.lyingEyeY : 0;
       standingEyeY = Number.isFinite(eyes.standingEyeY) ? eyes.standingEyeY : lyingEyeY;
+      // A scene switch places the art from scratch: no ramp is running, so the
+      // end eye takes effect at once and any deferred value is dropped.
+      standingFrom = standingEyeY;
+      standingNow = standingEyeY;
+      pendingStanding = null;
       restMix = eyes.restMix === 1 ? 1 : 0;
       // With no calibration the mix has no frame to rotate: its only meaning is
       // where the art sits, so place it at the eye it was drawn from. That is
@@ -262,6 +415,14 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
       if (!ready) {
         mix = restMix;
       }
+      // A fresh scene is a fresh hand-off: no slider, no ramp, tracks on the
+      // value that is actually applied.
+      sliderDriven = false;
+      sliderTarget = mix;
+      mixTrack.value = mix;
+      mixTrack.velocity = 0;
+      standingTrack.value = standingNow;
+      standingTrack.velocity = 0;
       apply();
     },
     calibrate,
@@ -271,9 +432,11 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
       held = frozen;
     },
     rise,
+    setMixTarget,
     stopRise,
     setDuration,
-    isRising: () => moving,
+    setStandingEyeY,
+    isRising: movingNow,
     apply,
     state
   };

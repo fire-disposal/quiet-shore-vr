@@ -46,7 +46,15 @@ const DEFAULT_DURATION_MS = 900;
 const DEFAULT_MAX_DEVIATION_DEG = 6;
 const DEFAULT_CAPACITY = 64;
 
-function angleBetween(a: QuatSample, b: QuatSample): number {
+/**
+ * Angle between two orientations, degrees. `q` and `−q` are the same pose, so
+ * the dot product is taken absolute before the acos.
+ *
+ * Exported because the calibration window needs the same measure to notice a
+ * head that wandered inside the sampling window: two copies of this formula
+ * are two chances to disagree about what "moved" means.
+ */
+export function headingDeviationDeg(a: QuatSample, b: QuatSample): number {
   const dot = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
   return (2 * Math.acos(Math.min(1, dot)) * 180) / Math.PI;
 }
@@ -121,7 +129,7 @@ export function createCalibrationSampler(
       let worst = 0;
       for (let i = 0; i < count; i += 1) {
         const s = { x: buf[i * 4], y: buf[i * 4 + 1], z: buf[i * 4 + 2], w: buf[i * 4 + 3] };
-        worst = Math.max(worst, angleBetween(mean, s));
+        worst = Math.max(worst, headingDeviationDeg(mean, s));
       }
       return {
         ok: worst <= maxDeviationDeg,

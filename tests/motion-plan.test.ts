@@ -50,9 +50,20 @@ describe('motion plan', () => {
         stop: false,
         float: false,
         view: false,
-        blocked: reason
+        blocked: reason,
+        // A ceiling travels with every plan, live or blocked, so the tablet can
+        // draw the control's limit without a second field.
+        floatCap: 1
       });
     }
+  });
+
+  it('reports a zero ceiling as a room that cannot move', () => {
+    const caps = planCapabilities(input({ floatCap: 0 }));
+    expect(caps.float).toBe(false);
+    expect(caps.floatCap).toBe(0);
+    // The correction still works: a motionless room is not a dead session.
+    expect(caps.rise || caps.lie).toBe(true);
   });
 
   it('treats a non-finite mix as a settled ceiling', () => {
