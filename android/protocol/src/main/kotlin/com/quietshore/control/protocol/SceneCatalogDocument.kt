@@ -1,6 +1,7 @@
 package com.quietshore.control.protocol
 
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
  * The scene catalogue, as the page publishes it on the JSON channel and as the
@@ -16,12 +17,12 @@ import org.json.JSONObject
 object SceneCatalogDocument {
     const val MAX_SCENES = 16
 
-    /** One entry. [comfortLevel] is null when the scene allows the global max; 0 is "no motion". */
+    /** One entry. [comfortPercent] is null when the scene allows the global max; 0 is "no motion". */
     data class Scene(
         val id: String,
         val nameZh: String,
         val taglineZh: String,
-        val comfortLevel: Int? = null,
+        val comfortPercent: Int? = null,
         /** Built-in preparation space: rendered, but never offered as a choice. */
         val special: Boolean = false
     )
@@ -29,7 +30,8 @@ object SceneCatalogDocument {
     private val ID = Regex("^[a-z][a-z0-9-]{0,15}$")
 
     /**
-     * Parses `{"scenes":[{id,name:{zh,en},tagline:{zh,en},comfortLevel}]}`.
+     * Parses `{"scenes":[{id,name:{zh,en},tagline:{zh,en},comfort}]}`; the ceiling arrives
+     * as a fraction of the envelope, 0–1, and is kept as a whole percent.
      *
      * Returns null for anything malformed, empty, duplicated or over
      * [MAX_SCENES]: a half-read catalogue would silently reorder the indices
@@ -59,10 +61,12 @@ object SceneCatalogDocument {
             // Absent and explicit `null` both mean "the global maximum"; a
             // declared 0 means "this room does not move", which is different and
             // has to survive. `isNull` covers both of the first two.
-            val comfort = if (item.isNull("comfortLevel")) {
+            val comfort = if (item.isNull("comfort")) {
                 null
             } else {
-                item.optInt("comfortLevel", -1).takeIf { it in 0..3 }
+                // A fraction on the wire, a percent in the model: the console
+                // speaks percents everywhere, and this is the only conversion.
+                (item.optDouble("comfort", -1.0) * 100).roundToInt().takeIf { it in 0..100 }
             }
             val special = item.optBoolean("special", false)
             scenes.add(Scene(id, name.ifEmpty { id }, tagline, comfort, special))

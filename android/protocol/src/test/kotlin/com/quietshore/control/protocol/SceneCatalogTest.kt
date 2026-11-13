@@ -16,11 +16,11 @@ class SceneCatalogTest {
 
     private val five = """
         {"scenes":[
-          {"id":"washroom","name":{"zh":"洁净立便间","en":"Washroom"},"tagline":{"zh":"稳。","en":"Steady."},"comfortLevel":null},
-          {"id":"shore","name":{"zh":"仰望湖面","en":"Lake"},"tagline":{"zh":"云。","en":"Clouds."},"comfortLevel":null},
-          {"id":"ward","name":{"zh":"病房","en":"Ward"},"tagline":{"zh":"窗。","en":"Window."},"comfortLevel":null},
-          {"id":"garden","name":{"zh":"花园","en":"Garden"},"tagline":{"zh":"树影。","en":"Shade."},"comfortLevel":2},
-          {"id":"grove","name":{"zh":"树林","en":"Grove"},"tagline":{"zh":"落叶。","en":"Leaves."},"comfortLevel":1}
+          {"id":"washroom","name":{"zh":"洁净立便间","en":"Washroom"},"tagline":{"zh":"稳。","en":"Steady."},"comfort":null},
+          {"id":"shore","name":{"zh":"仰望湖面","en":"Lake"},"tagline":{"zh":"云。","en":"Clouds."},"comfort":null},
+          {"id":"ward","name":{"zh":"病房","en":"Ward"},"tagline":{"zh":"窗。","en":"Window."},"comfort":null},
+          {"id":"garden","name":{"zh":"花园","en":"Garden"},"tagline":{"zh":"树影。","en":"Shade."},"comfort":0.66},
+          {"id":"grove","name":{"zh":"树林","en":"Grove"},"tagline":{"zh":"落叶。","en":"Leaves."},"comfort":0.5}
         ]}
     """.trimIndent()
 
@@ -34,9 +34,9 @@ class SceneCatalogTest {
         )
         assertEquals("洁净立便间", scenes[0].nameZh)
         assertEquals("树影。", scenes[3].taglineZh)
-        assertEquals(2, scenes[3].comfortLevel)
-        assertEquals(1, scenes[4].comfortLevel)
-        assertNull(scenes[0].comfortLevel)
+        assertEquals(66, scenes[3].comfortPercent)
+        assertEquals(50, scenes[4].comfortPercent)
+        assertNull(scenes[0].comfortPercent)
         assertTrue(scenes.none { it.special })
 
         val builtIn = requireNotNull(
@@ -48,13 +48,13 @@ class SceneCatalogTest {
         val still = requireNotNull(
             SceneCatalogDocument.parse(
                 """{"scenes":[
-                    {"id":"prep","special":true,"comfortLevel":0},
-                    {"id":"ward","name":{"zh":"病房"},"comfortLevel":null}
+                    {"id":"prep","special":true,"comfort":0},
+                    {"id":"ward","name":{"zh":"病房"},"comfort":null}
                 ]}"""
             )
         )
-        assertEquals(0, still[0].comfortLevel)
-        assertNull(still[1].comfortLevel)
+        assertEquals(0, still[0].comfortPercent)
+        assertNull(still[1].comfortPercent)
     }
 
     @Test

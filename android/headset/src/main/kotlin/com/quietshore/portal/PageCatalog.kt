@@ -38,7 +38,7 @@ internal object PageCatalog {
                 id = id,
                 nameZh = ControlProtocol.SCENE_LABELS[id] ?: id,
                 taglineZh = "",
-                comfortLevel = null
+                comfortPercent = null
             )
         }
 

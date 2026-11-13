@@ -1292,9 +1292,6 @@ class PortalService : Service() {
             calibrating = json.optBoolean("calibrating", false),
             moving = json.optBoolean("moving", false),
             audioMuted = json.optBoolean("audio", false),
-            // Buoyancy the page is actually applying; the tablet mirrors this so
-            // its controls can never drift from the headset.
-            floatLevel = json.optInt("floatLevel", 1).coerceIn(0, 3),
             // The one posture scalar: rotation and eye height both follow it.
             mix = finite("mix", 0f).coerceIn(0f, 1f),
             eyeHeight = finite("eyeHeight", ControlProtocol.EYE_HEIGHT_DEFAULT)
