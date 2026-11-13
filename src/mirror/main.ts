@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { getSceneDefinition, SCENE } from '../scenes/registry';
 import { SceneHost } from '../core/scene/host';
+import { AUTHORED_EYE_Y } from '../core/anatomy';
 import { mirrorCameraTransform } from './camera';
+import { createFrustumGeometry, FOV_HALF_V_DEG, writeFrustumQuaternion } from './frustum';
 
 /**
  * Tablet scene mirror, minimal on purpose.
@@ -104,7 +106,7 @@ const target = {
   worldT: new THREE.Vector3(),
   floatMm: 0,
   /** Device-frame eye position from telemetry, metres. */
-  x: 0, y: 1.7, z: 0
+  x: 0, y: 0, z: 0
 };
 /** False until a payload carries a finite pose. */
 let hasPose = false;
@@ -114,7 +116,7 @@ const applied = {
   world: new THREE.Quaternion(),
   worldT: new THREE.Vector3(),
   floatMm: 0,
-  x: 0, y: 1.7, z: 0
+  x: 0, y: 0, z: 0
 };
 /** False until the first payload, which snaps instead of easing in from zero. */
 let primed = false;
@@ -263,7 +265,7 @@ function settleFloor(): void {
   // below and the room looked enormous.
   // The page reports the eye it actually applied (lying..standing by mix); the
   // mirror never re-derives it from a scene or from the operator's setting.
-  const sceneEye = state.eyeHeight ?? 1.59;
+  const sceneEye = state.eyeHeight ?? AUTHORED_EYE_Y;
   // Unconditional: the camera lives in the page's `local` frame, where the eye
   // is the origin, so the art only lands at eye level because it is dropped by
   // its own eye height. Gating that on `state.session` put the camera on the
@@ -287,37 +289,9 @@ overview.name = 'mirror-overview';
 overview.visible = false;
 scene.add(overview);
 
-/** Half-angles of the headset's usable field of view, degrees. */
-const FOV_HALF_H = 42;
-const FOV_HALF_V = 38;
-const FOV_LENGTH = 1.5;
 /** The diorama's own lens: narrow enough that the room fills the panel. */
 const OVERVIEW_FOV = 58;
 
-const frustumGeometry = (() => {
-  const halfW = Math.tan((FOV_HALF_H * Math.PI) / 180) * FOV_LENGTH;
-  const halfH = Math.tan((FOV_HALF_V * Math.PI) / 180) * FOV_LENGTH;
-  // Local frame: apex at the origin, axis along -Z, up along +Y.
-  const far = -FOV_LENGTH;
-  const corners: [number, number][] = [
-    [-halfW, halfH],
-    [halfW, halfH],
-    [halfW, -halfH],
-    [-halfW, -halfH]
-  ];
-  const positions: number[] = [];
-  for (const [x, y] of corners) {
-    positions.push(0, 0, 0, x, y, far);
-  }
-  for (let i = 0; i < 4; i += 1) {
-    const a = corners[i];
-    const b = corners[(i + 1) % 4];
-    positions.push(a[0], a[1], far, b[0], b[1], far);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  return geometry;
-})();
 const frustumMaterial = new THREE.LineBasicMaterial({
   color: 0x7de6ff,
   transparent: true,
@@ -326,20 +300,58 @@ const frustumMaterial = new THREE.LineBasicMaterial({
   depthWrite: false,
   toneMapped: false
 });
-const frustum = new THREE.LineSegments(frustumGeometry, frustumMaterial);
+const frustum = new THREE.LineSegments(createFrustumGeometry(), frustumMaterial);
 frustum.name = 'mirror-frustum';
 frustum.renderOrder = 3000;
 overview.add(frustum);
 
+/**
+ * The two horizons, drawn in the diorama as a schematic.
+ *
+ * `realHorizon` is the patient's own room: the device's X axis carried into the
+ * content frame by the applied world rotation. `virtualHorizon` is the content's
+ * own X axis. At full correction they lie on top of each other; the angle
+ * between them is exactly the compensation the page has applied, which is the
+ * one quantity this console is about. They are drawn as lines, not as a gauge,
+ * because the mirror already has a picture.
+ */
+const horizonGeometry = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-0.9, 0, 0),
+  new THREE.Vector3(0.9, 0, 0)
+]);
+const realHorizon = new THREE.Line(
+  horizonGeometry,
+  new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.5,
+    depthTest: false,
+    toneMapped: false
+  })
+);
+realHorizon.name = 'mirror-real-horizon';
+realHorizon.renderOrder = 3000;
+const virtualHorizon = new THREE.Line(
+  horizonGeometry,
+  new THREE.LineBasicMaterial({
+    color: 0x7de6ff,
+    transparent: true,
+    opacity: 0.85,
+    depthTest: false,
+    toneMapped: false
+  })
+);
+virtualHorizon.name = 'mirror-virtual-horizon';
+virtualHorizon.renderOrder = 3001;
+overview.add(realHorizon, virtualHorizon);
+const realAxis = new THREE.Vector3(1, 0, 0);
+
 const eyePoint = new THREE.Vector3();
-const gazeDir = new THREE.Vector3();
-const headUp = new THREE.Vector3();
+/** The patient's own orientation, captured before the camera is moved out. */
+const patientQuaternion = new THREE.Quaternion();
 const upAxis = new THREE.Vector3(0, 1, 0);
 const lookAt = new THREE.Vector3();
-const basis = new THREE.Matrix4();
 const orbitOffset = new THREE.Vector3();
-const frustumX = new THREE.Vector3();
-const frustumZ = new THREE.Vector3();
 
 /**
  * Overview camera orbit: **not** driven by the patient's gaze.
@@ -444,9 +456,10 @@ canvasHost.addEventListener('pointercancel', releasePointer);
 
 function applyOverview(): void {
   eyePoint.copy(camera.position);
-  // Patient orientation, used for the frustum only.
-  gazeDir.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-  headUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+  // The camera is about to leave the eye for the diorama orbit, so the patient's
+  // own orientation is taken *here*: reading `camera.quaternion` after `lookAt`
+  // would point the frustum wherever the orbit happens to be aimed.
+  patientQuaternion.copy(camera.quaternion);
 
   const azimuth = (orbit.azimuthDeg * Math.PI) / 180;
   const elevation = (orbit.elevationDeg * Math.PI) / 180;
@@ -468,18 +481,18 @@ function applyOverview(): void {
   camera.up.copy(upAxis);
   camera.lookAt(lookAt);
 
-  // Frustum: local -Z along the gaze, local +Y along the patient's up. A
-  // patient looking straight up makes `headUp × gaze` degenerate, so fall back
-  // to the room's +Z axis rather than producing a zero-length basis.
-  frustumX.crossVectors(headUp, gazeDir);
-  if (frustumX.lengthSq() < 1e-6) {
-    frustumX.set(0, 0, 1);
-  }
-  frustumX.normalize();
-  frustumZ.copy(gazeDir).negate().normalize();
-  basis.makeBasis(frustumX, headUp, frustumZ);
+  // Frustum: the camera's own quaternion, so the wire points where the panel
+  // points. Any second derivation of "the gaze" is a chance to point elsewhere.
+  writeFrustumQuaternion(frustum.quaternion, patientQuaternion);
   frustum.position.copy(eyePoint);
-  frustum.quaternion.setFromRotationMatrix(basis);
+  // The content's own horizontal, and the patient's room carried into it.
+  realAxis.set(1, 0, 0);
+  virtualHorizon.position.copy(eyePoint);
+  virtualHorizon.quaternion.identity();
+  realAxis.set(1, 0, 0).applyQuaternion(applied.world);
+  const tilt = Math.atan2(realAxis.y, realAxis.x);
+  realHorizon.position.copy(eyePoint);
+  realHorizon.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), tilt);
   overview.visible = true;
 }
 
@@ -507,7 +520,7 @@ function applyCamera(): void {
     overview.visible = false;
     // The headset's vertical field (2 × 38°), kept so the framing reads similar
     // — the contract is the centre ray, not the field: no letterboxing.
-    camera.fov = FOV_HALF_V * 2;
+    camera.fov = FOV_HALF_V_DEG * 2;
     camera.updateProjectionMatrix();
     return;
   }
