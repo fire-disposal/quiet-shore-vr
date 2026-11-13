@@ -36,6 +36,7 @@ package com.quietshore.portal
 internal class EntryRetry(
     private val pageWaitMs: Long = PAGE_WAIT_MS,
     private val pressWaitMs: Long = PRESS_WAIT_MS,
+    private val tapRetryMs: Long = TAP_RETRY_MS,
     private val maxRetries: Int = MAX_RETRIES,
     /** Whether a synthetic tap is possible right now (accessibility enabled). */
     private val autoTapAvailable: () -> Boolean = { false }
@@ -102,6 +103,8 @@ internal class EntryRetry(
             return Decision.HOLD
         }
         if (phase == Phase.WAITING_SESSION && !tapped && autoTapAvailable()) {
+            // The allowance is spent when the tap is *asked* for; `tapFailed`
+            // gives it back when the service refused to inject anything.
             tapped = true
             // The patient gets the same window again before we disturb anything.
             checkAt = now + pressWaitMs
@@ -121,6 +124,20 @@ internal class EntryRetry(
         return Decision.RELAUNCH
     }
 
+    /**
+     * The injected tap never happened (no service, wrong front window, or the
+     * platform refused the gesture). Return the allowance so the same window
+     * can try once more instead of waiting out a relaunch that was only ever
+     * needed because the tap was silently dropped.
+     */
+    fun tapFailed(now: Long) {
+        if (phase != Phase.WAITING_SESSION) {
+            return
+        }
+        tapped = false
+        checkAt = now + tapRetryMs
+    }
+
     companion object {
         /** Firefox Reality's cold start plus the page's first state frame. */
         const val PAGE_WAIT_MS = 25_000L
@@ -131,6 +148,9 @@ internal class EntryRetry(
          * that an operator notices the scene arrive.
          */
         const val PRESS_WAIT_MS = 20_000L
+
+        /** After a tap that was never injected, try again this soon. */
+        const val TAP_RETRY_MS = 3_000L
 
         /** Two relaunches; a third would only fight the patient's own press. */
         const val MAX_RETRIES = 2

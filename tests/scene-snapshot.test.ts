@@ -28,6 +28,8 @@ function neutralInput(): SceneSnapshotInput {
     floatLevel: 1,
     floatMm: 0,
     sessionSec: 0,
+    rampMs: 6000,
+    adaptationDone: true,
     voiceId: -1,
     caps: {
       rise: true,
@@ -110,9 +112,12 @@ describe('scene snapshot', () => {
     expect(payload.elapsedSec).toBe(96);
     expect(payload.voiceId).toBe(7);
     expect(payload.app).toBe('training');
+    expect(payload.adaptationDone).toBe(true);
+    expect(payload.rampMs).toBe(6000);
 
     expect(Object.keys(payload).sort()).toEqual(
       [
+        'adaptationDone',
         'app',
         'calibrationConfidence',
         'calibrating',
@@ -124,6 +129,7 @@ describe('scene snapshot', () => {
         'floatMm',
         'mix',
         'moving',
+        'rampMs',
         'scene',
         'session',
         'viewAnim',

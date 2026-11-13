@@ -58,7 +58,20 @@ A user gesture is required.
 - 会话一旦上报过，监督立即结束：结束后的空闲页绝不被当成“患者还没按”。
 - 状态可查 `GET /status` 的 `entry:{phase,retries}`。
 
-监督不管 FireFox Reality 自己的窗口位置；重拉能否真的把窗口挪到患者当前视线前方，需要在实机上确认（见 §8 验证清单）。
+监督不管 Firefox Reality 自己的窗口位置。
+
+**2026-11-13 静态结论（FxR 10.5 上游源码）**：窗口的朝向/位置**没有任何可用接口**。
+
+- `VRBrowserActivity.loadFromIntent` 接受的 extras 全集只有
+  `{url, homepage, background, create_new_window, hide_webxr_interstitial, hide_whats_new}`
+  （外加 `EXTRA_TEXT` 里抠 URL）。没有位置、朝向、缩放、recenter 的任何键。
+- 窗口摆放属于 FxR 自己的 `WindowWidget`/`WindowPlacement`，只有它自己的 UI 能改。
+- 页面侧在机制上也不可能影响面板：面板是 Java 层的 VR window widget，不是 DOM；WebXR 没有
+  “浏览器窗口姿态”的 API；而且 `requestSession` 成功后面板就被沉浸画面替换，时序是反的。
+- `view:anim:recenter` 是**场景相机俯仰回正**，与 FxR 窗口无关，不要混用。
+
+因此“患者戴上就看到画面”在这套容器上不可达。能交付的上限是：重拉 + 入口页提示 `retry` +
+首帧视线回正。`create_new_window=true` 的新窗口由 FxR 自己摆位，属于唯一尚未试过的手段。
 
 ### 3.1a 入口自动点击（借患者一次按压）
 
@@ -78,8 +91,19 @@ Firefox Reality），然后在屏幕中心注入一次 90 ms 的点击（`dispat
 - 监督顺序（`EntryRetry`）：页面上线后 20 s 没有会话 → **先注入一次点击**（不消耗重拉次数，
   再给 20 s）→ 仍无会话 → 带新地址重拉（最多 2 次）。
 - 只在 `org.mozilla.vrbrowser` 位于前台时点击，避免误点控制台。
-- 未验证项：Firefox Reality 是否在点击后再要求一次确认；注入点击在 2D 窗口的命中点是否
-  为面板坐标。两者都需实机（`docs/pico-g2.md` §8）。
+- **已消除一个未验证项**：FxR 默认在进入沉浸模式前弹自己的 WebXR interstitial（第二次确认）。
+  `PortalActions.enter` 现在带 `hide_webxr_interstitial=true` 把它关掉——这是整条入口路径上
+  唯一无需 root、确定有效的减点击手段。
+- **仍待判定，且静态证据倾向不可行**：注入点击能否变成页面指针。FxR 10.5 里指针只从引擎侧
+  进入（`VRBrowserActivity.handleMotionEvent` → `MotionEventGenerator.dispatch`，且是 widget
+  局部坐标），而 `VRBrowserActivity` 与 `UISurfaceTextureView` 都**没有**
+  `onTouchEvent`/`dispatchTouchEvent`：显示层触摸没有到 Gecko 页面的通路。
+  `dispatchGesture` 返回 true 只说明系统输入管线收下了手势。
+- 命中点也从未被计算过：`TapService.tapCenter` 取的是整屏中心 `(w/2, 0.55h)`，而服务没有声明
+  `canRetrieveWindowContent`，拿不到窗口 bounds，无法把面板位置折算成像素。
+- 判定方式：连续三次 launch 中若 ≥2 次出现「tap sent → 20 s 内 relaunching」，即判为不可行；
+  此时应删除 `Decision.TAP` 分支与 `TapService`，把入口问题的答案收敛为「重拉 + 提示 +
+  `hide_webxr_interstitial`」。
 
 ### 3.2 Gecko 78 的 `xrCompatible`
 

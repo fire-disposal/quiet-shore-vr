@@ -122,13 +122,13 @@ private val STEPS: List<Step> = listOf(
     Step(2, "启动", "进准备间",
         "点«启动训练»，患者按一次右侧按钮", "‹20 秒›未按将重开页面"),
     Step(3, "标定", "准备间里做",
-        "技术员点«记录起始体位»，患者保持不动", "标定后才解锁场景"),
-    Step(4, "选场景", "标定完成后",
-        "在«01 场景»选卡，再按«进入正式场景»", "多段用«02 流程»"),
+        "技术员点«记录起始体位»，患者保持不动", "未标定时场景不可选"),
+    Step(4, "选场景", "标定以后",
+        "在«01 场景»选卡，再按«进入正式场景»", "会话中可换场"),
     Step(5, "调整", "强度、语音、体位",
-        "起身前选时长，再按‹起身›；其余在操作区", "体位偏了点«重新校准»"),
-    Step(6, "结束", "可补答 SUS",
-        "点«结束»，等淡出", "结束后补答 SUS")
+        "起身前选时长，再按‹起身›；语音与水声在«音频»", "体位偏了点«重新校准»"),
+    Step(6, "结束", "记录本次结果",
+        "点«结束»，等淡出", "取下头显记下本次结果")
 )
 
 /** One row of the state table: the left column is the word the screen prints. */
@@ -146,7 +146,7 @@ private val STATES: List<StateRow> = listOf(
     StateRow("校准", "«校准中»", "请患者保持不动"),
     StateRow("训练中", "«训练中»", "按需调强度与语音"),
     StateRow("正在结束", "«正在结束»", "等淡出"),
-    StateRow("已结束", "计时停止", "补答 SUS 或再启动"),
+    StateRow("已结束", "计时停止", "记录本次结果，或再启动"),
     StateRow("连接受限", "«连接受限»", "让头显回到前台"),
     StateRow("已断开", "«头显已断开»", "点«重新连接»")
 )
@@ -200,7 +200,7 @@ private fun QuestionnaireGuide() {
     Spacer(Modifier.height(12.dp))
     for (line in listOf(
         "1 在顶栏把应用切到「场景化问卷作答器」；会话进行中不能切。",
-        "2 让患者戴上头显，打开问卷；题目与选项出现在视野里。",
+        "2 让患者戴上头显，打开问卷；题目与选项出现在视野里（问卷面有自己的空房间，没有环境声）。",
         "3 患者目视选项停住即作答；看不准的题由技术员在平板上代答。",
         "4 答完最后一题即记录；提前关闭只保存已完成部分。"
     )) {
@@ -229,7 +229,9 @@ fun GuideScreen(
     onBack: () -> Unit,
     /** Which app's guide: `i` follows the current app, never a global one. */
     app: String = "training",
-    withChrome: Boolean = true
+    withChrome: Boolean = true,
+    /** Share the local record set; both guides offer it, the file is shared. */
+    onExport: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -278,11 +280,47 @@ fun GuideScreen(
                         Spacer(Modifier.height(44.dp))
                         FaultsBand()
                     }
+                    Spacer(Modifier.height(44.dp))
+                    RecordsBand(onExport = onExport)
                     Spacer(Modifier.height(48.dp))
                 }
             }
         }
     }
+}
+
+/**
+ * The record band: one document, both applications.
+ *
+ * Training sessions, questionnaire sheets and the behaviour events that led to
+ * them live in the same local store. The export is deliberately the only thing
+ * here that reaches outside the device, and it reaches a destination the
+ * operator picks — nothing is uploaded, nothing leaves on a timer.
+ */
+@Composable
+private fun RecordsBand(onExport: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "记录",
+            style = MaterialTheme.typography.titleLarge,
+            color = QuietPalette.TextPrimary,
+            modifier = Modifier.semantics { heading() }
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = "会话、问卷与本机行为事件同库；只在取下头显后导出",
+            style = MaterialTheme.typography.bodySmall,
+            color = QuietPalette.TextSecondary,
+            modifier = Modifier.weight(1f)
+        )
+        Key(
+            label = "导出本机记录",
+            onClick = onExport,
+            kind = KeyKind.Outline
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    Rule()
 }
 
 /**

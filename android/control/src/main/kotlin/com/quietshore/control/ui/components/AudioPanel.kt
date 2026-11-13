@@ -32,17 +32,19 @@ import com.quietshore.control.ui.theme.QuietPalette
 import com.quietshore.control.voice.VoiceCatalog
 
 /**
- * Voice cue drawer.
+ * The audio page: every sound the patient hears, in one place.
  *
- * Everything the operator does here is a name: play this line, play this
- * sequence, stop. Audio never crosses the link, so every action lands in a few
- * hundred milliseconds and the panel stays usable while a session runs.
+ * Two sources and one transport. The cues are spoken lines the operator fires
+ * by hand — there is no sequence player and no automatic schedule, because the
+ * person at the bedside is the scheduler. The water bed is room tone: it has
+ * its own level, independent of the cue level, so "quieter water" never means
+ * "quieter voice".
  *
- * Order is by frequency of use: transport, what is speaking now, the two
- * switches, sequences, tone, mixing, then the full catalog.
+ * Order is by frequency of use: what is speaking, the transport, the cue level,
+ * the bed, then the full catalogue.
  */
 @Composable
-fun VoicePanel(
+fun AudioPanel(
     state: ControlUiState,
     actions: ControlActions,
     modifier: Modifier = Modifier
@@ -141,8 +143,24 @@ fun VoicePanel(
             }
         }
 
-        Band(title = "声音") {
+        Band(title = "音量") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                ValueSlider(
+                    label = "语音",
+                    value = state.voiceVolume,
+                    range = 0..100,
+                    text = "${state.voiceVolume}",
+                    enabled = connected
+                ) { actions.onVoiceVolume(it) }
+                // The bed has a level, not only a switch: the room tone is the
+                // one sound the patient cannot ask to stop mid-sentence.
+                ValueSlider(
+                    label = "水声",
+                    value = state.waterVolume,
+                    range = 0..100,
+                    text = "${state.waterVolume}",
+                    enabled = connected && !state.control.audioMuted
+                ) { actions.onAudioVolume(it) }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -151,83 +169,17 @@ fun VoicePanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "水声",
+                        text = if (state.control.audioMuted) "水声已关闭" else "水声开启",
                         style = MaterialTheme.typography.bodyMedium,
                         color = QuietPalette.TextPrimary,
                         modifier = Modifier.weight(1f)
                     )
                     Key(
-                        label = if (state.control.audioMuted) "开始水声" else "暂停水声",
+                        label = if (state.control.audioMuted) "开启水声" else "关闭水声",
                         onClick = actions.onToggleAudio,
                         enabled = connected,
                         minWidth = TouchTarget + 32.dp
                     )
-                }
-                ValueSlider(
-                    label = "语音音量",
-                    value = state.voiceVolume,
-                    range = 0..100,
-                    text = "${state.voiceVolume}",
-                    enabled = connected
-                ) { actions.onVoiceVolume(it) }
-                ValueSlider(
-                    label = "水声压低",
-                    value = state.duckDb,
-                    range = 0..18,
-                    text = "${state.duckDb} dB",
-                    enabled = connected
-                ) { actions.onVoiceDuck(it) }
-            }
-        }
-
-        // Four scripted sequences. The page owns the pacing and keeps the bed
-        // ducked until the last line, so one tap runs the whole arc.
-        Band(title = "连续播放") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                for ((label, name) in listOf(
-                    "开始" to "start",
-                    "想象" to "imagine",
-                    "放松" to "relax",
-                    "收束" to "close"
-                )) {
-                    Key(
-                        label = label,
-                        onClick = { actions.onVoiceSequence(name) },
-                        modifier = Modifier.weight(1f),
-                        enabled = connected
-                    )
-                }
-            }
-        }
-
-        Band(title = "音色") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "切换音色会短暂停顿。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary,
-                    modifier = Modifier.weight(1f)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for ((label, id) in listOf("女声" to "female", "男声" to "male")) {
-                        Key(
-                            label = label,
-                            onClick = { actions.onVoiceSet(id) },
-                            kind = if (state.voiceSet == id) KeyKind.Fill else KeyKind.Outline,
-                            enabled = connected,
-                            minWidth = TouchTarget + 32.dp
-                        )
-                    }
                 }
             }
         }

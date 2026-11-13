@@ -75,7 +75,7 @@ fun MirrorSlot(
                 // carried that nothing else does; it rides here instead of
                 // costing a whole block under the picture.
                 note = when {
-                    phase == SessionPhase.Calibrating -> "标定中 · 镜像来自状态帧"
+                    phase == SessionPhase.Calibrating -> "标定中，镜像来自状态帧"
                     state.sessionElapsedMs > 0L -> "已运行 ${clock(state.sessionElapsedMs)}"
                     else -> "镜像来自状态帧"
                 },
@@ -120,9 +120,9 @@ fun MirrorSlot(
                 if (state.inSpecialScene) {
                     Text(
                         text = when {
-                            state.control.calibrating -> "标定中 · 请患者保持不动"
-                            state.sessionElapsedMs > 0L -> "准备间 · 右侧选择正式场景"
-                            else -> "准备间 · 调整体位并记录起始朝向"
+                            state.control.calibrating -> "标定中，请患者保持不动"
+                            state.sessionElapsedMs > 0L -> "准备间，右侧选择正式场景"
+                            else -> "准备间，调整体位并记录起始朝向"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = QuietPalette.Ink,
@@ -153,7 +153,7 @@ fun MirrorSlot(
                     val note = when {
                         !hasFrame && phase == SessionPhase.Entry -> "头显在入口页，等待患者按压。"
                         !hasFrame -> "头显未连接，或未收到状态帧。"
-                        else -> "画面就绪后自动替换。"
+                        else -> "画面还没有到。"
                     }
                     Text(
                         text = title,
@@ -265,18 +265,56 @@ fun VoiceSummaryRow(
     }
 }
 
-/** The posture gauges, side by side: one read-only block on any page. */
+/**
+ * The head's angles, as two figures and nothing else.
+ *
+ * This used to be three drawings of one fact — a side elevation, a compass dial
+ * and a slider — spread across a third of the page. The operator reads this
+ * while looking at the patient, not while studying it: two numbers on the same
+ * baseline answer "which way is the head facing and how far is it tipped", and
+ * the mirror above already shows the same thing as a picture.
+ */
 @Composable
 fun PostureGauges(state: ControlUiState, modifier: Modifier = Modifier) {
+    val pose = state.pose
+    val stale = state.poseStale || pose == null
+    val yaw = pose?.yaw ?: 0f
+    val pitch = pose?.pitch ?: 0f
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(40.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(48.dp),
+        verticalAlignment = Alignment.Bottom
     ) {
-        PitchSideGauge(pose = state.pose, stale = state.poseStale)
-        AngleGauge(pose = state.pose, stale = state.poseStale)
+        for ((label, value, unit) in listOf(
+            Triple("偏航", yaw, "°"),
+            Triple("俯仰", pitch, "°")
+        )) {
+            Column {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = QuietPalette.InkSecondary
+                )
+                Text(
+                    // `%+.0f` turns -0.2° into "-0°" and 0° into "+0°"; below
+                    // half a degree the sign carries no information at all.
+                    text = if (stale) {
+                        "—"
+                    } else {
+                        val rounded = Math.round(value)
+                        if (rounded == 0) {
+                            "0$unit"
+                        } else {
+                            String.format(java.util.Locale.US, "%+d%s", rounded, unit)
+                        }
+                    },
+                    style = MaterialTheme.typography.headlineMedium.tabularFigures(),
+                    color = if (stale) QuietPalette.Disabled else QuietPalette.Ink
+                )
+            }
+        }
     }
 }
 

@@ -50,7 +50,8 @@ describe('scene registry', () => {
       washroom: { standing: 1.7, lying: 0.66, viewer: 'standing' },
       shore: { standing: 1.7, lying: 0.08, viewer: 'supine' },
       ward: { standing: 1.7, lying: 0.71, viewer: 'supine' },
-      prep: { standing: 1.7, lying: 0.66, viewer: 'supine' }
+      prep: { standing: 1.7, lying: 0.66, viewer: 'supine' },
+      survey: { standing: 1.7, lying: 0.66, viewer: 'supine' }
     });
   });
 
@@ -60,7 +61,8 @@ describe('scene registry', () => {
       'washroom',
       'shore',
       'ward',
-      'prep'
+      'prep',
+      'survey'
     ]);
 
     // A session opens in the neutral preparation room, not in a real scene.
@@ -137,7 +139,7 @@ describe('scene capabilities', () => {
     // `comfortLevel` stays on the contract for a scene that earns a lower cap;
     // none of the shipped scenes now does, and the catalogue must say so.
     const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfortLevel ?? 3]));
-    expect(ceilings).toEqual({ washroom: 3, shore: 3, ward: 3, prep: 3 });
+    expect(ceilings).toEqual({ washroom: 3, shore: 3, ward: 3, prep: 3, survey: 3 });
   });
 
   it('hands each motion channel to the scene that needs it', () => {
@@ -145,14 +147,35 @@ describe('scene capabilities', () => {
     const shore = build('shore').handle;
     try {
       // The room is static: no per-frame work beyond the patient's own motion.
-      expect(washroom.applyBuoyancy).toBeUndefined();
-      expect(washroom.setMotion).toBeUndefined();
+      expect(washroom.controls.applyBuoyancy).toBeUndefined();
       // The lake carries the buoyancy itself so the horizon stays level.
-      expect(typeof shore.applyBuoyancy).toBe('function');
-      expect(shore.setMotion).toBeUndefined();
+      expect(typeof shore.controls.applyBuoyancy).toBe('function');
     } finally {
       washroom.dispose();
       shore.dispose();
+    }
+  });
+
+  it('exposes one manual-control surface on every scene', () => {
+    // The operator drives one handle shape, whatever the scene: adding a scene
+    // that invented its own channel would mean the app grew a branch per
+    // scene, which is exactly what the registry exists to prevent.
+    for (const definition of SCENES) {
+      const { handle } = build(definition.id);
+      try {
+        expect(typeof handle.controls.setMotion).toBe('function');
+        // Out-of-range scale is clamped, never thrown: the app feeds it from a
+        // motion plan that may pass 0 mid-fade.
+        expect(() => handle.controls.setMotion(-1)).not.toThrow();
+        expect(() => handle.controls.setMotion(4)).not.toThrow();
+        if (handle.controls.applyBuoyancy) {
+          expect(() =>
+            handle.controls.applyBuoyancy!({ amountM: 0.02, axis: { x: 0, y: 1, z: 0 } })
+          ).not.toThrow();
+        }
+      } finally {
+        handle.dispose();
+      }
     }
   });
 

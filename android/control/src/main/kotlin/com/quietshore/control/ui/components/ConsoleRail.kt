@@ -43,7 +43,7 @@ import com.quietshore.control.ui.theme.QuietSpace
 enum class ConsoleSection(val label: String, val latin: String) {
     Session("会话", "SESSION"),
     Scene("场景", "SCENE"),
-    Voice("语音", "VOICE")
+    Audio("音频", "AUDIO")
 }
 
 /** Width of the rail: Latin eyebrow + Chinese label, one column each. */

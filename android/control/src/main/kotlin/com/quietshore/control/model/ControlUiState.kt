@@ -90,8 +90,14 @@ data class ControlUiState(
     val rssi: Int? = null,
     /** Buoyancy intensity 0..3, mirrored from the operator's choice. */
     val floatLevel: Int = 1,
-    /** Sit-up ramp length in milliseconds. */
-    val animDurationMs: Int = 6000,
+    /**
+     * Sit-up ramp length the headset holds, milliseconds.
+     *
+     * This is a readback like every other live value: the operator picks a
+     * length, the page keeps it, and the row highlights what the page says. A
+     * local copy would keep showing 10 s after a page reload reset it to 6.
+     */
+    val rampMs: Int = 0,
     /** Operator switch for gaze dwell; on by default. */
     val gazeDwell: Boolean = true,
     /** Operator switch for reading the SUS statement aloud; on by default. */
@@ -104,10 +110,20 @@ data class ControlUiState(
     val susOpen: Boolean = false,
     /** Milliseconds since the headset reported a running session. */
     val sessionElapsedMs: Long = 0L,
+    /**
+     * Whether the page's orientation gate has opened.
+     *
+     * The page owns the timing and publishes only the verdict: the tablet keeps
+     * the capture key closed until then and never counts anything down. True by
+     * default, so an older page that does not publish it cannot lock the key.
+     */
+    val adaptationDone: Boolean = true,
     /** Voice set the operator picked: "male" or "female". */
     val voiceSet: String = "female",
     /** Cue volume 0–100, independent of the scene bed. */
     val voiceVolume: Int = 90,
+    /** Ambience level 0–100 of the scene bed's authored loudness. */
+    val waterVolume: Int = 100,
     /** Scene ducking depth while a cue speaks, 0–18 dB. */
     val duckDb: Int = 12,
     /** Index of the cue the headset reports as speaking, or -1. */
@@ -148,12 +164,6 @@ data class ControlUiState(
 
     /** Product face the headset reports; the top bar displays this value. */
     val app: String = "training",
-
-    /** The operator's plan; empty segments = one open-ended scene. */
-    val program: ProgramState = ProgramState(),
-
-    /** Page-reported progress through [program], null outside a session. */
-    val segmentProgress: SegmentProgress? = null,
 
     /** Questionnaire catalogue announced by the page. */
     val questionnaires: List<

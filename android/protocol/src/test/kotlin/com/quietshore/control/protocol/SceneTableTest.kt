@@ -20,14 +20,12 @@ class SceneTableTest {
     }
 
     @Test
-    fun `labels and blurbs cover exactly the shipped scenes`() {
+    fun `labels cover exactly the shipped scenes`() {
+        // Copy is the page's: this table only resolves a state-frame index into
+        // a name before the catalogue arrives, so names are all it may carry.
         assertEquals(ControlProtocol.SCENE_IDS.toSet(), ControlProtocol.SCENE_LABELS.keys)
-        assertEquals(ControlProtocol.SCENE_IDS.toSet(), ControlProtocol.SCENE_BLURBS.keys)
         for (id in ControlProtocol.SCENE_IDS) {
             assertTrue(ControlProtocol.SCENE_LABELS.getValue(id).isNotBlank())
-            val blurb = ControlProtocol.SCENE_BLURBS.getValue(id)
-            assertTrue(blurb.isNotBlank())
-            assertTrue(blurb.length <= 48, "blurb for $id is too long for one card line")
         }
     }
 

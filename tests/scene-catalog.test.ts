@@ -16,8 +16,18 @@ describe('scene catalogue', () => {
       'washroom',
       'shore',
       'ward',
-      'prep'
+      'prep',
+      'survey'
     ]);
+  });
+
+  it('keeps the questionnaire room out of the picker and out of the sound', () => {
+    const survey = SCENES.find((scene) => scene.id === 'survey');
+    expect(survey).toBeDefined();
+    // The face owns it; the operator must never be offered a card for it.
+    expect(survey?.special).toBe(true);
+    // And it declares no ambience at all: the questionnaire face is silent.
+    expect(survey?.audio).toBeUndefined();
   });
 
   it('carries the copy and the cap both consumers render', () => {
@@ -34,8 +44,11 @@ describe('scene catalogue', () => {
     expect(entries.every((entry) => entry.comfortLevel === null)).toBe(true);
     // The preparation room is built in: the picker filters it, the page and
     // the headset still need its name.
+    // Two built-in rooms the operator never picks: the preparation space and
+    // the questionnaire's own.
     expect(entries.filter((entry) => entry.special).map((entry) => entry.id)).toEqual([
-      'prep'
+      'prep',
+      'survey'
     ]);
   });
 

@@ -118,9 +118,10 @@ class TapService : AccessibilityService() {
         }
 
         /**
-         * Feedback types the manager expects; kept here so `isEnabled` does not
-         * depend on a framework constant name.
+         * `AccessibilityServiceInfo.FEEDBACK_ALL_MASK`. The old literal 0x10F
+         * happened to include `feedbackGeneric`, so it worked while saying
+         * something else entirely; the all-bits mask is what the call means.
          */
-        private const val AccessibilityServiceInfoFeedbackAll = 0x10F
+        private const val AccessibilityServiceInfoFeedbackAll = -1
     }
 }

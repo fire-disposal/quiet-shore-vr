@@ -278,6 +278,9 @@ class PortalService : Service() {
                 override fun onControlMode(active: Boolean) {
                     val changed = controlMode != active
                     controlMode = active
+                    if (active) {
+                        PortalStatus.updateApp(pageApp)
+                    }
                     // CLAIM/RELEASE/断开/停 BLE 都从这里进来：立即推一条
                     // control 消息，页面无需轮询就能停下虚拟视角移动。
                     if (changed) {
@@ -760,11 +763,16 @@ class PortalService : Service() {
                     org.json.JSONObject().put("t", "questionnaire").put("d", data).toString()
                 )
             }
-            // Program progress: index/total/scene/remaining. Change-driven on
-            // the same JSON channel as SUS; the state frame stays fixed.
-            "segment" -> json.optJSONObject("data")?.let { data ->
+            // A behaviour event the page witnessed: a calibration capture, a
+            // scene change, the patient's own stop. The tablet appends it to
+            // the one cross-app log next to its own commands.
+            "log" -> json.optJSONObject("data")?.let { data ->
                 bluetooth?.publishJson(
-                    org.json.JSONObject().put("t", "segment").put("d", data).toString()
+                    org.json.JSONObject()
+                        .put("t", "log")
+                        .put("d", data)
+                        .put("app", json.optString("app", "training"))
+                        .toString()
                 )
             }
             // A refusal or one-off report from the page: the page knows why a
@@ -1273,6 +1281,7 @@ class PortalService : Service() {
             .takeIf { it in ControlProtocol.APP_IDS } ?: pageApp
         if (app != pageApp) {
             pageApp = app
+            PortalStatus.updateApp(app)
             // Remember the face for the next launch; the page is authoritative.
             HeadsetSettings.saveApp(this, app)
         }
@@ -1305,6 +1314,8 @@ class PortalService : Service() {
             worldY = json.optJSONObject("worldT")?.optDouble("y", 0.0)?.toFloat() ?: 0f,
             worldZ = json.optJSONObject("worldT")?.optDouble("z", 0.0)?.toFloat() ?: 0f
         )
+        lastAdaptationDone = json.optBoolean("adaptationDone", true)
+        lastRampMs = json.optInt("rampMs", 0).coerceIn(0, 60_000)
         lastState = state
         // Watchdog for the bug this replaced: if the page is running a scene
         // other than the one the launch record owns, say so with both ids —
@@ -1363,7 +1374,10 @@ class PortalService : Service() {
                 if (TapService.tapCenter()) {
                     Log.i(TAG, "entry: synthetic tap sent")
                 } else {
+                    // Nothing was injected: return the allowance rather than
+                    // waiting out a relaunch the drop did not call for.
                     Log.w(TAG, "entry: synthetic tap refused")
+                    entryRetry.tapFailed(System.currentTimeMillis())
                 }
             }
             EntryRetry.Decision.RELAUNCH -> {
@@ -1383,6 +1397,14 @@ class PortalService : Service() {
     }
 
     /** Last flags document published on the JSON channel, and when. */
+    /** Posture ramp the page holds, milliseconds; 0 until it reports one. */
+    @Volatile
+    private var lastRampMs: Int = 0
+
+    /** The page's orientation gate: false until the empty room has settled. */
+    @Volatile
+    private var lastAdaptationDone: Boolean = true
+
     @Volatile
     private var lastFlagsJson: String = ""
     @Volatile
@@ -1404,6 +1426,8 @@ class PortalService : Service() {
             put("scene", state.scene)
             put("session", state.session)
             put("calibrating", state.calibrating)
+            put("adaptationDone", lastAdaptationDone)
+            put("rampMs", lastRampMs)
             put("moving", state.moving)
             put("hold", state.hold)
             put("voiceAuto", state.voiceAuto)
@@ -1637,7 +1661,7 @@ class PortalService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setColor(BrandAssets.ACCENT)
-            .setContentTitle("静岸 · 训练控制台")
+            .setContentTitle("静岸 训练控制台")
             .setContentText(message)
             .setContentIntent(content)
             .setStyle(Notification.BigTextStyle().bigText(message))

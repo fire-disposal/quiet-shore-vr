@@ -2,15 +2,21 @@
 
 范围与决策见 `docs/core.md`。完成项直接删除。
 
-## 现在（0.9.31）
+## 现在（2.1）
 
-- [ ] 实机回归 0.9.31：校准时画面静止、场景构图、水声默认关、SUS 目视作答与归档。
+- [ ] 实机回归：校准时画面静止、场景构图、水声开关、SUS 目视作答与归档。
 - [ ] 起身轨迹首秒的观感（1.2 s 渐出到静止）。
 - [ ] SUS 归档按 `completedAt` 去重（当前到达即追加，重连补发可能重复记账）。
 - [ ] 平板 SUS 历史在系统字体放大下的截断。
 - [ ] `docs/ux-plan.md` 的旧观察（镜像、场景数）已标注过时，其余建议仍未评审。
 - [ ] `SceneSummary.description` 两端界面都没用（入口只显示名字、平板只显示一句话）；决定展开显示或删除。
-- [ ] **砍掉场景训练流程**：`SessionProgram` / 分段编排 / 分段带。它把自动化强加给床边操作，限制临时调整，学习成本高；保留单场景手动切换。执行时一起拆掉平板流程编辑器、`program:*` 命令与回传、台账分段字段。
+- [x] **砍掉场景训练流程**：`SessionProgram` / 分段编排 / 分段带已整体移除（页面、平板、协议白名单、测试）。
+- [x] 急停与结束合并：`emergencyStop` 与 `onEmergencyStop` 已删除，`结束` 是唯一会话出口。
+- [x] 训练面与量表解离：训练界面不再出现量表入口，页面只在 `questionnaire` 应用下接受 `sus:*`。
+- [x] 适应阶段：患者按压后 60 s 取向窗口（`adapt:skip` 可提前结束），不显示任何秒数。
+- [x] 场景控制句柄标准化：`SceneHandle.controls` 是唯一手动控制面，`tests/scenes.test.ts` 断言每个场景都有。
+- [x] 跨应用行为日志：`EventLog` + 页面 `log` 文档，导出为一份 JSON。
+- [x] 头显测试接入 Gradle：`ControlChannelCheck` 现在由 `:headset:testDebugUnitTest` 运行。
 
 ## 状态管理（见 `docs/state-management.md`）
 

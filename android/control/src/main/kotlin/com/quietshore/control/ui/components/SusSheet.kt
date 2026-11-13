@@ -117,7 +117,7 @@ fun SusSheet(
                     text = if (current in 1..questions.size) {
                         "当前第 $current 题。"
                     } else {
-                        "未开始。打开后逐题出现。"
+                        "未开始。打开量表逐题出现。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.TextSecondary,
@@ -220,7 +220,7 @@ fun SusSheet(
             trailing = {
                 Key(
                     label = "导出",
-                    onClick = actions.onSusExport,
+                    onClick = actions.onExportRecords,
                     kind = KeyKind.Quiet,
                     enabled = archived.isNotEmpty()
                 )

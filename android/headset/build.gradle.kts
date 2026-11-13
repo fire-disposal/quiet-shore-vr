@@ -10,8 +10,8 @@ android {
         applicationId = "com.quietshore.portal"
         minSdk = 26
         targetSdk = 33
-        versionCode = 201
-        versionName = "2.0.0"
+        versionCode = 211
+        versionName = "2.1.0"
     }
 
     buildFeatures {
@@ -27,6 +27,12 @@ android {
 
 dependencies {
     implementation(project(":protocol"))
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
 
 val syncWebAsset = tasks.register<Copy>("syncWebAsset") {

@@ -87,15 +87,22 @@ interface SceneDefinition extends SceneSummary {
   build(): SceneHandle;
 }
 
-
 interface SceneHandle {
   root: THREE.Object3D;
   settings: SceneSettings;         // background / fog
   update(dt: number, elapsed: number): void;
+  controls: SceneControls;         // 唯一的手动控制入口
   dispose(): void;
   budget?: SceneBudget;
 }
+
+interface SceneControls {
+  setMotion(scale: number): void;                     // 0..1，越界夹紧
+  applyBuoyancy?(state: BuoyancyState): void;         // 自行分配浮沉时才实现
+}
 ```
+
+`controls` 是手工控制的唯一形状：应用不再按场景 id 或能力分支调用不同方法；静态场景也实现 `setMotion`（接受并忽略），因此“这个场景没有这个通道”不会变成运行时的 `undefined`。
 
 - 没有画质挡位：渲染参数写死在 `src/core/xr/renderer.ts`。
 - 场景声明 `posture`，应用由 `src/core/anatomy.ts` 推导躺/立两个眼高（见 `docs/animation.md`）；不再向下传眼高。
@@ -129,13 +136,24 @@ interface SceneHandle {
 - 镜像（左侧常显）两种视角，顶栏「患者 / 全局」切换：患者视角 = 患者看到的画面（校准帧 + 俯仰修正 + 起伏都已应用）；
   全局视角 = 拉高后拉的三分之四视图，用一个**视锥**指代患者（顶点在眼睛、沿视线张开、按头显视场角定尺寸），
   不建人物模型。
-- SUS：打开/关闭、逐题、作答、目视选择开关、**朗读题干开关（默认开）**；完成后归档。
+- SUS 不属于本应用：量表是「场景化问卷作答器」这个产品面的内容，训练界面不出现任何量表入口；
+  页面侧也只在当前应用是 `questionnaire` 时接受 `sus:*` 命令。
+- **问卷面有自己的房间**（`survey`，`src/scenes/survey/`）：六面素色、一块天光、无陈设、**无环境声**。
+  切到问卷时页面把训练场景换成它并停掉水声；切回时恢复技术员原来的场景。
+  `survey` 是 `special`，永不出现在场景卡里。
 - 水声开关在「语音」页混音区，**默认开**（三场景基准音量已减半，语音不受它影响）。
-- 语音页只有两种动作：**点台词播放**（默认全部展开，按脚本顺序）、停止；不再有「开始/想象/放松/收束」序列按钮，
-  序列能力只留在头显的现场接口里。
+- **音频页**（左轨 `AUDIO`）是全部声音的唯一入口：正在播放、停止/上一句/下一句、字幕开关、
+  语音音量、水声音量与水声开关、语音提示目录。会话页不再有语音控件——床边逐句播放由这一页承担，
+  连续播放与音色切换已从界面移除（协议能力保留）。
+- 水声音量是独立通道 `audio:volume:<0-100>`：水声与语音各有自己的电平，调水声不会调语音。
+- 会话没有「段」「流程」「自动推进」：一次会话就是技术员手动选场景、手动调体位与强度、手动结束。
+- 会话页的现场控制只有三块：场景卡、强度、体位（时长 + 起身/躺下/保持），下面钉住「记录体位/重新校准」与「结束」。
+  镜像吃满剩余高度，镜像下一行读数（已运行 / 场景 / 起伏 / 偏航 / 俯仰）。
+- **强度与体位都是回读**：时长的选中项来自页面回报的 `rampMs`，强度的数字来自状态帧，本地不做乐观写入；
+  一个页面拒绝的点击不会在平板上显示成已生效。体位键被禁用时，界面显示页面给出的原因（`caps.blocked`）。
 - **字幕卡片**：朗读时在患者视野下方（性能卡在上的位置）显示当前台词，音频结束即消失；中文按字断行，最多 3 行，
   超长句末加省略号。开关在语音页「字幕」，命令 `voice:subtitle:on|off`，默认开。
-- 紧急停止，常驻可见，不依赖界面层级。
+- **没有急停**：患者随时可以说停、按一次确认键，或由技术员直接取下头显；`结束` 是与 `断开连接` 并列的唯一出口。
 
 平板不显示患者 3D 镜像，不录屏，不显示排尿相关字样。
 
@@ -185,5 +203,10 @@ interface SceneHandle {
 - SUS：头显单卡片、注视 5 s 作答；结果经 JSON socket → 头显 `sus` 特征（UTF-8 JSON）→ 平板计分并持久化（最近 50 份）。
 - 音频：环境声默认开、基准音量减半（0.4）；平板水声开关可关；语音独立音量，不受水声开关影响。
   环境声播放器双路交叉淡化（±0.6% 速率错开、11–19 s 随机交换），叠加 6–15 s 一次的短片段细节。
-- 协议：state **v13（28 B）**：`mix` 是唯一姿态标量，`eyeHeight` 已含抬升，世界变换用 `worldQuat xyz + worldT cm`；命令面收敛到 21 条（无 `view:orient`/`settings:*`/`allapps`）。不向后兼容：v12 及更早整帧拒收。
-- 验证：`tsc`；vitest 30 文件 / 279 用例；web 构建 + standalone；`:protocol:test`；两个 APK 构建。实机：0.9.31 待烧录验证。
+- 协议：state **v14（28 B）**：`mix` 是唯一姿态标量，`eyeHeight` 已含抬升，世界变换用 `worldQuat xyz + worldT cm`；命令面收敛到 21 条（无 `view:orient`/`settings:*`/`allapps`）。不向后兼容：v12 及更早整帧拒收。
+- **适应阶段**：患者按下确认键后，页面在准备间里守住一次 60 s 的取向窗口（`adaptationDone`）。
+  这不是倒计时：两块屏幕都不显示秒数，只显示「适应中 / 可记录」。技术员可用 `adapt:skip` 提前结束。
+- **记录**：会话摘要、问卷答卷与**行为事件**同库（`data/EventLog.kt` + 页面 `log` 文档），
+  导出是一份 JSON，走系统分享；默认不上传。
+- 验证：`tsc`；vitest 32 文件 / 244 用例；web 构建 + standalone；`:protocol:test`、
+  `:control:testDebugUnitTest`、`:headset:testDebugUnitTest`（含控制通道入口监督自证）；两个 APK 构建。

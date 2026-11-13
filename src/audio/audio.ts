@@ -20,6 +20,16 @@ let context: AudioContext | null = null;
 let master: GainNode | null = null;
 /** Scene ducking bus: voice cues pull the water bed down, never the reverse. */
 let duck: GainNode | null = null;
+/**
+ * The ambience's own level, after ducking and before the shared master.
+ *
+ * The water bed and the cues used to share one gain, so "quieter water" and
+ * "quieter voice" were the same knob. They are different decisions at a
+ * bedside: the bed is room tone the patient can move away from, a cue is the
+ * thing being said to them.
+ */
+let bed: GainNode | null = null;
+let bedVolume = 1;
 /** Voice cues get their own bus so ducking cannot touch them. */
 let voiceBus: GainNode | null = null;
 let duckDepthDb = 12;
@@ -66,7 +76,10 @@ function ensureContext(): AudioContext | null {
     // only thing that ever moves the level is a cue speaking.
     duck = context.createGain();
     duck.gain.value = 1;
-    duck.connect(master);
+    bed = context.createGain();
+    bed.gain.value = bedVolume;
+    duck.connect(bed);
+    bed.connect(master);
     voiceBus = context.createGain();
     // Cue level lives here and only here: a per-clip gain would scale it twice.
     voiceBus.gain.value = 0.9;
@@ -97,6 +110,25 @@ async function bufferFor(track: AudioTrack): Promise<AudioBuffer | null> {
 /** The one AudioContext the page owns: scene bed, cues and swell share it. */
 export function getAudioContext(): AudioContext | null {
   return ensureContext();
+}
+
+/**
+ * Ambience level, 0..1 of the authored bed.
+ *
+ * Applied with a short ramp rather than a jump: a step in a sustained
+ * soundscape is heard as a click, and this is the one control an operator may
+ * touch while the patient is listening.
+ */
+export function setAmbienceVolume(level: number): void {
+  bedVolume = Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0));
+  const ctx = ensureContext();
+  if (!ctx || !bed) {
+    return;
+  }
+  const now = ctx.currentTime;
+  bed.gain.cancelScheduledValues(now);
+  bed.gain.setValueAtTime(bed.gain.value, now);
+  bed.gain.linearRampToValueAtTime(bedVolume, now + 0.25);
 }
 
 export async function unlockAudio(): Promise<void> {

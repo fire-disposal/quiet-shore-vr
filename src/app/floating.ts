@@ -92,11 +92,11 @@ export function createFloating(
 
   function apply(): void {
     const scene = handle();
-    const splits = typeof scene?.applyBuoyancy === 'function';
+    const applyBuoyancy = scene?.controls.applyBuoyancy;
     axis(up);
-    if (splits && scene?.applyBuoyancy) {
+    if (applyBuoyancy) {
       host.setFloorOffset(baseOffset);
-      scene.applyBuoyancy({ amountM: offsetM, axis: { x: up.x, y: up.y, z: up.z } });
+      applyBuoyancy({ amountM: offsetM, axis: { x: up.x, y: up.y, z: up.z } });
       return;
     }
     // The frame owns the base Y; the heave is one vector along the visual up,

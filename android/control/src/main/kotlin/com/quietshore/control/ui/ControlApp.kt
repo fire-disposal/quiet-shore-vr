@@ -118,7 +118,11 @@ fun ControlApp(viewModel: ControlViewModel) {
     }
 
     if (showInfo) {
-        GuideScreen(onBack = { showInfo = false }, app = state.app)
+        GuideScreen(
+            onBack = { showInfo = false },
+            app = state.app,
+            onExport = viewModel::exportRecords
+        )
         return
     }
 
@@ -139,14 +143,6 @@ fun ControlApp(viewModel: ControlViewModel) {
             onAppSelect = viewModel::selectApp,
             onSceneSelect = viewModel::selectScene,
             onSceneApply = viewModel::applyScene,
-            onNextSegment = viewModel::nextSegment,
-            onProgramAdd = viewModel::addProgramSegment,
-            onProgramRemove = viewModel::removeProgramSegment,
-            onProgramScene = viewModel::cycleProgramScene,
-            onProgramDuration = viewModel::cycleProgramDuration,
-            onProgramVoice = viewModel::cycleProgramVoice,
-            onProgramCap = viewModel::cycleProgramCap,
-            onProgramAuto = viewModel::setProgramAuto,
             onAnimDuration = viewModel::setAnimDuration,
             onGazeDwellChange = viewModel::setGazeDwell,
             onSusVoiceChange = viewModel::setSusVoice,
@@ -157,11 +153,11 @@ fun ControlApp(viewModel: ControlViewModel) {
             onEnterTraining = viewModel::enterTraining,
             onEnd = viewModel::endSession,
             onRecalibrate = viewModel::recalibrate,
+            onAdaptationSkip = viewModel::skipAdaptation,
             onToggleAudio = viewModel::toggleAudio,
             onFloatLevel = viewModel::setFloatLevel,
             onViewAnim = viewModel::playViewAnim,
             onViewStop = viewModel::stopView,
-            onEmergencyStop = viewModel::emergencyStop,
             onPostureLower = viewModel::postureLower,
             onPostureRise = viewModel::postureRise,
             onPostureStop = viewModel::postureStop,
@@ -170,11 +166,12 @@ fun ControlApp(viewModel: ControlViewModel) {
             onVoiceSequence = viewModel::playVoiceSequence,
             onVoiceStop = viewModel::stopVoice,
             onVoiceVolume = viewModel::setVoiceVolume,
+            onAudioVolume = viewModel::setAudioVolume,
             onVoiceDuck = viewModel::setVoiceDuck,
             onVoiceSet = viewModel::setVoiceSet,
             onSusShow = viewModel::susShow,
             onSusAnswer = viewModel::susAnswer,
-            onSusExport = viewModel::exportSus,
+            onExportRecords = viewModel::exportRecords,
             onSusFilterQuestionnaire = viewModel::cycleSusFilterQuestionnaire,
             onSusFilterDays = viewModel::cycleSusFilterDays,
             onOutcome = viewModel::recordOutcome,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -49,23 +50,30 @@ fun SceneChooser(
     /** The headset's own report, drawn as the small "playing" mark. */
     playing: String? = null,
     /** What the page announced; the local table is only a fallback. */
-    scenes: List<SceneCatalog.Scene> = SceneCatalog.ALL
+    scenes: List<SceneCatalog.Scene> = SceneCatalog.ALL,
+    /** Stretch the cards to the height the page gives them. */
+    fillHeight: Boolean = false
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         for (scene in scenes) {
-            Box(Modifier.weight(1f)) {
-                SceneCardView(
-                    scene = scene,
-                    current = scene.id == current,
-                    enabled = enabled,
-                    onSelect = onSelect,
-                    showBlurb = true,
-                    playing = playing != null && scene.id == playing
-                )
-            }
+            // The card itself carries the fill: a Box wrapper leaves the drawn
+            // background at content height, which is how a "large target" came
+            // out as a strip over empty paper.
+            SceneCardView(
+                scene = scene,
+                current = scene.id == current,
+                enabled = enabled,
+                onSelect = onSelect,
+                showBlurb = true,
+                playing = playing != null && scene.id == playing,
+                stretch = fillHeight,
+                modifier = Modifier
+                    .weight(1f)
+                    .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
+            )
         }
     }
 }
@@ -86,7 +94,9 @@ fun SceneCardView(
     modifier: Modifier = Modifier,
     showBlurb: Boolean = false,
     /** The headset reports this scene as the one it is playing. */
-    playing: Boolean = false
+    playing: Boolean = false,
+    /** A tall card reads from the top; a strip card is centred. */
+    stretch: Boolean = false
 ) {
     Column(
         modifier = modifier
@@ -112,7 +122,7 @@ fun SceneCardView(
                 horizontal = if (showBlurb) 16.dp else 10.dp,
                 vertical = if (showBlurb) 18.dp else 16.dp
             ),
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = if (stretch) Arrangement.Top else Arrangement.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (current) {

@@ -114,6 +114,24 @@ private fun retryChecks() {
     silent.pageState(50_100, session = false)
     checkEquals("no helper means no tap", EntryRetry.Decision.RELAUNCH, silent.onDeadline(50_600))
 
+    // A tap the platform refused must give its allowance back: burning it
+    // would leave the only possible recovery a relaunch nobody needed.
+    val dropped = EntryRetry(
+        pageWaitMs = 1000,
+        pressWaitMs = 500,
+        tapRetryMs = 300,
+        maxRetries = 2,
+        autoTapAvailable = { true }
+    )
+    dropped.launch(60_000, fresh = true)
+    dropped.pageState(60_100, session = false)
+    checkEquals("dropped tap asked for", EntryRetry.Decision.TAP, dropped.onDeadline(60_600))
+    dropped.tapFailed(60_601)
+    checkEquals("dropped tap returns the allowance", false, dropped.tapped)
+    checkEquals("dropped tap re-arms quickly", 60_901L, dropped.checkAt)
+    checkEquals("short wait holds", EntryRetry.Decision.HOLD, dropped.onDeadline(60_800))
+    checkEquals("tap is asked again", EntryRetry.Decision.TAP, dropped.onDeadline(60_901))
+
     // A session still ends supervision, even mid-tap.
     tapping.pageState(51_000, session = true)
     checkEquals("session ends tap supervision", EntryRetry.Phase.IDLE, tapping.phase)
@@ -409,14 +427,26 @@ private fun protocolGrammarChecks() {
     )
 }
 
-fun main() {
+/**
+ * Every transport-independent check, as one call.
+ *
+ * The harness started life as a hand-compiled `main`; it is a JUnit test now so
+ * the release workflow actually runs it. The `main` stays for the manual
+ * one-file compile documented at the top.
+ */
+internal fun runControlChannelChecks(): Int {
     retentionChecks()
     queueChecks()
     codecChecks()
     protocolGrammarChecks()
     retryChecks()
-    if (failures > 0) {
-        throw AssertionError("$failures control-channel checks failed")
+    return failures
+}
+
+fun main() {
+    val failed = runControlChannelChecks()
+    if (failed > 0) {
+        throw AssertionError("$failed control-channel checks failed")
     }
     println("control channel checks passed")
 }

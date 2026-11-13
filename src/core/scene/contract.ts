@@ -30,27 +30,21 @@ export interface BuoyancyState {
   axis: { x: number; y: number; z: number };
 }
 
+/** Stable manual-control surface exposed by every built scene. */
+export interface SceneControls {
+  /** Scale scene-authored motion, 0..1. Static scenes accept and ignore it. */
+  setMotion(scale: number): void;
+  /** Optional scene-specific buoyancy placement; absent means move the whole content. */
+  applyBuoyancy?: (state: BuoyancyState) => void;
+}
+
 export interface SceneHandle {
   /** Everything the scene owns. Added under the host scene; never the host scene itself. */
   root: THREE.Object3D;
   settings: SceneSettings;
   update(dt: number, elapsed: number): void;
-  /**
-   * Optional world-motion permission, 0..1. Scenes that manufacture their own
-   * self-motion (the light well's fall) ease their speed towards this; the app
-   * feeds it the **session**, never the posture: a running session may move the
-   * scene, a stop, a calibration capture or an idle page may not.
-   */
-  setMotion?(scale: number): void;
-  /**
-   * Optional: spread the frame's buoyancy across this scene's layers.
-   *
-   * A global content translation moves the sky as well as the water, so the one
-   * surface a supine patient looks at barely changes angle. A scene that knows
-   * its own depth order can hold the dome still and move the near field, which
-   * is both more visible and keeps the subjective horizon stable.
-   */
-  applyBuoyancy?(state: BuoyancyState): void;
+  /** The only scene-level control entry point used by the application. */
+  controls: SceneControls;
   dispose(): void;
   budget?: SceneBudget;
 }

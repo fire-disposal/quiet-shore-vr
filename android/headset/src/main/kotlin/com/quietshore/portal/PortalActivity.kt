@@ -38,9 +38,9 @@ import com.quietshore.control.protocol.ControlProtocol
 class PortalActivity : Activity() {
     private enum class Page(val label: String, val description: String) {
         HOME("静岸", "等待平板接管"),
-        SETTINGS("设置", "启动偏好 · 连接"),
-        HELP("帮助", "进入方式 · 平板控制"),
-        SUS("SUS 量表", "共 10 题 · 每题 1–5 分")
+        SETTINGS("设置", "启动偏好与连接"),
+        HELP("帮助", "进入方式与平板控制"),
+        SUS("SUS 量表", "共 10 题，每题 1–5 分")
     }
 
     private companion object {
@@ -98,7 +98,10 @@ class PortalActivity : Activity() {
     private var settings = HeadsetSettings()
     private var homeStatusCard: View? = null
     private var homeStatusMac: TextView? = null
-    private var homeSceneName: TextView? = null
+    private var homeAppName: TextView? = null
+    private var homeAppCard: View? = null
+    /** `--ez preview true`: draw the connected state without a pad. */
+    private var previewConnected = false
     private var homeSceneTagline: TextView? = null
     private var batteryCardView: View? = null
     private var batteryLabel: TextView? = null
@@ -153,6 +156,7 @@ class PortalActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ensureBlePermissions()
+        previewConnected = intent?.getBooleanExtra(PortalActions.EXTRA_PREVIEW, false) == true
         settings = HeadsetSettings.read(this)
         PortalActions.startServer(this)
         window.statusBarColor = PAPER
@@ -379,7 +383,7 @@ class PortalActivity : Activity() {
     private fun renderPage() {
         homeStatusCard = null
         homeStatusMac = null
-        homeSceneName = null
+        homeAppName = null
         homeSceneTagline = null
         batteryCardView = null
         batteryLabel = null
@@ -426,31 +430,23 @@ class PortalActivity : Activity() {
             setPadding(dp(28), dp(18), dp(28), dp(24))
         }
         page.addView(batteryCard())
-        val sceneCard = sectionCard()
-        val sceneHead = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        sceneHead.addView(label("下一场景", 13f, MUTED, Typeface.BOLD))
-        sceneCard.addView(sceneHead)
-        sceneCard.addView(
+        // The pad owns the choice, so this card is the pad's answer, not the
+        // headset's guess: it appears once a pad has the console and names the
+        // face that pad has selected. Before that it is not shown at all —
+        // an empty "no face" card is a question the patient cannot answer.
+        val appCard = sectionCard().apply { visibility = View.GONE }
+        appCard.addView(label("已选应用", 13f, MUTED, Typeface.BOLD))
+        appCard.addView(
             View(this).apply { setBackgroundColor(SCENE_TINT) },
             LinearLayout.LayoutParams(dp(36), dp(3)).apply {
                 topMargin = dp(10)
                 bottomMargin = dp(14)
             }
         )
-        val sceneId = HeadsetSettings.read(this).sceneId
-        val catalogScene = PageCatalog.scene(this, sceneId)
-        val sceneName = catalogScene?.nameZh
-            ?: ControlProtocol.SCENE_LABELS[sceneId]
-            ?: sceneId
-        homeSceneName = label(sceneName, 30f, TEXT, Typeface.BOLD)
-        homeSceneTagline = label(catalogScene?.taglineZh.orEmpty(), 15f, MUTED, Typeface.NORMAL)
-            .apply { setPadding(0, dp(6), 0, 0) }
-        sceneCard.addView(homeSceneName)
-        sceneCard.addView(homeSceneTagline)
-        page.addView(sceneCard)
+        homeAppName = label("", 30f, TEXT, Typeface.BOLD)
+        appCard.addView(homeAppName)
+        page.addView(appCard)
+        homeAppCard = appCard
 
         val status = sectionCard().apply { visibility = View.GONE }
         val statusHead = LinearLayout(this).apply {
@@ -598,7 +594,7 @@ class PortalActivity : Activity() {
         val connection = sectionCard()
         connection.addView(sectionLabel("连接"))
         connection.addView(
-            label("场景 · 语音 · 体位记录由平板控制", 15f, MUTED, Typeface.NORMAL).apply {
+            label("场景、语音与体位记录由平板控制", 15f, MUTED, Typeface.NORMAL).apply {
                 setPadding(0, dp(8), 0, dp(10))
             }
         )
@@ -699,7 +695,7 @@ class PortalActivity : Activity() {
         card.addView(scale)
         page.addView(card)
         susScoreText = label(
-            if (susAnswers.all { it > 0 }) susScoreText?.text?.toString() ?: "答完 10 题后显示得分"
+            if (susAnswers.all { it > 0 }) susScoreText?.text?.toString() ?: "尚未答完 10 题"
             else "已答 ${susAnswers.count { it > 0 }} / ${SUS_STATEMENTS.size}",
             15f,
             if (susAnswers.all { it > 0 }) OK else MUTED,
@@ -798,17 +794,16 @@ class PortalActivity : Activity() {
     }
 
     private fun refreshStatus() {
-        val control = PortalStatus.isControlActive()
+        val control = PortalStatus.isControlActive() || previewConnected
         homeStatusCard?.visibility = if (control) View.VISIBLE else View.GONE
         homeStatusMac?.text = "蓝牙地址  ${PortalStatus.controllerAddress() ?: "—"}"
-        // A catalogue announcement or a scene command changes this card while
-        // it is already on screen; rebuilding the whole page would flicker.
-        val sceneId = HeadsetSettings.read(this).sceneId
-        val scene = PageCatalog.scene(this, sceneId)
-        homeSceneName?.text = scene?.nameZh
-            ?: ControlProtocol.SCENE_LABELS[sceneId]
-            ?: sceneId
-        homeSceneTagline?.text = scene?.taglineZh.orEmpty()
+        // The page is the authority on the face; the persisted setting is what
+        // to say in the second before it reports, and nothing is said at all
+        // while no pad holds the console.
+        val appId = PortalStatus.appId()
+            ?: HeadsetSettings.read(this).app.takeIf { control || previewConnected }
+        homeAppCard?.visibility = if (control && appId != null) View.VISIBLE else View.GONE
+        homeAppName?.text = appId?.let(ControlProtocol::appLabel).orEmpty()
     }
 
     /** Writes the battery bar from the last sticky broadcast; hides when unknown. */

@@ -64,8 +64,6 @@ class MainActivity : ComponentActivity() {
                         // `--es current prep` renders the built-in room as the
                         // loaded scene, including its mirror.
                         current = intent.getStringExtra("current"),
-                        programWire = intent.getStringExtra("program"),
-                        segmentSpec = intent.getStringExtra("segment"),
                         app = intent.getStringExtra("app"),
                         seedRecords = intent.getBooleanExtra("records", false),
                         filterDays = intent.getIntExtra("filterDays", -1)

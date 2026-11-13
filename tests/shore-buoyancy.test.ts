@@ -17,7 +17,7 @@ describe('shore buoyancy distribution', () => {
   it('moves the near layers and leaves the dome still', () => {
     const handle = shoreScene.build({ registry: null as never });
     // Standing frame: the visual up is the lake's up.
-    handle.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 1, z: 0 } });
+    handle.controls.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 1, z: 0 } });
 
     const dome = part(handle, 'shore-dome');
     const water = part(handle, 'shore-water');
@@ -41,7 +41,7 @@ describe('shore buoyancy distribution', () => {
     const water = part(handle, 'shore-water');
     const swell = part(handle, 'shore-swell');
     const shore = part(handle, 'shore-shoreline');
-    handle.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 1, z: 0 } });
+    handle.controls.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 1, z: 0 } });
 
     // A quarter period (5.5 s of 22 s) lands on the crest; three quarters on
     // the trough. The exact amplitude is the comfort envelope's business
@@ -61,7 +61,7 @@ describe('shore buoyancy distribution', () => {
   it('follows the axis when the visual up is not the lake up', () => {
     const handle = shoreScene.build({ registry: null as never });
     // Supine frame: the patient's up runs along the scene's depth.
-    handle.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 0, z: 1 } });
+    handle.controls.applyBuoyancy?.({ amountM: 0.05, axis: { x: 0, y: 0, z: 1 } });
 
     expect(part(handle, 'shore-water').position.z).toBeCloseTo(0.05, 6);
     expect(part(handle, 'shore-water').position.y).toBeCloseTo(0, 6);
@@ -72,8 +72,8 @@ describe('shore buoyancy distribution', () => {
 
   it('returns everything to rest', () => {
     const handle = shoreScene.build({ registry: null as never });
-    handle.applyBuoyancy?.({ amountM: -0.04, axis: { x: 0, y: 1, z: 0 } });
-    handle.applyBuoyancy?.({ amountM: 0, axis: { x: 0, y: 1, z: 0 } });
+    handle.controls.applyBuoyancy?.({ amountM: -0.04, axis: { x: 0, y: 1, z: 0 } });
+    handle.controls.applyBuoyancy?.({ amountM: 0, axis: { x: 0, y: 1, z: 0 } });
 
     expect(part(handle, 'shore-water').position.y).toBe(0);
     expect(part(handle, 'shore-shoreline').position.y).toBe(0);

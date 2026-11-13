@@ -38,10 +38,11 @@
 - 场景：三个正式场景，由技术员在标定后选择（会话中也能换，见上）；另有内置准备间 `prep`，不作为场景卡出现，但同样有可用的患者视野镜像。`washroom` 洁净立便间（默认）：2.4 × 2.4 × 2.55 m 单间、立便器、木隔屏、天光；`shore` 仰望湖面：天穹、一层漂移云、水面与日光、4 m 内木桩与芦苇；`ward` 病房：床、被面、百叶窗与床旁监护仪。均无人物、无标牌。每个场景声明 `posture`（站立眼高、身下支撑、`viewer`），画面据此放置（见 `docs/animation.md`）。
 - 双 APK 通信：头显前台服务广播 BLE 外设，平板自动扫描连接、`HELLO 2` / `WELCOME 2` 握手与 5 s PING 存活检测；state 为 28 字节 v14，另有独立的 `sus` 特征回传量表答卷。
 - 音频：训练语音从面板手动播放，SUS 与结束语归问卷应用，不在训练语音里出现；播放时环境声自动压低 12 dB。环境声**默认关闭**，由平板开启；播放器双路交叉淡化 + 随机起点/速率（详见 `docs/core.md` §10）。
-- 平板界面：顶栏显示完整应用名（场景化排尿引导器 / 场景化问卷作答器，会话中锁定），点应用名切换，`i` 打开当前应用说明书；首页左侧三个说明标签（连接 / 排尿引导 / 问卷作答），右侧固定的头显连接窗口。排尿引导侧有会话/场景/流程/语音；问卷作答器是独立的配置化作答与归档面，题目由页面
+- 平板界面：顶栏显示完整应用名（场景化排尿引导器 / 场景化问卷作答器，会话中锁定），点应用名切换，`i` 打开当前应用说明书；首页左侧三个说明标签（连接 / 排尿引导 / 问卷作答），右侧固定的头显连接窗口。排尿引导侧只有会话/场景/音频——**没有流程编排，也没有量表入口**；问卷作答器是独立的配置化作答与归档面（有自己的空房间、无环境声），题目由页面
   `src/questionnaire/registry.ts` 单一来源下发，记录带完成时间，可按问卷与时间筛选后导出；
   训练记录与问卷记录写同一份本机文件，用 `app` 字段区分。
-- 未完成：0.9.31 的实机验证（帧/s、SUS 目视作答）；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。
+- 记录：训练会话、问卷答卷与行为事件写同一份本机记录，导出为一份 JSON（系统分享），默认不上传。
+- 未完成：实机验证（帧/s、SUS 目视作答、入口监督）；端上自更新；PICO G2 4K 的 OpenXR 原生迁移（经评估无法支持）。
 
 ## 启动流程
 
@@ -78,6 +79,8 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/v2-architecture.md](docs/v2-architecture.md) — v2 代码架构：先删后加的四项结构性欠账与它们的顺序
 - [docs/v2-roadmap.md](docs/v2-roadmap.md) — v2 路线：场景流程加长（阶段时间线）、场景质量、会话中切换的依赖顺序
 - [docs/scene-switch.md](docs/scene-switch.md) — 会话中切换场景：现状（已能跑）与重设计要定的事
+- [docs/protocol-v3.md](docs/protocol-v3.md) — 蓝牙协议 v3 设计稿（应用面进入协议；未实现）
+- [docs/ota.md](docs/ota.md) — OTA 与远程收集的调研存档（结论：不做；离线为硬约束）
 - [docs/handoff-next.md](docs/handoff-next.md) — **新开会话从这里开始**：goal 原文、已定决策、最新需求与代码现状
 - [docs/releases.md](docs/releases.md) — 发布归档：v1.0.0 是旧界面的收尾（含校验值），界面重做后进入 v2.0
 - [docs/ux-tree.md](docs/ux-tree.md) — UX 树：会话状态机、触发权限表、四个面的层级与组件清单
@@ -90,3 +93,4 @@ cd android && ./gradlew :protocol:test :headset:assembleDebug :control:assembleD
 - [docs/guide.qmd](docs/guide.qmd) / [docs/quiet-shore-guide.pdf](docs/quiet-shore-guide.pdf) — 使用说明 PDF：目的、上机流程、SUS、故障（交付物）
 - [docs/voice-script.md](docs/voice-script.md) — 引导语音脚本（27 句）、控制端触发与 TTS 生成规范
 - [TODO.md](TODO.md) — 迭代演进与重构路线
+- `scripts/tablet-collage.sh` + `scripts/collage.py` — 模拟器自动截图并合成界面拼图（产物在 `artifacts/collage/`）

@@ -3,11 +3,12 @@ package com.quietshore.control.model
 import com.quietshore.control.protocol.ControlProtocol
 
 /**
- * One card per shipped scene, for the operator's choice.
+ * The scene ids the state frame can name, before the page has said anything.
  *
- * Names and blurbs come from the wire module, which is where the ids live: a
- * second copy here is exactly how the washroom once described rails the room
- * does not have. This catalog only adds ordering and lookup.
+ * This is a *fallback*, not a catalogue: it resolves the 4-bit index of an
+ * incoming state frame into a name so the console can print something. Copy,
+ * taglines and the list itself belong to the page; once its `catalog` document
+ * lands, this table is not read again.
  */
 object SceneCatalog {
     data class Scene(
@@ -23,7 +24,8 @@ object SceneCatalog {
         Scene(
             id = id,
             name = name,
-            blurb = ControlProtocol.SCENE_BLURBS[id].orEmpty(),
+            // The page fills this in; a name is all the tablet knows alone.
+            blurb = "",
             special = id in ControlProtocol.SPECIAL_SCENES
         )
     }

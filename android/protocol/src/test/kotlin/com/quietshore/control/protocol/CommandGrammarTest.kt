@@ -61,8 +61,7 @@ class CommandGrammarTest {
             "voice:set:female",
             "record:outcome:attempt:yes", "record:outcome:attempt:no",
             "record:outcome:success:yes", "record:outcome:success:no",
-            "program:1:shore,360,start,3;ward,240,imagine,2;shore,180,close,1",
-            "program:next", "program:auto:on", "program:auto:off",
+            "audio:volume:0", "audio:volume:100",
             "app:training", "app:questionnaire"
         )) {
             assertTrue(ControlProtocol.isAllowedCommand(raw), raw)
@@ -89,7 +88,11 @@ class CommandGrammarTest {
             "record:outcome:attempt:maybe",
             "record:outcome:mood:yes",
             "record:outcome:",
-            "program:\u0000",
+            "program:1:shore,360,start,3",
+            "program:next",
+            "audio:volume:101",
+            "audio:volume:-1",
+            "audio:volume:",
             "app:moon",
             "app:",
         )) {

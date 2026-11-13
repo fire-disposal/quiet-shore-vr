@@ -31,8 +31,10 @@ export type RemoteCommand =
   | { kind: 'susVoice'; on: boolean }
   | { kind: 'preview' }
   | { kind: 'calibrate' }
+  | { kind: 'adaptationSkip' }
   | { kind: 'exit' }
   | { kind: 'audio'; state: 'on' | 'off' | 'toggle' }
+  | { kind: 'audioVolume'; percent: number }
   | { kind: 'posture'; target: 'rise' | 'lower' | 'stop' }
   | { kind: 'status' }
   | { kind: 'start' }
@@ -71,6 +73,12 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   }
   if (command.startsWith('scene:')) {
     return { kind: 'scene', id: command.slice('scene:'.length) };
+  }
+  if (command.startsWith('audio:volume:')) {
+    const percent = Number(command.slice('audio:volume:'.length));
+    return Number.isInteger(percent) && percent >= 0 && percent <= 100
+      ? { kind: 'audioVolume', percent }
+      : { kind: 'invalid', message: '水声音量无效' };
   }
   if (command.startsWith('voice:')) {
     return { kind: 'voice', command };
@@ -124,6 +132,8 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
       return { kind: 'preview' };
     case 'calibrate':
       return { kind: 'calibrate' };
+    case 'adapt:skip':
+      return { kind: 'adaptationSkip' };
     case 'exit':
     case 'stop':
       return { kind: 'exit' };

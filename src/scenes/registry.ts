@@ -1,5 +1,6 @@
 import type { SceneDefinition } from '../core/scene/contract';
 import { prepScene } from './prep/index';
+import { surveyScene } from './survey/index';
 import { shoreScene } from './shore/index';
 import { wardScene } from './ward/index';
 import { washroomScene } from './washroom/index';
@@ -19,7 +20,9 @@ export const SCENES: readonly SceneDefinition[] = [
   shoreScene,
   wardScene,
   // Appended, never inserted: the state frame's 4-bit index is this order.
-  prepScene
+  prepScene,
+  // The questionnaire face's own room. `special`, so it never becomes a card.
+  surveyScene
 ];
 
 /**

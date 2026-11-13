@@ -24,9 +24,12 @@ function harness(options: {
   const handle = (options.split === false
     ? null
     : ({
-        applyBuoyancy: (state: { amountM: number; swayDeg: number }) => {
-          applied.push({ ...state });
-          content.rotation.x = 0;
+        controls: {
+          setMotion: () => {},
+          applyBuoyancy: (state: { amountM: number }) => {
+            applied.push({ ...state });
+            content.rotation.x = 0;
+          }
         }
       } as unknown as SceneHandle)) ?? null;
   const floating = createFloating({

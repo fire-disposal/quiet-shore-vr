@@ -45,6 +45,13 @@ internal object PortalActions {
     const val EXTRA_SKIP_CALIBRATION = "skipCalibration"
     const val EXTRA_PAGE = "page"
 
+    /**
+     * Design review only: render the home page as if a pad had claimed the
+     * console. The connected state is otherwise reachable only from a real
+     * tablet, and the one thing this page exists to show lives behind it.
+     */
+    const val EXTRA_PREVIEW = "preview"
+
     /** 唯一已验证的 WebXR 入口：预装 Firefox Reality 10（Gecko 78）。 */
     private const val FIREFOX_PACKAGE = "org.mozilla.vrbrowser"
     private const val FIREFOX_ACTIVITY = "org.mozilla.vrbrowser.VRBrowserActivity"
@@ -152,6 +159,13 @@ internal object PortalActions {
                 // telemetry session is already active. NEW_TASK + a fresh URL
                 // key reuses the warm task and navigates it.
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // FxR's own "enter immersive mode?" interstitial is a second
+                // confirmation the patient never agreed to. The page has
+                // already taken its one press; this is the browser asking the
+                // same question again. Clearing it is the only click in the
+                // whole entry path that is removable without root, and it is
+                // an extra FxR documents (`hide_webxr_interstitial`).
+                intent.putExtra("hide_webxr_interstitial", true)
                 launch(app, intent, "未找到 Firefox Reality，训练无法工作")
             }, LAUNCH_DELAY_MS)
         }, "quietshore-launch").start()
@@ -352,11 +366,22 @@ internal object PortalStatus {
     @Volatile
     private var controllerMac: String? = null
 
+    /** Product face the page last reported; null until it says anything. */
+    @Volatile
+    private var app: String? = null
+
     fun update(state: String, control: Boolean, mac: String? = null) {
         bluetoothState = state
         controlActive = control
         controllerMac = mac
     }
+
+    /** Called by the service whenever the page reports a different face. */
+    fun updateApp(id: String) {
+        app = id.takeIf { it in ControlProtocol.APP_IDS }
+    }
+
+    fun appId(): String? = app
 
     fun isControlActive(): Boolean = controlActive
 

@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.ProgramSegment
 import com.quietshore.control.model.SessionPhase
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.sessionPhaseOf
@@ -45,6 +44,8 @@ import com.quietshore.control.ui.components.ActionTone
 import com.quietshore.control.ui.components.ActionKey
 import com.quietshore.control.ui.components.ActionColumnWidth
 import com.quietshore.control.ui.components.BarWordKey
+import com.quietshore.control.ui.components.CalibrationKey
+import com.quietshore.control.ui.components.calibrationView
 import com.quietshore.control.ui.components.CommandBar
 import com.quietshore.control.ui.components.ConsoleRail
 import com.quietshore.control.ui.components.ConsoleSection
@@ -69,8 +70,7 @@ import com.quietshore.control.ui.components.StepLine
 import com.quietshore.control.ui.components.SusSheet
 import com.quietshore.control.ui.components.SwitchRow
 import com.quietshore.control.ui.components.TouchTarget
-import com.quietshore.control.ui.components.VoicePanel
-import com.quietshore.control.ui.components.VoiceSummaryRow
+import com.quietshore.control.ui.components.AudioPanel
 import com.quietshore.control.ui.components.clock
 import com.quietshore.control.ui.components.tabularFigures
 import com.quietshore.control.ui.components.nextVoiceId
@@ -216,9 +216,7 @@ fun ControlScreen(
                                 state = state,
                                 actions = actions,
                                 phase = phase,
-                                wide = wide,
-                                onOpenScene = { chosen = ConsoleSection.Scene },
-                                onOpenVoice = { chosen = ConsoleSection.Voice }
+                                wide = wide
                             )
                             ConsoleSection.Scene -> ScenePage(
                                 state = state,
@@ -226,12 +224,12 @@ fun ControlScreen(
                                 phase = phase,
                                 wide = wide
                             )
-                            ConsoleSection.Voice -> PanelPage(
-                                title = "语音",
-                                note = "患者听到的提示语",
+                            ConsoleSection.Audio -> PanelPage(
+                                title = "音频",
+                                note = "提示语与水声，都在这一页",
                                 onBack = { chosen = back }
                             ) {
-                                VoicePanel(state = state, actions = actions)
+                                AudioPanel(state = state, actions = actions)
                             }
 
                         }
@@ -414,9 +412,7 @@ private fun SessionPage(
     state: ControlUiState,
     actions: ControlActions,
     phase: SessionPhase,
-    wide: Boolean,
-    onOpenScene: () -> Unit,
-    onOpenVoice: () -> Unit
+    wide: Boolean
 ) {
     if (!wide) {
         Column(
@@ -426,14 +422,7 @@ private fun SessionPage(
             verticalArrangement = Arrangement.spacedBy(QuietSpace.Section)
         ) {
             SessionMain(state = state, actions = actions, phase = phase)
-            SessionColumn(
-                state = state,
-                actions = actions,
-                phase = phase,
-                fill = false,
-                onOpenScene = onOpenScene,
-                onOpenVoice = onOpenVoice
-            )
+            SessionColumn(state = state, actions = actions, phase = phase, fill = false)
             Spacer(Modifier.height(QuietSpace.Page))
         }
         return
@@ -442,6 +431,8 @@ private fun SessionPage(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(QuietSpace.Section)
     ) {
+        // The picture is the product; it takes every pixel the controls do not
+        // need, and the controls are sized to what a hand reaches for.
         Box(Modifier.weight(1f).fillMaxHeight()) {
             SessionMain(state = state, actions = actions, phase = phase)
         }
@@ -450,14 +441,19 @@ private fun SessionPage(
             actions = actions,
             phase = phase,
             fill = true,
-            modifier = Modifier.width(ActionColumnWidth).fillMaxHeight(),
-            onOpenScene = onOpenScene,
-            onOpenVoice = onOpenVoice
+            modifier = Modifier.width(ActionColumnWidth).fillMaxHeight()
         )
     }
 }
 
-/** Left half: picture, figures, dials. Everything here is read, not pressed. */
+/**
+ * The patient's picture, and one line of facts under it.
+ *
+ * Everything here is read, not pressed. The four facts are the ones an
+ * operator glances at while talking to the patient; each used to have its own
+ * drawing (a dial, a side elevation, a slider), which is three pictures of one
+ * number and three places to look away from the person.
+ */
 @Composable
 private fun SessionMain(
     state: ControlUiState,
@@ -465,9 +461,6 @@ private fun SessionMain(
     phase: SessionPhase,
     modifier: Modifier = Modifier
 ) {
-    // The picture is the app surface; the gauges are a footnote. The mirror
-    // takes whatever height is left after them, instead of a fixed block with
-    // empty paper under it.
     Column(modifier) {
         MirrorSlot(
             state = state,
@@ -475,17 +468,66 @@ private fun SessionMain(
             onModeChange = actions.onMirrorModeChange,
             modifier = Modifier.weight(1f)
         )
-        Spacer(Modifier.height(24.dp))
-        SectionHead(title = "患者当前姿态", note = "只读")
+        Spacer(Modifier.height(16.dp))
         Rule()
-        PostureGauges(state = state)
-        Spacer(Modifier.height(QuietSpace.Page))
+        SessionReadout(state = state)
+    }
+}
+
+/** Scene name from the live catalogue, falling back to the built-in table. */
+private fun sceneName(state: ControlUiState, id: String): String =
+    state.scenes.firstOrNull { it.id == id }?.name
+        ?: com.quietshore.control.model.SceneCatalog.scene(id)?.name
+        ?: id
+
+/** One row, one baseline: elapsed, scene, buoyancy, head angles. */
+@Composable
+private fun SessionReadout(state: ControlUiState) {
+    val stale = state.poseStale || state.pose == null
+    val facts = buildList {
+        add("已运行" to clock(state.sessionElapsedMs))
+        add("场景" to sceneName(state, state.control.scene))
+        add("起伏" to "${state.control.floatMm.toInt()} mm")
+        // The wire carries radians; every screen prints degrees.
+        val deg = 180.0 / Math.PI
+        add("偏航" to if (stale) "—" else "${(state.pose!!.yaw * deg).toInt()}°")
+        add("俯仰" to if (stale) "—" else "${(state.pose!!.pitch * deg).toInt()}°")
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        for ((label, value) in facts) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = QuietPalette.InkSecondary,
+                    modifier = Modifier.padding(bottom = 3.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleMedium.tabularFigures(),
+                    color = QuietPalette.Ink,
+                    maxLines = 1
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
     }
 }
 
 /**
- * Right column: the four things that are live during a session, in the order
- * the hand reaches for them, then the two corrections and the end.
+ * Right column: what the hand reaches for during a session.
+ *
+ * Three blocks in the order the bedside asks for them — which room, how much
+ * motion, where the body is — then the two corrections pinned at the foot. The
+ * blocks size themselves and the column scrolls, so a short window loses the
+ * end of a block instead of clipping a key.
  */
 @Composable
 private fun SessionColumn(
@@ -493,55 +535,45 @@ private fun SessionColumn(
     actions: ControlActions,
     phase: SessionPhase,
     fill: Boolean,
-    modifier: Modifier = Modifier,
-    onOpenScene: () -> Unit,
-    onOpenVoice: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     val ready = state.phase == BlePhase.READY
-    // The real scene list unlocks only once the patient is inside XR and the
-    // posture has been recorded: the preparation room is the first surface,
-    // and entering a real scene is the deliberate second step. After that a
-    // switch is live during training — the page swaps content under the kept
-    // calibration frame — so it needs no confirmation, only the apply key.
     val scenesEnabled = ready && phase == SessionPhase.Running
     val level = state.control.floatLevel.coerceIn(0, 3)
+    val calibration = calibrationView(state, phase, ready)
     val selectedScene = state.sceneIntent.ifEmpty { state.control.scene }
     val selectedName = state.selectableScenes
         .firstOrNull { it.id == state.sceneIntent }
         ?.name
 
     Column(modifier) {
-        // The band is status, not a control page: it stays outside the scroller
-        // so the remaining time never leaves the screen mid-session.
-        if (phase == SessionPhase.Running || state.segmentProgress != null) {
-            SegmentBand(
-                state = state,
-                actions = actions,
-                enabled = scenesEnabled
-            )
-        }
-        Box(Modifier.then(if (fill) Modifier.weight(1f) else Modifier)) {
         Column(
             Modifier.then(
                 if (fill) {
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
                 } else {
-                    Modifier
+                    Modifier.fillMaxWidth()
                 }
-            )
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Panel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(
-                        text = "场景",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = QuietPalette.InkSecondary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "场景",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = QuietPalette.InkSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = selectedName ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.InkSecondary,
+                            maxLines = 1
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
-                    // One row of four names: the descriptions and the rise
-                    // length live on the scene page, and the tab bar reaches
-                    // it. A second entry point here costs height the four
-                    // live blocks below need.
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (scene in state.selectableScenes) {
                             SceneCardView(
@@ -554,49 +586,37 @@ private fun SessionColumn(
                             )
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    // Status and the one deliberate action share a line: more
-                    // controls must cost width here, not height in the app.
+                    Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = when {
-                                phase == SessionPhase.Calibrating -> "标定中，完成后解锁场景。"
-                                phase == SessionPhase.Stopping -> "正在结束，结束后再切换。"
-                                phase != SessionPhase.Running -> "进入 VR 并完成标定后可选场景。"
-                                selectedName != null -> "已选「$selectedName」"
+                                phase == SessionPhase.Calibrating -> calibration.unlockNote
+                                phase != SessionPhase.Running -> calibration.unlockNote
                                 state.inSpecialScene -> "准备间中：选择一个正式场景。"
-                                else -> "选中后点右侧切换。"
+                                selectedName != null -> "已选「$selectedName」"
+                                else -> "点一张卡选择场景。"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = QuietPalette.InkSecondary,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(8.dp))
                         Key(
-                            label = when {
-                                state.program.segments.isNotEmpty() ->
-                                    if (state.inSpecialScene) "开始流程" else "重启流程"
-                                state.inSpecialScene -> "进入正式场景"
-                                else -> "切换场景"
-                            },
+                            label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
                             onClick = actions.onSceneApply,
-                            enabled = scenesEnabled && (
-                                state.program.segments.isNotEmpty() || state.sceneIntentDiverges
-                                ),
+                            enabled = scenesEnabled && state.sceneIntentDiverges,
                             height = TouchTarget
                         )
                     }
                 }
-                Rule()
-                // Two narrow blocks side by side: both are live during a
-                // session, and stacking them cost the posture row its bottom
-                // half under the pinned keys.
+            }
+
+            Panel(Modifier.fillMaxWidth()) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -605,57 +625,27 @@ private fun SessionColumn(
                             color = QuietPalette.InkSecondary
                         )
                         Text(
-                            text = "上限 ${state.caps.floatMax} 级",
+                            text = when {
+                                level == 0 -> "已关闭"
+                                else -> "上限 ${state.caps.floatMax} 级"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = QuietPalette.InkSecondary
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Stepper(
-                            value = "$level",
-                            description = "强度 $level 级",
-                            canDecrement = ready && phase.acceptsChanges && level > 0,
-                            canIncrement = ready && phase.acceptsChanges &&
-                                level < state.caps.floatMax,
-                            onDecrement = { actions.onFloatLevel(level - 1) },
-                            onIncrement = { actions.onFloatLevel(level + 1) }
-                        )
                     }
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = "语音",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = QuietPalette.InkSecondary
-                        )
-                        Text(
-                            text = state.voiceLine?.let {
-                                if (it.text.length > 12) it.text.take(11) + "…" else it.text
-                            } ?: "未播放",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.InkSecondary,
-                            maxLines = 1
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        // Calibration measures where the body is: the caption
-                        // says only the stop works, so every voice key refuses.
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Key(
-                                label = "停止",
-                                onClick = actions.onVoiceStop,
-                                enabled = ready && phase.acceptsChanges,
-                                height = 44.dp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Key(
-                                label = "下一句",
-                                onClick = { actions.onVoicePlay(nextVoiceId(state)) },
-                                enabled = ready && phase.acceptsChanges,
-                                height = 44.dp,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                    Stepper(
+                        value = if (level == 0) "关" else "$level",
+                        description = if (level == 0) "起伏已关闭" else "强度 $level 级",
+                        canDecrement = ready && phase.acceptsChanges && level > 0,
+                        canIncrement = ready && phase.acceptsChanges &&
+                            level < state.caps.floatMax,
+                        onDecrement = { actions.onFloatLevel(level - 1) },
+                        onIncrement = { actions.onFloatLevel(level + 1) }
+                    )
                 }
-                Rule()
+            }
+
+            Panel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
                         text = "体位",
@@ -663,18 +653,25 @@ private fun SessionColumn(
                         color = QuietPalette.Ink
                     )
                     Spacer(Modifier.height(8.dp))
-                    // The duration is part of the manual rise, not a setup
-                    // screen: it is chosen where the operator's hand is when
-                    // they decide to raise the patient.
+                    // The duration is part of the manual rise: it sits where the
+                    // hand is when the operator decides to raise the patient.
                     RiseDurationRow(
-                        selectedMs = state.animDurationMs,
+                        selectedMs = state.rampMs,
                         enabled = ready && state.caps.rise,
                         onSelect = actions.onAnimDuration
                     )
                     Spacer(Modifier.height(12.dp))
-                    // Recording the posture freezes every motion channel: the
-                    // page is measuring where the body is, so moving it would
-                    // record the movement instead. Only the stop stays live.
+                    // A disabled key that says nothing sends the operator
+                    // hunting for a fault. The page already knows why: it is
+                    // the same `blocked` reason it gates its own commands on.
+                    if (state.caps.blocked.isNotEmpty()) {
+                        Text(
+                            text = state.caps.blocked,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.InkSecondary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
                     KeyRow {
                         ActionKey(
                             label = "起身",
@@ -690,55 +687,30 @@ private fun SessionColumn(
                             enabled = ready && state.caps.lie && phase.acceptsChanges
                         )
                         ActionKey(
-                            label = "停止",
+                            label = "保持",
                             onClick = actions.onPostureStop,
                             modifier = Modifier.weight(1f),
                             enabled = ready && state.caps.stop && phase.acceptsChanges
                         )
                     }
-                    // The pinned row below is not part of the scroller; this
-                    // spacer lets the last key row scroll clear of it instead
-                    // of stopping at the viewport edge.
-                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
-        // A hard cut at the pinned row reads as a clipped panel; the short
-        // fade says the column continues under the keys.
-        if (fill) {
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(20.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(QuietPalette.Paper.copy(alpha = 0f), QuietPalette.Paper)
-                        )
-                    )
-            )
-        }
-        }
-        // Corrections and the end are one pinned row: 校准 is a real key with
-        // the same weight as before, not a bare word floating above the stop.
+        Spacer(Modifier.height(12.dp))
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, start = 20.dp, end = 20.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Key(
-                label = "重新校准",
+            CalibrationKey(
+                view = calibration,
                 onClick = actions.onRecalibrate,
-                enabled = ready && phase == SessionPhase.Running,
                 height = 56.dp,
-                modifier = Modifier.weight(0.42f)
+                modifier = Modifier.weight(0.62f)
             )
             EndKey(
-                enabled = ready && phase == SessionPhase.Running,
+                enabled = ready && phase != SessionPhase.Stopping,
                 label = when (phase) {
-                    SessionPhase.Calibrating -> "校准中，不能结束"
                     SessionPhase.Stopping -> "正在结束"
                     else -> "结束"
                 },
@@ -746,16 +718,9 @@ private fun SessionColumn(
                 modifier = Modifier.weight(1f)
             )
         }
-        Spacer(Modifier.height(12.dp))
-        Spacer(Modifier.height(QuietSpace.Page))
     }
 }
 
-/**
- * The rise length, next to the key that starts the rise. Both the bench and
- * the live posture block use it, so the choice always sits where the manual
- * action is, never on a separate setup screen.
- */
 @Composable
 private fun RiseDurationRow(
     selectedMs: Int,
@@ -797,198 +762,6 @@ private fun EndKey(
 }
 
 // ---------------------------------------------------------------------------
-// 流程（段编排）
-// ---------------------------------------------------------------------------
-
-/** Scene name from the live catalogue, falling back to the built-in table. */
-private fun sceneName(state: ControlUiState, id: String): String =
-    state.scenes.firstOrNull { it.id == id }?.name
-        ?: com.quietshore.control.model.SceneCatalog.scene(id)?.name
-        ?: id
-
-private fun durationLabel(seconds: Int): String =
-    if (seconds <= 0) "不限时" else "${seconds / 60} 分"
-
-private fun voiceLabel(voice: String): String = when (voice) {
-    "start" -> "开场"
-    "imagine" -> "想象"
-    "relax" -> "放松"
-    "close" -> "结束"
-    else -> "无语音"
-}
-
-private fun capLabel(cap: Int): String =
-    if (cap <= 0) "默认" else "$cap 级"
-
-/**
- * The always-on band: which segment of how many, where, and how long is left.
- * The page is the clock; the tablet is a mirror of it.
- */
-@Composable
-private fun SegmentBand(
-    state: ControlUiState,
-    actions: ControlActions,
-    enabled: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val progress = state.segmentProgress ?: return
-    val name = sceneName(state, progress.scene)
-    val remaining = progress.remainingSec
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = buildString {
-                append("第 ${progress.index}/${progress.total} 段 │ ")
-                append(name)
-                append(" │ ")
-                append(if (remaining == null) "不限时" else "还剩 ${clock(remaining * 1000L)}")
-                if (progress.total > 1) {
-                    append(if (progress.auto) " │ 自动" else " │ 手动")
-                }
-            },
-            style = MaterialTheme.typography.bodyMedium.tabularFigures(),
-            color = QuietPalette.InkSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(8.dp))
-        Key(
-            label = "下一段",
-            onClick = actions.onNextSegment,
-            enabled = enabled && progress.index < progress.total,
-            height = TouchTarget
-        )
-    }
-    Spacer(Modifier.height(8.dp))
-    Rule()
-}
-
-/** One editable segment: scene, length, cue and strength ceiling, all cycled. */
-@Composable
-private fun ProgramRow(
-    index: Int,
-    segment: ProgramSegment,
-    state: ControlUiState,
-    actions: ControlActions,
-    enabled: Boolean
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = "${index + 1}",
-            style = MaterialTheme.typography.bodySmall.tabularFigures(),
-            color = QuietPalette.InkSecondary
-        )
-        Key(
-            label = sceneName(state, segment.scene),
-            onClick = { actions.onProgramScene(index) },
-            enabled = enabled,
-            height = 44.dp,
-            modifier = Modifier.weight(1.5f)
-        )
-        Key(
-            label = durationLabel(segment.seconds),
-            onClick = { actions.onProgramDuration(index) },
-            enabled = enabled,
-            height = 44.dp,
-            modifier = Modifier.weight(0.8f)
-        )
-        Key(
-            label = voiceLabel(segment.voice),
-            onClick = { actions.onProgramVoice(index) },
-            enabled = enabled,
-            height = 44.dp,
-            modifier = Modifier.weight(0.8f)
-        )
-        Key(
-            label = capLabel(segment.cap),
-            onClick = { actions.onProgramCap(index) },
-            enabled = enabled,
-            height = 44.dp,
-            modifier = Modifier.weight(0.7f)
-        )
-        Key(
-            label = "删",
-            onClick = { actions.onProgramRemove(index) },
-            enabled = enabled,
-            height = 44.dp,
-            modifier = Modifier.weight(0.5f)
-        )
-    }
-}
-
-/**
- * The plan editor. An empty plan is the one open-ended segment the page already
- * runs; pressing 增加 materialises both that segment and a second one, so the
- * default single-segment session never pays for an editor it did not use.
- */
-@Composable
-private fun ProgramEditor(
-    state: ControlUiState,
-    actions: ControlActions,
-    enabled: Boolean
-) {
-    val segments = state.program.segments
-    SectionHead(
-        title = "02 流程",
-        note = if (segments.isEmpty()) "默认单段：按当前场景，手动结束" else "${segments.size} 段，按顺序执行"
-    )
-    Panel(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(QuietSpace.Panel)) {
-            if (segments.isEmpty()) {
-                val sceneId = state.sceneIntent.ifEmpty { state.control.scene }
-                Text(
-                    text = "第 1 段 · ${sceneName(state, sceneId)} · 不限时",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = QuietPalette.Ink
-                )
-            } else {
-                segments.forEachIndexed { index, segment ->
-                    ProgramRow(index, segment, state, actions, enabled)
-                    if (index != segments.lastIndex) {
-                        Rule()
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Key(
-                    label = "＋ 增加一段",
-                    onClick = actions.onProgramAdd,
-                    enabled = enabled && (segments.isEmpty() || segments.size < 8),
-                    height = TouchTarget
-                )
-                Key(
-                    label = "自动推进 ${if (state.program.auto) "开" else "关"}",
-                    onClick = { actions.onProgramAuto(!state.program.auto) },
-                    enabled = enabled,
-                    height = TouchTarget
-                )
-                Spacer(Modifier.weight(1f))
-                if (segments.isNotEmpty()) {
-                    Text(
-                        text = "点任一段的参数可循环",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.InkSecondary
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // 场景
 // ---------------------------------------------------------------------------
 
@@ -1003,12 +776,15 @@ private fun ScenePage(
     // The list unlocks only inside XR after the posture is recorded; before
     // that the preparation room is the whole app surface.
     val scenesEnabled = ready && phase == SessionPhase.Running
+    val calibration = calibrationView(state, phase, ready)
     val selectedName = state.selectableScenes
         .firstOrNull { it.id == state.sceneIntent }
         ?.name
     val left = @Composable { modifier: Modifier ->
-        Box(modifier) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        // No scroller here: the cards take a weight, and a scrollable column
+        // gives its children unbounded height, which silently turned the
+        // largest target on the page back into a strip.
+        Column(modifier) {
             StartBlock(
                 state = state,
                 actions = actions,
@@ -1026,114 +802,35 @@ private fun ScenePage(
                 SectionHead(
                     title = "01 场景",
                     note = when {
-                        phase == SessionPhase.Calibrating -> "标定完成后解锁"
-                        phase == SessionPhase.Stopping -> "正在结束"
-                        !scenesEnabled -> "进入 VR 后解锁"
                         selectedName != null -> "已选「$selectedName」"
-                        state.inSpecialScene -> "准备间中"
-                        else -> "选中后切换"
+                        state.inSpecialScene -> calibration.unlockNote
+                        else -> calibration.unlockNote
                     },
                     modifier = Modifier.weight(1f)
                 )
                 // One key next to the header: the extra control costs width,
                 // not a new row in the app's main area.
                 Key(
-                    label = when {
-                        state.program.segments.isNotEmpty() ->
-                            if (state.inSpecialScene) "开始流程" else "重启流程"
-                        state.inSpecialScene -> "进入正式场景"
-                        else -> "切换场景"
-                    },
+                    label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
                     onClick = actions.onSceneApply,
-                    enabled = scenesEnabled && (
-                        state.program.segments.isNotEmpty() || state.sceneIntentDiverges
-                        ),
+                    enabled = scenesEnabled && state.sceneIntentDiverges,
                     height = TouchTarget,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
             }
+            // The choice is the page: the cards take every pixel the header
+            // leaves, so a ten-inch tablet is a large target rather than three
+            // small ones over a field of empty paper.
             SceneChooser(
                 current = state.sceneIntent.ifEmpty { state.control.scene },
                 enabled = scenesEnabled,
                 onSelect = actions.onSceneSelect,
                 playing = state.control.scene,
-                scenes = state.selectableScenes
-            )
-            Spacer(Modifier.height(QuietSpace.Section))
-            ProgramEditor(
-                state = state,
-                actions = actions,
-                enabled = ready &&
-                    phase != SessionPhase.Calibrating &&
-                    phase != SessionPhase.Stopping
-            )
-            Spacer(Modifier.height(QuietSpace.Section))
-            SectionHead(title = "体位与起伏", note = "时长随起身选择，会话中也可调整")
-            Panel(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(QuietSpace.Panel)) {
-                    SwitchRow(
-                        title = "竖直起伏",
-                        checked = state.control.floatLevel > 0,
-                        onCheckedChange = { on ->
-                            actions.onFloatLevel(
-                                if (on) state.caps.floatMax.coerceAtLeast(1) else 0
-                            )
-                        },
-                        enabled = ready && state.caps.float,
-                        note = "画面缓慢升降，视野随之移动。"
-                    )
-                    Rule()
-                    RiseDurationRow(
-                        selectedMs = state.animDurationMs,
-                        enabled = ready,
-                        onSelect = actions.onAnimDuration,
-                        modifier = Modifier.padding(top = 16.dp)
-                    )
-                    KeyRow(Modifier.padding(top = 12.dp)) {
-                        ActionKey(
-                            label = "起身",
-                            onClick = actions.onPostureRise,
-                            modifier = Modifier.weight(1f),
-                            tone = ActionTone.Primary,
-                            enabled = ready && state.caps.rise
-                        )
-                        ActionKey(
-                            label = "躺下",
-                            onClick = actions.onPostureLower,
-                            modifier = Modifier.weight(1f),
-                            enabled = ready && state.caps.lie
-                        )
-                        ActionKey(
-                            label = "停止",
-                            onClick = actions.onPostureStop,
-                            modifier = Modifier.weight(1f),
-                            enabled = ready && state.caps.stop
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(QuietSpace.Section))
-            SectionHead(title = "语音", note = "患者听到的提示语")
-            VoiceSummaryRow(
-                state = state,
-                onOpenVoice = actions.onVoiceOpen,
-                enabled = ready
+                scenes = state.selectableScenes,
+                fillHeight = true,
+                modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.height(QuietSpace.Page))
-        }
-            // A block cut at the fold reads as a broken layout; the fade reads
-            // as "there is more".
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(36.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(QuietPalette.Paper.copy(alpha = 0f), QuietPalette.Paper)
-                        )
-                    )
-            )
         }
     }
     val right = @Composable { modifier: Modifier ->
@@ -1158,6 +855,7 @@ private fun StartBlock(
     phase: SessionPhase
 ) {
     val ready = state.phase == BlePhase.READY
+    val calibration = calibrationView(state, phase, ready)
     // A status line, not another board: the page already has one white work
     // surface on the right, and this line is where the whole page begins.
     Column(Modifier.fillMaxWidth()) {
@@ -1166,25 +864,16 @@ private fun StartBlock(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = when (phase) {
-                    SessionPhase.Entry -> "已启动，等待按压"
-                    SessionPhase.Calibrating -> "校准中"
-                    SessionPhase.Running, SessionPhase.Stopping -> "训练中"
-                    else -> "准备本次训练"
-                },
+                text = calibration.headline,
                 style = MaterialTheme.typography.titleLarge,
                 color = QuietPalette.Ink
             )
             Spacer(Modifier.width(16.dp))
             Text(
-                text = if (!ready) {
-                    "头显未连接。返回配对页重连。"
-                } else if (phase == SessionPhase.Entry) {
+                text = if (phase == SessionPhase.Entry) {
                     "已过 ${clock(state.sessionElapsedMs)}。20 秒未按将重开页面。"
-                } else if (phase.inSession) {
-                    "会话在会话页调整。"
                 } else {
-                    "患者确认后开始训练。"
+                    calibration.hint
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary,
@@ -1214,8 +903,9 @@ private fun StandbySteps(
 ) {
     val ready = state.phase == BlePhase.READY
     val live = phase == SessionPhase.Running || phase == SessionPhase.Stopping
+    val calibration = calibrationView(state, phase, ready)
     Panel(modifier) {
-        Column(Modifier.padding(QuietSpace.Panel)) {
+        Column(Modifier.fillMaxSize().padding(QuietSpace.Panel)) {
             Text(
                 text = "准备",
                 style = MaterialTheme.typography.titleLarge,
@@ -1223,7 +913,7 @@ private fun StandbySteps(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "启动后，患者按一次；先进入准备间。",
+                text = "患者按一次确认键，进入准备间。",
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary
             )
@@ -1237,38 +927,35 @@ private fun StandbySteps(
                 "启动训练",
                 when (phase) {
                     SessionPhase.Entry -> "等待患者按压"
-                    SessionPhase.Calibrating -> "准备间 · 记录中"
+                    SessionPhase.Calibrating -> "准备间，记录中"
                     SessionPhase.Running -> "已在准备间"
-                    else -> "按后进入准备间"
+                    else -> "未启动"
                 },
                 phase != SessionPhase.Idle
             )
             Spacer(Modifier.height(16.dp))
             StepLine(
                 "记录起始体位",
-                when {
-                    phase == SessionPhase.Calibrating -> "进行中"
-                    live && !state.inSpecialScene -> "已记录"
-                    live && state.inSpecialScene -> "待技术员"
-                    else -> "启动后"
-                },
-                phase == SessionPhase.Calibrating || (live && !state.inSpecialScene)
+                calibration.stepValue,
+                calibration.stepDone
             )
             Spacer(Modifier.height(16.dp))
             StepLine(
                 "进入正式场景",
                 when {
                     live && !state.inSpecialScene -> "已进入"
-                    phase == SessionPhase.Running -> "标定后可选"
-                    else -> "标定后解锁"
+                    phase == SessionPhase.Running -> "已标定"
+                    else -> "标定未完成"
                 },
                 live && !state.inSpecialScene
             )
-            Spacer(Modifier.height(24.dp))
+            // The chain sits at the top, the one key at the foot: the panel is
+            // the height of the column, so the target is where the thumb is.
+            Spacer(Modifier.weight(1f))
             ActionKey(
                 label = when (phase) {
                     SessionPhase.Entry -> "等待确认"
-                    SessionPhase.Calibrating -> "校准中"
+                    SessionPhase.Calibrating -> calibration.headline
                     else -> "启动训练"
                 },
                 onClick = actions.onEnterTraining,
@@ -1292,37 +979,21 @@ private fun StandbySteps(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = if (!ready) {
-                    "头显未连接。返回配对页重连。"
-                } else if (phase == SessionPhase.Calibrating) {
-                    "校准中，患者保持不动。"
-                } else {
-                    "患者确认后开始训练。"
-                },
+                text = calibration.hint,
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary
             )
             if (phase == SessionPhase.Idle && state.sessionElapsedMs > 0L) {
-                // A finished session's last step: the scale is answered while
-                // the patient is still on the bed, not after they leave.
+                // The session that just ended is recorded; the scale is a
+                // separate application face and is not offered from training.
                 Spacer(Modifier.height(16.dp))
                 Rule()
-                Row(
-                    modifier = Modifier.padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "上一轮已完成，补答 SUS",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = QuietPalette.InkSecondary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    BarWordKey(
-                        label = "打开量表",
-                        onClick = actions.onSusOpen,
-                        enabled = ready
-                    )
-                }
+                Text(
+                    text = "上一轮已记录。量表在「问卷」应用内。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.InkSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
     }

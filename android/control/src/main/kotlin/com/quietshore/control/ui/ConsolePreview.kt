@@ -13,9 +13,7 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.MotionCaps
-import com.quietshore.control.model.ProgramCodec
 import com.quietshore.control.model.SceneCatalog
-import com.quietshore.control.model.SegmentProgress
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.SceneCatalogDocument
 import com.quietshore.control.protocol.TelemetryPose
@@ -49,10 +47,6 @@ fun ConsolePreview(
     catalog: String? = null,
     /** `--es current prep` marks the built-in room as the loaded scene. */
     current: String? = null,
-    /** `--es program 'program:1:shore,360,none,3;...'` for the plan editor. */
-    programWire: String? = null,
-    /** `--es segment '1,3,shore,312,360,1'` for the persistent band. */
-    segmentSpec: String? = null,
     /** `--es app questionnaire` renders the other product face. */
     app: String? = null,
     /** `--ez records true` seeds two archived questionnaire sheets. */
@@ -79,29 +73,6 @@ fun ConsolePreview(
                 SceneCatalog.Scene(it.id, it.nameZh, it.taglineZh, it.special)
             }
             if (scenes.isNullOrEmpty()) base else base.copy(scenes = scenes)
-        }
-        .let { base ->
-            val program = programWire?.let(ProgramCodec::parse)
-            if (program == null) base else base.copy(program = program)
-        }
-        .let { base ->
-            val progress = segmentSpec?.split(',')?.let { fields ->
-                if (fields.size != 6) {
-                    return@let null
-                }
-                val index = fields[0].toIntOrNull() ?: return@let null
-                val total = fields[1].toIntOrNull() ?: return@let null
-                val remaining = fields[3].takeIf { it != "-" }?.toIntOrNull()
-                SegmentProgress(
-                    index = index,
-                    total = total,
-                    scene = fields[2],
-                    remainingSec = remaining,
-                    durationSec = fields[4].toIntOrNull() ?: 0,
-                    auto = fields[5] == "1"
-                )
-            }
-            if (progress == null) base else base.copy(segmentProgress = progress)
         }
         .let { base -> if (app.isNullOrBlank()) base else base.copy(app = app) }
         .let { base ->
@@ -147,14 +118,6 @@ fun ConsolePreview(
         onAppSelect = {},
         onSceneSelect = {},
         onSceneApply = noop,
-        onNextSegment = noop,
-        onProgramAdd = noop,
-        onProgramRemove = {},
-        onProgramScene = {},
-        onProgramDuration = {},
-        onProgramVoice = {},
-        onProgramCap = {},
-        onProgramAuto = {},
         onAnimDuration = {},
         onGazeDwellChange = {},
         onSusVoiceChange = {},
@@ -165,11 +128,11 @@ fun ConsolePreview(
         onEnterTraining = noop,
         onEnd = noop,
         onRecalibrate = noop,
+        onAdaptationSkip = noop,
         onToggleAudio = noop,
         onFloatLevel = {},
         onViewAnim = {},
         onViewStop = noop,
-        onEmergencyStop = noop,
         onPostureLower = noop,
         onPostureRise = noop,
         onPostureStop = noop,
@@ -181,11 +144,12 @@ fun ConsolePreview(
         onVoiceSequence = {},
         onVoiceStop = noop,
         onVoiceVolume = {},
+        onAudioVolume = {},
         onVoiceDuck = {},
         onVoiceSet = {},
         onSusShow = {},
         onSusAnswer = {},
-        onSusExport = noop,
+        onExportRecords = noop,
         onSusFilterQuestionnaire = noop,
         onSusFilterDays = noop,
         onOutcome = { _, _ -> }
@@ -263,9 +227,16 @@ fun fixtureState(
             pose = pose,
             poseStale = pose == null
         )
+        // A calibrating session still streams pose: the headset is measuring
+        // where the head is, so the mirror has a picture and the readout has
+        // numbers. The fixture owes the screen the same frame the wire does.
         ConsoleFixture.Calibrating -> base.copy(
             control = running.copy(calibrating = true),
-            sessionElapsedMs = 8_000L
+            sessionElapsedMs = 8_000L,
+            pose = pose,
+            poseStale = pose == null,
+            // The page blocks posture changes while it is measuring; say so.
+            caps = base.caps.copy(rise = false, lie = false, stop = false, blocked = "校准中")
         )
         ConsoleFixture.Entry -> base.copy(startPending = true)
         ConsoleFixture.Idle -> base.copy(

@@ -60,6 +60,9 @@ object ControlProtocol {
     const val SUS_SHOW: String = "sus:show:"
     const val SUS_ANSWER: String = "sus:answer:"
 
+    /** Ambience level: `audio:volume:<0-100>` (0 = the bed is silent, not off). */
+    const val AUDIO_VOLUME: String = "audio:volume:"
+
     /** Voice cue channel: `voice:play:<id>`, `voice:stop`, `voice:volume:<0-100>`, … */
     const val VOICE_PREFIX: String = "voice:"
 
@@ -111,8 +114,8 @@ object ControlProtocol {
      */
     val CAPABILITIES: List<String> = listOf(
         "enter", "exit", "stop",
-        "calibrate",
-        "audio:on", "audio:off", "audio:toggle",
+        "calibrate", "adapt:skip",
+        "audio:on", "audio:off", "audio:toggle", "audio:volume:0-100",
         "float:level:0-3",
         "scene:<id>",
         "anim:duration:4000-20000", "posture:rise", "posture:lower", "posture:stop",
@@ -293,9 +296,8 @@ object ControlProtocol {
 
     fun normalize(command: String): String? {
         val normalized = command.trim().lowercase()
-        // Programs carry a few segments in one command; everything else stays
-        // short. The page still parses and bounds the payload.
-        return normalized.takeIf { it.isNotEmpty() && it.length <= 512 && !it.contains('\n') }
+        // Every verb is a short line; the page still parses and bounds it.
+        return normalized.takeIf { it.isNotEmpty() && it.length <= 200 && !it.contains('\n') }
     }
 
     /** Plain decimal meters only: no sign, exponent or locale-specific comma. */
@@ -355,18 +357,6 @@ object ControlProtocol {
         return value.takeIf { it.isFinite() && abs(it) <= limitDeg }
     }
 
-    /**
-     * `program:<auto>:<scene>,<seconds>,<voice>,<cap>;...`, plus the verbs
-     * `next` and `auto:on|off`. The page owns the exact grammar; this only
-     * refuses control characters and absurd lengths before the write.
-     */
-    private fun isProgramCommand(command: String): Boolean {
-        if (!command.startsWith("program:")) {
-            return false
-        }
-        return command.all { it.isLetterOrDigit() || it in ":;,._-" }
-    }
-
     /** `record:outcome:attempt|success:yes|no` — the post-session question. */
     private fun isOutcomeCommand(command: String): Boolean =
         command.startsWith("record:outcome:") &&
@@ -389,16 +379,18 @@ object ControlProtocol {
             normalized == "exit" ||
             normalized == "stop" ||
             normalized == "calibrate" ||
+            normalized == "adapt:skip" ||
             normalized == "audio:on" ||
             normalized == "audio:off" ||
             normalized == "audio:toggle" ||
+            (normalized.startsWith(AUDIO_VOLUME) &&
+                normalized.removePrefix(AUDIO_VOLUME).toIntOrNull() in 0..100) ||
             (normalized.startsWith(FLOAT_LEVEL) &&
                 normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
             (normalized.startsWith(SCENE_PREFIX) &&
                 normalized.removePrefix(SCENE_PREFIX) in sceneIds) ||
             (normalized.startsWith(APP_PREFIX) &&
                 normalized.removePrefix(APP_PREFIX) in APP_IDS) ||
-            isProgramCommand(normalized) ||
             (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
             (normalized.startsWith(ANIM_DURATION) &&
                 normalized.removePrefix(ANIM_DURATION).toIntOrNull() in 4000..20000) ||
@@ -651,6 +643,20 @@ object ControlProtocol {
     val APP_IDS: Set<String> = setOf(DEFAULT_APP, "questionnaire")
 
     /**
+     * The product face's name, as both screens print it.
+     *
+     * One table, because the headset shows this name on its home page and the
+     * tablet shows it in its top bar: two copies is how the same face ends up
+     * with two names in one shift.
+     */
+    val APP_LABELS: Map<String, String> = mapOf(
+        "training" to "场景化排尿引导器",
+        "questionnaire" to "场景化问卷作答器"
+    )
+
+    fun appLabel(id: String): String = APP_LABELS[id] ?: id
+
+    /**
      * Built-in surfaces that are never offered as a scene choice. The live
      * catalogue carries the same flag; this is the pre-catalogue fallback.
      */
@@ -670,12 +676,11 @@ object ControlProtocol {
      * only place an operator sees all four at once — and a blurb that drifts
      * from the art is worse than none.
      */
-    val SCENE_BLURBS: Map<String, String> = linkedMapOf(
-        "washroom" to "起身视角：0.85 米外的立便器与木隔屏；躺下只见天花板的一盏筒灯。",
-        "shore" to "躺卧视角：水面在身下缓缓起伏，云在头顶漂移，地平线稳定。",
-        "ward" to "仰卧视角：被面轻褶、窗上百叶、监护仪滚动的波形，头顶两盏嵌灯。",
-        "prep" to "空旷的灰色房间：没有陈设，只有头顶一块柔光。"
-    )
+    // No blurbs here on purpose. The page's registry is the only place a
+    // scene's copy exists; a second table in Kotlin is how the washroom once
+    // described rails the room does not have. Before the catalogue arrives a
+    // card shows its name and nothing else, which is honest about what the
+    // tablet actually knows.
 
     private fun sceneIndex(name: String, sceneIds: List<String>): Int {
         val index = sceneIds.indexOf(name)

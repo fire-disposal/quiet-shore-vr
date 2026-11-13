@@ -135,7 +135,7 @@ export class StartScreen {
     const percent = Math.max(0, Math.min(100, Math.round(level)));
     const low = percent <= 15 && !charging;
     this.battery.hidden = false;
-    this.battery.textContent = `头显电量 ${percent}%${charging ? ' · 充电中' : ''}`;
+    this.battery.textContent = `头显电量 ${percent}%${charging ? '，充电中' : ''}`;
     this.battery.dataset.low = low ? 'true' : 'false';
   }
 }

@@ -10,17 +10,8 @@ data class ControlActions(
     val onAppSelect: (String) -> Unit,
     /** Marks a scene as the operator's next choice; nothing is sent yet. */
     val onSceneSelect: (String) -> Unit,
-    /** Applies the marked scene or the configured program. */
+    /** Applies the marked scene: the only way content changes mid-session. */
     val onSceneApply: () -> Unit,
-    /** Advances a running program to its next segment. */
-    val onNextSegment: () -> Unit,
-    val onProgramAdd: () -> Unit,
-    val onProgramRemove: (Int) -> Unit,
-    val onProgramScene: (Int) -> Unit,
-    val onProgramDuration: (Int) -> Unit,
-    val onProgramVoice: (Int) -> Unit,
-    val onProgramCap: (Int) -> Unit,
-    val onProgramAuto: (Boolean) -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
     val onAnimDuration: (Int) -> Unit,
     /** Gaze dwell selection (SUS answers and spatial targets). Default on. */
@@ -34,14 +25,15 @@ data class ControlActions(
     val onEnterTraining: () -> Unit,
     val onEnd: () -> Unit,
     val onRecalibrate: () -> Unit,
+    /** End the orientation phase early; the capture key then opens. */
+    val onAdaptationSkip: () -> Unit,
     val onToggleAudio: () -> Unit,
     val onFloatLevel: (Int) -> Unit,
     /** One discrete view preset: up / down / recenter / breathe. */
     val onViewAnim: (String) -> Unit,
     /** Hold the current view angles; only `recenter` returns to level. */
     val onViewStop: () -> Unit,
-    val onEmergencyStop: () -> Unit,
-    /** Posture branch: only meaningful in posture mode. */
+    /** Posture correction: lower, rise, or hold the current angle. */
     val onPostureLower: () -> Unit,
     val onPostureRise: () -> Unit,
     val onPostureStop: () -> Unit,
@@ -57,6 +49,8 @@ data class ControlActions(
     /** Plays a whole sequence: start / imagine / relax / close. */
     val onVoiceStop: () -> Unit,
     val onVoiceVolume: (Int) -> Unit,
+    /** Scene bed level 0–100; the water is not the voice. */
+    val onAudioVolume: (Int) -> Unit,
     /** How far the scene bed is pulled down while a cue speaks, in dB. */
     val onVoiceDuck: (Int) -> Unit,
     val onVoiceSet: (String) -> Unit,
@@ -64,8 +58,8 @@ data class ControlActions(
     val onSusShow: (Int) -> Unit,
     /** SUS: record the operator's answer for the current question. */
     val onSusAnswer: (Int) -> Unit,
-    /** SUS: share the archived sheets as JSON through the system chooser. */
-    val onSusExport: () -> Unit,
+    /** Share every local record — sheets, sessions, behaviour — as one JSON. */
+    val onExportRecords: () -> Unit,
     val onSusFilterQuestionnaire: () -> Unit,
     val onSusFilterDays: () -> Unit,
     /** Bedside answer: "attempt" | "success", yes/no. */

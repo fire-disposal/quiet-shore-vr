@@ -64,6 +64,12 @@ export function defineScene(
         update(dt: number, elapsed: number): void {
           parts.update?.(dt, elapsed);
         },
+        controls: {
+          setMotion(scale: number): void {
+            parts.setMotion?.(Math.min(1, Math.max(0, scale)));
+          },
+          ...(parts.applyBuoyancy ? { applyBuoyancy: parts.applyBuoyancy } : {})
+        },
         dispose(): void {
           // The scene releases what it owns; anything left (instanced buffers,
           // textures a material still holds) is released here, once.
@@ -74,12 +80,6 @@ export function defineScene(
           parts.root.removeFromParent();
         }
       };
-      if (parts.setMotion) {
-        handle.setMotion = parts.setMotion;
-      }
-      if (parts.applyBuoyancy) {
-        handle.applyBuoyancy = parts.applyBuoyancy;
-      }
       return handle;
     }
   };

@@ -46,6 +46,10 @@ export interface StateSnapshot {
   readonly viewAnim: ViewAnimState;
   readonly voiceId: number;
   readonly elapsedSec: number;
+  /** Ramp length the page will use next, milliseconds. */
+  readonly rampMs: number;
+  /** True once the orientation phase is over; the capture key opens then. */
+  readonly adaptationDone: boolean;
   readonly calibrationConfidence: number;
   /** Applied world rotation, xyz only: `w` is derived by the reader. */
   readonly worldQ: QuatXyz;
@@ -124,6 +128,8 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     viewAnim: snapshot.viewAnim,
     voiceId: snapshot.voiceId,
     elapsedSec: snapshot.sessionSec,
+    rampMs: snapshot.rampMs,
+    adaptationDone: snapshot.adaptationDone,
     calibrationConfidence: snapshot.calibrationConfidence,
     worldQ: {
       x: snapshot.worldQuat.x,
@@ -258,12 +264,7 @@ export class PortalLink {
     socket?.close();
   }
 
-  /** Immediate readback after an accepted discrete command. */
-  /**
-   * One-off payload towards the tablet, through the headset app's BLE bridge.
-   * The 20-byte state frame is frozen by the wire contract, so anything that is
-   * not live telemetry travels on its own channel (`sus` today).
-   */
+  /** One-off payload towards the tablet through the headset's JSON channel. */
   /**
    * The scene catalogue, pushed once per connection.
    *
@@ -280,13 +281,17 @@ export class PortalLink {
   }
 
   /**
-   * Program progress: which segment the page is executing, its planned length
-   * and the seconds left. The state frame has no room for it, and it is
-   * change-driven, so it rides the JSON channel like SUS and notices.
+   * One behaviour event the tablet's own log cannot infer.
+   *
+   * Commands travel tablet → page, so the tablet knows what it asked for; only
+   * the page knows what actually happened — a capture that landed, a scene
+   * that swapped, a session that the patient ended with the confirm key. Those
+   * go up as `log` and join the same ledger as the presses.
    */
-  sendSegment(data: unknown): void {
-    this.send({ type: 'segment', data });
+  sendLog(app: string, kind: string, detail?: Record<string, unknown>): void {
+    this.send({ type: 'log', app, data: { kind, d: detail ?? {} } });
   }
+
 
   /**
    * The questionnaire catalogue, pushed once per connection like the scenes.

@@ -15,11 +15,7 @@ import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.MirrorMode
 import com.quietshore.control.model.ScannedHeadset
-import com.quietshore.control.model.ProgramCodec
-import com.quietshore.control.model.ProgramSegment
-import com.quietshore.control.model.ProgramState
 import com.quietshore.control.model.SceneCatalog
-import com.quietshore.control.model.SegmentProgress
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.SceneCatalogDocument
 import com.quietshore.control.data.SusStore
@@ -56,6 +52,7 @@ class ControlViewModel(application: Application) :
 
     private val susStore = SusStore(application)
     private val trainingStore = com.quietshore.control.data.TrainingStore(application)
+    private val eventLog = com.quietshore.control.data.EventLog(application)
 
     private val _uiState = MutableStateFlow(
         ControlUiState(
@@ -253,27 +250,16 @@ class ControlViewModel(application: Application) :
         }
     }
 
+    /**
+     * End the session. There is one stop: the page freezes motion and fades out
+     * inside a second, and the patient's own confirm key sends the same verb.
+     * The tablet flips to [SessionPhase.Stopping] on the press, not on a reply,
+     * because the next frame that drops the session flag is what clears it.
+     */
     fun endSession() {
         requestStop()
     }
 
-    /**
-     * Emergency stop: ends the session immediately. The page freezes motion and
-     * fades the buoyancy out inside a second; this is the same `stop` the
-     * patient's confirm key sends, so both converge on one path.
-     */
-    fun emergencyStop() {
-        // Idempotent on purpose: a second press while the fade runs must not
-        // be a dialog, a debounce, or a different code path.
-        requestStop()
-    }
-
-    /**
-     * One stop path for both keys. The tablet flips to [SessionPhase.Stopping]
-     * on the press, not on a reply — the page has already frozen by the time
-     * the command lands — and the next frame that drops the session flag clears
-     * it. Nothing here waits for an acknowledgement the wire does not carry.
-     */
     private fun requestStop() {
         if (!_uiState.value.control.session) {
             return
@@ -344,19 +330,6 @@ class ControlViewModel(application: Application) :
         if (!current.control.session || current.control.calibrating || current.stopRequested) {
             return
         }
-        val program = current.program
-        if (program.segments.isNotEmpty()) {
-            if (!programIsValid(current, program)) {
-                notice("流程里有不可用的场景或参数")
-                return
-            }
-            sendCommand("program:auto:${if (program.auto) "on" else "off"}")
-            sendCommand(ProgramCodec.format(program))
-            // The page reports the actual segment; highlight the first now so
-            // the card row does not contradict the band.
-            _uiState.update { it.copy(sceneIntent = program.segments.first().scene) }
-            return
-        }
         val target = current.sceneIntent
         if (target.isEmpty() ||
             target == current.control.scene ||
@@ -382,154 +355,6 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.APP_PREFIX + id)
     }
 
-    /** Opens the next program segment; at the last one the page ends. */
-    fun nextSegment() {
-        if (_uiState.value.segmentProgress == null) {
-            return
-        }
-        sendCommand("program:next")
-    }
-
-    fun setProgramAuto(auto: Boolean) {
-        _uiState.update { it.copy(program = it.program.copy(auto = auto)) }
-        sendCommand("program:auto:${if (auto) "on" else "off"}")
-    }
-
-    /**
-     * Explicit plans. An empty list is not "no plan": it is the single
-     * open-ended segment the page already runs, so the editor only materialises
-     * when the operator adds a second one.
-     */
-    fun addProgramSegment() {
-        val current = _uiState.value
-        val seedScene = current.sceneIntent
-            .ifEmpty { current.control.scene }
-            .takeIf { it in selectableSceneIds(current) }
-            ?: current.selectableScenes.firstOrNull()?.id
-            ?: return
-        val existing = current.program.segments
-        val next = if (existing.isEmpty()) {
-            listOf(
-                ProgramSegment(scene = seedScene, seconds = 0, voice = "none", cap = 0),
-                ProgramSegment(scene = seedScene, seconds = 300, voice = "none", cap = 0)
-            )
-        } else {
-            val last = existing.last()
-            existing + ProgramSegment(scene = last.scene, seconds = 300, voice = "none", cap = last.cap)
-        }
-        _uiState.update { it.copy(program = it.program.copy(segments = next)) }
-    }
-
-    fun removeProgramSegment(index: Int) {
-        val current = _uiState.value.program
-        val next = current.segments.filterIndexed { at, _ -> at != index }
-        _uiState.update { it.copy(program = current.copy(segments = next)) }
-    }
-
-    fun cycleProgramScene(index: Int) {
-        val current = _uiState.value
-        val ids = current.selectableScenes.map { it.id }
-        if (ids.isEmpty()) {
-            return
-        }
-        val segments = current.program.segments
-        val segment = segments.getOrNull(index) ?: return
-        val next = ids[(ids.indexOf(segment.scene) + 1).mod(ids.size)]
-        _uiState.update {
-            it.copy(
-                program = it.program.copy(
-                    segments = segments.mapIndexed { at, value ->
-                        if (at == index) value.copy(scene = next) else value
-                    }
-                )
-            )
-        }
-    }
-
-    fun cycleProgramDuration(index: Int) {
-        val lengths = listOf(0, 180, 300, 480, 600)
-        val segments = _uiState.value.program.segments
-        val segment = segments.getOrNull(index) ?: return
-        val next = lengths[(lengths.indexOf(segment.seconds).coerceAtLeast(0) + 1) % lengths.size]
-        _uiState.update {
-            it.copy(
-                program = it.program.copy(
-                    segments = segments.mapIndexed { at, value ->
-                        if (at == index) value.copy(seconds = next) else value
-                    }
-                )
-            )
-        }
-    }
-
-    fun cycleProgramVoice(index: Int) {
-        val voices = listOf("none", "start", "imagine", "relax", "close")
-        val segments = _uiState.value.program.segments
-        val segment = segments.getOrNull(index) ?: return
-        val next = voices[(voices.indexOf(segment.voice).coerceAtLeast(0) + 1) % voices.size]
-        _uiState.update {
-            it.copy(
-                program = it.program.copy(
-                    segments = segments.mapIndexed { at, value ->
-                        if (at == index) value.copy(voice = next) else value
-                    }
-                )
-            )
-        }
-    }
-
-    fun cycleProgramCap(index: Int) {
-        val segments = _uiState.value.program.segments
-        val segment = segments.getOrNull(index) ?: return
-        val next = (segment.cap + 1) % 4
-        _uiState.update {
-            it.copy(
-                program = it.program.copy(
-                    segments = segments.mapIndexed { at, value ->
-                        if (at == index) value.copy(cap = next) else value
-                    }
-                )
-            )
-        }
-    }
-
-    private fun programIsValid(current: ControlUiState, program: ProgramState): Boolean {
-        val scenes = selectableSceneIds(current)
-        val voices = setOf("none", "start", "imagine", "relax", "close")
-        return program.segments.size in 1..8 && program.segments.all { segment ->
-            segment.scene in scenes &&
-                segment.seconds in 0..3600 &&
-                segment.cap in 0..3 &&
-                segment.voice in voices
-        }
-    }
-
-    private fun handleSegment(data: String) {
-        val json = try {
-            JSONObject(data)
-        } catch (error: JSONException) {
-            return
-        }
-        val total = json.optInt("total", 0)
-        if (total <= 0) {
-            return
-        }
-        val remaining = if (json.isNull("remainingSec")) {
-            null
-        } else {
-            json.optInt("remainingSec", 0).coerceAtLeast(0)
-        }
-        val progress = SegmentProgress(
-            index = json.optInt("index", 1).coerceIn(1, total),
-            total = total,
-            scene = json.optString("scene", ""),
-            remainingSec = remaining,
-            durationSec = json.optInt("durationSec", 0).coerceAtLeast(0),
-            auto = json.optBoolean("auto", false)
-        )
-        _uiState.update { it.copy(segmentProgress = progress) }
-    }
-
     /**
      * Gaze dwell switch. It is on by default because a supine patient has no
      * pointer; turning it off leaves only the tablet able to answer.
@@ -541,9 +366,9 @@ class ControlViewModel(application: Application) :
 
     /** Sit-up ramp length; slower reads as gentler for a frail patient. */
     fun setAnimDuration(millis: Int) {
-        val clamped = millis.coerceIn(4000, 20000)
-        _uiState.update { it.copy(animDurationMs = clamped) }
-        sendCommand(ControlProtocol.ANIM_DURATION + clamped)
+        // No optimistic write: the page echoes the length it now holds, and the
+        // row follows the echo. A click the page refused must not look applied.
+        sendCommand(ControlProtocol.ANIM_DURATION + millis.coerceIn(4000, 20000))
     }
 
     fun openSus() {
@@ -558,6 +383,11 @@ class ControlViewModel(application: Application) :
 
     fun recalibrate() {
         sendCommand("calibrate")
+    }
+
+    /** The bedside decides when the patient has had enough of the empty room. */
+    fun skipAdaptation() {
+        sendCommand("adapt:skip")
     }
 
     /** Posture branch: only meaningful while the session runs in posture mode. */
@@ -699,23 +529,56 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    /** Share the archived sheets as JSON through the system chooser. */
-    fun exportSus() {
-        val state = _uiState.value
-        val history = filteredSus(state)
-        val cutoff = if (state.susFilterDays <= 0) {
-            Long.MIN_VALUE
-        } else {
-            System.currentTimeMillis() - state.susFilterDays * 24L * 3600L * 1000L
-        }
-        val training = trainingStore.load().filter { it.optLong("at", 0L) >= cutoff }
-        if (history.isEmpty() && training.isEmpty()) {
-            error("当前筛选没有已归档的结果")
+    /**
+     * The page's own event: a calibration capture, a scene change, a stop the
+     * patient pressed. Only the headset knows these fired, and they are the
+     * half of the timeline that the tablet's command log cannot infer.
+     */
+    private fun handlePageEvent(data: String) {
+        val json = try {
+            JSONObject(data)
+        } catch (error: JSONException) {
             return
         }
-        val array = org.json.JSONArray()
-        for (record in history) {
-            array.put(
+        val app = json.optString("app").ifEmpty { "training" }
+        val kind = json.optString("kind")
+        if (kind.isEmpty()) {
+            return
+        }
+        eventLog.append(app, "page.$kind", json.optJSONObject("d"))
+    }
+
+    /**
+     * Everything this tablet has recorded, in one document.
+     *
+     * Three record kinds, one export: behaviour events, finished sessions, and
+     * questionnaire sheets. They are useless apart — a sheet without the
+     * session it followed, or a session without the presses that ended it,
+     * cannot be read. Exported through the system chooser so nothing leaves
+     * the device without the operator choosing a destination.
+     */
+    fun exportRecords(filterDays: Int = 0, questionnaireId: String? = null) {
+        val state = _uiState.value
+        val days = if (filterDays <= 0) state.susFilterDays else filterDays
+        val instrument = questionnaireId ?: state.susFilterQuestionnaire
+        val cutoff = if (days <= 0) {
+            Long.MIN_VALUE
+        } else {
+            System.currentTimeMillis() - days * 24L * 3600L * 1000L
+        }
+        val sheets = state.susHistory.filter { record ->
+            (instrument == null || record.questionnaireId == instrument) &&
+                record.completedAt >= cutoff
+        }
+        val sessions = trainingStore.load().filter { it.optLong("at", 0L) >= cutoff }
+        val events = eventLog.load().filter { it.optLong("at", 0L) >= cutoff }
+        if (sheets.isEmpty() && sessions.isEmpty() && events.isEmpty()) {
+            error("当前筛选没有已归档的记录")
+            return
+        }
+        val sheetArray = org.json.JSONArray()
+        for (record in sheets) {
+            sheetArray.put(
                 org.json.JSONObject().apply {
                     put("answers", org.json.JSONArray(record.answers))
                     put("filled", record.filled)
@@ -730,28 +593,36 @@ class ControlViewModel(application: Application) :
                 }
             )
         }
-        val trainingArray = org.json.JSONArray()
-        for (record in training) {
-            trainingArray.put(record)
+        val sessionArray = org.json.JSONArray()
+        for (record in sessions) {
+            sessionArray.put(record)
+        }
+        val eventArray = org.json.JSONArray()
+        for (record in events) {
+            eventArray.put(record)
         }
         val payload = org.json.JSONObject()
-            .put("version", 1)
-            .put("count", history.size + training.size)
-            .put("sheets", array)
-            .put("training", trainingArray)
+            .put("version", 2)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("filterDays", days)
+            .put("count", sheets.size + sessions.size + events.size)
+            .put("sheets", sheetArray)
+            .put("sessions", sessionArray)
+            .put("events", eventArray)
             .toString()
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "application/json"
             putExtra(
                 android.content.Intent.EXTRA_SUBJECT,
-                "记录 ${history.size + training.size} 条（问卷 ${history.size} / 训练 ${training.size}）"
+                "记录 ${sheets.size + sessions.size + events.size} 条"
+                    + "（问卷 ${sheets.size} / 会话 ${sessions.size} / 行为 ${events.size}）"
             )
             putExtra(android.content.Intent.EXTRA_TEXT, payload)
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         try {
             getApplication<Application>().startActivity(
-                android.content.Intent.createChooser(intent, "导出 SUS 结果")
+                android.content.Intent.createChooser(intent, "导出本机记录")
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             notice("已打开导出分享")
@@ -768,6 +639,13 @@ class ControlViewModel(application: Application) :
         val value = percent.coerceIn(0, 100)
         _uiState.update { it.copy(voiceVolume = value) }
         sendCommand(ControlProtocol.VOICE_PREFIX + "volume:" + value)
+    }
+
+    /** Ambience level; independent of the cue volume on the same page. */
+    fun setAudioVolume(percent: Int) {
+        val value = percent.coerceIn(0, 100)
+        _uiState.update { it.copy(waterVolume = value) }
+        sendCommand(ControlProtocol.AUDIO_VOLUME + value)
     }
 
     fun setVoiceDuck(db: Int) {
@@ -798,6 +676,13 @@ class ControlViewModel(application: Application) :
             error("头显未连接")
             return
         }
+        // One event per accepted command, in the face it was pressed in: this
+        // is the seam the split record stores cannot see on their own.
+        eventLog.append(
+            _uiState.value.app,
+            "command",
+            org.json.JSONObject().put("c", normalized)
+        )
         // No "已发送" banner here: it used to replace the acknowledgement or
         // the rejection in the one-slot notice bar, so a refused command looked
         // like a command that simply did nothing. The panels already show the
@@ -822,6 +707,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onReconnecting(attempt: Int, max: Int) {
+        eventLog.append("system", "link.reconnecting", org.json.JSONObject().put("attempt", attempt))
         _uiState.update {
             it.copy(
                 reconnectAttempt = attempt,
@@ -831,6 +717,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlGranted() {
+        eventLog.append("system", "link.ready")
         _uiState.update {
             it.copy(
                 controlGranted = true,
@@ -851,6 +738,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlLost(reason: String) {
+        eventLog.append("system", "link.lost", org.json.JSONObject().put("reason", reason))
         _uiState.update {
             it.copy(
                 controlGranted = false,
@@ -860,6 +748,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onDisconnected() {
+        eventLog.append("system", "link.disconnected")
         lastPoseAt = 0L
         _uiState.update {
             it.copy(
@@ -885,8 +774,11 @@ class ControlViewModel(application: Application) :
             "sus" -> handleSus(data)
             "catalog" -> handleCatalog(data)
             "questionnaire" -> handleQuestionnaires(data)
-            "session" -> trainingStore.append(data)
-            "segment" -> handleSegment(data)
+            "session" -> {
+                trainingStore.append(data)
+                eventLog.append("training", "session.recorded", org.json.JSONObject(data))
+            }
+            "log" -> handlePageEvent(data)
             "flags" -> applyFlags(data)
             // Unknown topics are ignored: a newer headset may publish more.
             else -> Unit
@@ -958,6 +850,8 @@ class ControlViewModel(application: Application) :
         _uiState.update { current ->
             current.copy(
                 app = reportedApp,
+                adaptationDone = json.optBoolean("adaptationDone", true),
+                rampMs = json.optInt("rampMs", current.rampMs).coerceIn(0, 60_000),
                 caps = caps ?: current.caps,
                 battery = battery ?: current.battery,
                 control = current.control.copy(
@@ -982,6 +876,15 @@ class ControlViewModel(application: Application) :
             null
         } ?: return
         val history = susStore.append(result)
+        eventLog.append(
+            "questionnaire",
+            "sheet.recorded",
+            org.json.JSONObject()
+                .put("questionnaireId", result.questionnaireId)
+                .put("complete", result.complete)
+                .put("filled", result.filled)
+                .put("score", result.score ?: org.json.JSONObject.NULL)
+        )
         notice(
             result.score?.let { "SUS 已记录：$it 分" } ?: "SUS 已记录 ${result.filled}/10"
         )
