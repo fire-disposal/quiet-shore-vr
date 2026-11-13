@@ -290,12 +290,26 @@ private fun QuestionnaireApp(
                     bottom = 12.dp
                 )
         ) {
+            if (section == QuestionnaireSection.Guide) {
+                // Owns its own scroller and its own full height: inside the
+                // scrolling column below it was handed unbounded height and
+                // drew nothing at all.
+                GuideScreen(
+                    onBack = {},
+                    app = "questionnaire",
+                    withChrome = false,
+                    onExport = actions.onExportRecords
+                )
+                return@Box
+            }
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
                 when (section) {
+                    // Handled above: it owns its own scroller.
+                    QuestionnaireSection.Guide -> Unit
                     QuestionnaireSection.Answer -> {
                         SectionHead(
                             title = "作答",
@@ -307,14 +321,6 @@ private fun QuestionnaireApp(
                             state = state,
                             actions = actions,
                             showArchive = false
-                        )
-                    }
-                    QuestionnaireSection.Guide -> {
-                        GuideScreen(
-                            onBack = {},
-                            app = "questionnaire",
-                            withChrome = false,
-                            onExport = actions.onExportRecords
                         )
                     }
                     QuestionnaireSection.Archive -> {

@@ -165,7 +165,7 @@ private val FAULTS: List<FaultRow> = listOf(
     FaultRow("等待确认超时", "患者再按右侧按钮"),
     // Two different failures: one is the patient, one is the link. Merging
     // them into one row used to send the operator to the wrong one.
-    FaultRow("患者不适", "按«结束»，再摘头显", ActionTone.Primary),
+    FaultRow("患者不适", "按«结束会话»，再摘头显", ActionTone.Primary),
     FaultRow("连接中断", "摘头显，再重新连接"),
     FaultRow("电量偏低", "‹20%› 以下，先充电")
 )
@@ -199,7 +199,7 @@ private fun QuestionnaireGuide() {
     Text("施测", style = MaterialTheme.typography.titleLarge, color = QuietPalette.TextPrimary)
     Spacer(Modifier.height(12.dp))
     for (line in listOf(
-        "1 在顶栏把应用切到「场景化问卷作答器」；会话进行中不能切。",
+        "1 确认顶栏是「场景化问卷作答器」；会话进行中不能切换应用。",
         "2 让患者戴上头显，打开问卷；题目与选项出现在视野里（问卷面有自己的空房间，没有环境声）。",
         "3 患者目视选项停住即作答；看不准的题由技术员在平板上代答。",
         "4 答完最后一题即记录；提前关闭只保存已完成部分。"
@@ -227,7 +227,7 @@ private fun QuestionnaireGuide() {
 @Composable
 fun GuideScreen(
     onBack: () -> Unit,
-    /** Which app's guide: `i` follows the current app, never a global one. */
+    /** Which app's guide: the 说明 tab follows the current app, never a global one. */
     app: String = "training",
     withChrome: Boolean = true,
     /** Share the local record set; both guides offer it, the file is shared. */
