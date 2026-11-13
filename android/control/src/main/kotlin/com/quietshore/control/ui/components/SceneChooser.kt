@@ -221,3 +221,83 @@ fun KeyRow(
         content = content
     )
 }
+
+/**
+ * The same scenes as an index, for a page where they cannot be entered yet.
+ *
+ * Before the posture is recorded nothing on this page can choose a scene, and
+ * three large disabled cards made the largest surface of the app answer
+ * nothing — the operator's one decision at that moment is 启动. The index keeps
+ * the scenes visible as an agenda (name, one line, the reason they are closed)
+ * and leaves the weight to the key that works.
+ */
+@Composable
+fun SceneIndex(
+    scenes: List<SceneCatalog.Scene>,
+    current: String,
+    note: String,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier.fillMaxWidth()) {
+        // A board, not a bare list: on a page this tall an unbacked three-row
+        // list reads as a table someone forgot to fill, while a short board at
+        // the top reads as a card that says exactly three things.
+        Panel(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                for ((index, scene) in scenes.withIndex()) {
+                    if (index > 0) {
+                        Rule()
+                    }
+                    SceneIndexRow(scene = scene, current = scene.id == current)
+                }
+            }
+        }
+        if (note.isNotBlank()) {
+            Text(
+                text = note,
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.InkSecondary,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+        }
+    }
+}
+
+/** One line of the agenda: the mark, the name, and what it is for. */
+@Composable
+private fun SceneIndexRow(scene: SceneCatalog.Scene, current: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // A loaded scene keeps its leading ice bar: selection is state, and
+        // state survives being shown as a read-only list.
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(36.dp)
+                .background(if (current) QuietPalette.Ice else QuietPalette.Hairline)
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = scene.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = QuietPalette.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (scene.blurb.isNotBlank()) {
+                Text(
+                    text = scene.blurb,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.InkSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}

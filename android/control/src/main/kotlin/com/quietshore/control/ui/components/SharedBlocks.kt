@@ -1,6 +1,7 @@
 package com.quietshore.control.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,17 +14,28 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.quietshore.control.protocol.ControlProtocol
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,17 +80,35 @@ fun MirrorSlot(
     var loaded by remember(state.mirrorMode) { mutableStateOf(false) }
 
     Column(modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionHead(
-                title = "患者视野",
+        // A picture label, not a page title: 32 dp of title plus 16 dp of gap
+        // above the image is height the mirror could be using. One compact row,
+        // 20 sp title, its clock, then the two cameras — and on a board, because
+        // every other fact on this page is on one.
+        Panel(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "VR 视野",
+                style = MaterialTheme.typography.titleMedium,
+                color = QuietPalette.Ink
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
                 // The elapsed clock is the one datum the old readout card
                 // carried that nothing else does; it rides here instead of
                 // costing a whole block under the picture.
-                note = when {
+                text = when {
                     phase == SessionPhase.Calibrating -> "标定中，镜像来自状态帧"
                     state.sessionElapsedMs > 0L -> "已运行 ${clock(state.sessionElapsedMs)}"
                     else -> "镜像来自状态帧"
                 },
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.InkSecondary,
+                maxLines = 1,
                 modifier = Modifier.weight(1f)
             )
             // The two cameras, inline: selection is an outline, never a fill.
@@ -88,12 +118,17 @@ fun MirrorSlot(
                     Key(
                         label = mode.label,
                         onClick = { onModeChange(mode) },
-                        kind = if (state.mirrorMode == mode) KeyKind.Selected else KeyKind.Outline,
-                        height = 48.dp
+                        // A segmented pair: the current camera keeps its ice
+                        // outline, the other one is a word on paper. Two boxes
+                        // side by side were two primaries beside a picture.
+                        kind = if (state.mirrorMode == mode) KeyKind.Selected else KeyKind.Quiet,
+                        height = 40.dp,
+                        minWidth = 88.dp
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(4.dp))
                 }
             }
+        }
         }
         Rule()
         Box(
@@ -104,8 +139,9 @@ fun MirrorSlot(
                 // has, not a fixed box with dead paper around it.
                 .weight(1f, fill = false)
                 .heightIn(min = MirrorHeight)
-                .padding(top = 12.dp)
-                .clip(CutCornerShape(0.dp, 0.dp, 0.dp, 18.dp))
+                .padding(top = 10.dp)
+                // The picture is not pressable, so it takes no cut corner: a
+                // wedge cut out of a photograph read as damage, not as design.
                 .background(if (hasFrame && loaded) QuietPalette.Ink else QuietPalette.Board)
         ) {
             if (hasFrame) {
@@ -203,29 +239,90 @@ fun StepLine(name: String, value: String, done: Boolean) {
     }
 }
 
-/** Four ramp lengths; the page accepts any 4–14 s, these are the useful ones. */
-private val DURATIONS_S = listOf(6, 8, 10, 12)
-
 /**
- * The rise length, as four selectable keys. The current one is an ice
- * *outline* with medium ink — selection is a state, and a fill on this console
- * means "pressing this does something now".
+ * One value drives both directions: the operator types the seconds once and the
+ * rise and the lie-back both take it.
+ *
+ * It is a field, not four keys, because the useful range is wider than any row
+ * of buttons (4–20 s) and because a length is a number the bedside says out
+ * loud. The band is the protocol's own (`ControlProtocol.RAMP_S_*`), so the
+ * tablet can never offer a value the page would reject. Out of band the text
+ * turns red and nothing is sent; a refused value must not look applied.
  */
 @Composable
-fun DurationRow(selected: Int, enabled: Boolean, onSelect: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        for (seconds in DURATIONS_S) {
-            val active = selected == seconds * 1000
-            Key(
-                label = "$seconds 秒",
-                onClick = { onSelect(seconds * 1000) },
-                kind = if (active) KeyKind.Selected else KeyKind.Outline,
-                enabled = enabled,
-                minWidth = 96.dp,
-                height = 64.dp,
-                textStyle = MaterialTheme.typography.titleSmall
-            )
+fun RampField(
+    rampMs: Int,
+    enabled: Boolean,
+    onCommit: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // The readback is the truth, so the buffer refills whenever the page reports
+    // a new length — a typed value that the page refused never sticks. A page
+    // that has not reported one yet (0) shows the default rather than an error:
+    // an all-red field on a fresh link reads as a fault in the app.
+    val secondsShown = if (rampMs > 0) rampMs / 1000 else ControlProtocol.RAMP_S_DEFAULT
+    var text by rememberSaveable(secondsShown) { mutableStateOf(secondsShown.toString()) }
+    var touched by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    val seconds = text.toIntOrNull()
+    val valid = seconds != null && seconds in ControlProtocol.RAMP_S_MIN..ControlProtocol.RAMP_S_MAX
+
+    fun commit() {
+        val value = text.toIntOrNull()
+        if (value != null && value in ControlProtocol.RAMP_S_MIN..ControlProtocol.RAMP_S_MAX) {
+            onCommit(value * 1000)
+        } else {
+            text = secondsShown.toString()
         }
+    }
+
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        BasicTextField(
+            value = text,
+            onValueChange = { raw ->
+                touched = true
+                // Two digits is the whole band: no signs, no decimals, no paste.
+                text = raw.filter { it.isDigit() }.take(2)
+            },
+            enabled = enabled,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.titleMedium
+                .tabularFigures()
+                .copy(
+                    color = if (valid) QuietPalette.Ink else QuietPalette.Danger,
+                    textAlign = TextAlign.End
+                ),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(onDone = {
+                commit()
+                focus.clearFocus()
+            }),
+            cursorBrush = SolidColor(QuietPalette.Ink),
+            modifier = Modifier
+                .width(64.dp)
+                .height(48.dp)
+                .border(1.dp, if (valid) QuietPalette.Hairline else QuietPalette.Danger)
+                .padding(horizontal = 10.dp, vertical = 10.dp)
+                .onFocusChanged { state ->
+                    // Commit on the way out only, and only after the field was
+                    // actually used: the first composition reports "unfocused".
+                    if (state.isFocused) {
+                        touched = true
+                    } else if (touched) {
+                        touched = false
+                        commit()
+                    }
+                }
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "秒",
+            style = MaterialTheme.typography.bodySmall,
+            color = QuietPalette.InkSecondary
+        )
     }
 }
 

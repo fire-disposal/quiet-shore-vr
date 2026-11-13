@@ -103,8 +103,6 @@ fun ControlApp(viewModel: ControlViewModel) {
         }
     }
 
-    var showInfo by rememberSaveable { mutableStateOf(false) }
-
     val onOpenSettings: () -> Unit = {
         val intent = Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -117,19 +115,9 @@ fun ControlApp(viewModel: ControlViewModel) {
         }
     }
 
-    if (showInfo) {
-        GuideScreen(
-            onBack = { showInfo = false },
-            app = state.app,
-            onExport = viewModel::exportRecords
-        )
-        return
-    }
-
     ControlScreen(
         state = state,
         event = latestEvent,
-        onOpenInfo = { showInfo = !showInfo },
         initialContent = {
             InitialPanel(
                 state = state,
@@ -144,6 +132,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onSceneSelect = viewModel::selectScene,
             onSceneApply = viewModel::applyScene,
             onAnimDuration = viewModel::setAnimDuration,
+            onPostureMix = viewModel::setPostureMix,
             onGazeDwellChange = viewModel::setGazeDwell,
             onSusVoiceChange = viewModel::setSusVoice,
             onSubtitlesChange = viewModel::setSubtitles,
@@ -155,7 +144,8 @@ fun ControlApp(viewModel: ControlViewModel) {
             onRecalibrate = viewModel::recalibrate,
             onAdaptationSkip = viewModel::skipAdaptation,
             onToggleAudio = viewModel::toggleAudio,
-            onFloatLevel = viewModel::setFloatLevel,
+            onFloatAmount = viewModel::setFloatAmount,
+            onBreathChange = viewModel::setBreath,
             onViewAnim = viewModel::playViewAnim,
             onViewStop = viewModel::stopView,
             onPostureLower = viewModel::postureLower,

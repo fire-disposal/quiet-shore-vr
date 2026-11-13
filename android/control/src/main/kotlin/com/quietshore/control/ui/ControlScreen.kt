@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.quietshore.control.ble.BlePhase
+import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.SessionPhase
 import com.quietshore.control.model.UiEvent
@@ -50,8 +51,13 @@ import com.quietshore.control.ui.components.CommandBar
 import com.quietshore.control.ui.components.ConsoleRail
 import com.quietshore.control.ui.components.ConsoleSection
 import com.quietshore.control.ui.components.RailRule
-import com.quietshore.control.ui.components.DurationRow
+import com.quietshore.control.ui.components.PitchReadout
+import com.quietshore.control.ui.components.PostureMixBar
+import com.quietshore.control.ui.components.RampField
+import com.quietshore.control.ui.components.HeaveBar
 import com.quietshore.control.ui.components.Key
+import com.quietshore.control.ui.components.LevelBar
+import com.quietshore.control.ui.components.KeyKind
 import com.quietshore.control.ui.components.KeyRow
 import com.quietshore.control.ui.components.LoadingDots
 import com.quietshore.control.ui.components.MirrorSlot
@@ -64,6 +70,7 @@ import com.quietshore.control.ui.components.QuestionnaireSection
 import com.quietshore.control.ui.components.Rule
 import com.quietshore.control.ui.components.SceneCardView
 import com.quietshore.control.ui.components.SceneChooser
+import com.quietshore.control.ui.components.SceneIndex
 import com.quietshore.control.ui.components.SectionHead
 import com.quietshore.control.ui.components.Stepper
 import com.quietshore.control.ui.components.StepLine
@@ -75,6 +82,7 @@ import com.quietshore.control.ui.components.clock
 import com.quietshore.control.ui.components.tabularFigures
 import com.quietshore.control.ui.components.nextVoiceId
 import com.quietshore.control.ui.theme.QuietPalette
+import kotlin.math.roundToInt
 import com.quietshore.control.ui.theme.QuietSpace
 
 /**
@@ -104,11 +112,11 @@ fun ControlScreen(
     actions: ControlActions,
     /** Latest one-shot operator message; shown briefly under the bar. */
     event: UiEvent? = null,
-    onOpenInfo: () -> Unit = {},
     /** The main area while no headset is claimed: the initial page. */
     initialContent: @Composable () -> Unit = {},
     /** Design review only: open the mirror cover on first composition. */
-    startWithMirrorOpen: Boolean = false
+    startWithMirrorOpen: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val phase = sessionPhaseOf(
         state.control,
@@ -122,7 +130,7 @@ fun ControlScreen(
 
     val bottomInset = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding()
     BoxWithConstraints(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(QuietPalette.Paper)
             // The rail is chrome down to the bottom edge; only its interior
@@ -153,7 +161,6 @@ fun ControlScreen(
         Column(Modifier.fillMaxSize()) {
             CommandBar(
                 state = state,
-                onOpenInfo = onOpenInfo,
                 onAppSelect = actions.onAppSelect,
                 onDisconnect = actions.onDisconnect
             )
@@ -224,6 +231,14 @@ fun ControlScreen(
                                 phase = phase,
                                 wide = wide
                             )
+                            ConsoleSection.Guide -> GuideScreen(
+                                onBack = {},
+                                app = "training",
+                                // The chrome is the console's own: this is a page
+                                // in the main area, not an overlay over it.
+                                withChrome = false,
+                                onExport = actions.onExportRecords
+                            )
                             ConsoleSection.Audio -> PanelPage(
                                 title = "音频",
                                 note = "提示语与水声，都在这一页",
@@ -292,6 +307,14 @@ private fun QuestionnaireApp(
                             state = state,
                             actions = actions,
                             showArchive = false
+                        )
+                    }
+                    QuestionnaireSection.Guide -> {
+                        GuideScreen(
+                            onBack = {},
+                            app = "questionnaire",
+                            withChrome = false,
+                            onExport = actions.onExportRecords
                         )
                     }
                     QuestionnaireSection.Archive -> {
@@ -461,18 +484,36 @@ private fun SessionMain(
     phase: SessionPhase,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier) {
-        MirrorSlot(
-            state = state,
-            phase = phase,
-            onModeChange = actions.onMirrorModeChange,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.height(16.dp))
-        Rule()
-        SessionReadout(state = state)
+    // The picture is two thirds of the column, not all of it. At full height it
+    // crowded the strip underneath — the numbers and the instrument sat in a
+    // band that looked tacked on — and the third it keeps free is what makes the
+    // strip read as its own row instead of as leftovers.
+    BoxWithConstraints(modifier) {
+        val picture = maxHeight * MIRROR_HEIGHT_SHARE
+        Column(Modifier.fillMaxSize()) {
+            MirrorSlot(
+                state = state,
+                phase = phase,
+                onModeChange = actions.onMirrorModeChange,
+                modifier = Modifier.height(picture)
+            )
+            Spacer(Modifier.height(12.dp))
+            // One card, like the column on the right: the strip used to sit on
+            // bare paper, which made it read as a caption to the picture rather
+            // than as the session's own instrument.
+            SessionReadout(state = state)
+            Spacer(Modifier.weight(1f))
+            // The third of the column the picture gives back holds the two
+            // sounds the operator actually rides mid-session. Voice sets, duck
+            // depth and the cue ladders stay on the 音频 page: they are setup,
+            // not steering.
+            SessionAudio(state = state, actions = actions)
+        }
     }
 }
+
+/** Share of the left column the patient's picture takes. */
+private const val MIRROR_HEIGHT_SHARE = 0.66f
 
 /** Scene name from the live catalogue, falling back to the built-in table. */
 private fun sceneName(state: ControlUiState, id: String): String =
@@ -480,24 +521,29 @@ private fun sceneName(state: ControlUiState, id: String): String =
         ?: com.quietshore.control.model.SceneCatalog.scene(id)?.name
         ?: id
 
-/** One row, one baseline: elapsed, scene, buoyancy, head angles. */
+/**
+ * One row, one baseline: elapsed, scene, buoyancy, and the two horizons.
+ *
+ * The numbers here are the ones an operator glances at while talking to the
+ * patient. The pitch used to be a bare angle; it is now a small dial, because
+ * what the correction *is* — the gap between the real horizon and the one the
+ * scene is being placed in — cannot be read off a single number.
+ */
 @Composable
 private fun SessionReadout(state: ControlUiState) {
     val stale = state.poseStale || state.pose == null
     val facts = buildList {
-        add("已运行" to clock(state.sessionElapsedMs))
-        add("场景" to sceneName(state, state.control.scene))
+        // The clock rides the mirror's own header and the scene name is on the
+        // picture's own chip: printing either here gave the strip three owners
+        // for two facts, and pushed the calibration key out of the width.
         add("起伏" to "${state.control.floatMm.toInt()} mm")
-        // The wire carries radians; every screen prints degrees.
-        val deg = 180.0 / Math.PI
-        add("偏航" to if (stale) "—" else "${(state.pose!!.yaw * deg).toInt()}°")
-        add("俯仰" to if (stale) "—" else "${(state.pose!!.pitch * deg).toInt()}°")
     }
+    Panel(Modifier.fillMaxWidth()) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         for ((label, value) in facts) {
@@ -518,6 +564,69 @@ private fun SessionReadout(state: ControlUiState) {
             }
         }
         Spacer(Modifier.weight(1f))
+        // The instrument sits on the same baseline as the facts it belongs with:
+        // one strip under the picture, not a line of numbers here and a gauge
+        // somewhere else. A quarter turn of correction for a supine body, of
+        // which `mix` of it has been applied — the page's own derivation.
+        PitchReadout(
+            headPitchDeg = if (stale) null else (state.pose!!.pitch * 180.0 / Math.PI).toFloat(),
+            gapDeg = (1f - state.mix.coerceIn(0f, 1f)) * 90f,
+            stale = stale
+        )
+    }
+    }
+}
+
+/**
+ * The scene bed, one card: a switch and a level.
+ *
+ * The voice is not here on purpose. A cue is a sentence the operator starts and
+ * the patient hears out; the bed is the room tone they ride for the whole
+ * session and want to turn down for one minute. Only the second one belongs
+ * under the picture.
+ */
+@Composable
+private fun SessionAudio(
+    state: ControlUiState,
+    actions: ControlActions,
+    modifier: Modifier = Modifier
+) {
+    val ready = state.phase == BlePhase.READY
+    val muted = state.control.audioMuted
+    Panel(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "水声",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = QuietPalette.InkSecondary
+                )
+                Spacer(Modifier.width(10.dp))
+                LevelBar(
+                    percent = state.waterVolume,
+                    enabled = ready && !muted,
+                    onChange = actions.onAudioVolume,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = if (muted) "关" else "${state.waterVolume}",
+                    style = MaterialTheme.typography.bodySmall.tabularFigures(),
+                    color = if (muted) QuietPalette.Disabled else QuietPalette.InkSecondary,
+                    modifier = Modifier.width(34.dp)
+                )
+                // The key names the action, the number names the state: a bare
+                // 关 beside a full bar read as "the water is off".
+                Key(
+                    label = if (muted) "恢复" else "静音",
+                    onClick = actions.onToggleAudio,
+                    kind = if (muted) KeyKind.Selected else KeyKind.Outline,
+                    enabled = ready,
+                    height = 40.dp,
+                    minWidth = 72.dp
+                )
+            }
+        }
     }
 }
 
@@ -538,13 +647,11 @@ private fun SessionColumn(
     modifier: Modifier = Modifier
 ) {
     val ready = state.phase == BlePhase.READY
-    val scenesEnabled = ready && phase == SessionPhase.Running
-    val level = state.control.floatLevel.coerceIn(0, 3)
+    val percent = state.floatPercent.coerceIn(0, 100)
     val calibration = calibrationView(state, phase, ready)
-    val selectedScene = state.sceneIntent.ifEmpty { state.control.scene }
-    val selectedName = state.selectableScenes
-        .firstOrNull { it.id == state.sceneIntent }
-        ?.name
+    // The one posture number, as the operator reads it: a whole percent.
+    val mixPercent = (state.mix.coerceIn(0f, 1f) * 100f).roundToInt()
+    val mixEnabled = ready && phase.acceptsChanges && (state.caps.rise || state.caps.lie)
 
     Column(modifier) {
         Column(
@@ -555,10 +662,14 @@ private fun SessionColumn(
                     Modifier.fillMaxWidth()
                 }
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Scenes come back here as chips: a session can be switched live, and
+            // mid-session the operator should not have to leave the body
+            // controls to do it. Only the divergence draws a key, so the block
+            // is one row when the intent already matches what the patient sees.
             Panel(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "场景",
@@ -567,100 +678,151 @@ private fun SessionColumn(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = selectedName ?: "",
+                            text = sceneName(state, state.sceneIntent.ifEmpty { state.control.scene }),
                             style = MaterialTheme.typography.bodySmall,
                             color = QuietPalette.InkSecondary,
                             maxLines = 1
                         )
+                        // The neutral room is not a scene card — it is the way
+                        // out of the performance: entering it stops the bed,
+                        // the voice and the heave, and leaves the patient in a
+                        // grey room with the calibration intact.
+                        if (!state.inSpecialScene && state.sceneIntent != "prep") {
+                            Spacer(Modifier.width(10.dp))
+                            Key(
+                                label = "准备间",
+                                onClick = { actions.onSceneSelect("prep") },
+                                kind = KeyKind.Quiet,
+                                enabled = ready && phase.acceptsChanges,
+                                height = 40.dp
+                            )
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (scene in state.selectableScenes) {
                             SceneCardView(
                                 scene = scene,
-                                current = scene.id == selectedScene,
-                                enabled = scenesEnabled,
+                                current = scene.id == state.sceneIntent.ifEmpty { state.control.scene },
+                                enabled = ready && phase.acceptsChanges,
                                 onSelect = actions.onSceneSelect,
-                                modifier = Modifier.weight(1f),
+                                // Taller than the kit floor: this is the block
+                                // the hand reaches for mid-session, and three
+                                // 56 dp strips at arm's length were a gamble.
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(72.dp),
                                 showBlurb = false
                             )
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = when {
-                                phase == SessionPhase.Calibrating -> calibration.unlockNote
-                                phase != SessionPhase.Running -> calibration.unlockNote
-                                state.inSpecialScene -> "准备间中：选择一个正式场景。"
-                                selectedName != null -> "已选「$selectedName」"
-                                else -> "点一张卡选择场景。"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.InkSecondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Key(
-                            label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
-                            onClick = actions.onSceneApply,
-                            enabled = scenesEnabled && state.sceneIntentDiverges,
-                            height = TouchTarget
-                        )
-                    }
+                    Spacer(Modifier.height(8.dp))
+                    // The key is always here, and off while the selection already
+                    // is the scene the patient is in: a key that appears and
+                    // disappears moves everything under the hand, and an idling
+                    // key that says nothing is what its `blocked` note is for.
+                    ActionKey(
+                        label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
+                        subLabel = if (state.sceneIntentDiverges) null else "已在此场景",
+                        onClick = actions.onSceneApply,
+                        modifier = Modifier.fillMaxWidth(),
+                        tone = ActionTone.Primary,
+                        enabled = ready && phase.acceptsChanges && state.sceneIntentDiverges,
+                        height = 56.dp
+                    )
                 }
             }
 
+            // The scene lives on its own page (the rail's 场景). It used to have
+            // a second home here as three cards and an apply key, which is two
+            // ways to do one thing — and mid-session the block pushed the body
+            // controls down for a decision the operator usually is not making.
             Panel(Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "强度",
+                            text = "起伏",
                             style = MaterialTheme.typography.labelMedium,
-                            color = QuietPalette.InkSecondary
+                            color = QuietPalette.InkSecondary,
+                            modifier = Modifier.weight(1f)
                         )
                         Text(
                             text = when {
-                                level == 0 -> "已关闭"
-                                else -> "上限 ${state.caps.floatMax} 级"
+                                state.caps.floatCap == 0 -> "本场景无起伏"
+                                percent == 0 -> "已关闭"
+                                else -> "$percent%"
                             },
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.tabularFigures(),
                             color = QuietPalette.InkSecondary
                         )
+                        Spacer(Modifier.width(14.dp))
+                        // A switch, not a second level: with the level at 0 the
+                        // wave is off, and breathing is the character of a wave
+                        // that is running.
+                        Key(
+                            label = "呼吸",
+                            subLabel = if (state.breath) "开" else "关",
+                            onClick = { actions.onBreathChange(!state.breath) },
+                            kind = if (state.breath) KeyKind.Selected else KeyKind.Outline,
+                            enabled = ready && phase.acceptsChanges &&
+                                percent > 0 && state.caps.floatCap > 0,
+                            height = 48.dp,
+                            minWidth = 84.dp,
+                            textStyle = MaterialTheme.typography.labelLarge
+                        )
                     }
-                    Stepper(
-                        value = if (level == 0) "关" else "$level",
-                        description = if (level == 0) "起伏已关闭" else "强度 $level 级",
-                        canDecrement = ready && phase.acceptsChanges && level > 0,
-                        canIncrement = ready && phase.acceptsChanges &&
-                            level < state.caps.floatMax,
-                        onDecrement = { actions.onFloatLevel(level - 1) },
-                        onIncrement = { actions.onFloatLevel(level + 1) }
+                    Spacer(Modifier.height(4.dp))
+                    HeaveBar(
+                        percent = percent,
+                        cap = state.caps.floatCap.coerceIn(0, 100),
+                        enabled = ready && phase.acceptsChanges && state.caps.floatCap > 0,
+                        onPercent = actions.onFloatAmount
                     )
                 }
             }
 
             Panel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(
-                        text = "体位",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = QuietPalette.Ink
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "体位",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = QuietPalette.Ink,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "补偿 $mixPercent%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.InkSecondary
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    // One bar, the one posture scalar: the fill is what the
+                    // headset applies, the handle is where the hand is. Touching
+                    // it is the manual override, so no separate "stop" gesture
+                    // is needed for a drag.
+                    PostureMixBar(
+                        applied = state.mix,
+                        enabled = mixEnabled,
+                        onTarget = actions.onPostureMix
                     )
-                    Spacer(Modifier.height(8.dp))
-                    // The duration is part of the manual rise: it sits where the
-                    // hand is when the operator decides to raise the patient.
-                    RiseDurationRow(
-                        selectedMs = state.rampMs,
-                        enabled = ready && state.caps.rise,
-                        onSelect = actions.onAnimDuration
-                    )
-                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "天花板",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = QuietPalette.InkSecondary
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "平视前方",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = QuietPalette.InkSecondary
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
                     // A disabled key that says nothing sends the operator
                     // hunting for a fault. The page already knows why: it is
                     // the same `blocked` reason it gates its own commands on.
@@ -672,70 +834,88 @@ private fun SessionColumn(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
+                    // One value, both directions: the rise and the lie-back are
+                    // the same motion run backwards, so they share one length.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "时长",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = QuietPalette.InkSecondary
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        RampField(
+                            rampMs = state.rampMs,
+                            enabled = ready && state.caps.rise,
+                            onCommit = actions.onAnimDuration
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "${ControlProtocol.RAMP_S_MIN}–${ControlProtocol.RAMP_S_MAX}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = QuietPalette.InkSecondary
+                        )
+                        Spacer(Modifier.weight(1f))
+                        // Re-aiming the world shares the ramp's row: the row has
+                        // the width, and the two are the same kind of decision —
+                        // how the world is placed right now.
+                        CalibrationKey(
+                            view = calibration,
+                            onClick = actions.onRecalibrate,
+                            height = 40.dp,
+                            modifier = Modifier.width(116.dp)
+                        )
+                    }
+                    Text(
+                        text = "正反两个方向同速",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = QuietPalette.InkSecondary,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
                     KeyRow {
                         ActionKey(
-                            label = "起身",
+                            label = "修正",
+                            subLabel = "起身",
                             onClick = actions.onPostureRise,
                             modifier = Modifier.weight(1f),
                             tone = ActionTone.Primary,
-                            enabled = ready && state.caps.rise && phase.acceptsChanges
+                            enabled = ready && state.caps.rise && phase.acceptsChanges,
+                            height = 64.dp
                         )
                         ActionKey(
-                            label = "躺下",
+                            label = "逆修正",
+                            subLabel = "躺下",
                             onClick = actions.onPostureLower,
                             modifier = Modifier.weight(1f),
-                            enabled = ready && state.caps.lie && phase.acceptsChanges
+                            enabled = ready && state.caps.lie && phase.acceptsChanges,
+                            height = 64.dp
                         )
                         ActionKey(
-                            label = "保持",
+                            label = "暂停",
+                            subLabel = "冻结",
                             onClick = actions.onPostureStop,
                             modifier = Modifier.weight(1f),
-                            enabled = ready && state.caps.stop && phase.acceptsChanges
+                            enabled = ready && state.caps.stop && phase.acceptsChanges,
+                            height = 64.dp
                         )
                     }
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CalibrationKey(
-                view = calibration,
-                onClick = actions.onRecalibrate,
-                height = 56.dp,
-                modifier = Modifier.weight(0.62f)
-            )
-            EndKey(
-                enabled = ready && phase != SessionPhase.Stopping,
-                label = when (phase) {
-                    SessionPhase.Stopping -> "正在结束"
-                    else -> "结束"
-                },
-                onClick = actions.onEnd,
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun RiseDurationRow(
-    selectedMs: Int,
-    enabled: Boolean,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier.fillMaxWidth()) {
-        Text(
-            text = "起身时长",
-            style = MaterialTheme.typography.labelMedium,
-            color = QuietPalette.InkSecondary
+        Spacer(Modifier.height(10.dp))
+        // One key at the foot now that calibration lives on the strip: the
+        // session's only exit takes the whole width and the thumb's reach.
+        EndKey(
+            enabled = ready && phase != SessionPhase.Stopping,
+            label = when (phase) {
+                SessionPhase.Stopping -> "正在结束"
+                // It ends the session, not the link: the bar's 断开链接 is a
+                // different object and says so.
+                else -> "结束会话"
+            },
+            onClick = actions.onEnd,
+            modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(8.dp))
-        DurationRow(selected = selectedMs, enabled = enabled, onSelect = onSelect)
     }
 }
 
@@ -803,33 +983,53 @@ private fun ScenePage(
                     title = "01 场景",
                     note = when {
                         selectedName != null -> "已选「$selectedName」"
-                        state.inSpecialScene -> calibration.unlockNote
-                        else -> calibration.unlockNote
+                        state.inSpecialScene -> "准备间中"
+                        // The ice mark on a row says "this one is loaded", so the
+                        // header has to name it: a bare 未选择 beside a marked row
+                        // is two answers to the same question.
+                        else -> "已载入「${sceneName(state, state.control.scene)}」"
                     },
                     modifier = Modifier.weight(1f)
                 )
-                // One key next to the header: the extra control costs width,
-                // not a new row in the app's main area.
-                Key(
-                    label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
-                    onClick = actions.onSceneApply,
-                    enabled = scenesEnabled && state.sceneIntentDiverges,
-                    height = TouchTarget,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
+                // The apply key only exists where it can act. Before the posture
+                // is recorded no scene can be entered, and a disabled key beside
+                // a disabled list is a page with no decision on it at all.
+                if (scenesEnabled) {
+                    Key(
+                        label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
+                        onClick = actions.onSceneApply,
+                        enabled = state.sceneIntentDiverges,
+                        height = TouchTarget,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                }
             }
-            // The choice is the page: the cards take every pixel the header
-            // leaves, so a ten-inch tablet is a large target rather than three
-            // small ones over a field of empty paper.
-            SceneChooser(
-                current = state.sceneIntent.ifEmpty { state.control.scene },
-                enabled = scenesEnabled,
-                onSelect = actions.onSceneSelect,
-                playing = state.control.scene,
-                scenes = state.selectableScenes,
-                fillHeight = true,
-                modifier = Modifier.weight(1f)
-            )
+            if (scenesEnabled) {
+                // The choice is the page, and it is live: the cards take every
+                // pixel the header leaves, so a ten-inch tablet is a large
+                // target rather than three small ones over a field of paper.
+                SceneChooser(
+                    current = state.sceneIntent.ifEmpty { state.control.scene },
+                    enabled = true,
+                    onSelect = actions.onSceneSelect,
+                    playing = state.control.scene,
+                    scenes = state.selectableScenes,
+                    fillHeight = true,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                // Nothing can be entered yet, so the scenes are an agenda, not
+                // targets: the page's one live decision is 启动 on the right.
+                SceneIndex(
+                    scenes = state.selectableScenes,
+                    current = state.control.scene,
+                    note = calibration.unlockNote,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // The agenda is a short board at the top; the rest of the column
+                // is air on purpose.
+                Spacer(Modifier.weight(1f))
+            }
             Spacer(Modifier.height(QuietSpace.Page))
         }
     }
@@ -908,7 +1108,7 @@ private fun StandbySteps(
         Column(Modifier.fillMaxSize().padding(QuietSpace.Panel)) {
             Text(
                 text = "准备",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 color = QuietPalette.Ink
             )
             Spacer(Modifier.height(4.dp))
@@ -917,12 +1117,12 @@ private fun StandbySteps(
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(14.dp))
             // The chain follows the room the patient is actually in: the
             // start key is not the scene choice any more, and the scene list
             // is not a pre-session step.
             StepLine("连接头显", if (ready) "已连接" else "未连接", ready)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             StepLine(
                 "启动训练",
                 when (phase) {
@@ -933,13 +1133,13 @@ private fun StandbySteps(
                 },
                 phase != SessionPhase.Idle
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             StepLine(
                 "记录起始体位",
                 calibration.stepValue,
                 calibration.stepDone
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             StepLine(
                 "进入正式场景",
                 when {
@@ -966,16 +1166,9 @@ private fun StandbySteps(
                 textStyle = MaterialTheme.typography.titleMedium
             )
             if (phase == SessionPhase.Entry) {
+                // The countdown already lives in the page headline; repeating it
+                // under the key made the same sentence appear twice on one screen.
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    LoadingDots(color = QuietPalette.Ink)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = "已过 ${clock(state.sessionElapsedMs)}。20 秒未按将重开页面。",
-                        style = MaterialTheme.typography.bodySmall.tabularFigures(),
-                        color = QuietPalette.InkSecondary
-                    )
-                }
             }
             Spacer(Modifier.height(8.dp))
             Text(

@@ -16,7 +16,7 @@ import org.json.JSONObject
 object SceneCatalogDocument {
     const val MAX_SCENES = 16
 
-    /** One entry. [comfortLevel] is null when the scene allows the global max. */
+    /** One entry. [comfortLevel] is null when the scene allows the global max; 0 is "no motion". */
     data class Scene(
         val id: String,
         val nameZh: String,
@@ -54,7 +54,16 @@ object SceneCatalogDocument {
             }
             val name = item.optJSONObject("name")?.optString("zh").orEmpty().trim()
             val tagline = item.optJSONObject("tagline")?.optString("zh").orEmpty().trim()
-            val comfort = item.optInt("comfortLevel", 0).takeIf { it in 1..3 }
+            // Absent means "the global maximum"; a declared 0 means "this room
+            // does not move", which is different from absent and has to survive.
+            // Absent and explicit `null` both mean "the global maximum"; a
+            // declared 0 means "this room does not move", which is different and
+            // has to survive. `isNull` covers both of the first two.
+            val comfort = if (item.isNull("comfortLevel")) {
+                null
+            } else {
+                item.optInt("comfortLevel", -1).takeIf { it in 0..3 }
+            }
             val special = item.optBoolean("special", false)
             scenes.add(Scene(id, name.ifEmpty { id }, tagline, comfort, special))
         }

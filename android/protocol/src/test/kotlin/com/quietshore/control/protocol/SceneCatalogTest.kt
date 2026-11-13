@@ -43,6 +43,18 @@ class SceneCatalogTest {
             SceneCatalogDocument.parse("""{"scenes":[{"id":"prep","special":true}]}""")
         )
         assertTrue(builtIn.single().special)
+        // A room that does not move declares 0, and 0 has to survive: absent
+        // means "global maximum", which is a different statement.
+        val still = requireNotNull(
+            SceneCatalogDocument.parse(
+                """{"scenes":[
+                    {"id":"prep","special":true,"comfortLevel":0},
+                    {"id":"ward","name":{"zh":"病房"},"comfortLevel":null}
+                ]}"""
+            )
+        )
+        assertEquals(0, still[0].comfortLevel)
+        assertNull(still[1].comfortLevel)
     }
 
     @Test
@@ -69,7 +81,7 @@ class SceneCatalogTest {
     fun `a fifth scene rides the frame without a Kotlin table`() {
         val scenes = requireNotNull(SceneCatalogDocument.parse(five))
         val ids = scenes.map { it.id }
-        val state = ControlState(scene = "grove", floatLevel = 1, eyeHeight = 1.7f)
+        val state = ControlState(scene = "grove", eyeHeight = 1.7f)
         val bytes = ControlProtocol.encodeState(state, sceneIds = ids)
 
         val decoded = requireNotNull(ControlProtocol.decodeState(bytes, ids))

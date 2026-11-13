@@ -268,11 +268,13 @@ class ControlViewModel(application: Application) :
         sendCommand("stop")
     }
 
-    /** Buoyancy intensity 0..3; the page scales amplitude linearly. */
-    fun setFloatLevel(level: Int) {
-        val clamped = level.coerceIn(0, 3)
-        _uiState.update { it.copy(floatLevel = clamped) }
-        sendCommand(ControlProtocol.FLOAT_LEVEL + clamped)
+    /**
+     * Buoyancy as a whole percent of the envelope. The page scales the
+     * amplitude linearly and caps it to the loaded scene's own ceiling; no
+     * optimistic write here, the bar's fill is the page's readback.
+     */
+    fun setFloatAmount(percent: Int) {
+        sendCommand(ControlProtocol.FLOAT_LEVEL + percent.coerceIn(0, 100))
     }
 
     /**
@@ -364,11 +366,30 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.GAZE_DWELL + if (enabled) "on" else "off")
     }
 
+    /** The heave's breathing switch: off is a plain sine, not a stop. */
+    fun setBreath(on: Boolean) {
+        // Readback, not optimism: the toggle follows the page's own `breath`.
+        sendCommand(if (on) "float:breath:on" else "float:breath:off")
+    }
+
     /** Sit-up ramp length; slower reads as gentler for a frail patient. */
     fun setAnimDuration(millis: Int) {
         // No optimistic write: the page echoes the length it now holds, and the
         // row follows the echo. A click the page refused must not look applied.
-        sendCommand(ControlProtocol.ANIM_DURATION + millis.coerceIn(4000, 20000))
+        sendCommand(
+            ControlProtocol.ANIM_DURATION +
+                millis.coerceIn(ControlProtocol.RAMP_MS_MIN, ControlProtocol.RAMP_MS_MAX)
+        )
+    }
+
+    /**
+     * Correction slider target, whole percent. Absolute, not a delta: the page
+     * owns the speed and the queue keeps only the newest sample of a drag.
+     */
+    fun setPostureMix(percent: Int) {
+        // Again no optimistic write: the bar's fill is the page's readback, and
+        // only the handle follows the finger.
+        sendCommand(ControlProtocol.POSTURE_MIX + percent.coerceIn(0, 100))
     }
 
     fun openSus() {
@@ -832,7 +853,11 @@ class ControlViewModel(application: Application) :
                 float = obj.optBoolean("float", false),
                 view = obj.optBoolean("view", false),
                 blocked = obj.optString("blocked", ""),
-                floatMax = obj.optInt("floatMax", 3).coerceIn(1, 3)
+                // 0 is a real ceiling: a room that does not move at all.
+                // Both arrive as fractions of the envelope; the console speaks
+                // whole percents.
+                floatCap = Math.round(obj.optDouble("floatCap", 1.0).toFloat() * 100f)
+                    .coerceIn(0, 100)
             )
         }
         // Absent and null both mean "not read": keep the last reading rather
@@ -852,6 +877,11 @@ class ControlViewModel(application: Application) :
                 app = reportedApp,
                 adaptationDone = json.optBoolean("adaptationDone", true),
                 rampMs = json.optInt("rampMs", current.rampMs).coerceIn(0, 60_000),
+                mix = json.optDouble("mix", current.mix.toDouble()).toFloat().coerceIn(0f, 1f),
+                breath = json.optBoolean("breath", current.breath),
+                floatPercent = Math.round(
+                    json.optDouble("floatAmount", current.floatPercent / 100.0).toFloat() * 100f
+                ).coerceIn(0, 100),
                 caps = caps ?: current.caps,
                 battery = battery ?: current.battery,
                 control = current.control.copy(

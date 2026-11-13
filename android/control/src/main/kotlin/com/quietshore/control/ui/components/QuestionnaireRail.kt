@@ -34,7 +34,9 @@ import com.quietshore.control.ui.theme.QuietPalette
  */
 enum class QuestionnaireSection(val latin: String, val label: String) {
     Answer("ANSWER", "作答"),
-    Archive("ARCHIVE", "归档")
+    Archive("ARCHIVE", "归档"),
+    /** The manual, as a page, in the same place the guidance app keeps it. */
+    Guide("GUIDE", "说明")
 }
 
 @Composable
@@ -49,41 +51,14 @@ fun QuestionnaireRail(
             .fillMaxHeight()
             .background(QuietPalette.Board)
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 12.dp, horizontal = 8.dp),
+            .padding(vertical = 12.dp, horizontal = 8.dp)
     ) {
         for (section in QuestionnaireSection.entries) {
-            val shape = CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .clip(shape)
-                    .background(if (section == current) QuietPalette.Ice else QuietPalette.Board)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Tab,
-                        onClick = { onSelect(section) }
-                    )
-                    .semantics { this.selected = section == current }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = section.latin,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = QuietPalette.InkSecondary,
-                    maxLines = 1
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = section.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (section == current) FontWeight.Medium else FontWeight.Normal,
-                    color = QuietPalette.Ink,
-                    maxLines = 1
-                )
-            }
+            RailTab(
+                label = section.label,
+                selected = section == current,
+                onClick = { onSelect(section) }
+            )
             Spacer(Modifier.height(6.dp))
         }
     }

@@ -85,7 +85,14 @@ fun calibrationView(state: ControlUiState, phase: SessionPhase, ready: Boolean):
     )
 }
 
-/** The calibration key, shared by every surface that performs the verb. */
+/**
+ * The calibration key, shared by every surface that performs the verb.
+ *
+ * It takes the accent outline rather than a plain hairline: re-aiming the world
+ * is the one correction the operator performs mid-session, and on the strip
+ * under the picture it sits beside read-only numbers, where it has to be
+ * visible as an action at a glance.
+ */
 @Composable
 fun CalibrationKey(
     view: CalibrationView,
@@ -96,8 +103,9 @@ fun CalibrationKey(
     Key(
         label = view.keyLabel,
         onClick = onClick,
+        kind = KeyKind.Selected,
         enabled = view.keyEnabled,
         height = height,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
     )
 }

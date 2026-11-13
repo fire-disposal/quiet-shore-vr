@@ -201,7 +201,13 @@ fun Key(
     icon: ImageVector? = null,
     height: Dp = TouchTarget,
     minWidth: Dp = 0.dp,
-    textStyle: TextStyle? = null
+    textStyle: TextStyle? = null,
+    /**
+     * A second, smaller line under the label: the verb stays the biggest thing
+     * on the key ("修正"), the mode sits under it ("起身"). Both on one line
+     * would have been clipped at a third of the action column.
+     */
+    subLabel: String? = null
 ) {
     val fill by animateColorAsState(
         targetValue = when {
@@ -244,27 +250,41 @@ fun Key(
             .padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = labelColor,
-                    modifier = Modifier.size(20.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = labelColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    text = label,
+                    style = textStyle ?: MaterialTheme.typography.labelLarge,
+                    fontWeight = if (kind == KeyKind.Selected) FontWeight.Medium else null,
+                    color = labelColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.width(10.dp))
             }
-            Text(
-                text = label,
-                style = textStyle ?: MaterialTheme.typography.labelLarge,
-                fontWeight = if (kind == KeyKind.Selected) FontWeight.Medium else null,
-                color = labelColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (subLabel != null) {
+                Text(
+                    text = subLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (enabled) QuietPalette.InkSecondary else QuietPalette.Disabled,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -545,7 +565,8 @@ fun ActionKey(
     icon: ImageVector? = null,
     height: Dp = TouchTarget,
     minWidth: Dp = 0.dp,
-    textStyle: TextStyle? = null
+    textStyle: TextStyle? = null,
+    subLabel: String? = null
 ) {
     Key(
         label = label,
@@ -562,6 +583,7 @@ fun ActionKey(
         icon = icon,
         height = height,
         minWidth = minWidth,
-        textStyle = textStyle
+        textStyle = textStyle,
+        subLabel = subLabel
     )
 }

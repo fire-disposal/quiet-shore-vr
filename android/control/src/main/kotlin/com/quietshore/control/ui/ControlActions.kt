@@ -14,6 +14,11 @@ data class ControlActions(
     val onSceneApply: () -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
     val onAnimDuration: (Int) -> Unit,
+    /**
+     * Correction slider target, whole percent. Sending it is the manual
+     * override: the page freezes whatever the correction was doing.
+     */
+    val onPostureMix: (Int) -> Unit,
     /** Gaze dwell selection (SUS answers and spatial targets). Default on. */
     val onGazeDwellChange: (Boolean) -> Unit,
     val onSusVoiceChange: (Boolean) -> Unit,
@@ -28,7 +33,10 @@ data class ControlActions(
     /** End the orientation phase early; the capture key then opens. */
     val onAdaptationSkip: () -> Unit,
     val onToggleAudio: () -> Unit,
-    val onFloatLevel: (Int) -> Unit,
+    /** Buoyancy as a whole percent of the envelope, 0–100. */
+    val onFloatAmount: (Int) -> Unit,
+    /** The heave's breathing switch; the page eases it, never steps it. */
+    val onBreathChange: (Boolean) -> Unit,
     /** One discrete view preset: up / down / recenter / breathe. */
     val onViewAnim: (String) -> Unit,
     /** Hold the current view angles; only `recenter` returns to level. */

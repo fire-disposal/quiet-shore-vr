@@ -46,14 +46,16 @@ class CommandGrammarTest {
         }
     }
 
+    @Test
     fun `the allowlist accepts what the tablet sends and rejects the rest`() {
         for (raw in listOf(
-            "enter", "home", "exit", "stop", "calibrate",
+            "enter", "exit", "stop", "calibrate",
             "audio:on", "audio:off", "audio:toggle",
-            "float:level:0", "float:level:3",
+            "float:level:0", "float:level:3", "float:breath:on", "float:breath:off",
             "scene:washroom", "scene:shore", "scene:ward", "scene:prep",
-            "anim:duration:4000", "anim:duration:20000",
+            "anim:duration:4000", "anim:duration:10000", "anim:duration:20000",
             "posture:rise", "posture:lower", "posture:stop",
+            "posture:mix:0", "posture:mix:37", "posture:mix:100",
             "gaze:dwell:on", "gaze:dwell:off",
             "sus:open", "sus:close", "sus:show:4", "sus:answer:2", "sus:voice:off",
             "view:anim:up", "view:anim:recenter", "view:stop",
@@ -75,12 +77,18 @@ class CommandGrammarTest {
             "launch:the:missiles",
             "scene:moon",
             "float:level:4",
+            "float:breath:1",
             "float:profile:b",
-            "float:breath:on",
             "mode:float",
             "view:orient:0,12",
             "view:anim:loop",
             "view:anim:breathe",
+            "anim:duration:3999",
+            "anim:duration:20001",
+            "posture:mix:101",
+            "posture:mix:-1",
+            "posture:mix:1.5",
+            "posture:mix:",
             "settings:eyeheight:1.70",
             "settings:hud:on",
             "sus:next",

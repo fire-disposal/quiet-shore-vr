@@ -69,7 +69,14 @@ class MainActivity : ComponentActivity() {
                         filterDays = intent.getIntExtra("filterDays", -1)
                             .takeIf { it >= 0 },
                         sessionAgeSec = intent.getIntExtra("sessionAgeSec", -1)
-                            .takeIf { it >= 0 }
+                            .takeIf { it >= 0 },
+                        mixPercent = intent.getIntExtra("mix", -1).takeIf { it >= 0 },
+                        percent = intent.getIntExtra("level", -1).takeIf { it >= 0 },
+                        breath = if (intent.hasExtra("breath")) {
+                            intent.getBooleanExtra("breath", true)
+                        } else {
+                            null
+                        }
                     )
                 } else {
                     val controlViewModel: ControlViewModel = viewModel()

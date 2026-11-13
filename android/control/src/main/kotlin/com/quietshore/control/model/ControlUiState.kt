@@ -22,10 +22,14 @@ data class MotionCaps(
     val view: Boolean = false,
     val blocked: String = "",
     /**
-     * Buoyancy ceiling of the scene the headset has loaded (1..3). The stepper
-     * clamps to it, so a request never has to be reduced downstream.
+     * Buoyancy ceiling of the scene the headset has loaded, as a percent
+     * (0–100). The bar clamps to it, so a request never has to be reduced
+     * downstream.
+     *
+     * **0 is a real value**: the preparation room declares no motion, and a
+     * control that cannot move the patient is not drawn as one that can.
      */
-    val floatMax: Int = 3
+    val floatCap: Int = 100
 )
 
 enum class MirrorMode(val label: String) {
@@ -88,8 +92,13 @@ data class ControlUiState(
     val reconnectAttempt: Int = 0,
     val reconnectMax: Int = 0,
     val rssi: Int? = null,
-    /** Buoyancy intensity 0..3, mirrored from the operator's choice. */
-    val floatLevel: Int = 1,
+    /** Buoyancy as a whole percent of the envelope, mirrored from the page. */
+    val floatPercent: Int = 100,
+    /**
+     * The heave's breathing switch, read back from the page. Off keeps the same
+     * envelope and period as a plain sine — the patient still floats.
+     */
+    val breath: Boolean = true,
     /**
      * Sit-up ramp length the headset holds, milliseconds.
      *
@@ -98,6 +107,11 @@ data class ControlUiState(
      * local copy would keep showing 10 s after a page reload reset it to 6.
      */
     val rampMs: Int = 0,
+    /**
+     * Correction applied, 0–1: the one posture scalar. The headset reports it
+     * every state frame; the bar draws it, and the handle follows the hand.
+     */
+    val mix: Float = 0f,
     /** Operator switch for gaze dwell; on by default. */
     val gazeDwell: Boolean = true,
     /** Operator switch for reading the SUS statement aloud; on by default. */

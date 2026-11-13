@@ -55,6 +55,12 @@ fun ConsolePreview(
     filterDays: Int? = null,
     /** `--ei sessionAgeSec 0` overrides the fixture's running clock. */
     sessionAgeSec: Int? = null,
+    /** `--ei mix 45` puts the applied correction at 45 % for design review. */
+    mixPercent: Int? = null,
+    /** `--ei level 60` sets the buoyancy percentage the page reports. */
+    percent: Int? = null,
+    /** `--ez breath off` draws the breathing switch in its off state. */
+    breath: Boolean? = null,
     modifier: Modifier = Modifier
 ) {
     val state = fixtureState(fixture, batteryLevel, withPose, withDrift, tapped, withElapsed)
@@ -64,7 +70,14 @@ fun ConsolePreview(
             } else {
                 base.copy(
                     sceneIntent = "",
-                    control = base.control.copy(scene = current)
+                    control = base.control.copy(scene = current),
+                    // The preparation room declares no motion: the page sends a
+                    // zero ceiling, so the fixture does too.
+                    caps = if (current == "prep") {
+                        base.caps.copy(float = false, floatCap = 0)
+                    } else {
+                        base.caps
+                    }
                 )
             }
         }
@@ -111,7 +124,15 @@ fun ConsolePreview(
             if (sessionAgeSec == null) base
             else base.copy(sessionElapsedMs = sessionAgeSec.toLong() * 1000L)
         }
-    var showGuide by remember { mutableStateOf(false) }
+        // The three numbers the review actually looks at: the correction, the
+        // heave and its character.
+        .let { base ->
+            base.copy(
+                mix = mixPercent?.let { (it / 100f).coerceIn(0f, 1f) } ?: base.mix,
+                breath = breath ?: base.breath,
+                floatPercent = percent ?: base.floatPercent
+            )
+        }
     val noop: () -> Unit = {}
     val actions = ControlActions(
         onStartTraining = noop,
@@ -119,6 +140,7 @@ fun ConsolePreview(
         onSceneSelect = {},
         onSceneApply = noop,
         onAnimDuration = {},
+        onPostureMix = {},
         onGazeDwellChange = {},
         onSusVoiceChange = {},
         onSubtitlesChange = {},
@@ -130,7 +152,8 @@ fun ConsolePreview(
         onRecalibrate = noop,
         onAdaptationSkip = noop,
         onToggleAudio = noop,
-        onFloatLevel = {},
+        onFloatAmount = {},
+        onBreathChange = {},
         onViewAnim = {},
         onViewStop = noop,
         onPostureLower = noop,
@@ -154,22 +177,12 @@ fun ConsolePreview(
         onSusFilterDays = noop,
         onOutcome = { _, _ -> }
     )
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(QuietPalette.Paper)
-    ) {
-        if (showGuide) {
-            GuideScreen(onBack = { showGuide = false }, app = state.app)
-        } else {
-            ControlScreen(
-                state = state,
-                actions = actions,
-                onOpenInfo = { showGuide = true },
-                startWithMirrorOpen = withMirror
-            )
-        }
-    }
+    ControlScreen(
+        state = state,
+        actions = actions,
+        startWithMirrorOpen = withMirror,
+        modifier = modifier
+    )
 }
 
 /** One state per row of the tree; every field is one the wire really carries. */
@@ -192,7 +205,7 @@ fun fixtureState(
             stop = true,
             float = true,
             view = true,
-            floatMax = 3
+            floatCap = 100
         )
     )
     val pose = if (withPose) {
@@ -203,7 +216,6 @@ fun fixtureState(
     val running = ControlState(
         session = true,
         scene = "shore",
-        floatLevel = 2,
         floatMm = 18f,
         eyeHeight = 0.68f,
         mix = 0.12f
@@ -241,7 +253,7 @@ fun fixtureState(
         ConsoleFixture.Entry -> base.copy(startPending = true)
         ConsoleFixture.Idle -> base.copy(
             sceneIntent = drift,
-            control = ControlState(scene = "shore", floatLevel = 1),
+            control = ControlState(scene = "shore"),
             // `--ez elapsed true`: the state just after a session, which is the
             // only time the bedside question is on screen.
             sessionElapsedMs = if (withElapsed) 252_000L else 0L

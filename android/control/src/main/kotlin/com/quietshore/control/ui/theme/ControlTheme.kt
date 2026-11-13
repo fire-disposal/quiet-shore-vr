@@ -200,7 +200,15 @@ object QuietSpace {
     /** Outer margin: 32 dp. Wide screens do not get more, the content fills. */
     val Page: androidx.compose.ui.unit.Dp = 32.dp
 
-    /** Between two zones of a page. */
+    /**
+     * Between two zones of a page.
+     *
+     * Deliberately roomy: the 0.9 build ran 16–17 sp body text and a 12 sp label
+     * tier, and "字号小、拘束" was the single complaint from the bedside. The
+     * scale below is the answer to that complaint, so it is not a dial to loosen
+     * for density — a compact *control column* is built from explicit values in
+     * its own block, not by shrinking every page.
+     */
     val Section: androidx.compose.ui.unit.Dp = 28.dp
 
     /** Between two rows inside a zone. */

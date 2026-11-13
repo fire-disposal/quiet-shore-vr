@@ -2,7 +2,9 @@ package com.quietshore.control.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,13 +13,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -27,6 +28,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietshore.control.ui.theme.QuietPalette
 import com.quietshore.control.ui.theme.QuietSpace
@@ -43,11 +45,13 @@ import com.quietshore.control.ui.theme.QuietSpace
 enum class ConsoleSection(val label: String, val latin: String) {
     Session("会话", "SESSION"),
     Scene("场景", "SCENE"),
-    Audio("音频", "AUDIO")
+    Audio("音频", "AUDIO"),
+    /** The manual, as a page: it used to be an overlay reached from the bar. */
+    Guide("说明", "GUIDE")
 }
 
-/** Width of the rail: Latin eyebrow + Chinese label, one column each. */
-val RailWidth = 132.dp
+/** Width of the rail: one Chinese label plus its trace, no second line. */
+val RailWidth = 96.dp
 
 @Composable
 fun ConsoleRail(
@@ -81,16 +85,24 @@ private fun RailItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val shape = CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
-    Column(
+    RailTab(label = section.label, selected = selected, onClick = onClick)
+}
+
+/**
+ * One tab, in the one style both rails use.
+ *
+ * A tab is a location, not an action: it takes a trace on its leading edge and
+ * ink, never the ice fill. The fill on this console means "pressing this does
+ * something now", and a filled tab competed with the one primary of whichever
+ * page was open. Shared by the guidance rail and the questionnaire rail so the
+ * operator does not learn a second navigation.
+ */
+@Composable
+internal fun RailTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
-            .clip(shape)
-            .background(if (selected) QuietPalette.Ice else QuietPalette.Board)
-            .then(
-                if (selected) Modifier else Modifier
-            )
+            .heightIn(min = 60.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -98,23 +110,23 @@ private fun RailItem(
                 onClick = onClick
             )
             .semantics { this.selected = selected }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.Center
+            .padding(start = 10.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(24.dp)
+                .background(if (selected) QuietPalette.Ice else Color.Transparent)
+        )
+        Spacer(Modifier.width(10.dp))
         Text(
-            text = section.latin,
-            style = MaterialTheme.typography.labelSmall,
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) QuietPalette.Ink else QuietPalette.InkSecondary,
             maxLines = 1,
             overflow = TextOverflow.Clip
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = section.label,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            color = QuietPalette.Ink,
-            maxLines = 1
         )
     }
 }

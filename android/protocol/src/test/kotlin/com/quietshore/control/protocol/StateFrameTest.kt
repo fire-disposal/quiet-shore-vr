@@ -29,7 +29,6 @@ class StateFrameTest {
             hold = true,
             voiceAuto = true,
             scene = ControlProtocol.SCENE_IDS[2],
-            floatLevel = 2,
             viewAnim = ViewAnim.PLAYING,
             eyeHeight = 0.71f,
             mix = 0.5f,
@@ -52,8 +51,8 @@ class StateFrameTest {
         assertEquals(14, bytes[0].toInt())
         // session | calibrating | audio | moving | hold | voiceAuto
         assertEquals(1 or 2 or 4 or 8 or 16 or 32, bytes[1].toInt() and 0xFF)
-        // scene index 2 | level 2 << 4 | anim playing 1 << 6
-        assertEquals(2 or (2 shl 4) or (1 shl 6), bytes[2].toInt() and 0xFF)
+        // scene index 2 | (bits 4–5 retired, always 0) | anim playing 1 << 6
+        assertEquals(2 or (1 shl 6), bytes[2].toInt() and 0xFF)
         assertEquals(71, bytes[3].toInt() and 0xFF)
         assertEquals(125, bytes[4].toInt() and 0xFF)
         assertEquals(-32, bytes[5].toInt())
@@ -82,7 +81,6 @@ class StateFrameTest {
             hold = false,
             voiceAuto = true,
             scene = "shore",
-            floatLevel = 3,
             viewAnim = ViewAnim.HELD,
             eyeHeight = 1.13f,
             mix = 0.532f,
@@ -107,7 +105,6 @@ class StateFrameTest {
         assertEquals(state.moving, decoded.moving)
         assertEquals(state.voiceAuto, decoded.voiceAuto)
         assertEquals(state.scene, decoded.scene)
-        assertEquals(state.floatLevel, decoded.floatLevel)
         assertEquals(state.viewAnim, decoded.viewAnim)
         assertEquals(state.eyeHeight, decoded.eyeHeight, 0.005f)
         assertEquals(state.mix, decoded.mix, 1f / 250f)

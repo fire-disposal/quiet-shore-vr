@@ -10,7 +10,7 @@ import com.quietshore.control.protocol.ControlState
  * here because they are the tablet's **ownership contract**, and contracts
  * deserve a name and a test:
  *
- * - the mirror fields (`control`, `floatLevel`, `voiceId`, elapsed time) always
+ * - the mirror fields (`control`, `voiceId`, elapsed time) always
  *   follow the headset;
  * - `startPending` stays on the tablet until the headset reports a session.
  */
@@ -36,7 +36,6 @@ fun mergeRemoteFrame(
         // While a session runs the headset is authoritative for the mode too,
         // so a rejected command cannot leave the panel showing something that
         // is not happening. Before a session the operator's choice stands.
-        floatLevel = frame.floatLevel,
         // Voice is authoritative on the headset: the tablet only echoes.
         voiceId = frame.voiceId,
         startPending = if (running) false else current.startPending,

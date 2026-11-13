@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +54,9 @@ import com.quietshore.control.ui.theme.QuietPalette
 /** Bar height: one row — app name, link, the two doors, the stop. */
 val CommandBarHeight = 72.dp
 
+/** One charge field's width: label, state word and value within one glance. */
+private val ChargFieldWidth = 268.dp
+
 /** Where the stop sits on the bar's second line, and how wide it is. */
 val StopWidth = 168.dp
 
@@ -83,7 +87,6 @@ val StopHeight = 48.dp
 @Composable
 fun CommandBar(
     state: ControlUiState,
-    onOpenInfo: () -> Unit,
     onAppSelect: (String) -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier
@@ -140,21 +143,28 @@ fun CommandBar(
             // The middle of the bar is the charge, as two field lines. No
             // bars: a bar made the operator read a length, a field makes the
             // reading the number.
-            Column(
+            // Two fields side by side, each as wide as its reading needs. Full
+            // width made the operator cross half the bar from the label to its
+            // own number, which is what read as "not aligned" even once the
+            // numbers were in a fixed column.
+            Row(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 BatteryField(
                     label = "头显",
                     level = state.battery?.level,
-                    charging = state.battery?.charging ?: false
+                    charging = state.battery?.charging ?: false,
+                    modifier = Modifier.width(ChargFieldWidth)
                 )
                 BatteryField(
                     label = "平板",
                     level = pad?.level,
-                    charging = pad?.charging ?: false
+                    charging = pad?.charging ?: false,
+                    modifier = Modifier.width(ChargFieldWidth)
                 )
             }
 
@@ -166,27 +176,22 @@ fun CommandBar(
 
             Spacer(Modifier.width(8.dp))
 
-            GuideKey(onClick = onOpenInfo)
-
             Spacer(Modifier.width(16.dp))
-            // The bar's right end is the way out of the link: 断开连接. The
-            // emergency stop is gone from the product; a session ends through
-            // 结束 on the console, which is the same planned stop it always was.
-            // Warning, not deletion: ending the link is reversible but it does
-            // interrupt a session, so it takes the amber block the skill asks
-            // for (red stays for delete). Disabled keeps a hairline + ink, so
-            // the key never disappears.
+            // The link's own exit, and a different object from the session's
+            // 结束会话: this one drops the radio, that one ends the patient's
+            // experience. Two terminal actions drawn at the same weight read as
+            // two ways to stop everything, so this one is a quiet word on paper
+            // — amber fill is for a stop-like interruption, and a link drop is
+            // housekeeping: the page freezes and can be reconnected.
             Box(
                 modifier = Modifier
-                    .height(48.dp)
+                    .height(44.dp)
                     .clip(androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
-                    .background(if (connected) QuietPalette.Warning else QuietPalette.Board)
-                    .then(
-                        if (connected) {
-                            Modifier
-                        } else {
-                            Modifier.border(1.dp, QuietPalette.Hairline, androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
-                        }
+                    .background(QuietPalette.Board)
+                    .border(
+                        1.dp,
+                        if (connected) QuietPalette.Danger else QuietPalette.Hairline,
+                        androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
                     )
                     .clickable(
                         enabled = connected,
@@ -195,13 +200,16 @@ fun CommandBar(
                         role = Role.Button,
                         onClick = onDisconnect
                     )
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "断开连接",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-                    color = if (connected) QuietPalette.Ink else QuietPalette.InkSecondary,
+                    text = "断开链接",
+                    style = MaterialTheme.typography.labelLarge,
+                    // Red ink in a hairline box, never a red fill: the same
+                    // language 结束会话 speaks, so two different objects (the
+                    // radio, the session) are recognisable as two ends.
+                    color = if (connected) QuietPalette.Danger else QuietPalette.InkSecondary,
                     maxLines = 1
                 )
             }
@@ -307,30 +315,7 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
 }
 
 /** `i`: the current app's guide, nothing global. */
-@Composable
-private fun GuideKey(onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
-            .background(QuietPalette.Ice)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClick = onClick
-            )
-            .semantics { contentDescription = "当前应用说明" },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Description,
-            contentDescription = "当前应用说明",
-            tint = QuietPalette.Ink,
-            modifier = Modifier.size(22.dp)
-        )
-    }
-}
+
 
 /**
  * Link strength as four bars, tall to short: 24 dp high, 20 dp wide, 3 dp bars

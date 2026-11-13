@@ -103,6 +103,25 @@ object ControlProtocol {
     const val POSTURE_LOWER: String = "posture:lower"
     const val POSTURE_STOP: String = "posture:stop"
 
+    /**
+     * Operator slider: `posture:mix:<0-100>`, whole percent.
+     *
+     * Absolute target, not a delta: the tablet may send it as fast as the hand
+     * moves (the queue keeps only the newest), and the page owns the speed. The
+     * first sample of a drag is the manual override.
+     */
+    const val POSTURE_MIX: String = "posture:mix:"
+
+    /**
+     * Ramp length band, seconds. One value drives both directions — a slower
+     * rise is also a slower lie-back, which is what the bedside asks for.
+     */
+    const val RAMP_S_MIN: Int = 4
+    const val RAMP_S_MAX: Int = 20
+    const val RAMP_S_DEFAULT: Int = 10
+    const val RAMP_MS_MIN: Int = RAMP_S_MIN * 1000
+    const val RAMP_MS_MAX: Int = RAMP_S_MAX * 1000
+
     /** Absolute up-gaze envelope, in degrees. */
     const val VIEW_PITCH_MAX_DEG: Float = 90f
     /** Absolute yaw envelope, in degrees. */
@@ -116,9 +135,10 @@ object ControlProtocol {
         "enter", "exit", "stop",
         "calibrate", "adapt:skip",
         "audio:on", "audio:off", "audio:toggle", "audio:volume:0-100",
-        "float:level:0-3",
+        "float:level:0-3", "float:breath:on|off",
         "scene:<id>",
-        "anim:duration:4000-20000", "posture:rise", "posture:lower", "posture:stop",
+        "anim:duration:$RAMP_MS_MIN-$RAMP_MS_MAX", "posture:rise", "posture:lower", "posture:stop",
+        "posture:mix:0-100",
         "sus:open", "sus:close",
         "sus:show:1-10", "sus:answer:1-5", "sus:voice:on|off",
         "view:anim:up|down|recenter", "view:stop",
@@ -300,13 +320,6 @@ object ControlProtocol {
         return normalized.takeIf { it.isNotEmpty() && it.length <= 200 && !it.contains('\n') }
     }
 
-    /** Plain decimal meters only: no sign, exponent or locale-specific comma. */
-    /**
-     * The page's parser is `^1\.\d{1,3}$` (see `src/app/commands.ts`); the two
-     * must accept exactly one grammar, so a value the page would reject can
-     * never be persisted here.
-     */
-
     /**
      * Plain decimal axis, identical to the page's `^-?\d+(?:\.\d+)?$`:
      * "NaN", "Infinity", exponents, a leading dot (`.5`), a leading plus and a
@@ -387,13 +400,17 @@ object ControlProtocol {
                 normalized.removePrefix(AUDIO_VOLUME).toIntOrNull() in 0..100) ||
             (normalized.startsWith(FLOAT_LEVEL) &&
                 normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
+            normalized == "float:breath:on" ||
+            normalized == "float:breath:off" ||
             (normalized.startsWith(SCENE_PREFIX) &&
                 normalized.removePrefix(SCENE_PREFIX) in sceneIds) ||
             (normalized.startsWith(APP_PREFIX) &&
                 normalized.removePrefix(APP_PREFIX) in APP_IDS) ||
             (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
             (normalized.startsWith(ANIM_DURATION) &&
-                normalized.removePrefix(ANIM_DURATION).toIntOrNull() in 4000..20000) ||
+                normalized.removePrefix(ANIM_DURATION).toIntOrNull() in RAMP_MS_MIN..RAMP_MS_MAX) ||
+            (normalized.startsWith(POSTURE_MIX) &&
+                normalized.removePrefix(POSTURE_MIX).toIntOrNull() in 0..100) ||
             normalized == POSTURE_RISE ||
             normalized == POSTURE_LOWER ||
             normalized == POSTURE_STOP ||
@@ -500,7 +517,10 @@ object ControlProtocol {
         if (state.voiceAuto) flags = flags or 32
 
         val packed = (sceneIndex(state.scene, sceneIds) and 0xF) or
-            ((state.floatLevel.coerceIn(0, 3) and 0x3) shl 4) or
+            // Bits 4–5 are retired: the heave is a percentage and it rides the
+            // JSON document (`floatAmount`), not a two-bit step in a frame that
+            // is already full. Written as 0, read as "not in this frame".
+            (0 shl 4) or
             ((state.viewAnim.code and 0x3) shl 6)
 
         val buffer = ByteBuffer.wrap(target).order(ByteOrder.LITTLE_ENDIAN)
@@ -606,7 +626,7 @@ object ControlProtocol {
             hold = flags and 16 != 0,
             voiceAuto = flags and 32 != 0,
             scene = sceneIds.getOrElse(packed and 0xF) { fallbackScene },
-            floatLevel = (packed shr 4) and 0x3,
+
             viewAnim = ViewAnim.fromCode((packed shr 6) and 0x3),
             eyeHeight = eyeHeight,
             mix = mix,
@@ -741,7 +761,7 @@ data class ControlState(
     /** Scene currently loaded on the page; the tablet shows this as its choice. */
     val scene: String = ControlProtocol.DEFAULT_SCENE,
     /** Buoyancy intensity the page is actually applying, 0–3. */
-    val floatLevel: Int = 1,
+
     /** Coarse view-animation phase reported by the page; see [ViewAnim]. */
     val viewAnim: ViewAnim = ViewAnim.IDLE,
     /**

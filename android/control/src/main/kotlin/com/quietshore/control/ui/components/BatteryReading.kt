@@ -138,121 +138,44 @@ fun BatteryField(
 ) {
     val known = level != null && level in 0..100
     val fraction = if (known) level!!.coerceIn(0, 100) / 100f else 0f
-    // One bar, three layers, text centred vertically inside it:
-    //   1. the neutral track, full width and height;
-    //   2. the charge segment, same height, width = charge, a light tint so the
-    //      ink words stay readable on top of the one state that matters;
-    //   3. the words, ink, vertically centred, never colour-coded.
-    // A thin solid edge under the segment keeps the reading crisp without
-    // painting ink over a saturated fill.
+    val ink = if (known) BatteryInk.of(level!!, charging) else QuietPalette.InkSecondary
+    val wordStyle = MaterialTheme.typography.bodyLarge.tabularFigures()
+        .copy(lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+    // One bar, and the reading inside it. Two things were wrong with the old
+    // one and both were alignment: the value sat wherever the label ended, so
+    // the two rows' numbers never lined up, and a 3 dp marker at the segment's
+    // edge floated beside the text it was supposed to measure. The value is now
+    // a fixed column at the right and the segment is its own edge.
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(ChargeBarHeight)
-            .clipToBounds()
             .background(QuietPalette.Hairline.copy(alpha = 0.16f)),
         contentAlignment = Alignment.CenterStart
     ) {
         if (known && fraction > 0f) {
-            val motion = rememberMotionEnabled()
-            // One highlight sweeping the *filled* part while charge is arriving:
-            // it says "energy is coming in", which no static mark can say, and
-            // it lives inside the fill so it never reads as a second reading.
-            val sweep = if (charging && motion && level!! < 100) {
-                val transition = rememberInfiniteTransition(label = "charge")
-                transition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1000, easing = LinearEasing),
-                        repeatMode = RepeatMode.Restart
-                    ),
-                    label = "charge-sweep"
-                ).value
-            } else {
-                null
-            }
             Box(
                 Modifier
                     .fillMaxWidth(fraction)
                     .fillMaxHeight()
-                    .background(BatteryInk.of(level!!, charging).copy(alpha = 0.22f))
-                    .drawBehind {
-                        val t = sweep ?: return@drawBehind
-                        // 1 s sweep, then a 1.4 s rest: the pause is what keeps
-                        // it calm instead of a machine's LED.
-                        val cycle = (t * 2.4f) % 1f
-                        if (cycle > 1f / 2.4f) return@drawBehind
-                        val band = 18.dp.toPx()
-                        val x = -band + (size.width + band) * (cycle * 2.4f)
-                        drawRect(
-                            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.45f),
-                            topLeft = androidx.compose.ui.geometry.Offset(x, 0f),
-                            size = androidx.compose.ui.geometry.Size(band, size.height)
-                        )
-                    }
-            )
-            // The crisp edge of the reading: full-width guide, then the solid
-            // 3 dp marker at the segment's own end.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .drawBehind {
-                        val w = size.width * fraction
-                        val thickness = 3.dp.toPx()
-                        drawRect(
-                            color = BatteryInk.of(level, charging),
-                            topLeft = Offset(w - thickness, size.height - thickness),
-                            size = androidx.compose.ui.geometry.Size(thickness, thickness)
-                        )
-                    }
+                    .background(ink.copy(alpha = 0.22f))
             )
         }
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(start = 12.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // One face for the whole reading: the label is set from the same
-            // tabular, semibold template as the number beside it.
-            val fieldStyle = MaterialTheme.typography.bodyLarge.tabularFigures()
-                .copy(lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-            val fieldColor = if (known) QuietPalette.Ink else QuietPalette.InkSecondary
             Text(
-                text = PREFIX,
-                style = fieldStyle,
-                color = fieldColor,
+                text = "$PREFIX$label" + "电量",
+                style = wordStyle,
+                color = if (known) QuietPalette.Ink else QuietPalette.InkSecondary,
                 maxLines = 1
             )
-            Text(
-                text = "${label}电量:",
-                style = fieldStyle,
-                color = fieldColor,
-                maxLines = 1
-            )
-            if (known) {
-                // The number is the reading: the same face as its label, so
-                // the line reads as one field rather than two type tiers.
-                Text(
-                    text = String.format(java.util.Locale.US, "%.1f%%", level!!.toFloat()),
-                    style = fieldStyle,
-                    color = fieldColor,
-                    maxLines = 1
-                )
-            } else {
-                // No word, just a dash: "unconnected" is already said by the
-                // bar's empty track, and this line is a reading, not a status.
-                Text(
-                    text = "---",
-                    style = fieldStyle,
-                    color = fieldColor,
-                    maxLines = 1
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            // One state word at the right, never two: charging outranks low.
+            Spacer(Modifier.width(10.dp))
+            // One state word, before the value: after it, the value column
+            // would move whenever a device started charging.
             if (known) {
                 if (charging && level!! < 100) {
                     ChargeTag("充电中")
@@ -260,12 +183,19 @@ fun BatteryField(
                     ChargeTag("低电量")
                 }
             }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = if (known) "$level%" else "---",
+                style = wordStyle,
+                color = ink,
+                maxLines = 1
+            )
         }
     }
 }
 
-/** Height of one charge bar. Tall enough to hold its own words centred. */
-private val ChargeBarHeight = 26.dp
+/** One charge bar: tall enough to hold its own words with air above and below. */
+private val ChargeBarHeight = 32.dp
 
 /** One bracketed word at the right end: `[低电量]`, `[充电中]`. Ink only. */
 @Composable

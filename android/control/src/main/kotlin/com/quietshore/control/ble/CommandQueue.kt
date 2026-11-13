@@ -33,8 +33,17 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
      */
     fun enqueue(command: String): Boolean {
         if (command in STOP_COMMANDS) {
-            // Stop preempts everything still queued.
+            // Stop preempts everything still queued — including a slider sample
+            // still waiting: a target sent before the freeze must not arrive
+            // after it.
             stops.addLast(command)
+            move = null
+            return true
+        }
+        if (command.startsWith(ControlProtocol.POSTURE_MIX)) {
+            // A drag is a stream, not a list: the operator only ever means the
+            // newest sample, and a queue of them would arrive minutes late.
+            move = command
             return true
         }
         if (discrete.size + stops.size >= discreteCapacity) {
