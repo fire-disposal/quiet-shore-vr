@@ -193,8 +193,9 @@ PING / RELEASE / CLAIM   # 存活与租约
 | `exit` / `stop` | 结束训练并关闭页面 |
 | `calibrate` | 打开校准：保持不动 1.8 s + 3 s 取样取平均；训练中可用 |
 | `scene:<id>` | 切到场景；空闲时重建世界，训练中拒绝 |
-| `anim:duration:4000-20000` | 起身/躺下斜坡时长，ms，4–20 s |
+| `anim:duration:4000-20000` | 起身/躺下斜坡时长，ms，整数秒 4–20，默认 10 s；**一个值同时作用正反两个方向** |
 | `posture:rise` / `posture:lower` / `posture:stop` | 站立比率：rise = 0→1（躺 → 起身），lower = 1→0，stop 冻结在当前值；患者按钮只做开始/停止 |
+| `posture:mix:0-100` | 操作员滑条的绝对目标（整数百分比）。首次下发即**手动超越**：冻结正在跑的斜坡与视线动画，此后 `mix` 以 ≤0.4/s、加速度受限跟随，任何手速都不会跳变 |
 | `float:level:0-3` | 起伏幅度；0 为停用，按 tau 0.25 s 渐出。场景可低于此上限（立便间 2 级） |
 | `view:anim:up\|down\|recenter` | 相对俯仰斜坡：up/down ±10°，3 s；recenter 回 0°，2.4 s |
 | `view:stop` | 停止斜坡并保持当前俯仰，不回正 |
