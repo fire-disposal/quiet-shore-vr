@@ -174,15 +174,9 @@ fun ControlScreen(
                 onAppSelect = actions.onAppSelect,
                 onDisconnect = actions.onDisconnect
             )
-            // No link banners on the initial page: the device list is the
-            // action, and a banner offering "重新连接" beside it is a second
-            // way to do the same thing.
-            if (state.showControls) {
-                LinkBanners(state = state, event = event, actions = actions)
-            }
-
-            // 16 dp under the bar: the bar is chrome, close to the page; 32 dp
-            // is for block-to-block gaps.
+            // Alerts and session verbs live inside the content column, never
+            // above the rail. The top bar and left tabs keep one fixed origin
+            // for the whole session.
             Box(
                 Modifier
                     .weight(1f)
@@ -204,34 +198,39 @@ fun ControlScreen(
                     QuestionnaireApp(
                         state = state,
                         actions = actions,
+                        event = event,
                         modifier = Modifier.fillMaxSize()
                     )
                     return@Box
                 }
-                // Navigation on the left, as a rail: a landscape tablet is
-                // short on height, and the rail scrolls instead of clipping.
-                Column(Modifier.fillMaxSize()) {
-                    // While a session runs, the two exits ride above the page —
-                    // whichever destination the operator is on — so nobody has
-                    // to navigate back to 会话 to stop the patient. The session
-                    // page carries them at the foot of its own column instead.
-                    if (phase.showsSessionVerbs && section != ConsoleSection.Session) {
-                        SessionVerbsStrip(
-                            state = state,
-                            actions = actions,
-                            phase = phase
-                        )
-                    }
-                    Row(Modifier.weight(1f).fillMaxWidth()) {
-                        ConsoleRail(
-                            current = section,
-                            onSelect = { chosen = it }
-                        )
-                        RailRule()
+                // Navigation on the left, as a rail. It begins directly below
+                // the command bar and never moves: alerts and session actions
+                // are children of the content column, not of the shell.
+                Row(Modifier.fillMaxSize()) {
+                    ConsoleRail(
+                        current = section,
+                        onSelect = { chosen = it }
+                    )
+                    RailRule()
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        if (state.showControls) {
+                            LinkBanners(state = state, event = event, actions = actions)
+                        }
+                        if (phase.showsSessionVerbs && section != ConsoleSection.Session) {
+                            SessionVerbsStrip(
+                                state = state,
+                                actions = actions,
+                                phase = phase
+                            )
+                        }
                         Box(
                             Modifier
                                 .weight(1f)
-                                .fillMaxHeight()
+                                .fillMaxWidth()
                                 .then(pagePadding)
                                 .padding(bottom = 12.dp)
                         ) {
@@ -359,6 +358,7 @@ private fun SessionVerbsStrip(
 private fun QuestionnaireApp(
     state: ControlUiState,
     actions: ControlActions,
+    event: UiEvent?,
     modifier: Modifier = Modifier
 ) {
     var section by rememberSaveable { mutableStateOf(QuestionnaireSection.Answer) }
@@ -369,35 +369,41 @@ private fun QuestionnaireApp(
             modifier = Modifier.fillMaxHeight()
         )
         RailRule()
-        // The rail is chrome and reaches the page edge exactly like the
-        // guidance app's rail; only the content takes the page gutter.
-        Box(
+        Column(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(
-                    start = QuietSpace.Page,
-                    end = QuietSpace.Page,
-                    bottom = 12.dp
-                )
         ) {
-            if (section == QuestionnaireSection.Guide) {
-                // Owns its own scroller and its own full height: inside the
-                // scrolling column below it was handed unbounded height and
-                // drew nothing at all.
-                GuideScreen(
-                    onBack = {},
-                    app = "questionnaire",
-                    withChrome = false,
-                    onExport = actions.onExportRecords
-                )
-                return@Box
+            if (state.showControls) {
+                LinkBanners(state = state, event = event, actions = actions)
             }
-            Column(
+            Box(
                 Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(
+                        start = QuietSpace.Page,
+                        end = QuietSpace.Page,
+                        bottom = 12.dp
+                    )
             ) {
+                if (section == QuestionnaireSection.Guide) {
+                    // Owns its own scroller and its own full height: inside the
+                    // scrolling column below it was handed unbounded height and
+                    // drew nothing at all.
+                    GuideScreen(
+                        onBack = {},
+                        app = "questionnaire",
+                        withChrome = false,
+                        onExport = actions.onExportRecords
+                    )
+                    return@Box
+                }
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
                 when (section) {
                     // Handled above: it owns its own scroller.
                     QuestionnaireSection.Guide -> Unit
@@ -432,6 +438,8 @@ private fun QuestionnaireApp(
             }
         }
     }
+}
+
 }
 
 /**

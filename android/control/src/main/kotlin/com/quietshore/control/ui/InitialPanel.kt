@@ -169,53 +169,20 @@ private fun InitialRail(
 ) {
     Column(
         modifier = modifier
-            .width(132.dp)
+            .fillMaxHeight()
+            .width(com.quietshore.control.ui.components.RailWidth)
             .background(QuietPalette.Board)
             .verticalScroll(rememberScrollState())
             .padding(vertical = 12.dp, horizontal = 8.dp),
     ) {
         for (tab in EntryTab.entries) {
-            RailItem(
-                tab = tab,
+            com.quietshore.control.ui.components.RailTab(
+                label = tab.label,
                 selected = tab == current,
                 onClick = { onSelect(tab) }
             )
             Spacer(Modifier.height(6.dp))
         }
-    }
-}
-
-@Composable
-private fun RailItem(tab: EntryTab, selected: Boolean, onClick: () -> Unit) {
-    val shape = CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .clip(shape)
-            .background(if (selected) QuietPalette.Ice else QuietPalette.Board)
-            .clickable(
-                                                role = Role.Tab,
-                onClick = onClick
-            )
-            .semantics { this.selected = selected }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = tab.latin,
-            style = MaterialTheme.typography.labelSmall,
-            color = QuietPalette.InkSecondary,
-            maxLines = 1
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = tab.label,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            color = QuietPalette.Ink,
-            maxLines = 1
-        )
     }
 }
 

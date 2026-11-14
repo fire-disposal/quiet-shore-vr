@@ -7,11 +7,15 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -183,12 +187,25 @@ private val QuietShapes = Shapes(
 
 @Composable
 fun QuietShoreTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = QuietColorScheme,
-        typography = QuietTypography,
-        shapes = QuietShapes,
-        content = content
-    )
+    val system = LocalDensity.current
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    // The GOT-W29 reports 1024 dp wide at 400 dpi. Compose's 56 dp keys and
+    // 20 sp body then render visibly larger than the 1× browser console. A
+    // 0.90 design density shrinks every dp/sp token together, keeps touch
+    // height around 50 dp, and gives the page the width the wide layouts use.
+    val design = if (widthDp <= 1100) {
+        Density(density = system.density * 0.90f, fontScale = system.fontScale)
+    } else {
+        system
+    }
+    CompositionLocalProvider(LocalDensity provides design) {
+        MaterialTheme(
+            colorScheme = QuietColorScheme,
+            typography = QuietTypography,
+            shapes = QuietShapes,
+            content = content
+        )
+    }
 }
 
 /**
