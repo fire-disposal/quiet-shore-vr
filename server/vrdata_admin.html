@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="robots" content="noindex, nofollow">
+<title>vrdata 数据台</title>
+<style>
+:root {
+  --bg: #10120f;
+  --surface: #181b16;
+  --surface-2: #1f231c;
+  --fg: #e8e6dc;
+  --muted: #9aa292;
+  --border: rgba(232, 230, 220, 0.14);
+  --border-strong: rgba(232, 230, 220, 0.28);
+  --accent: #c8a24a;
+  --accent-ink: #10120f;
+  --danger: #e0736a;
+  --ok: #7fb069;
+  --radius: 3px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", serif;
+  --ui: -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f2ec;
+    --surface: #fbfaf6;
+    --surface-2: #efece3;
+    --fg: #1a1c17;
+    --muted: #5d6459;
+    --border: rgba(26, 28, 23, 0.16);
+    --border-strong: rgba(26, 28, 23, 0.34);
+    --accent: #7a5a12;
+    --accent-ink: #fbfaf6;
+    --danger: #a33a30;
+    --ok: #3f6b2c;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- login */
+
+.gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+.gate[hidden] { display: none; }
+
+.gate__card {
+  width: 100%;
+  max-width: 26rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem 1.75rem;
+}
+
+.gate__eyebrow {
+  margin: 0 0 0.75rem;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gate__title {
+  margin: 0 0 0.4rem;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 27px;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.gate__lede {
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+  max-width: 34ch;
+}
+
+.field { display: block; margin-bottom: 1rem; }
+
+.field__label {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.field__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-family: var(--ui);
+  font-size: 16px;
+  letter-spacing: 0;
+  transition: border-color 120ms ease;
+}
+.field__input:hover { border-color: var(--accent); }
+.field__input[aria-invalid="true"] { border-color: var(--danger); }
+
+.field__hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.5rem 0.9rem;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.btn:hover { border-color: var(--accent); background: var(--surface-2); }
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.btn--primary {
+  width: 100%;
+  min-height: 44px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.btn--primary:hover { background: var(--accent); border-color: var(--accent-ink); }
+.btn--quiet { border-color: transparent; color: var(--muted); }
+.btn--quiet:hover { border-color: var(--border); color: var(--fg); background: transparent; }
+
+.notice {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.7rem;
+  border-left: 2px solid var(--danger);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.6;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.notice[hidden] { display: none; }
+
+/* ------------------------------------------------------------ workspace */
+
+.app { display: none; }
+.app[data-ready="true"] { display: block; }
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem clamp(0.9rem, 3vw, 1.75rem);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.bar__mark {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bar__mark b { color: var(--fg); font-weight: 600; letter-spacing: 0.06em; }
+
+.bar__spacer { flex: 1 1 auto; }
+
+.bar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bar__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  transition: background-color 150ms ease;
+}
+.bar__status[data-state="loading"] .bar__dot { background: var(--muted); }
+.bar__status[data-state="error"] .bar__dot { background: var(--danger); }
+
+.bar__actions { display: flex; gap: 0.4rem; }
+
+.main {
+  padding: clamp(1rem, 3vw, 1.75rem);
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+/* --------------------------------------------------------------- counts */
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 1.5rem;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+@media (max-width: 34rem) {
+  .counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.count {
+  padding: 0.85rem 0.9rem;
+  background: var(--surface);
+  text-align: left;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.count:hover { background: var(--surface-2); }
+.count[aria-pressed="true"] { background: var(--surface-2); }
+.count[aria-pressed="true"] .count__label { color: var(--accent); }
+.count__label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.count__value {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--mono);
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* -------------------------------------------------------------- filters */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.filters__field { display: flex; flex-direction: column; gap: 0.25rem; }
+.filters__field--grow { flex: 1 1 10rem; }
+
+.filters select,
+.filters input[type="search"],
+.filters input[type="datetime-local"] {
+  min-height: 36px;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-family: var(--ui);
+  font-size: 13px;
+}
+.filters input[type="datetime-local"] { font-family: var(--mono); font-size: 12px; }
+
+.filters__label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.filters__reset { margin-left: auto; }
+
+.export-note {
+  margin: 0 0 0.75rem;
+  padding: 0.45rem 0.7rem;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.export-note[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- table */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.table-scroll { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+caption { text-align: left; padding: 0.7rem 0.85rem; color: var(--muted); font-size: 12px; }
+
+thead th {
+  position: sticky;
+  top: 0;
+  padding: 0.5rem 0.85rem;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+
+.cell-mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cell-id { font-family: var(--mono); font-size: 12px; word-break: break-all; min-width: 8rem; }
+.cell-kind { white-space: nowrap; }
+
+.row-btn {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.row-btn:hover { text-decoration-color: var(--accent); }
+
+.tag {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ states */
+
+.state {
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+}
+.state[hidden] { display: none; }
+.state__title { margin: 0 0 0.35rem; font-family: var(--sans); font-size: 18px; font-weight: 600; line-height: 1.4; }
+.state__body { margin: 0 auto 1rem; max-width: 40ch; color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+.skeleton {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+}
+.skeleton__row {
+  display: grid;
+  grid-template-columns: 8rem 6rem 1fr 5rem;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--surface);
+}
+.skeleton__bar {
+  height: 10px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ------------------------------------------------------------- pager */
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.pager[hidden] { display: none; }
+.pager__info { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.02em; }
+.pager__spacer { flex: 1 1 auto; }
+.pager button { min-height: 32px; padding: 0.3rem 0.7rem; font-size: 12px; }
+
+/* ------------------------------------------------------------- detail */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: end center;
+  background: rgba(6, 7, 5, 0.55);
+  padding: 0;
+}
+.sheet[hidden] { display: none; }
+@media (min-width: 42rem) { .sheet { place-items: center; padding: 1.5rem; } }
+
+.sheet__panel {
+  width: 100%;
+  max-width: 46rem;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius) var(--radius) 0 0;
+  animation: rise 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+@media (min-width: 42rem) { .sheet__panel { border-radius: var(--radius); } }
+
+@keyframes rise { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.sheet__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.sheet__titles { min-width: 0; flex: 1 1 auto; }
+.sheet__kind {
+  margin: 0 0 0.15rem;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.sheet__id {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.sheet__body { overflow: auto; padding: 1rem; }
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+  font-size: 12px;
+}
+.meta dt { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 0.15rem; }
+.meta dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; word-break: break-all; }
+
+pre {
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+/* --------------------------------------------------------- responsive */
+
+@media (max-width: 40rem) {
+  .bar { padding: 0.6rem 0.9rem; gap: 0.5rem; }
+  .bar__mark { font-size: 11px; }
+  .main { padding: 0.9rem; }
+  .counts { margin-bottom: 1rem; }
+  .count { padding: 0.7rem 0.75rem; }
+  .count__value { font-size: 21px; }
+  .filters { padding: 0.7rem; gap: 0.6rem; }
+  .filters__field, .filters__field--grow { flex: 1 1 100%; }
+  .filters__reset { margin-left: 0; width: 100%; }
+  /* The table keeps all columns; horizontal scroll beats dropping evidence. */
+  thead th, tbody td { padding: 0.45rem 0.6rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate__card">
+    <p class="gate__eyebrow">quiet-shore · vrdata</p>
+    <h1 class="gate__title">记录数据台</h1>
+    <p class="gate__lede">设备上传的训练、问卷、体验与事件记录。输入运维口令后读取。</p>
+    <form id="login-form" novalidate>
+      <div class="field">
+        <label class="field__label" for="password">口令</label>
+        <input class="field__input" id="password" name="password" type="password"
+               autocomplete="current-password" required aria-describedby="password-hint">
+        <span class="field__hint" id="password-hint">服务器环境变量 VRDATA_PASSWORD 的值，不写入数据库。</span>
+      </div>
+      <p class="notice" id="login-error" role="alert" hidden></p>
+      <button class="btn btn--primary" id="login-submit" type="submit">进入</button>
+    </form>
+  </div>
+</div>
+
+<div class="app" id="app">
+  <header class="bar">
+    <span class="bar__mark"><b>vrdata</b> · 记录数据台</span>
+    <span class="bar__spacer"></span>
+    <span class="bar__status" id="status" data-state="idle" role="status" aria-live="polite">
+      <span class="bar__dot" aria-hidden="true"></span>
+      <span id="status-text">待加载</span>
+    </span>
+    <div class="bar__actions">
+      <button class="btn" id="export" type="button">导出 CSV</button>
+      <button class="btn" id="refresh" type="button">刷新</button>
+      <label class="bar__status" style="gap:0.35rem">
+        <input type="checkbox" id="auto" style="accent-color:var(--accent)">
+        <span>自动 30s</span>
+      </label>
+      <button class="btn btn--quiet" id="logout" type="button">登出</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <h2 class="visually-hidden">记录总览</h2>
+    <div class="counts" id="counts" role="group" aria-label="按类型筛选"></div>
+
+    <h2 class="visually-hidden">筛选</h2>
+    <div class="filters" role="search">
+      <div class="filters__field">
+        <label class="filters__label" for="f-kind">类型</label>
+        <select id="f-kind">
+          <option value="">全部</option>
+          <option value="questionnaire">questionnaire · 问卷</option>
+          <option value="training">training · 训练</option>
+          <option value="experience">experience · 体验</option>
+          <option value="event">event · 事件</option>
+        </select>
+      </div>
+      <div class="filters__field filters__field--grow">
+        <label class="filters__label" for="f-device">设备</label>
+        <select id="f-device"><option value="">全部设备</option></select>
+      </div>
+      <div class="filters__field">
+        <label class="filters__label" for="f-since">起始</label>
+        <input id="f-since" type="datetime-local" step="1">
+      </div>
+      <div class="filters__field">
+        <label class="filters__label" for="f-until">截止</label>
+        <input id="f-until" type="datetime-local" step="1">
+      </div>
+      <button class="btn btn--quiet filters__reset" id="f-reset" type="button">清除筛选</button>
+    </div>
+
+    <p class="export-note" id="export-note" role="status" aria-live="polite" hidden></p>
+
+    <section class="panel" aria-labelledby="table-caption">
+      <div class="table-scroll">
+        <table id="table" aria-labelledby="table-caption">
+          <caption id="table-caption">记录列表</caption>
+          <thead>
+            <tr>
+              <th scope="col">occurredAt</th>
+              <th scope="col">kind</th>
+              <th scope="col">device</th>
+              <th scope="col">record</th>
+              <th scope="col">bytes</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <div class="skeleton" id="loading" hidden aria-hidden="true"></div>
+
+      <div class="state" id="empty" hidden>
+        <p class="state__title">没有匹配的记录</p>
+        <p class="state__body" id="empty-body">这个筛选条件下还没有记录。</p>
+        <button class="btn" id="empty-reset" type="button">清除筛选</button>
+      </div>
+
+      <div class="state" id="error" hidden>
+        <p class="state__title" id="error-title">读取失败</p>
+        <p class="state__body" id="error-body"></p>
+        <button class="btn" id="error-retry" type="button">重试</button>
+      </div>
+
+      <div class="pager" id="pager" hidden>
+        <span class="pager__info" id="pager-info"></span>
+        <span class="pager__spacer"></span>
+        <button class="btn" id="prev" type="button">上一页</button>
+        <button class="btn" id="next" type="button">下一页</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-id">
+  <div class="sheet__panel">
+    <div class="sheet__head">
+      <div class="sheet__titles">
+        <p class="sheet__kind" id="sheet-kind">record</p>
+        <p class="sheet__id" id="sheet-id">—</p>
+      </div>
+      <button class="btn btn--quiet" id="sheet-close" type="button">关闭</button>
+    </div>
+    <div class="sheet__body" id="sheet-body"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var API = "/vrdata/admin/api/";
+  var state = {
+    offset: 0,
+    limit: 25,
+    total: 0,
+    kind: "",
+    device: "",
+    since: "",
+    until: "",
+    order: "desc",
+    loading: false,
+    autoTimer: null,
+    lastFocus: null
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var gate = $("gate"), app = $("app"), rows = $("rows");
+
+  function text(node, value) { node.textContent = value == null ? "" : String(value); }
+
+  function setStatus(mode, label) {
+    var el = $("status");
+    el.dataset.state = mode;
+    text($("status-text"), label);
+  }
+
+  // ------------------------------------------------------------- requests
+
+  function request(method, path, body) {
+    var init = {
+      method: method,
+      credentials: "same-origin",
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    };
+    if (body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (response) {
+      return response.text().then(function (raw) {
+        var data = null;
+        if (raw) {
+          try { data = JSON.parse(raw); } catch (err) { data = null; }
+        }
+        return { status: response.status, ok: response.ok, data: data };
+      });
+    });
+  }
+
+  function apiError(result, fallback) {
+    if (result.data && result.data.error && result.data.error.message) {
+      return result.data.error.message;
+    }
+    if (result.status === 0) { return "网络不可达，请检查连接。"; }
+    return fallback;
+  }
+
+  // ---------------------------------------------------------------- login
+
+  function showLogin(message) {
+    stopAuto();
+    app.removeAttribute("data-ready");
+    app.style.display = "none";
+    gate.hidden = false;
+    var notice = $("login-error");
+    if (message) { text(notice, message); notice.hidden = false; }
+    else { notice.hidden = true; }
+    $("password").value = "";
+    $("password").focus();
+  }
+
+  function showApp() {
+    gate.hidden = true;
+    app.style.display = "block";
+    app.setAttribute("data-ready", "true");
+  }
+
+  $("login-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var input = $("password");
+    var password = input.value;
+    if (!password) {
+      input.setAttribute("aria-invalid", "true");
+      input.focus();
+      return;
+    }
+    var submit = $("login-submit");
+    submit.disabled = true;
+    text(submit, "验证中…");
+    request("POST", API + "login", { password: password }).then(function (result) {
+      submit.disabled = false;
+      text(submit, "进入");
+      if (result.ok && result.data && result.data.authenticated) {
+        showApp();
+        loadFacets();
+        loadPage(0);
+        return;
+      }
+      if (password === input.value) { input.value = ""; }
+      input.setAttribute("aria-invalid", "true");
+      showLogin(apiError(result, "口令不正确。"));
+      $("password").focus();
+    }).catch(function () {
+      submit.disabled = false;
+      text(submit, "进入");
+      showLogin("网络不可达，请检查连接后重试。");
+    });
+  });
+
+  $("logout").addEventListener("click", function () {
+    request("POST", API + "logout").then(function () {
+      state.offset = 0;
+      rows.textContent = "";
+      showLogin(null);
+    }).catch(function () {
+      showLogin("登出请求未到达，已清除本地视图。");
+    });
+  });
+
+  // -------------------------------------------------------------- summary
+
+  function syncCountTiles() {
+    var tiles = document.querySelectorAll(".count[data-kind]");
+    for (var i = 0; i < tiles.length; i++) {
+      tiles[i].setAttribute("aria-pressed", tiles[i].dataset.kind === state.kind ? "true" : "false");
+    }
+  }
+
+  function renderCounts(facets) {
+    var host = $("counts");
+    host.textContent = "";
+    var labels = {
+      questionnaire: "问卷",
+      training: "训练",
+      experience: "体验",
+      event: "事件"
+    };
+    var order = ["questionnaire", "training", "experience", "event"];
+    order.forEach(function (kind) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "count";
+      button.dataset.kind = kind;
+      button.setAttribute("aria-pressed", state.kind === kind ? "true" : "false");
+      var label = document.createElement("span");
+      label.className = "count__label";
+      text(label, kind + " · " + (labels[kind] || ""));
+      var value = document.createElement("span");
+      value.className = "count__value";
+      var count = facets && facets.byKind ? (facets.byKind[kind] || 0) : 0;
+      text(value, count.toLocaleString("zh-CN"));
+      button.appendChild(label);
+      button.appendChild(value);
+      button.addEventListener("click", function () {
+        state.kind = state.kind === kind ? "" : kind;
+        $("f-kind").value = state.kind;
+        // The tiles are not rebuilt on a filter change, so their pressed
+        // state has to be brought in line by hand.
+        syncCountTiles();
+        loadPage(0);
+      });
+      host.appendChild(button);
+    });
+  }
+
+  function renderDevices(facets) {
+    var select = $("f-device");
+    var keep = state.device;
+    select.textContent = "";
+    var all = document.createElement("option");
+    all.value = "";
+    text(all, "全部设备");
+    select.appendChild(all);
+    var devices = (facets && facets.byDevice) || [];
+    devices.forEach(function (entry) {
+      var option = document.createElement("option");
+      option.value = entry.deviceId;
+      text(option, entry.deviceId + " · " + entry.count);
+      select.appendChild(option);
+    });
+    select.value = keep;
+    if (select.value !== keep) {
+      // The previous device vanished from the list (no records left): fall back.
+      select.value = "";
+      state.device = "";
+    }
+  }
+
+  function loadFacets() {
+    return request("GET", API + "facets").then(function (result) {
+      if (result.status === 401) { showLogin("会话已过期，请重新输入口令。"); return; }
+      if (!result.ok) { return; }
+      renderCounts(result.data);
+      renderDevices(result.data);
+    }).catch(function () { /* the table's own error state covers this */ });
+  }
+
+  // ----------------------------------------------------------------- page
+
+  function queryString() {
+    var parts = ["limit=" + state.limit, "offset=" + state.offset, "order=" + state.order];
+    if (state.kind) { parts.push("kind=" + encodeURIComponent(state.kind)); }
+    if (state.device) { parts.push("device=" + encodeURIComponent(state.device)); }
+    if (state.since) { parts.push("since=" + encodeURIComponent(state.since)); }
+    if (state.until) { parts.push("until=" + encodeURIComponent(state.until)); }
+    return parts.join("&");
+  }
+
+  function setBusy(busy) {
+    state.loading = busy;
+    $("refresh").disabled = busy;
+    $("loading").hidden = !busy || state.total > 0;
+    if (busy) { setStatus("loading", "加载中…"); }
+  }
+
+  function clearStates() {
+    $("empty").hidden = true;
+    $("error").hidden = true;
+  }
+
+  function showError(title, body, retry) {
+    clearStates();
+    $("pager").hidden = true;
+    $("table-caption").textContent = "记录列表";
+    text($("error-title"), title);
+    text($("error-body"), body);
+    $("error").hidden = false;
+    $("error-retry").onclick = retry;
+    setStatus("error", title);
+  }
+
+  function loadPage(offset) {
+    if (state.loading && offset === state.offset) { return Promise.resolve(); }
+    state.offset = Math.max(0, offset | 0);
+    setBusy(true);
+    return request("GET", API + "records?" + queryString()).then(function (result) {
+      setBusy(false);
+      if (result.status === 401) { showLogin("会话已过期，请重新输入口令。"); return; }
+      if (!result.ok) {
+        showError(
+          result.status === 400 ? "筛选条件无效" : "读取失败",
+          apiError(result, "服务器没有返回可读的记录。"),
+          function () { loadPage(state.offset); }
+        );
+        return;
+      }
+      render(result.data || {});
+      var stamp = new Date();
+      setStatus("ready", "更新于 " + stamp.toLocaleTimeString("zh-CN", { hour12: false }));
+    }).catch(function () {
+      setBusy(false);
+      showError("无法连接", "请求没有到达服务器。检查网络后重试。", function () { loadPage(state.offset); });
+    });
+  }
+
+  function render(data) {
+    var list = data.records || [];
+    state.total = typeof data.total === "number" ? data.total : list.length;
+    state.limit = data.limit || state.limit;
+    clearStates();
+    rows.textContent = "";
+
+    if (!list.length) {
+      $("pager").hidden = true;
+      $("table-caption").textContent = "记录列表";
+      var filtered = state.kind || state.device || state.since || state.until;
+      text($("empty-body"), filtered
+        ? "当前筛选没有匹配记录。清除筛选可查看全部。"
+        : "数据库里还没有任何记录。设备上传后这里会出现。");
+      $("empty").hidden = false;
+      $("empty-reset").hidden = !filtered;
+      return;
+    }
+
+    var fragment = document.createDocumentFragment();
+    list.forEach(function (record) {
+      var tr = document.createElement("tr");
+      tr.dataset.device = record.deviceId;
+      tr.dataset.record = record.recordId;
+
+      var occurred = document.createElement("td");
+      occurred.className = "cell-mono";
+      text(occurred, record.occurredAt);
+      if (record.occurredAtRaw && record.occurredAtRaw !== record.occurredAt) {
+        occurred.title = "设备原始值 " + record.occurredAtRaw;
+      }
+
+      var kind = document.createElement("td");
+      kind.className = "cell-kind";
+      var tag = document.createElement("span");
+      tag.className = "tag";
+      text(tag, record.kind);
+      kind.appendChild(tag);
+
+      var device = document.createElement("td");
+      device.className = "cell-mono";
+      text(device, record.deviceId);
+
+      var id = document.createElement("td");
+      id.className = "cell-id";
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "row-btn";
+      text(button, record.recordId);
+      button.addEventListener("click", function () { openDetail(record, button); });
+      id.appendChild(button);
+
+      var bytes = document.createElement("td");
+      bytes.className = "cell-mono";
+      text(bytes, record.payloadBytes);
+
+      tr.appendChild(occurred);
+      tr.appendChild(kind);
+      tr.appendChild(device);
+      tr.appendChild(id);
+      tr.appendChild(bytes);
+      fragment.appendChild(tr);
+    });
+    rows.appendChild(fragment);
+
+    var from = state.offset + 1;
+    var to = state.offset + list.length;
+    $("table-caption").textContent =
+      "记录列表 · 共 " + state.total.toLocaleString("zh-CN") + " 条";
+    $("pager").hidden = state.total <= state.limit && state.offset === 0;
+    text($("pager-info"), "第 " + from + "–" + to + " 条 / 共 " + state.total.toLocaleString("zh-CN"));
+    $("prev").disabled = state.offset <= 0;
+    $("next").disabled = state.offset + list.length >= state.total;
+  }
+
+  // --------------------------------------------------------------- detail
+
+  function openDetail(record, opener) {
+    state.lastFocus = opener || document.activeElement;
+    var sheet = $("sheet");
+    sheet.hidden = false;
+    text($("sheet-kind"), record.kind);
+    text($("sheet-id"), record.deviceId + " / " + record.recordId);
+    var body = $("sheet-body");
+    body.textContent = "";
+
+    var meta = document.createElement("dl");
+    meta.className = "meta";
+    [["occurred", record.occurredAt],
+     ["raw", record.occurredAtRaw],
+     ["received", record.receivedAt],
+     ["bytes", record.payloadBytes]].forEach(function (pair) {
+      var dt = document.createElement("dt");
+      text(dt, pair[0]);
+      var dd = document.createElement("dd");
+      text(dd, pair[1]);
+      meta.appendChild(dt);
+      meta.appendChild(dd);
+    });
+    body.appendChild(meta);
+
+    var pre = document.createElement("pre");
+    pre.id = "detail-json";
+    pre.tabIndex = 0;
+    text(pre, "加载中…");
+    body.appendChild(pre);
+
+    $("sheet-close").focus();
+
+    request("GET", API + "records/" + encodeURIComponent(record.deviceId) + "/" + encodeURIComponent(record.recordId))
+      .then(function (result) {
+        if (result.status === 401) { closeDetail(); showLogin("会话已过期，请重新输入口令。"); return; }
+        if (!result.ok) {
+          text(pre, apiError(result, "该记录无法读取。"));
+          return;
+        }
+        var data = result.data || {};
+        if (data.truncated) {
+          text(pre, "载荷 " + data.payloadBytes + " 字节，超过页面展示上限，请用 sqlite3 读取。");
+        } else {
+          text(pre, JSON.stringify(data.data, null, 2));
+        }
+      })
+      .catch(function () {
+        text(pre, "网络不可达，记录内容未取回。");
+      });
+  }
+
+  function closeDetail() {
+    if ($("sheet").hidden) { return; }
+    $("sheet").hidden = true;
+    $("sheet-body").textContent = "";
+    if (state.lastFocus && document.contains(state.lastFocus)) { state.lastFocus.focus(); }
+    state.lastFocus = null;
+  }
+
+  $("sheet-close").addEventListener("click", closeDetail);
+  $("sheet").addEventListener("click", function (event) {
+    if (event.target === $("sheet")) { closeDetail(); }
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && !$("sheet").hidden) {
+      event.preventDefault();
+      closeDetail();
+    }
+  });
+
+  // -------------------------------------------------------------- filters
+
+  function localToInstant(value) {
+    // `datetime-local` is wall-clock without a zone; the console treats it as
+    // the operator's zone and converts once, so the API keeps its UTC form.
+    if (!value) { return ""; }
+    var moment = new Date(value);
+    if (isNaN(moment.getTime())) { return ""; }
+    return moment.toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
+  function applyFilters() {
+    state.kind = $("f-kind").value;
+    state.device = $("f-device").value;
+    state.since = localToInstant($("f-since").value);
+    state.until = localToInstant($("f-until").value);
+    syncCountTiles();
+    loadPage(0);
+  }
+
+  $("f-kind").addEventListener("change", applyFilters);
+  $("f-device").addEventListener("change", applyFilters);
+  $("f-since").addEventListener("change", applyFilters);
+  $("f-until").addEventListener("change", applyFilters);
+
+  function resetFilters() {
+    $("f-kind").value = "";
+    $("f-device").value = "";
+    $("f-since").value = "";
+    $("f-until").value = "";
+    state.kind = "";
+    state.device = "";
+    state.since = "";
+    state.until = "";
+    syncCountTiles();
+    loadPage(0);
+  }
+
+  $("f-reset").addEventListener("click", resetFilters);
+  $("empty-reset").addEventListener("click", resetFilters);
+
+  $("refresh").addEventListener("click", function () {
+    loadFacets();
+    loadPage(state.offset);
+  });
+
+  // --------------------------------------------------------------- export
+
+  function filterQuery() {
+    var parts = [];
+    if (state.kind) { parts.push("kind=" + encodeURIComponent(state.kind)); }
+    if (state.device) { parts.push("device=" + encodeURIComponent(state.device)); }
+    if (state.since) { parts.push("since=" + encodeURIComponent(state.since)); }
+    if (state.until) { parts.push("until=" + encodeURIComponent(state.until)); }
+    parts.push("order=" + state.order);
+    return parts.join("&");
+  }
+
+  function hasFilter() {
+    return Boolean(state.kind || state.device || state.since || state.until);
+  }
+
+  function describeFilter() {
+    var bits = [];
+    if (state.kind) { bits.push("类型 " + state.kind); }
+    if (state.device) { bits.push("设备 " + state.device); }
+    if (state.since) { bits.push("起始 " + state.since); }
+    if (state.until) { bits.push("截止 " + state.until); }
+    return bits.join(" · ");
+  }
+
+  // A plain navigation to the export URL cannot report an HTTP status to the
+  // page, so probe cheaply first with a one-row HEAD-less request: a 401 must
+  // become the login form and a 400/413 a visible error, never a saved file
+  // containing an error body. The probe is the same URL with `limit=1` and is
+  // not the download itself.
+  $("export").addEventListener("click", function () {
+    var button = $("export");
+    var original = "导出 CSV";
+    button.disabled = true;
+    text(button, "准备中…");
+    var note = $("export-note");
+    if (note) { note.hidden = true; }
+    var filters = filterQuery();
+    var path = API + "export.csv" + (filters ? "?" + filters : "");
+
+    request("GET", API + "records?" + (filters ? filters + "&" : "") + "limit=1").then(function (result) {
+      button.disabled = false;
+      text(button, original);
+      if (result.status === 401) {
+        showLogin("会话已过期，请重新输入口令。");
+        return;
+      }
+      if (!result.ok) {
+        showError("导出失败", apiError(result, "当前筛选无法导出。"),
+          function () { loadPage(state.offset); });
+        return;
+      }
+      // Same filters, no paging: the export covers the whole selected set.
+      var anchor = document.createElement("a");
+      anchor.href = path;
+      anchor.rel = "noopener";
+      anchor.download = "";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      if (note) {
+        text(note, hasFilter() ? "已按当前筛选导出：" + describeFilter() + "。" : "已导出全部记录。");
+        note.hidden = false;
+      }
+      setStatus("ready", "已导出 CSV");
+    }).catch(function () {
+      button.disabled = false;
+      text(button, original);
+      showError("无法连接", "导出请求没有到达服务器。检查网络后重试。",
+        function () { loadPage(state.offset); });
+    });
+  });
+
+  $("prev").addEventListener("click", function () {
+    loadPage(Math.max(0, state.offset - state.limit));
+  });
+  $("next").addEventListener("click", function () {
+    loadPage(state.offset + state.limit);
+  });
+
+  // ----------------------------------------------------------- auto refresh
+
+  function stopAuto() {
+    if (state.autoTimer) { clearInterval(state.autoTimer); state.autoTimer = null; }
+    $("auto").checked = false;
+  }
+
+  $("auto").addEventListener("change", function (event) {
+    stopAuto();
+    if (!event.target.checked) { return; }
+    event.target.checked = true;
+    state.autoTimer = setInterval(function () {
+      if (document.hidden || !$("sheet").hidden) { return; }
+      loadFacets();
+      loadPage(state.offset);
+    }, 30000);
+  });
+
+  // -------------------------------------------------------------- startup
+
+  request("GET", API + "session").then(function (result) {
+    if (result.ok && result.data && result.data.authenticated) {
+      showApp();
+      loadFacets();
+      loadPage(0);
+    } else {
+      showLogin(null);
+    }
+  }).catch(function () {
+    showLogin("无法联系服务器。");
+  });
+})();
+</script>
+</body>
+</html>

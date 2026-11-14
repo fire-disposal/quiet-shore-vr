@@ -1,0 +1,66 @@
+[Unit]
+Description=quiet-shore VR record receiver (upload + password-gated read console)
+Documentation=file:///opt/vrdata/README.md
+After=network.target
+
+[Service]
+Type=simple
+# The code lives here; the database does not (see ReadWritePaths).
+WorkingDirectory=/opt/vrdata
+# The operator password lives in this file and nowhere else: not in the unit,
+# not in the repository, not in the database. It must be mode 0600 and owned by
+# root or vrdata. Without it the read console stays off and the service remains
+# the write-only receiver it always was.
+#
+#   /etc/vrdata/vrdata.env:
+#       VRDATA_PASSWORD=<operator chosen secret>
+#
+EnvironmentFile=-/etc/vrdata/vrdata.env
+ExecStart=/usr/bin/python3 -I -X dev /opt/vrdata/vrdata_receiver.py --host 127.0.0.1 --port 8197 --database /var/lib/vrdata/vrdata.sqlite3
+Restart=always
+RestartSec=2
+
+# A dedicated unprivileged account: `useradd --system --no-create-home --shell /usr/sbin/nologin vrdata`.
+User=vrdata
+Group=vrdata
+# 0077: the SQLite file is readable only by the service account and root, so an
+# operator reads it over SSH with sudo rather than by world access.
+UMask=0077
+
+# -- hardening ------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateUsers=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+# ProtectSystem=strict makes everything read-only except these two paths: the
+# database directory (where SQLite also writes -wal and -shm) and nothing else.
+ReadWritePaths=/var/lib/vrdata
+
+# -- logs ----------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vrdata
+
+[Install]
+WantedBy=multi-user.target
