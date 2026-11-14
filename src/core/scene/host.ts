@@ -14,7 +14,7 @@ import type { SceneDefinition, SceneHandle } from './contract';
  */
 export class SceneHost {
   readonly scene: THREE.Scene;
-  /** Geometry the heave must not move; takes the floor offset only. */
+  /** Geometry the heave must not move; mounted inside the comfort frame. */
   readonly backdrop: THREE.Group;
   readonly content: THREE.Group;
 

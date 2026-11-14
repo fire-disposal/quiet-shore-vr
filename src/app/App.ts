@@ -790,6 +790,10 @@ export class QuietShoreApp {
     // (floor). Wrapping the host's content group, not the scene root, keeps the
     // floor offset on content and survives both rotations.
     this.comfort = createComfort({ scene: this.scene, world: this.host.content });
+    // Weather is part of the same world, not a screen-space backdrop. Mount it
+    // beside the content inside comfort so it inherits calibration, posture and
+    // world rotation; `setBackdropOffset` still keeps it out of the heave bob.
+    this.comfort.group.add(this.host.backdrop);
     this.shell = createWorldShell({ scene: this.scene, base: this.comfort.group });
     // Rebind, do not re-animate: the controller keeps its angles and state.
     this.shell.setWorldRotation(
@@ -817,7 +821,9 @@ export class QuietShoreApp {
       this.comfort.reset();
       this.scene.remove(this.comfort.group);
       this.comfort.group.remove(this.host.content);
+      this.comfort.group.remove(this.host.backdrop);
       this.scene.add(this.host.content);
+      this.scene.add(this.host.backdrop);
       this.floating.setBaseOffset(0);
       this.comfort = null;
     }

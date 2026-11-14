@@ -41,8 +41,9 @@ export interface SceneHandle {
   root: THREE.Object3D;
   /**
    * The part of the scene that must not move with the heave — sky, horizon,
-   * far layers. Added under the host's backdrop group, which takes the floor
-   * offset but never the bob.
+   * far layers. Added under the host's backdrop group, which is mounted inside
+   * the comfort frame so it follows calibration, posture and world rotation;
+   * only the bob is withheld.
    */
   backdrop: THREE.Object3D | null;
   settings: SceneSettings;
