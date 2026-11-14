@@ -29,20 +29,29 @@ class TrainingStore(context: Context) {
         }
     }
 
-    /** Appends one page summary; a duplicate timestamp is ignored. */
-    fun append(json: String) {
+    /**
+     * Appends or refreshes one page summary.
+     *
+     * @return true only for a new session timestamp. Reliable replay may carry
+     * an outcome update, so the record is still written for a duplicate, but
+     * the caller must not emit another `session.recorded` event.
+     */
+    fun append(json: String): Boolean {
         val record = try {
             JSONObject(json).put("app", "training")
         } catch (error: Exception) {
-            return
+            return false
         }
-        val existing = load().filterNot { it.optLong("at", -1) == record.optLong("at", 0) }
-        val next = (existing + record).takeLast(MAX_RECORDS)
+        val at = record.optLong("at", 0)
+        val existing = load()
+        val isNew = existing.none { it.optLong("at", -1) == at }
+        val next = (existing.filterNot { it.optLong("at", -1) == at } + record).takeLast(MAX_RECORDS)
         val array = JSONArray()
         for (item in next) {
             array.put(item)
         }
         preferences.edit().putString(KEY, array.toString()).apply()
+        return isNew
     }
 
     private companion object {

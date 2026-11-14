@@ -80,6 +80,31 @@ state 帧冻结为**运动通道**（位置、角度、起伏、现在播放的�
 `"t"` 主题：`sus`（`d` 为答卷）、`flags`（scene/session/calibrating/postureMode/sitUpActive/hold/
 voiceAuto，变化即发 + 1 s 心跳）。
 
+### 2.1.1 尺寸契约
+
+一块 payload 为 `MTU − 3 − 3` 字节，最多 255 块，因此**一份文档的上限是
+`(MTU − 6) × 255`**：默认 MTU 23 时每块 17 字节、上限 **4335 字节**。这个数字由
+`ControlProtocol.jsonDocumentLimitBytes(mtu)` 给出，是双向共用的唯一契约：
+
+- 头显 → 平板：`publishDocument` 在分片前比对，超限**整份拒发**并留日志，不再抛异常；
+- 页面 → 头显：`handleClientText` 在解析与任何副作用（写目录 prefs、转发平板）之前比对
+  同一上限，超限直接 `1009` 关闭控制通道，不会留下写了一半的目录。
+- WS 帧另有 8 KiB 传输层上限（`WsFrameCodec`），它比语义上限宽：两者之间的一帧合法上线、
+  按内容拒绝。
+
+### 2.1.2 MTU 归属
+
+MTU 属于**一条链路**，但发布端是共用的，所以只有**当前控制者**的 `onMtuChanged` 能改变分块尺寸
+（`MtuPolicy`）：
+
+- 每条链路的协商值按地址保存，换控制者时取新控制者自己的值，取不到即回落 23；
+- 非控制者的上报只记录、不生效；
+- 控制者断开、`RELEASE`、GATT teardown 或蓝牙重启都把当前值复位为 23，避免旧链路的 517 让
+  新链路发出超长通知。
+
+CCCD 订阅时的 SUS 补发与实时发布走同一条路径：同样的 `{"t":"sus","d":…}` 信封、同样的三字节
+分片头、当前 MTU，且**只发给控制者**；非控制者订阅不补发答卷。
+
 **新增字段一律进 JSON 通道，不再动 state 帧版本。**
 
 ## 3 反向通道
@@ -89,9 +114,12 @@ voiceAuto，变化即发 + 1 s 心跳）。
 | 状态 | `{"type":"state","data":{…}}` | state 特征（二进制帧） |
 | 遥测 | `{"type":"telemetry",…}` | telemetry 特征 |
 | 应答 | `{"type":"ack","seq":N}` | status 特征（`OK:<cmd>`） |
-| SUS | `{"type":"sus","data":{answers,filled,complete,scene,sessionSec,completedAt}}` | `sus` 特征（UTF-8 JSON） |
+| 记录确认 | 头显 → 页面 `{"type":"recordAck","id":…}` | 无 |
+| 会话与事件 | `{"type":"session"\\|"log","id":…}` | `session` / `log` JSON 文档 |
+| SUS | `{"type":"sus","id":…,"data":{answers,filled,complete,scene,sessionSec,completedAt}}` | `sus` 特征（UTF-8 JSON） |
 
-所有命令都走 seq/ack；`view:anim:*` 只实时投递，不跨重连重放。
+所有命令都走 seq/ack；`view:anim:*` 只实时投递，不跨重连重放。`session`、`sus` 与 `log`
+只有进入 JSON 通道后才回 `recordAck`，未确认项跨重连补发，平板按稳定键去重。
 
 ## 4 已知的不对称（有意保留）
 
@@ -100,4 +128,4 @@ voiceAuto，变化即发 + 1 s 心跳）。
 | 白名单 vs 语义校验 | 头显只做语法与枚举校验；会话态（是否校准中、是否起身模式）由页面判定并回一行状态 | 头显不持有页面状态机 |
 | `scene` 未知值 | 头显直接拒绝；页面也会拒绝，但保留状态文案 | 双保险，不是冲突 |
 | `viewPitch` 夹紧 | 只在页面（±90 协议、±30 平板滑杆） | 头显若再夹紧，坏值会被改写成"合法"的错值 |
-| `sus` 答卷 | 页面不重发；平板按到达追加 | 重连补发可能重复记账，已登记在 `TODO.md` |
+| `sus` 答卷 | 页面不重发；头显订阅时补发最后一帧 | 平板按稳定键去重，补发不重复记账 |

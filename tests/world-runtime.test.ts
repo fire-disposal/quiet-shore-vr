@@ -176,6 +176,80 @@ describe('world runtime', () => {
     expect(h.runtime.state().mix).toBe(0);
   });
 
+  it('reverses at the endpoint instead of ignoring the command', () => {
+    // The bug: `rise` compared `next` with the applied mix only. A ramp that had
+    // just started still sat on its starting end, so an immediate reversal read
+    // as a no-op and the world went on moving the old way — `rise(1)` then
+    // `rise(0)` left `target=1, moving=true`.
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
+
+    expect(h.runtime.rise(1)).toBe(true);
+    expect(h.runtime.state().target).toBe(1);
+    expect(h.runtime.state().moving).toBe(true);
+
+    // Reversed before a single frame ran: the applied mix is still 0.
+    expect(h.runtime.rise(0)).toBe(true);
+    expect(h.runtime.state().target).toBe(0);
+    h.run(0.5);
+    // Heading back to the ceiling, not up to the wall.
+    expect(h.runtime.state().mix).toBeLessThan(0.1);
+    expect(h.runtime.state().moving).toBe(true);
+
+    h.run(4.5);
+    expect(h.runtime.state().mix).toBe(0);
+    expect(h.runtime.state().moving).toBe(false);
+  });
+
+  it('reverses at the far endpoint as well, in both orders', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7, restMix: 1 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
+    expect(h.runtime.state().mix).toBe(1);
+
+    // Lie back and immediately change your mind, before any frame.
+    expect(h.runtime.rise(0)).toBe(true);
+    expect(h.runtime.state().target).toBe(0);
+    expect(h.runtime.rise(1)).toBe(true);
+    expect(h.runtime.state().target).toBe(1);
+    h.run(4.5);
+    expect(h.runtime.state().mix).toBe(1);
+    expect(h.runtime.state().moving).toBe(false);
+  });
+
+  it('a repeated command in the same direction is still a no-op', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    h.runtime.setDuration(4000);
+
+    h.runtime.rise(1);
+    h.run(1.5);
+    const partway = h.runtime.state().mix;
+    expect(partway).toBeGreaterThan(0.1);
+    expect(partway).toBeLessThan(0.9);
+
+    // Same command again: the running ramp must not restart from the top.
+    expect(h.runtime.rise(1)).toBe(true);
+    h.run(1 / 60);
+    expect(h.runtime.state().mix).toBeGreaterThan(partway);
+    expect(h.runtime.state().target).toBe(1);
+  });
+
+  it('a command for the end it already rests on is a no-op', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    expect(h.runtime.state().mix).toBe(0);
+    expect(h.runtime.rise(0)).toBe(true);
+    expect(h.runtime.state().moving).toBe(false);
+    h.run(1);
+    expect(h.runtime.state().mix).toBe(0);
+  });
+
   it('refuses a rise before a calibration exists', () => {
     const h = harness();
     h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });

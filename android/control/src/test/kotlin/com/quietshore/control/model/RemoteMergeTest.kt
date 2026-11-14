@@ -16,14 +16,12 @@ class RemoteMergeTest {
 
     private fun frame(
         session: Boolean = false,
-        floatLevel: Int = 1,
         voiceId: Int = -1,
         scene: String = "shore",
         viewAnim: ViewAnim = ViewAnim.IDLE,
         elapsedSec: Int = 0
     ) = ControlState(
         session = session,
-        floatLevel = floatLevel,
         voiceId = voiceId,
         scene = scene,
         viewAnim = viewAnim,
@@ -31,16 +29,15 @@ class RemoteMergeTest {
     )
 
     @Test
-    fun `the panel follows the headset's scene, buoyancy, voice and player`() {
+    fun `the panel follows the headset's scene, voice and player`() {
         val merged = mergeRemoteFrame(
             ControlUiState(),
-            frame(floatLevel = 3, voiceId = 7, scene = "ward", viewAnim = ViewAnim.PLAYING),
+            frame(voiceId = 7, scene = "ward", viewAnim = ViewAnim.PLAYING),
             sessionStartedAt = 0L,
             nowMs = 1_000L
         )
 
         assertEquals("ward", merged.control.scene)
-        assertEquals(3, merged.floatLevel)
         assertEquals(7, merged.voiceId)
         assertEquals(ViewAnim.PLAYING, merged.control.viewAnim)
     }

@@ -315,8 +315,14 @@ export function createViewMotionController(options: {
     }
 
     if (peak === start && end === start) {
-      // No possible pitch motion (already at the clamp): do not report a fake
-      // playback, but keep a running yaw unwind honest.
+      // No pitch segment to start — but the channel may still be running an
+      // older one (e.g. `up` was pressed and `recenter` arrived before its first
+      // frame). Leaving that segment in place would play the old excursion to
+      // its old landing angle while the yaw unwinds, so drop it and state the
+      // landing angle explicitly: this command owns both channels from now on.
+      pitch.timed = null;
+      pitch.velocity = 0;
+      pitch.target = end;
       presetId = yawMoves ? preset.id : null;
       state = yawMoves ? 'playing' : 'idle';
       return;

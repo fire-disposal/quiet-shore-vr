@@ -217,18 +217,19 @@ export function createVoicePlayer(): VoicePlayerApi {
   }
 
   /**
-   * The bed is held down for as long as *anything* is speaking, so a sequence
-   * does not let it swell back up during its 4–20 s gaps. The counter is what
-   * makes that possible without the sequence and the clip fighting over one
-   * boolean; a duck only moves on the 0 -> 1 and 1 -> 0 edges.
+   * The bed is held down for as long as anything is speaking. Each clip and
+   * sequence owns a distinct hold: stop clears the current set, so a late
+   * Promise from before that stop cannot release a newer clip's hold.
    */
-  let duckHolds = 0;
+  const duckHolds = new Set<object>();
 
-  function holdDuck(): void {
-    duckHolds += 1;
-    if (duckHolds === 1) {
+  function holdDuck(): object {
+    const hold = {};
+    duckHolds.add(hold);
+    if (duckHolds.size === 1) {
       duckScene(true);
     }
+    return hold;
   }
 
   /**
@@ -255,19 +256,19 @@ export function createVoicePlayer(): VoicePlayerApi {
     }
   }
 
-  function releaseDuck(): void {
-    if (duckHolds === 0) {
-      return;
-    }
-    duckHolds -= 1;
-    if (duckHolds === 0) {
+  function releaseDuck(hold: object): void {
+    if (duckHolds.delete(hold) && duckHolds.size === 0) {
       duckScene(false);
     }
   }
 
-  function stopSource(): void {
-    if (element) {
-      element.pause();
+  /** Stops whatever is sounding and hands back the cancelled element, so a
+   *  late `play()` settle can pause *it* and never the clip that replaced it. */
+  function stopSource(): HTMLAudioElement | null {
+    const cancelled = element;
+    if (cancelled) {
+      cancelled.onended = null;
+      cancelled.pause();
       element = null;
     }
     if (source) {
@@ -279,6 +280,7 @@ export function createVoicePlayer(): VoicePlayerApi {
       source = null;
     }
     activeId = null;
+    return cancelled;
   }
 
   async function play(id: string): Promise<boolean> {
@@ -322,12 +324,12 @@ export function createVoicePlayer(): VoicePlayerApi {
     next.buffer = buffer;
     next.connect(gain);
     gain.connect(bus);
-    holdDuck();
+    const duckHold = holdDuck();
     next.onended = () => {
       if (source === next) {
         source = null;
         activeId = null;
-        releaseDuck();
+        releaseDuck(duckHold);
       }
     };
     source = next;
@@ -337,11 +339,23 @@ export function createVoicePlayer(): VoicePlayerApi {
     return true;
   }
 
-  function playWithElement(id: string, level: number, token: number): boolean {
+  /**
+   * Fallback clip through an `HTMLAudioElement`.
+   *
+   * Returns `true` only once the platform has *accepted* the play request: a
+   * rejection used to be reported as success, so a sequence kept counting down
+   * in silence on a headset that had blocked autoplay. The clip it replaces is
+   * stopped up front and only this attempt's own element is ever touched, so a
+   * late settle of an older clip can neither take over the state of a newer one
+   * nor pause a clip that replaced it.
+   */
+  async function playWithElement(id: string, level: number, token: number): Promise<boolean> {
     const file = fileById(id);
     if (!file) {
       return false;
     }
+    // The element this attempt replaces is paused here and never touched
+    // again: a late settle below must not reach the clip that replaced *it*.
     stopSource();
     const audio = new Audio(urlFor(file));
     audio.volume = Math.max(0, Math.min(1, level));
@@ -349,24 +363,42 @@ export function createVoicePlayer(): VoicePlayerApi {
       if (element === audio) {
         element = null;
         activeId = null;
-        releaseDuck();
+        releaseDuck(duckHold);
       }
     };
-    void audio.play().then(
-      () => {
-        if (token !== stopToken) {
-          audio.pause();
-          return;
-        }
-        element = audio;
-        activeId = id;
-        holdDuck();
-      },
-      () => {
+    // Hold from now, not from the resolve: the duck must not dip between the
+    // decoded path ending and this clip actually starting.
+    const duckHold = holdDuck();
+    let accepted = false;
+    try {
+      await audio.play();
+      accepted = true;
+    } catch {
+      // Refused: nothing sounds. Only the live attempt may report it.
+    }
+    if (!accepted) {
+      // Refused: nothing sounded. Only the live attempt may report it — a late
+      // failure of a superseded clip says nothing about what the operator now
+      // hears — and the element was never published, so the state is untouched.
+      releaseDuck(duckHold);
+      if (token === stopToken) {
         lastError = '播放被拒绝';
-        element = null;
       }
-    );
+      return false;
+    }
+    if (token !== stopToken) {
+      // Stopped or replaced while the platform was starting it. Never publish:
+      // a late `onended` would release a hold that now belongs to the newer
+      // clip, and a pause here would stop the clip that replaced this one.
+      audio.onended = null;
+      audio.pause();
+      releaseDuck(duckHold);
+      return false;
+    }
+    // The element this attempt replaced was paused by `stopSource()` above;
+    // nothing here touches it, so a stop in between stays a stop.
+    element = audio;
+    activeId = id;
     return true;
   }
 
@@ -389,12 +421,12 @@ export function createVoicePlayer(): VoicePlayerApi {
     let index = 0;
     // Covers the gaps as well as the clips: the comment below always claimed
     // the bed stayed down between lines, but each clip's own release lifted it.
-    holdDuck();
+    const duckHold = holdDuck();
     let sequenceReleased = false;
     const releaseSequence = (): void => {
       if (!sequenceReleased) {
         sequenceReleased = true;
-        releaseDuck();
+        releaseDuck(duckHold);
       }
     };
 
@@ -409,8 +441,17 @@ export function createVoicePlayer(): VoicePlayerApi {
         releaseSequence();
         return;
       }
+      // The next line is scheduled *inside* this callback, i.e. only after the
+      // clip actually started: a fallback that the platform rejected resolves
+      // false and ends the sequence instead of counting down in silence.
       void play(current.id).then((played) => {
-        if (!played || !alive()) {
+        if (!alive()) {
+          // A newer sequence (or `stop()`) owns the player now; its state must
+          // not be cleared and its duck hold must not be dropped by us.
+          releaseSequence();
+          return;
+        }
+        if (!played) {
           activeSequence = null;
           releaseSequence();
           return;
@@ -438,7 +479,8 @@ export function createVoicePlayer(): VoicePlayerApi {
     stopSource();
     activeSequence = null;
     // A stopped clip and a stopped sequence can both be holding the bed.
-    duckHolds = 0;
+    // Late async releases own their old tokens and cannot touch future holds.
+    duckHolds.clear();
     duckScene(false);
   }
 

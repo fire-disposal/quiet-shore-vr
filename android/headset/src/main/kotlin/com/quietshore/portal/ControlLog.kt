@@ -92,6 +92,42 @@ internal class ControlLog(private val depth: Int = PENDING_DEPTH) {
 }
 
 /**
+ * What a new subscriber is handed, in the order it must reach the wire.
+ *
+ * This exists to make the connection handshake testable without a socket. The
+ * bug it encodes is an *ordering* bug: the sink used to join the broadcast set
+ * before its gap-fill was queued, so a command issued in that window arrived
+ * with a newer seq ahead of the history. The page dedupes by newest seq, dropped
+ * the history, and acked a watermark that pruned it from retention.
+ *
+ * [snapshot] is the whole sequence a subscriber sees first — `ready`, then the
+ * retained commands above the watermark — and the caller must queue all of it
+ * before exposing the subscriber to broadcasts.
+ */
+internal object SubscriberHandshake {
+    /**
+     * Retained frames for a subscriber at [since], ascending by seq, as the
+     * caller would queue them. Pure: same inputs, same order, no locks.
+     */
+    fun gapFill(log: ControlLog, since: Int): List<ControlEntry> = log.pendingSince(since)
+
+    /**
+     * The full pre-broadcast sequence: `ready` (echoing [since]) followed by
+     * every retained command above it. The returned list is what a sink queues
+     * under one lock; anything broadcast afterwards carries a seq no lower than
+     * the last entry here, because both reads happened in that order.
+     */
+    fun snapshot(log: ControlLog, since: Int): List<String> {
+        val frames = ArrayList<String>(2 + log.pendingSize)
+        frames.add("ready:$since")
+        for (entry in gapFill(log, since)) {
+            frames.add("cmd:${entry.seq}:${entry.command}")
+        }
+        return frames
+    }
+}
+
+/**
  * Per-subscriber outbound queue.
  *
  * Continuous frames replace each other in place, discrete frames are never

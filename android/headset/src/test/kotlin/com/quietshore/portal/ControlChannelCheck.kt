@@ -1,6 +1,7 @@
 package com.quietshore.portal
 
 import com.quietshore.control.protocol.ControlProtocol
+import com.quietshore.control.protocol.JsonAssembler
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -8,8 +9,9 @@ import java.util.Base64
 
 /**
  * Local JVM harness for the transport-independent half of the control channel:
- * ack-based retention ([ControlLog]), outbound coalescing ([CoalescingQueue])
- * and the RFC 6455 codec ([WsFrameCodec]).
+ * ack-based retention ([ControlLog]), the subscriber handshake, outbound
+ * coalescing ([CoalescingQueue]), MTU ownership ([MtuPolicy]), entry
+ * supervision ([EntryRetry]) and the RFC 6455 codec ([WsFrameCodec]).
  *
  * It is not wired into Gradle on purpose: the Android module has no test
  * framework dependency and adding one is out of scope. Run it with the JDK and
@@ -22,6 +24,7 @@ import java.util.Base64
  *   android/headset/src/main/kotlin/com/quietshore/portal/ControlLog.kt \
  *   android/headset/src/main/kotlin/com/quietshore/portal/WsFrameCodec.kt \
  *   android/headset/src/main/kotlin/com/quietshore/portal/EntryRetry.kt \
+ *   android/headset/src/main/kotlin/com/quietshore/portal/MtuPolicy.kt \
  *   android/protocol/src/main/kotlin/com/quietshore/control/protocol/ControlProtocol.kt \
  *   android/headset/src/test/kotlin/com/quietshore/portal/ControlChannelCheck.kt \
  *   -d /tmp/control-check
@@ -137,6 +140,205 @@ private fun retryChecks() {
     checkEquals("session ends tap supervision", EntryRetry.Phase.IDLE, tapping.phase)
 }
 
+/**
+ * A synthetic tap that never lands must not be able to hold supervision on the
+ * entry screen forever.
+ *
+ * Trigger order under test (H6): launch → page up, no session → deadline TAP →
+ * platform refuses → `tapFailed` → deadline TAP → ... With one shared flag the
+ * deadline re-entered TAP on every cycle, `retries` never moved, and neither
+ * RELAUNCH nor GIVE_UP was reachable.
+ */
+private fun tapBudgetChecks() {
+    // Taps the platform keeps refusing still reach RELAUNCH, then GIVE_UP.
+    val stubborn = EntryRetry(
+        pageWaitMs = 1000,
+        pressWaitMs = 500,
+        tapRetryMs = 100,
+        maxRetries = 1,
+        autoTapAvailable = { true }
+    )
+    var now = 100_000L
+    stubborn.launch(now, fresh = true)
+    now += 1_000
+    stubborn.pageState(now, session = false)
+
+    // Window 1: the tap is refused twice, after which the deadline owes a
+    // relaunch instead of asking a third time.
+    var asked = 0
+    while (asked < EntryRetry.TAP_ATTEMPTS_PER_WINDOW) {
+        now += 500
+        checkEquals("refused taps are retried", EntryRetry.Decision.TAP, stubborn.onDeadline(now))
+        stubborn.tapFailed(now + 1)
+        asked++
+        checkEquals("$asked refused taps consumed", asked, stubborn.tapAttempts)
+        now += 100
+    }
+    // The last refusal could not give the allowance back: the window is spent,
+    // which is exactly what lets the next deadline fall out of the tap branch.
+    checkEquals("a spent window keeps its tap", true, stubborn.tapped)
+    checkEquals("the window spent its taps", EntryRetry.TAP_ATTEMPTS_PER_WINDOW, stubborn.tapAttempts)
+    checkEquals("no relaunch yet", 0, stubborn.retries)
+    checkEquals("out of taps, the deadline relaunches", EntryRetry.Decision.RELAUNCH, stubborn.onDeadline(now))
+    checkEquals("the relaunch is counted", 1, stubborn.retries)
+
+    // Window 2 begins with a fresh budget: the taps are retried there too, and
+    // only then does the ladder reach GIVE_UP — the point of the fix is that
+    // this ladder is reachable at all.
+    now += 1_000
+    stubborn.launch(now, fresh = false)
+    checkEquals("a new window resets its taps", 0, stubborn.tapAttempts)
+    checkEquals("a relaunch keeps the retry count", 1, stubborn.retries)
+    now += 1_000
+    stubborn.pageState(now, session = false)
+    var askedAgain = 0
+    while (askedAgain < EntryRetry.TAP_ATTEMPTS_PER_WINDOW) {
+        now += 500
+        checkEquals("window two taps", EntryRetry.Decision.TAP, stubborn.onDeadline(now))
+        stubborn.tapFailed(now + 1)
+        askedAgain++
+        now += 100
+    }
+    checkEquals("retries stay spent across a new window", 1, stubborn.retries)
+    checkEquals(
+        "the exhausted ladder gives up",
+        EntryRetry.Decision.GIVE_UP,
+        stubborn.onDeadline(now)
+    )
+    checkEquals("giving up stops the timer", -1L, stubborn.checkAt)
+
+    // A tap that lands is never asked for twice in the same window.
+    val landing = EntryRetry(
+        pageWaitMs = 1000,
+        pressWaitMs = 500,
+        maxRetries = 2,
+        autoTapAvailable = { true }
+    )
+    landing.launch(200_000, fresh = true)
+    landing.pageState(200_100, session = false)
+    checkEquals("first deadline taps", EntryRetry.Decision.TAP, landing.onDeadline(200_600))
+    checkEquals(
+        "a delivered tap falls through to relaunch",
+        EntryRetry.Decision.RELAUNCH,
+        landing.onDeadline(201_100)
+    )
+
+    // A helper that is disabled is still not a tap loop: it relaunches at once.
+    val unavailable = EntryRetry(
+        pageWaitMs = 1000,
+        pressWaitMs = 500,
+        maxRetries = 2,
+        autoTapAvailable = { false }
+    )
+    unavailable.launch(300_000, fresh = true)
+    unavailable.pageState(300_100, session = false)
+    checkEquals(
+        "no helper relaunches straight away",
+        EntryRetry.Decision.RELAUNCH,
+        unavailable.onDeadline(300_600)
+    )
+    checkEquals("no tap was spent", 0, unavailable.tapAttempts)
+}
+
+/**
+ * The handshake a new subscriber sees must be `ready` then history, never
+ * `ready` then a live command then history (H5).
+ *
+ * The second half is the reverse order: a command issued *after* the snapshot
+ * must be strictly newer than everything in it, so the page's watermark from
+ * `ready` plus the history stays monotonic.
+ */
+private fun handshakeChecks() {
+    val log = ControlLog()
+    log.record(1, "posture:lower")
+    log.record(2, "float:level:1")
+
+    // A page reconnecting with no watermark gets the whole history in order.
+    val fresh = SubscriberHandshake.snapshot(log, -1)
+    checkEquals(
+        "ready comes first, then the retained history",
+        listOf("ready:-1", "cmd:1:posture:lower", "cmd:2:float:level:1"),
+        fresh
+    )
+
+    // A page that acked 1 gets only what it missed, and still after `ready`.
+    val resumed = SubscriberHandshake.snapshot(log, 1)
+    checkEquals(
+        "since filters the history, ready still leads",
+        listOf("ready:1", "cmd:2:float:level:1"),
+        resumed
+    )
+
+    // Reverse order: a command recorded after the snapshot is newer than every
+    // seq in it, so a live broadcast can never precede the history.
+    log.record(3, "scene:ward")
+    val lastSeq = fresh.last().substringAfter("cmd:").substringBefore(':').toInt()
+    checkEquals("a later command is newer than the snapshot", 3, lastSeq + 1)
+    checkEquals(
+        "the later command is not in the earlier snapshot",
+        false,
+        fresh.any { it.startsWith("cmd:3:") }
+    )
+    checkEquals(
+        "and it is the only new one afterwards",
+        listOf("ready:2", "cmd:3:scene:ward"),
+        SubscriberHandshake.snapshot(log, 2)
+    )
+
+    // Nothing retained: `ready` alone, and the watermark is exactly `since`.
+    checkEquals(
+        "an acked-up page gets ready only",
+        listOf("ready:3"),
+        SubscriberHandshake.snapshot(log, 3)
+    )
+
+    // The interleaving that used to happen, pinned as a property: with the
+    // snapshot and the live publish under one lock, whatever a subscriber sees
+    // first is a prefix of seq order, and every command it does not see in the
+    // snapshot arrives live with a seq above the snapshot's last one.
+    val shared = ControlLog()
+    val lock = java.util.concurrent.locks.ReentrantLock()
+    val live = ArrayList<Int>()
+    shared.record(1, "scene:ward")
+    shared.record(2, "scene:shore")
+
+    val writer = Thread {
+        for (seq in 3..60) {
+            lock.lock()
+            try {
+                shared.record(seq, "scene:ward")
+                live.add(seq)
+            } finally {
+                lock.unlock()
+            }
+            Thread.yield()
+        }
+    }
+    writer.start()
+
+    // Snapshot taken while the writer runs: it must be a prefix, and anything
+    // it left out must be strictly newer than its own last entry.
+    lock.lock()
+    val whileWriting = try {
+        SubscriberHandshake.snapshot(shared, -1)
+    } finally {
+        lock.unlock()
+    }
+    writer.join()
+    val snapshotSeqs = whileWriting
+        .filter { it.startsWith("cmd:") }
+        .map { it.substringAfter("cmd:").substringBefore(':').toInt() }
+    checkEquals(
+        "the snapshot is a contiguous prefix of the seq order",
+        (1..snapshotSeqs.size).toList(),
+        snapshotSeqs
+    )
+    check(
+        "nothing below the snapshot watermark arrives live afterwards",
+        live.all { it > snapshotSeqs.size }
+    )
+}
+
 private fun retentionChecks() {
     val log = ControlLog()
     log.record(1, "scene:ward")
@@ -188,6 +390,134 @@ private fun retentionChecks() {
     // discrete now, and an animation never enters retention at all.
     checkEquals("view target is discrete", ControlKind.DISCRETE, outOfOrder.record(9, "view:orient:0,60"))
     checkEquals("view stop is discrete", ControlKind.DISCRETE, outOfOrder.record(10, "view:stop"))
+}
+
+/**
+ * The size contract both directions share (M2).
+ *
+ * The failure this pins: a document above the channel limit reached
+ * `encodeJsonChunks`, threw out of the publisher, and — depending on which
+ * callback it ran on — either killed a GATT request or escaped the WS reader
+ * after the scene catalogue had already been written to prefs.
+ */
+private fun jsonSizeChecks() {
+    val mtu = ControlProtocol.ATT_MTU_MIN
+    val limit = ControlProtocol.jsonDocumentLimitBytes(mtu)
+    checkEquals("default limit is 255 chunks of 17 bytes", 4335, limit)
+    checkEquals("per-chunk payload leaves room for the ATT header", 17, ControlProtocol.jsonChunkPayload(mtu))
+
+    // The check runs before the encoder, so it must agree at the boundary.
+    check("a document at the limit is accepted", ControlProtocol.fitsJsonChannel(limit, mtu))
+    check("one byte over is refused", !ControlProtocol.fitsJsonChannel(limit + 1, mtu))
+
+    val atLimit = ControlProtocol.encodeJsonChunks(ByteArray(limit), ControlProtocol.jsonChunkPayload(mtu), 9)
+    checkEquals("the limit fills every chunk", ControlProtocol.maxChunks, atLimit.size)
+    check("no chunk exceeds the MTU", atLimit.all { it.size <= mtu })
+
+    // A widened link carries more; the same predicate, one number.
+    val wide = ControlProtocol.jsonDocumentLimitBytes(128)
+    check("a wider mtu raises the limit", wide > limit)
+    check(
+        "the widened limit is exactly what the encoder frames",
+        ControlProtocol.encodeJsonChunks(
+            ByteArray(wide),
+            ControlProtocol.jsonChunkPayload(128),
+            10
+        ).size == ControlProtocol.maxChunks
+    )
+
+    // The page-facing number is the same number, so "the page sent it" implies
+    // "the tablet can receive it".
+    checkEquals("ws limit equals the json channel limit", limit, ControlProtocol.wsMessageLimitBytes())
+}
+
+/**
+ * SUS replay on subscribe (M4).
+ *
+ * A tablet that subscribes after the sheet was published used to get the raw
+ * JSON document — no `{"t":"sus","d":…}` envelope, no `[id][index][total]`
+ * header, no controller check. The replay must be byte-identical to the live
+ * document and must reassemble through the same assembler.
+ */
+private fun susReplayChecks() {
+    val sheet = "{\"answers\":[{" + (1..10).joinToString(",") { "\"q$it\":${it % 5 + 1}" } + "]}"
+    val document = "{\"t\":\"sus\",\"d\":$sheet}"
+
+    // Live path and replay path are the same document, so the tablet's
+    // assembler produces the same bytes either way.
+    val chunks = ControlProtocol.encodeJsonChunks(
+        document.toByteArray(StandardCharsets.UTF_8),
+        ControlProtocol.jsonChunkPayload(ControlProtocol.ATT_MTU_MIN),
+        11
+    )
+    val assembler = JsonAssembler()
+    var reassembled: ByteArray? = null
+    for (chunk in chunks) {
+        assembler.add(chunk)?.let { reassembled = it }
+    }
+    checkEquals("the replay reassembles to the enveloped document", document, reassembled?.toString(StandardCharsets.UTF_8))
+    check("every replay chunk fits the mtu", chunks.all { it.size <= ControlProtocol.ATT_MTU_MIN })
+
+    // The envelope is what makes it a channel document rather than a bare record.
+    check("the doc states its topic", document.startsWith("{\"t\":\"sus\",\"d\":"))
+}
+
+/**
+ * MTU ownership across controllers, disconnects and teardown (M3).
+ *
+ * The trigger orders under test: a wide MTU left over from a torn-down link,
+ * and a second tablet raising the chunk size while it does not own the console.
+ * Either one made the headset emit a notification larger than the ATT MTU,
+ * which the stack answers by dropping the link.
+ */
+private fun mtuPolicyChecks() {
+    val policy = MtuPolicy()
+    checkEquals("a fresh policy publishes at the ATT minimum", 23, policy.current)
+    checkEquals("and chunks for it", 17, policy.chunkPayload())
+
+    // The controller negotiates wide: the console follows its link.
+    policy.onClaim("AA")
+    policy.onMtuChanged("AA", 517, controller = "AA")
+    checkEquals("the controller raises the chunk size", 517, policy.current)
+
+    // A second tablet's link reports 185 while "AA" owns the console: recorded,
+    // not applied. This is the bug's second half.
+    policy.onMtuChanged("BB", 185, controller = "AA")
+    checkEquals("a non-controller cannot change the chunk size", 517, policy.current)
+
+    // Releasing the console returns the default even though both links are up.
+    policy.onRelease()
+    checkEquals("release restores the default", 23, policy.current)
+
+    // "BB" claims: it gets its own negotiated value, not "AA"'s leftover.
+    policy.onClaim("BB")
+    checkEquals("a new owner restores its own mtu", 185, policy.current)
+
+    // The owner disconnects: the value leaves with the link.
+    policy.onDisconnected("BB", controller = "BB")
+    checkEquals("a dropped controller restores the default", 23, policy.current)
+
+    // Teardown must not carry anything into the next link, even if a stale
+    // value was recorded for an address that reconnects later.
+    policy.onMtuChanged("AA", 517, controller = null)
+    policy.onTeardown()
+    checkEquals("teardown restores the default", 23, policy.current)
+    policy.onClaim("AA")
+    checkEquals("a post-teardown claim starts un-negotiated", 23, policy.current)
+
+    // A non-owner's report before any claim is recorded but never active.
+    val early = MtuPolicy()
+    early.onMtuChanged("CC", 400, controller = null)
+    checkEquals("an early report does not activate", 23, early.current)
+    early.onClaim("CC")
+    checkEquals("its claim picks the recorded value up", 400, early.current)
+
+    // A degraded negotiation is clamped to the ATT minimum, never below it.
+    val degraded = MtuPolicy()
+    degraded.onClaim("DD")
+    degraded.onMtuChanged("DD", 9, controller = "DD")
+    checkEquals("a tiny mtu is clamped", 23, degraded.current)
+    checkEquals("which still leaves a usable chunk", 17, degraded.chunkPayload())
 }
 
 private fun queueChecks() {
@@ -436,10 +766,15 @@ private fun protocolGrammarChecks() {
  */
 internal fun runControlChannelChecks(): Int {
     retentionChecks()
+    handshakeChecks()
     queueChecks()
+    jsonSizeChecks()
+    susReplayChecks()
+    mtuPolicyChecks()
     codecChecks()
     protocolGrammarChecks()
     retryChecks()
+    tapBudgetChecks()
     return failures
 }
 

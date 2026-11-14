@@ -175,4 +175,28 @@ describe('calibration window: manual trigger and the wander gate', () => {
     expect(last.status).toBe('countdown');
     expect(step(run, tiltPose(20), now + 500).progress).toBe(0);
   });
+
+  it('the 3 s window at 72 Hz samples the late part of the window too', () => {
+    // The original bug: the buffer held 64 frames (0.89 s at 72 Hz), so a head
+    // that stayed still through the start and drifted 8° over the last second
+    // produced `samples=64, ok=true, meanY≈0` — an accepted window describing a
+    // pose the patient had already left. Frame count must now match the window,
+    // and the late drift must reach the mean and the spread.
+    const run = createCalibrationRun();
+    run.start(0, true);
+    const frameMs = 1000 / 72;
+    let now = 0;
+    let last = step(run, HEAD, now);
+    while (last.status !== 'done' && now < 20_000) {
+      now += frameMs;
+      // Still for the first two seconds of the window, drifting after that.
+      last = step(run, now > 2_000 ? tiltPose(8) : HEAD, now);
+    }
+    expect(last.status).toBe('done');
+    expect(last.result?.samples).toBeGreaterThan(200);
+    // 8° of drift late in the window: the mean is part-way there, and the
+    // spread is measured against what the head did, not against a prefix.
+    expect(last.result?.quaternion?.y).toBeGreaterThan(0.005);
+    expect(last.result?.deviationDeg).toBeGreaterThan(3);
+  });
 });

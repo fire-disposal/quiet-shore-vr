@@ -1,12 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PortalLink,
+  createOutageClock,
+  noteOutageContinued,
+  noteOutageRecovered,
+  noteOutageStart,
   planControlDispatch,
+  shouldSelfHeal,
   type PoseSnapshot,
   type StateSnapshot
 } from '../src/app/portal-link';
 
 const POSE: PoseSnapshot = { x: 0, y: 1.6, z: 0, yaw: 0.1, pitch: -0.2, roll: 0.05 };
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>();
+  get length(): number { return this.values.size; }
+  clear(): void { this.values.clear(); }
+  getItem(key: string): string | null { return this.values.get(key) ?? null; }
+  key(index: number): string | null { return Array.from(this.values.keys())[index] ?? null; }
+  removeItem(key: string): void { this.values.delete(key); }
+  setItem(key: string, value: string): void { this.values.set(key, value); }
+}
+
+const storage = new MemoryStorage();
 
 class FakeSocket {
   static readonly CONNECTING = 0;
@@ -24,6 +41,15 @@ class FakeSocket {
     FakeSocket.instances.push(this);
   }
 
+  /**
+   * A refused connection still fires `close` (with no `open` first) — that is
+   * what drives the next backoff step. Tests that want a dead endpoint call
+   * this on each attempt, exactly as the browser would.
+   */
+  failConnect(): void {
+    this.emitClose();
+  }
+
   send(data: string): void {
     this.sent.push(JSON.parse(data) as Record<string, unknown>);
   }
@@ -38,6 +64,11 @@ class FakeSocket {
   }
 
   emitClose(): void {
+    if (this.readyState === FakeSocket.CLOSED) {
+      // A socket fires `close` once: a second emit would be a teardown the
+      // page never schedules, and the link would look stuck on a stale timer.
+      return;
+    }
     this.readyState = FakeSocket.CLOSED;
     this.onclose?.({ target: this });
   }
@@ -117,6 +148,52 @@ describe('planControlDispatch', () => {
   });
 });
 
+describe('outage clock', () => {
+  it('times the outage from its own start, not from page load', () => {
+    const clock = createOutageClock();
+    // The socket worked, then dropped 1 s before this attempt is made.
+    noteOutageRecovered(clock);
+    noteOutageStart(clock, 1000);
+    expect(shouldSelfHeal(clock, 1100, 15000)).toBe(false);
+    // Same page, far later: still the same outage, still inside the window.
+    expect(shouldSelfHeal(clock, 15900, 15000)).toBe(false);
+    expect(shouldSelfHeal(clock, 16100, 15000)).toBe(true);
+  });
+
+  it('never reloads a link that has not worked since the page loaded', () => {
+    const clock = createOutageClock();
+    // The very first attempt fails at t=0 and the page keeps retrying: this is
+    // the case that used to reload after 15 s of uptime.
+    for (const now of [0, 300, 5000, 30000, 120000]) {
+      noteOutageContinued(clock, now);
+      expect(shouldSelfHeal(clock, now, 15000)).toBe(false);
+    }
+  });
+
+  it('restarts the outage on every recovery', () => {
+    const clock = createOutageClock();
+    noteOutageRecovered(clock);
+    noteOutageStart(clock, 0);
+    expect(shouldSelfHeal(clock, 20000, 15000)).toBe(true);
+
+    noteOutageRecovered(clock);
+    expect(shouldSelfHeal(clock, 21000, 15000)).toBe(false);
+    // A later drop has to earn its own window from its own start.
+    noteOutageStart(clock, 30000);
+    expect(shouldSelfHeal(clock, 35000, 15000)).toBe(false);
+    expect(shouldSelfHeal(clock, 46000, 15000)).toBe(true);
+  });
+
+  it('arms the reload once per outage', () => {
+    const clock = createOutageClock();
+    noteOutageRecovered(clock);
+    noteOutageStart(clock, 0);
+    expect(shouldSelfHeal(clock, 20000, 15000)).toBe(true);
+    clock.reloadScheduled = true;
+    expect(shouldSelfHeal(clock, 60000, 15000)).toBe(false);
+  });
+});
+
 describe('PortalLink', () => {
   let viewAnim: StateSnapshot['viewAnim'] = 'idle';
   let sitUpMoving = false;
@@ -176,9 +253,23 @@ describe('PortalLink', () => {
   let harness: Harness;
 
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    vi.stubGlobal('window', globalThis);
+    vi.useFakeTimers({
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        // The self-heal window is measured on `performance.now()`; without
+        // faking it the outage clock would read real time and never advance.
+        'performance'
+      ]
+    });
+    // The page reads `window.performance.now()`; `globalThis` is not the
+    // faked clock, so the window object has to carry the faked one explicitly.
+    // `WebSocket` is looked up the same way, so it rides on the same object.
+    vi.stubGlobal('window', { ...globalThis, performance, WebSocket: FakeSocket, localStorage: storage });
     vi.stubGlobal('WebSocket', FakeSocket);
+    storage.clear();
     FakeSocket.instances = [];
     viewAnim = 'idle';
     sitUpMoving = false;
@@ -265,6 +356,34 @@ describe('PortalLink', () => {
     ]);
   });
 
+  it('retains a session across a drop until the portal acknowledges it', () => {
+    harness = createLink();
+    harness.link.start();
+    const first = harness.socket();
+    first.emitOpen();
+    harness.link.sendSession({ at: 123, stop: 'link-lost' });
+
+    const sent = first.sent.find((message) => message.type === 'session');
+    expect(sent).toBeDefined();
+    const id = sent?.id;
+    expect(typeof id).toBe('string');
+
+    // The socket closes before any acknowledgement. The record is still local
+    // and goes out again on the next connection.
+    first.emitClose();
+    vi.advanceTimersByTime(300);
+    const second = harness.socket();
+    second.emitOpen();
+    expect(second.sent.find((message) => message.type === 'session' && message.id === id)).toBeDefined();
+
+    second.deliver({ type: 'recordAck', id });
+    second.emitClose();
+    vi.advanceTimersByTime(300);
+    const third = harness.socket();
+    third.emitOpen();
+    expect(third.sent.find((message) => message.type === 'session')).toBeUndefined();
+  });
+
   it('backs off further on repeated failures', () => {
     harness = createLink();
     harness.link.start();
@@ -333,5 +452,99 @@ describe('PortalLink', () => {
     await harness.flush();
     expect(harness.commands).toEqual(['home']);
     expect(socket.sent).toEqual([]);
+  });
+
+  it('reloads only after one continuous outage, never on the page\'s uptime', () => {
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload });
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => null,
+      setItem: () => void 0
+    });
+
+    // The reported order: the page runs for 30 s, then the socket drops once.
+    harness = createLink();
+    harness.link.start();
+    harness.socket().emitOpen();
+    vi.advanceTimersByTime(30000);
+    harness.socket().emitClose();
+
+    // The first retry comes back almost immediately; a loopback glitch that is
+    // over by then must not reload the page the patient is using, however long
+    // the page itself has been open.
+    vi.advanceTimersByTime(300);
+    expect(FakeSocket.instances.at(-1)).not.toBe(undefined);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  /** Point every retry at a dead endpoint and step the page clock. */
+  function runOutage(ms: number): void {
+    for (let elapsed = 0; elapsed < ms; elapsed += 500) {
+      vi.advanceTimersByTime(500);
+      const socket = harness.socket();
+      // The retry timer creates the attempt; failing it schedules the next.
+      if (socket.readyState === FakeSocket.CONNECTING) {
+        socket.failConnect();
+      }
+    }
+  }
+
+  it('reloads a proved link that stays down past the threshold', () => {
+    const reload = vi.fn();
+    const location = { ...globalThis.location, reload };
+    vi.stubGlobal('location', location);
+    vi.stubGlobal('window', { ...window, location });
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => null,
+      setItem: () => void 0
+    });
+
+    harness = createLink();
+    harness.link.start();
+    harness.socket().emitOpen();
+    harness.socket().emitClose();
+    // Backoff tops out at 5 s, so 14 s of refused retries is still one outage
+    // short of the window.
+    runOutage(14000);
+    expect(reload).not.toHaveBeenCalled();
+
+    // Cross the threshold; the reload itself is deferred one tick.
+    runOutage(4000);
+    vi.advanceTimersByTime(200);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // A further refusal in the same outage does not arm a second reload.
+    runOutage(6000);
+    vi.advanceTimersByTime(200);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts the outage window when the link comes back', () => {
+    const reload = vi.fn();
+    const location = { ...globalThis.location, reload };
+    vi.stubGlobal('location', location);
+    vi.stubGlobal('window', { ...window, location });
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => null,
+      setItem: () => void 0
+    });
+
+    harness = createLink();
+    harness.link.start();
+    harness.socket().emitOpen();
+    harness.socket().emitClose();
+    // 14 s of refusals: inside the window, no reload yet.
+    runOutage(14000);
+    expect(reload).not.toHaveBeenCalled();
+
+    // The tablet answers, so this outage is over and the clock resets: the
+    // next drop has to earn its own 15 s from its own start.
+    harness.socket().emitOpen();
+    harness.socket().emitClose();
+    runOutage(14000);
+    expect(reload).not.toHaveBeenCalled();
+    runOutage(4000);
+    vi.advanceTimersByTime(200);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

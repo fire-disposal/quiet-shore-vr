@@ -557,23 +557,24 @@ object ControlProtocol {
     /**
      * Splits one UTF-8 document into `[id][index][total][payload]` chunks.
      *
-     * [chunkPayload] is what the link can carry per notification *after* the
-     * header; the caller derives it from the negotiated MTU. Documents that do
-     * not fit in [maxChunks] are refused rather than truncated.
+     * [perChunk] is what the link can carry per notification *after* the
+     * header; the caller derives it from the negotiated MTU. A document that
+     * does not fit [maxChunks] is refused rather than truncated, so callers
+     * that cannot afford the exception check [fitsJsonChannel] first.
      */
     fun encodeJsonChunks(
         payload: ByteArray,
-        chunkPayload: Int,
+        perChunk: Int,
         id: Int
     ): List<ByteArray> {
-        require(chunkPayload > 0) { "chunkPayload must be positive" }
+        require(perChunk > 0) { "perChunk must be positive" }
         val size = payload.size.coerceAtLeast(1)
-        val total = (size + chunkPayload - 1) / chunkPayload
+        val total = (size + perChunk - 1) / perChunk
         require(total <= maxChunks) { "document needs $total chunks" }
         val chunks = ArrayList<ByteArray>(total)
         for (index in 0 until total) {
-            val from = index * chunkPayload
-            val to = minOf(payload.size, from + chunkPayload)
+            val from = index * perChunk
+            val to = minOf(payload.size, from + perChunk)
             val chunk = ByteArray(chunkHeaderBytes + (to - from))
             chunk[0] = (id and 0xFF).toByte()
             chunk[1] = index.toByte()
@@ -583,6 +584,50 @@ object ControlProtocol {
         }
         return chunks
     }
+
+    // ---------------------------------------------------------------------
+    // Size contract of the JSON channel
+    // ---------------------------------------------------------------------
+
+    /**
+     * The default ATT MTU. A link that has not negotiated anything carries
+     * this, so every chunk size and document limit starts here.
+     */
+    const val ATT_MTU_MIN: Int = 23
+
+    /** ATT notification overhead: one opcode byte plus the two-byte handle. */
+    const val ATT_NOTIFICATION_OVERHEAD: Int = 3
+
+    /** Close code the control channel uses when a document breaks the limit. */
+    const val WS_CLOSE_TOO_BIG: Int = 1009
+
+    /** Document payload that fits one notification of a link with [mtu]. */
+    fun jsonChunkPayload(mtu: Int): Int =
+        (mtu.coerceAtLeast(ATT_MTU_MIN) - ATT_NOTIFICATION_OVERHEAD - chunkHeaderBytes)
+            .coerceAtLeast(1)
+
+    /**
+     * Largest document the JSON channel can carry on a link with [mtu]:
+     * [maxChunks] notifications of [jsonChunkPayload] bytes each. At the
+     * default 23 that is 4335 bytes, and this is the one number every producer
+     * must stay inside — a larger document used to escape as an exception from
+     * [encodeJsonChunks] and take the whole control link down with it.
+     */
+    fun jsonDocumentLimitBytes(mtu: Int = ATT_MTU_MIN): Int =
+        jsonChunkPayload(mtu) * maxChunks
+
+    /** True when a document of [bytes] fits the JSON channel at [mtu]. */
+    fun fitsJsonChannel(bytes: Int, mtu: Int = ATT_MTU_MIN): Boolean =
+        bytes <= jsonDocumentLimitBytes(mtu)
+
+    /**
+     * Largest frame the page may send on the control channel, in UTF-8 bytes.
+     *
+     * One number for both directions: the headset refuses to accept a document
+     * it could not relay at the default MTU, so "the page sent it" implies "the
+     * tablet can receive it".
+     */
+    fun wsMessageLimitBytes(mtu: Int = ATT_MTU_MIN): Int = jsonDocumentLimitBytes(mtu)
 
     /**
      * Only the v14 shape exists: the frame is not backward compatible.

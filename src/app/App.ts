@@ -61,6 +61,13 @@ import {
 } from '../core/xr/view-motion';
 import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
 import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent, type SessionState } from './session';
+import {
+  createLayoutToken,
+  invalidateLayout,
+  isLayoutCurrent,
+  nextLayoutTicket
+} from './layout';
+import { canSwitchApp, shouldFileSusSheet } from './app-switch';
 
 const MAX_DT = 0.25;
 /** The built-in neutral room; not a scene card, but a place to return to. */
@@ -143,6 +150,12 @@ export class QuietShoreApp {
   private linkLostTimer = 0;
   /** True while a link loss is unwinding the session. */
   private abandoned = false;
+  /**
+   * Generation/ticket for the page's deferred world changes. Bumped by every
+   * stop, exit and dispose, so a scene swap or fade scheduled before one of
+   * them cannot run after it (see `sceneChangeAllowed`).
+   */
+  private readonly layout = createLayoutToken();
   private readonly renderMonitor = new RenderMonitor();
   private readonly voice = createVoicePlayer();
   /** Wall clock at motion onset; 0 while idle. Drives the reported session clock. */
@@ -230,6 +243,13 @@ export class QuietShoreApp {
   private sceneComfort = 1;
   /** SUS answers live on the headset; the 20-byte state frame has no room. */
   private readonly susAnswers: (number | null)[] = new Array(10).fill(null);
+  /**
+   * This sheet has already been filed once. The answers stay for the rest of
+   * the questionnaire face (closing and reopening the panel continues them),
+   * but the next filing is a *different* sheet, so the boundary before it is a
+   * clean one instead of a second copy of the same ten answers.
+   */
+  private susFiled = false;
   private readonly calibrationFrame = new THREE.Quaternion();
   private readonly identityQuaternion = new THREE.Quaternion();
   private session: XRSession | null = null;
@@ -935,6 +955,10 @@ export class QuietShoreApp {
     if (this.lifecycle.phase !== 'stopping' || previous === 'stopping') {
       return;
     }
+    // Everything already scheduled for the world dies with the session it was
+    // scheduled in: a scene swap still behind the curtain must not land in the
+    // stopping scene, restart its audio or open a posture ramp.
+    invalidateLayout(this.layout);
     this.viewMotion.stop();
     this.stopSitUp();
     this.voice.stop();
@@ -1002,6 +1026,33 @@ export class QuietShoreApp {
   }
 
   /**
+   * A new respondent starts a new sheet.
+   *
+   * Called when the questionnaire face is (re)entered: the previous patient's
+   * answers must not be prefilled for this one, and the panel's own pager,
+   * draft and "already said this statement" state must not either — the cached
+   * panel kept all three, so a fresh patient saw the last one's sheet.
+   */
+  private resetSusSheet(): void {
+    this.susAnswers.fill(null);
+    this.susFiled = false;
+    this.susPanel?.reset();
+  }
+
+  /**
+   * The panel's answers are filed: once the last one is recorded, and once when
+   * the sheet closes. Never twice for one sheet — a reopen after filing is a
+   * new sheet, not a second copy of the same one in the tablet's record.
+   */
+  private fileSusSheet(): void {
+    if (!shouldFileSusSheet(this.susAnswers, this.susFiled)) {
+      return;
+    }
+    this.susFiled = true;
+    this.publishSus();
+  }
+
+  /**
    * Builds the SUS panel on first use and shows it.
    *
    * The panel is answered by gaze (5 s per target) because a supine patient has
@@ -1019,7 +1070,7 @@ export class QuietShoreApp {
           this.report(`SUS ${index + 1} = ${value}`);
           if (this.susAnswers.every((answer) => answer !== null)) {
             this.report('SUS 已完成');
-            this.publishSus();
+            this.fileSusSheet();
           }
         },
         onShow: (index) => {
@@ -1052,10 +1103,10 @@ export class QuietShoreApp {
           this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
           const filled = this.susAnswers.filter((answer) => answer !== null).length;
           // A half-finished sheet is still worth keeping: the tablet records it
-          // as incomplete rather than losing what the patient did answer.
-          if (filled > 0) {
-            this.publishSus();
-          }
+          // as incomplete rather than losing what the patient did answer. A
+          // sheet already filed is not sent again — reopening and closing it
+          // must not hand the tablet a second copy of the same answers.
+          this.fileSusSheet();
           this.start.setStatus(`SUS 已记录 ${filled}/${this.susAnswers.length}`, 'ok');
         }
       });
@@ -1165,9 +1216,16 @@ export class QuietShoreApp {
       return;
     }
     if (this.session && this.handle) {
-      this.behindCurtain(() => this.switchSceneLive(definition));
+      // One slot: a second scene command supersedes this one, and a stop, an
+      // exit or a dispose before the swap lands voids it (the check runs
+      // inside the callback, after the 220 ms curtain).
+      const ticket = nextLayoutTicket(this.layout);
+      this.behindCurtain(() => this.switchSceneLive(definition), () =>
+        this.sceneChangeAllowed(ticket)
+      );
       return;
     }
+    const ticket = nextLayoutTicket(this.layout);
     this.behindCurtain(() => {
       this.sceneId = definition.id;
       this.loadScene();
@@ -1178,7 +1236,26 @@ export class QuietShoreApp {
       this.start.setStatus(`场景：${definition.name[this.config.lang]}`, 'ok');
       this.link.sendStateNow();
       this.updateHud(performance.now());
-    });
+    }, () => this.sceneChangeAllowed(ticket));
+  }
+
+  /**
+   * The scene swap ordered under `ticket` still belongs to the live run.
+   *
+   * Every stop, exit and dispose bumps the layout token, so a change that was
+   * arranged before one of them cannot swap the world, restart the scene bed,
+   * write `scene.switched` or start a posture ramp after it. The lifecycle
+   * check only applies inside a session: a desktop preview never enters the
+   * machine, so its scene switches are gated by `previewing` alone.
+   */
+  private sceneChangeAllowed(ticket: number): boolean {
+    if (!isLayoutCurrent(this.layout, ticket) || this.capturePending) {
+      return false;
+    }
+    if (this.previewing) {
+      return true;
+    }
+    return this.lifecycle.phase !== 'stopping' && this.lifecycle.phase !== 'idle';
   }
 
   /**
@@ -1197,16 +1274,29 @@ export class QuietShoreApp {
    * The swap itself is untouched — it still happens in one synchronous call, so
    * nothing can observe a half-loaded scene. Only the moment of change is
    * covered.
+   *
+   * The swap waits 220 ms, which is longer than it takes to stop, exit or end
+   * the session: `guard` is checked inside the callback, so a change ordered
+   * before the stop but delivered after it does not run at all. The opaque
+   * curtain is lifted from inside the callback for the same reason — a swap
+   * that never ran must not leave the patient behind a black screen.
    */
-  private behindCurtain(swap: () => void): void {
+  private behindCurtain(swap: () => void, guard: () => boolean): void {
     const veil = this.veil;
     if (!veil) {
-      swap();
+      if (guard()) {
+        swap();
+      }
       return;
     }
     veil.style.transition = `opacity ${SCENE_CUT_IN_MS}ms linear`;
     veil.style.opacity = '1';
     window.setTimeout(() => {
+      if (!guard()) {
+        veil.style.transition = `opacity ${SCENE_CUT_IN_MS}ms linear`;
+        veil.style.opacity = '0';
+        return;
+      }
       swap();
       veil.style.transition = `opacity ${SCENE_CUT_OUT_MS}ms linear`;
       veil.style.opacity = '0';
@@ -1532,6 +1622,9 @@ export class QuietShoreApp {
   private resetWorldToRest(): void {
     // A stop during calibration must release every flag it set, or the next
     // session starts with the float gated off and the view commands refused.
+    // Every way out passes here (a session ending, a preview closing, an exit),
+    // so this is also where deferred world changes are voided.
+    invalidateLayout(this.layout);
     this.cancelAutoRise();
     this.capturePending = false;
     this.world.hold(false);
@@ -1638,7 +1731,13 @@ export class QuietShoreApp {
       this.refuse('未知应用');
       return;
     }
-    if (isActive(this.lifecycle) || this.capturePending) {
+    // The whole lifecycle must be `idle`, not merely "not running": the
+    // technician wait before the first capture is `calibrating` with no
+    // `capturePending`, so a switch there used to carry `awaitingCalibration`
+    // and the hold-still card into the questionnaire — the card and the sheet
+    // on screen together, and the patient's confirm starting a calibration
+    // nobody asked for. Entering or leaving a session owns the face.
+    if (!canSwitchApp(this.lifecycle.phase, this.capturePending)) {
       this.refuse('先结束会话，再切换应用');
       return;
     }
@@ -1660,10 +1759,15 @@ export class QuietShoreApp {
         this.sceneId = survey.id;
         this.loadScene();
       }
+      // Re-entering the face is a new respondent: the previous sheet — its
+      // answers, its page and the panel's cached draft — belongs to them, not
+      // to the person about to answer.
+      this.resetSusSheet();
       // The sheet is the face's content, not a modal it has to summon.
       this.openSus();
     } else {
       this.susPanel?.close();
+      this.resetSusSheet();
       const back = getSceneDefinition(this.trainingSceneId);
       if (back && back.id !== this.sceneId) {
         this.sceneId = back.id;
@@ -2420,6 +2524,9 @@ export class QuietShoreApp {
 
   dispose(): void {
     this.clearTimers();
+    // A curtain timer belongs to the page, not to a session: void it so a
+    // pending swap cannot touch a scene the disposer has already taken apart.
+    invalidateLayout(this.layout);
     this.link.stop();
     this.stopSceneAudio();
     disposeAudio();

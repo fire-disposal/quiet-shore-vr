@@ -8,6 +8,8 @@ import com.quietshore.control.protocol.ControlProtocol
  * Three lanes so a 10 Hz pitch stream can never starve an operator action:
  * - stop lane: `view:stop`, `stop`, `posture:stop` jump every other lane and
  *   discard the queued pitch sample, so a stop is never delayed by movement;
+ *   a stop also drops the motion still waiting in the discrete lane
+ *   ([SUPERSEDED_BY_STOP]) — anything enqueued after it is kept;
  * - discrete lane: FIFO, every command is delivered (bounded only to keep a
  *   wedged link from growing without limit; refusal is explicit, never silent);
  * - movement lane: exactly one `view:orient` sample, always the newest.
@@ -38,6 +40,12 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
             // after it.
             stops.addLast(command)
             move = null
+            // Motion already queued belongs to the operator's earlier intent.
+            // Left in the discrete lane it would be written right after the
+            // freeze and the headset would start moving again, so the stop
+            // supersedes it. Commands enqueued after this point are kept: they
+            // are the operator's newest intent and must still be delivered.
+            discrete.removeAll(SUPERSEDED_BY_STOP)
             return true
         }
         if (command.startsWith(ControlProtocol.POSTURE_MIX)) {
@@ -72,5 +80,17 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
 
         /** Commands that must never wait behind queued motion or scene work. */
         val STOP_COMMANDS: Set<String> = setOf("stop", "view:stop", "posture:stop")
+
+        /**
+         * Commands a stop makes obsolete when they are still queued behind it.
+         *
+         * These are motion: posture travel and view animations, which would
+         * move the patient again right after the freeze. Anything else (audio,
+         * scene state, SUS, ping) is not motion and is left alone, so a stop
+         * never silently swallows an unrelated operator action.
+         */
+        val SUPERSEDED_BY_STOP: Set<String> =
+            setOf(ControlProtocol.POSTURE_RISE, ControlProtocol.POSTURE_LOWER) +
+                ControlProtocol.VIEW_ANIM_NAMES.map { ControlProtocol.VIEW_ANIM + it }
     }
 }

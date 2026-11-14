@@ -566,7 +566,12 @@ class ControlViewModel(application: Application) :
         if (kind.isEmpty()) {
             return
         }
-        eventLog.append(app, "page.$kind", json.optJSONObject("d"))
+        val detail = json.optJSONObject("d") ?: JSONObject()
+        val recordId = json.optString("id")
+        if (recordId.isNotEmpty()) {
+            detail.put("id", recordId)
+        }
+        eventLog.append(app, "page.$kind", detail)
     }
 
     /**
@@ -796,8 +801,9 @@ class ControlViewModel(application: Application) :
             "catalog" -> handleCatalog(data)
             "questionnaire" -> handleQuestionnaires(data)
             "session" -> {
-                trainingStore.append(data)
-                eventLog.append("training", "session.recorded", org.json.JSONObject(data))
+                if (trainingStore.append(data)) {
+                    eventLog.append("training", "session.recorded", org.json.JSONObject(data))
+                }
             }
             "log" -> handlePageEvent(data)
             "flags" -> applyFlags(data)
@@ -905,19 +911,30 @@ class ControlViewModel(application: Application) :
             Log.w(TAG, "SUS payload rejected: ${error.message}")
             null
         } ?: return
-        val history = susStore.append(result)
-        eventLog.append(
-            "questionnaire",
-            "sheet.recorded",
-            org.json.JSONObject()
-                .put("questionnaireId", result.questionnaireId)
-                .put("complete", result.complete)
-                .put("filled", result.filled)
-                .put("score", result.score ?: org.json.JSONObject.NULL)
-        )
-        notice(
-            result.score?.let { "SUS 已记录：$it 分" } ?: "SUS 已记录 ${result.filled}/10"
-        )
+        // The headset re-sends its last sheet on every subscribe, so most calls
+        // here are replays. Only a genuinely new record may write the ledger
+        // event, show the recorded notice, or replace the local answers.
+        val history = when (val appended = susStore.append(result)) {
+            is SusStore.Appended.Duplicate -> {
+                Log.i(TAG, "SUS replay ignored: ${result.key}")
+                appended.history
+            }
+            is SusStore.Appended.Recorded -> {
+                eventLog.append(
+                    "questionnaire",
+                    "sheet.recorded",
+                    org.json.JSONObject()
+                        .put("questionnaireId", result.questionnaireId)
+                        .put("complete", result.complete)
+                        .put("filled", result.filled)
+                        .put("score", result.score ?: org.json.JSONObject.NULL)
+                )
+                notice(
+                    result.score?.let { "SUS 已记录：$it 分" } ?: "SUS 已记录 ${result.filled}/10"
+                )
+                appended.history
+            }
+        }
         _uiState.update { current ->
             current.copy(
                 susHistory = history,

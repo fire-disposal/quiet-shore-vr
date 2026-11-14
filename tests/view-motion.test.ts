@@ -324,6 +324,62 @@ describe('view motion controller', () => {
     expect(harness.controller.getStateName()).toBe('idle');
   });
 
+  it('recenter drops an older up-preset that has not advanced yet', () => {
+    // The hand-off bug: `up` starts a 3 s excursion, `recenter` arrives before
+    // that segment's first frame, yaw still has to unwind, and the pitch has
+    // nothing to do. The stale segment used to survive that branch and play on
+    // to its old landing angle: 1.5 s after the recenter the up-gaze was 5° and
+    // the target 10° instead of both heading to 0.
+    const harness = createHarness();
+    harness.controller.setTarget(-30, 0);
+    harness.step(30);
+    expect(harness.controller.getLookYawDeg()).toBeCloseTo(-30, 6);
+
+    harness.controller.play('up');
+    expect(harness.controller.getTargetUpGazeDeg()).toBe(10);
+    expect(harness.controller.play('recenter')).toBe(true);
+    // The command owns the pitch channel at once, before any frame runs.
+    expect(harness.controller.getTargetUpGazeDeg()).toBe(0);
+    // Yaw still has unwinding to do, so the recenter is honestly playing.
+    expect(harness.controller.getStateName()).toBe('playing');
+    expect(harness.controller.getPresetId()).toBe('recenter');
+
+    harness.step(1.5);
+    // The old up-segment would have climbed here; recenter must hold 0°.
+    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(0, 6);
+    expect(harness.controller.getTargetUpGazeDeg()).toBe(0);
+
+    harness.step(2);
+    expect(harness.controller.getLookYawDeg()).toBeCloseTo(0, 6);
+    expect(harness.controller.getStateName()).toBe('idle');
+    expect(harness.controller.getPresetId()).toBeNull();
+    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(0, 6);
+  });
+
+  it('recenter from a non-zero pitch still lands at 0°, not at the old target', () => {
+    const harness = createHarness();
+    harness.controller.play('up');
+    harness.step(1);
+    const climbing = harness.controller.getUpGazeDeg();
+    expect(climbing).toBeGreaterThan(0);
+
+    harness.controller.play('recenter');
+    expect(harness.controller.getTargetUpGazeDeg()).toBe(0);
+    harness.step(3);
+    expect(harness.controller.getUpGazeDeg()).toBeCloseTo(0, 6);
+    expect(harness.controller.getStateName()).toBe('idle');
+  });
+
+  it('recenter with no yaw and no pitch to undo settles idle at once', () => {
+    const harness = createHarness();
+    expect(harness.controller.play('recenter')).toBe(true);
+    expect(harness.controller.getStateName()).toBe('idle');
+    expect(harness.controller.getPresetId()).toBeNull();
+    expect(harness.controller.getTargetUpGazeDeg()).toBe(0);
+    harness.step(1);
+    expect(harness.controller.getUpGazeDeg()).toBe(0);
+  });
+
   it('writes state into a caller object so snapshotting does not allocate', () => {
     const harness = createHarness();
     const out = {

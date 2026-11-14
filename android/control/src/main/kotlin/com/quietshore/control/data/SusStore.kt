@@ -19,11 +19,35 @@ class SusStore(context: Context) {
     fun load(): List<SusResult> =
         SusResultCodec.decodeList(preferences.getString(KEY, null))
 
-    /** Appends one sheet and returns the new list, newest last. */
-    fun append(result: SusResult, keep: Int = MAX_RECORDS): List<SusResult> {
-        val next = (load() + result).takeLast(keep)
-        write(next)
-        return next
+    /** Outcome of [append]: the sheet either extended the history or was a replay. */
+    sealed interface Appended {
+        /** The stored history after this attempt. */
+        val history: List<SusResult>
+
+        /** A new sheet; [history] is the list including it. */
+        data class Recorded(override val history: List<SusResult>) : Appended
+
+        /**
+         * The same sheet arrived again (the headset re-sends its last frame on
+         * every subscribe). Nothing was written; [history] already holds it.
+         */
+        data class Duplicate(override val history: List<SusResult>) : Appended
+    }
+
+    /**
+     * Appends one sheet, newest last, unless the same sheet is already stored.
+     *
+     * Replays are the normal case, not the exception: the protocol re-sends the
+     * last record whenever a controller subscribes. Identity is [SusResult.key],
+     * so a replay never doubles a record, never doubles its ledger event, and
+     * never pushes a real record out of the [keep] window.
+     */
+    fun append(result: SusResult, keep: Int = SUS_RECORDS): Appended {
+        val outcome = mergeSusHistory(load(), result, keep)
+        if (outcome is Appended.Recorded) {
+            write(outcome.history)
+        }
+        return outcome
     }
 
     fun clear(): List<SusResult> {
@@ -40,6 +64,25 @@ class SusStore(context: Context) {
     private companion object {
         const val PREFERENCES = "quiet_shore_control"
         const val KEY = "sus_history"
-        const val MAX_RECORDS = 50
     }
+}
+
+/** How many sheets the tablet keeps; older ones fall off the front. */
+const val SUS_RECORDS: Int = 50
+
+/**
+ * Storage-free half of [SusStore]: what appending [result] to [history] means.
+ *
+ * Kept as a pure function so the replay contract (one sheet, one record, one
+ * ledger event) is testable without an Android context or a preferences file.
+ */
+internal fun mergeSusHistory(
+    history: List<SusResult>,
+    result: SusResult,
+    keep: Int = SUS_RECORDS
+): SusStore.Appended {
+    if (history.any { it.key == result.key }) {
+        return SusStore.Appended.Duplicate(history)
+    }
+    return SusStore.Appended.Recorded((history + result).takeLast(keep))
 }

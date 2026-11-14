@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest';
+import { canSwitchApp, shouldFileSusSheet } from '../src/app/app-switch';
+import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent } from '../src/app/session';
+
+const TEN = 10;
+const empty = (): (number | null)[] => new Array<number | null>(TEN).fill(null);
+
+describe('app switch guard', () => {
+  // The order the audit found: enter VR, the lifecycle reaches `calibrating`,
+  // the technician has not started the capture yet.
+  const waitingForTechnician = reduceSession(INITIAL_SESSION, { type: 'start' });
+
+  it('refuses a switch while the first capture is not started yet', () => {
+    expect(waitingForTechnician.phase).toBe('calibrating');
+    // `capturePending` is still false here — that is exactly the gap.
+    expect(canSwitchApp(waitingForTechnician.phase, false)).toBe(false);
+  });
+
+  it('refuses a switch while a session runs', () => {
+    const running = reduceSession(waitingForTechnician, { type: 'calibrated' });
+    expect(isActive(running)).toBe(true);
+    expect(canSwitchApp(running.phase, false)).toBe(false);
+  });
+
+  it('refuses a switch during the stop fade, before the world is at rest', () => {
+    const stopping = reduceSession(
+      reduceSession(waitingForTechnician, { type: 'calibrated' }),
+      { type: 'stop', reason: 'technician' }
+    );
+    expect(canSwitchApp(stopping.phase, false)).toBe(false);
+  });
+
+  it('refuses a switch while a capture is pending, whatever the phase says', () => {
+    expect(canSwitchApp('idle', true)).toBe(false);
+  });
+
+  it('allows the switch once the lifecycle is idle again', () => {
+    const faded = [
+      { type: 'start' },
+      { type: 'calibrated' },
+      { type: 'stop', reason: 'technician' },
+      { type: 'faded' }
+    ] as const satisfies readonly SessionEvent[];
+    const end = faded.reduce(reduceSession, INITIAL_SESSION);
+    expect(end.phase).toBe('idle');
+    expect(canSwitchApp(end.phase, false)).toBe(true);
+  });
+
+  it('allows the switch before the session ever starts', () => {
+    expect(canSwitchApp(INITIAL_SESSION.phase, false)).toBe(true);
+  });
+});
+
+describe('SUS sheet filing', () => {
+  it('files nothing for an untouched sheet', () => {
+    expect(shouldFileSusSheet(empty(), false)).toBe(false);
+  });
+
+  it('files a partial sheet when it closes', () => {
+    const answers = empty();
+    answers[0] = 4;
+    expect(shouldFileSusSheet(answers, false)).toBe(true);
+  });
+
+  it('never files the same sheet twice', () => {
+    // The sheet was filed by its last answer; closing it must not send a
+    // second copy of the same ten answers to the tablet.
+    const answers = new Array<number | null>(TEN).fill(5);
+    expect(shouldFileSusSheet(answers, false)).toBe(true);
+    expect(shouldFileSusSheet(answers, true)).toBe(false);
+  });
+
+  it('files again only after a new sheet has been started', () => {
+    const filed = new Array<number | null>(TEN).fill(1);
+    // A new respondent: the answers are cleared and the filing flag with them.
+    const fresh = empty();
+    expect(shouldFileSusSheet(filed, true)).toBe(false);
+    expect(shouldFileSusSheet(fresh, false)).toBe(false);
+    fresh[0] = 2;
+    expect(shouldFileSusSheet(fresh, false)).toBe(true);
+  });
+});

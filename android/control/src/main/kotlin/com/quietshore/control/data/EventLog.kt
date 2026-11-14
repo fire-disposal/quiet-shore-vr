@@ -45,6 +45,11 @@ class EventLog(context: Context) {
     }
 
     fun append(app: String, kind: String, detail: JSONObject? = null): List<JSONObject> {
+        val existing = load()
+        val recordId = detail?.optString("id")?.takeIf { it.isNotEmpty() }
+        if (recordId != null && existing.any { it.optJSONObject("d")?.optString("id") == recordId }) {
+            return existing
+        }
         val record = JSONObject().apply {
             put("at", System.currentTimeMillis())
             put("app", if (app in knownApps) app else "system")
@@ -53,7 +58,7 @@ class EventLog(context: Context) {
                 put("d", detail)
             }
         }
-        val next = (load() + record).takeLast(MAX_EVENTS)
+        val next = (existing + record).takeLast(MAX_EVENTS)
         write(next)
         return next
     }

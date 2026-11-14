@@ -74,6 +74,8 @@ import java.util.concurrent.locks.ReentrantLock
  * - [wsLock] 只保护订阅者注册表与每人队列；[controlLock] 只保护命令保留区。
  *   锁序固定 wsLock -> controlLock（从不在持锁时反向获取），且绝不在持锁时做
  *   任何 socket I/O，所以 BLE 线程写命令不会被慢页面阻塞。
+ * - 新订阅者进 [wsSinks] 之前，ready、电量与整段补发都在同一个 [wsLock] 内入队，
+ *   因此实时广播永远排在补发之后，不会出现 ready,3,1,2 这种插队。
  * - 每页订阅者的出站队列有界：连续帧互相覆盖，离散帧不会被丢；队列满时先
  *   丢最旧的连续帧，再丢 ready/control 帧。
  * - 停服务时先推最后一帧控制权失效，再关闭订阅 socket、唤醒写线程并
@@ -106,7 +108,14 @@ class PortalService : Service() {
         /** 页面只能来自本机静态服务；别的 Origin 一律拒绝。 */
         const val ORIGIN_PREFIX = "http://127.0.0.1:8130"
 
-        /** 单帧上限（文本 JSON）；更大的输入视为坏客户端。 */
+        /** 单帧上限（文本 JSON）；更大的输入视为坏客户端。
+         *
+         * This is the transport cap. The *semantic* cap is smaller and comes
+         * from the protocol: a document over [ControlProtocol.wsMessageLimitBytes]
+         * (4335 B at the default MTU) could never be relayed to the tablet, so
+         * `handleClientText` closes 1009 without applying it. A frame between
+         * the two sizes is legal on the wire and refused on content.
+         */
         const val WS_MAX_MESSAGE_BYTES = 8 * 1024
 
         /**
@@ -551,7 +560,9 @@ class PortalService : Service() {
                 isDaemon = true
                 start()
             }
-            sendGapFill(sink, since)
+            // No gap-fill here on purpose: [registerWsSink] already queued it
+            // under the same lock that guards live broadcasts, so it can never
+            // be overtaken by a newer seq.
             readLoop(sink, input, output)
         } catch (error: IOException) {
             // Page closed or the service is stopping.
@@ -563,8 +574,22 @@ class PortalService : Service() {
     private fun handshakeResponse(key: String): ByteArray = WsFrameCodec.handshakeResponse(key)
 
     /**
-     * Registers the sink and queues `ready` as its very first frame, so no
-     * broadcast can slip in front of the handshake message.
+     * Registers the sink and queues `ready`, the battery value **and the whole
+     * gap-fill** before the sink can see a live broadcast.
+     *
+     * The order is the fix, not decoration. The sink used to join [wsSinks]
+     * first and receive the gap-fill only after the writer thread started: a
+     * command issued in that window queued seq 3 in front of the history 1 and
+     * 2. The page dedupes by newest seq, so it then dropped 1 and 2 — and its
+     * ack of 3 pruned them from retention, making them unrecoverable.
+     *
+     * Holding [wsLock] across the snapshot is safe and cheap: the read side is
+     * a bounded list copy with no I/O, and the lock order stays
+     * `wsLock -> controlLock` ([recordAndBroadcast] is the other side of the
+     * pair: it records under `controlLock` while holding `wsLock`, so a command
+     * is either in this snapshot or delivered live through `wsSinks`).
+     * Gap-fill content can therefore never be newer than the `ready` watermark
+     * the page adopts.
      */
     private fun registerWsSink(sink: WsSink): Boolean {
         wsLock.lock()
@@ -576,6 +601,10 @@ class PortalService : Service() {
             // Second frame on every connection: the page can paint the gauge
             // without waiting for a transition the headset may never reach.
             battery?.let { sink.queue.offer(FrameKind.SNAPSHOT, textFrame(batteryJson(it))) }
+            // Third: everything the page missed, still under the same lock.
+            for (frame in gapFillFrames(sink.since)) {
+                sink.queue.offer(FrameKind.DISCRETE, frame)
+            }
             wsSinks.add(sink)
             return true
         } finally {
@@ -716,6 +745,21 @@ class PortalService : Service() {
 
     /** Returns false when the connection must close. */
     private fun handleClientText(sink: WsSink, output: OutputStream, payload: ByteArray): Boolean {
+        // Every document the page sends on this channel is either relayed to
+        // the tablet on the JSON channel or (the catalogue) written to prefs
+        // first. Both would either throw out of the JSON chunker or leave the
+        // catalogue half-applied, so the size contract is checked *before* the
+        // message is parsed and before any side effect: an oversized document
+        // gets an explicit 1009 close and nothing else happens.
+        if (!ControlProtocol.fitsJsonChannel(payload.size, ControlProtocol.ATT_MTU_MIN)) {
+            Log.w(
+                TAG,
+                "control message too large: ${payload.size} B > " +
+                    "${ControlProtocol.jsonDocumentLimitBytes()} B; closing"
+            )
+            closeWith(sink, output, ControlProtocol.WS_CLOSE_TOO_BIG)
+            return false
+        }
         val json = try {
             JSONObject(String(payload, StandardCharsets.UTF_8))
         } catch (error: JSONException) {
@@ -729,7 +773,9 @@ class PortalService : Service() {
             // Completed SUS sheets ride the JSON channel: the state frame is
             // a fixed size and has no room for a record.
             "sus" -> json.optJSONObject("data")?.let { data ->
-                bluetooth?.publishSus(data.toString())
+                if (bluetooth?.publishSus(data.toString()) == true) {
+                    acknowledgeRecord(sink, json.optString("id"))
+                }
             }
             // The scene catalogue: the page owns it, both apps render it. It
             // rides the same JSON channel as SUS, so adding a scene costs no
@@ -752,9 +798,12 @@ class PortalService : Service() {
             // One finished training session: the tablet stores it beside the
             // questionnaire sheets, in the same record file.
             "session" -> json.optJSONObject("data")?.let { data ->
-                bluetooth?.publishJson(
+                val forwarded = bluetooth?.publishJson(
                     org.json.JSONObject().put("t", "session").put("d", data).toString()
-                )
+                ) == true
+                if (forwarded) {
+                    acknowledgeRecord(sink, json.optString("id"))
+                }
             }
             // Questionnaire catalogue: one source on the page, rendered by the
             // tablet's answer sheet and record list.
@@ -767,13 +816,20 @@ class PortalService : Service() {
             // scene change, the patient's own stop. The tablet appends it to
             // the one cross-app log next to its own commands.
             "log" -> json.optJSONObject("data")?.let { data ->
-                bluetooth?.publishJson(
+                val recordId = json.optString("id")
+                if (recordId.isNotEmpty()) {
+                    data.put("id", recordId)
+                }
+                val forwarded = bluetooth?.publishJson(
                     org.json.JSONObject()
                         .put("t", "log")
                         .put("d", data)
                         .put("app", json.optString("app", "training"))
                         .toString()
-                )
+                ) == true
+                if (forwarded) {
+                    acknowledgeRecord(sink, recordId)
+                }
             }
             // A refusal or one-off report from the page: the page knows why a
             // command did not take effect, the tablet is what the operator is
@@ -798,6 +854,24 @@ class PortalService : Service() {
         return true
     }
 
+    /**
+     * Confirms that a durable page record reached the headset's JSON channel.
+     *
+     * The page keeps the record until this frame, so a socket close after send
+     * cannot silently lose a session summary. Replays are safe because every
+     * record carries an id and the tablet dedupes by it.
+     */
+    private fun acknowledgeRecord(sink: WsSink, id: String) {
+        if (id.isEmpty()) {
+            return
+        }
+        val json = JSONObject().apply {
+            put("type", "recordAck")
+            put("id", id)
+        }
+        offer(sink, FrameKind.DISCRETE, textFrame(json))
+    }
+
     private fun closeWith(sink: WsSink, output: OutputStream, code: Int) {
         markClosed(sink)
         try {
@@ -817,12 +891,46 @@ class PortalService : Service() {
         }
     }
 
-    /** Sends retained commands the page has not consumed (`seq > since`). */
-    private fun sendGapFill(sink: WsSink, since: Int) {
+    /**
+     * Commands the page has not consumed (`seq > since`), as ready-to-queue
+     * frames. Pure: no socket, no queue, no frame kind choice — the caller
+     * queues them in order. Called with [wsLock] held by [registerWsSink].
+     */
+    private fun gapFillFrames(since: Int): List<ByteArray> {
         // Every command is discrete now: there is no movement slot to replay.
         val pending = synchronized(controlLock) { controlLog.pendingSince(since) }
-        for (entry in pending) {
-            offer(sink, FrameKind.DISCRETE, textFrame(commandJson(entry, isContinuous = false)))
+        return pending.map { textFrame(commandJson(it, isContinuous = false)) }
+    }
+
+    /**
+     * Records [command] under [seq] and pushes it to the live subscribers as
+     * one step, under [wsLock].
+     *
+     * Holding [wsLock] across the record is what H5 needs. A subscriber that
+     * registers concurrently either snapshots this command in its gap-fill or
+     * is already registered to receive it live — never neither, and never both
+     * with the live copy ahead of the history. Record and broadcast used to be
+     * two separate steps, so a command could be recorded, a subscriber could
+     * snapshot, and only then did the live frame arrive with a seq above the
+     * history the page had just adopted as its watermark.
+     *
+     * Lock order stays `wsLock -> controlLock`; no socket I/O happens here.
+     */
+    private fun recordAndBroadcast(seq: Int, command: String) {
+        wsLock.lock()
+        try {
+            synchronized(controlLock) { controlLog.record(seq, command) }
+            if (wsSinks.isEmpty()) {
+                return
+            }
+            // Every retained command is discrete; `view:anim:*` is delivered
+            // live only, which retention already decided by not recording it.
+            val frame = textFrame(commandJson(ControlEntry(seq, command), isContinuous = false))
+            for (sink in wsSinks) {
+                offer(sink, FrameKind.DISCRETE, frame)
+            }
+        } finally {
+            wsLock.unlock()
         }
     }
 
@@ -837,16 +945,6 @@ class PortalService : Service() {
         } finally {
             sink.lock.unlock()
         }
-    }
-
-    private fun broadcastCommand(entry: ControlEntry, isContinuous: Boolean) {
-        if (!hasWsSinks()) {
-            return
-        }
-        publishFrame(
-            if (isContinuous) FrameKind.CONTINUOUS else FrameKind.DISCRETE,
-            textFrame(commandJson(entry, isContinuous))
-        )
     }
 
     /**
@@ -1145,9 +1243,9 @@ class PortalService : Service() {
             else -> queued = true
         }
         if (queued) {
-            // 保留区先记录再广播：重连补发永远看得到这条命令。
-            val kind = synchronized(controlLock) { controlLog.record(seq, command) }
-            broadcastCommand(ControlEntry(seq, command), kind == ControlKind.CONTINUOUS)
+            // 保留区记录与实时广播在同一次 wsLock 内完成：重连补发永远先于
+            // 任何实时帧，页面按最新水位去重时不会丢掉历史命令。
+            recordAndBroadcast(seq, command)
         }
         if (broadcastStatus) {
             try {
@@ -1213,6 +1311,10 @@ class PortalService : Service() {
             JSONObject().apply {
                 put("phase", entryRetry.phase.name.lowercase(java.util.Locale.US))
                 put("retries", entryRetry.retries)
+                // Taps spent in the current window. Read beside `retries` to
+                // tell "waiting for a press" from "the helper keeps refusing",
+                // which is the pair that used to look identical forever.
+                put("tapAttempts", entryRetry.tapAttempts)
             }
         )
         // Diagnosed from the tablet and the console; the page reads the same

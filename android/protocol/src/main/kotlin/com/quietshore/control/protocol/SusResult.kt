@@ -28,6 +28,42 @@ data class SusResult(
 ) {
     /** Standard SUS score, or null while any item is unanswered. */
     val score: Int? get() = if (complete) susScore(answers) else null
+
+    /**
+     * Stable identity of one filed sheet.
+     *
+     * The headset re-sends its last frame whenever a controller subscribes, so
+     * the same sheet arrives more than once per link, and the tablet must
+     * collapse the replay instead of filing the same record twice.
+     *
+     * Identity is built from facts both ends already agree on:
+     * - which instrument and product face produced it ([app],
+     *   [questionnaireId]) — two instruments never share a record;
+     * - when and where it was filed ([completedAt]) plus the session it closed
+     *   ([sessionSec], [scene]).
+     *
+     * A record whose [completedAt] was lost on the wire still needs a distinct
+     * identity, or two different sheets would collapse into one; the answers
+     * and [complete] only enter the key in that case, so the normal path stays
+     * insensitive to a patient re-tapping an answer before the sheet is filed.
+     */
+    val key: String
+        get() {
+            val head = listOf(
+                app,
+                questionnaireId,
+                completedAt.toString(),
+                sessionSec.toString(),
+                scene
+            )
+            if (completedAt > 0L) {
+                return head.joinToString(KEY_SEPARATOR)
+            }
+            // No trusted timestamp: fall back to the sheet's own content so a
+            // replay still matches itself and nothing else is swallowed.
+            return (head + answers.joinToString(",") + complete.toString())
+                .joinToString(KEY_SEPARATOR)
+        }
 }
 
 /** Standard SUS transform; null unless all ten items hold 1..5. */
@@ -47,3 +83,6 @@ fun susScore(answers: List<Int>): Int? {
 }
 
 const val SUS_ITEMS: Int = 10
+
+/** Field separator of [SusResult.key]; a unit separator cannot occur in an id. */
+internal const val KEY_SEPARATOR: String = "\u001F"

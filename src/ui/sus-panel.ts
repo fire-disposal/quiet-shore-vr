@@ -41,6 +41,39 @@ const SUS_THANKS_BODY = '可以摘下头显了。\n有感受请告诉工作人�
 /** Answer slots; the operator can also fill them from the tablet. */
 export type SusAnswers = (number | null)[];
 
+/** Which page of the sheet is on the card. */
+export type SusPhase = 'questions' | 'finish' | 'thanks';
+
+/**
+ * What the sheet itself remembers between card renders.
+ *
+ * This is the part of the panel a new respondent must never inherit: the
+ * finished answers, the page they had paged to, and the phase (a closed sheet
+ * left in `thanks` reopened on the thank-you page). Closing is not a boundary —
+ * a closed sheet is resumed — so only `resetSheet` clears it.
+ */
+export interface SusSheetState {
+  readonly answers: SusAnswers;
+  readonly page: number;
+  readonly phase: SusPhase;
+}
+
+export function emptySusSheet(slots: number): SusSheetState {
+  return { answers: new Array<number | null>(slots).fill(null), page: 0, phase: 'questions' };
+}
+
+/**
+ * Start a new sheet: every answer cleared, back to the first statement.
+ *
+ * Kept pure and exported because the rule is the fix: a page-level answer array
+ * that is reset without this leaves the cached panel still on the last
+ * patient's page, and a panel reset without the array leaves the page with
+ * their answers. Both halves are asserted in tests.
+ */
+export function resetSheet(sheet: SusSheetState, slots: number): SusSheetState {
+  return emptySusSheet(slots);
+}
+
 export interface SusPanelApi {
   readonly object: THREE.Object3D;
   open(): void;
@@ -52,6 +85,14 @@ export interface SusPanelApi {
   show(index: number): void;
   /** Records an answer (1..5) for the current item and advances. */
   answer(value: number): void;
+  /**
+   * Starts a fresh sheet: every answer cleared, back to the first statement.
+   *
+   * `close()` is not this — a closed sheet keeps what was answered, so a panel
+   * reopened for the same patient continues where it stopped. Only a new
+   * respondent, or a sheet that was already filed, resets.
+   */
+  reset(): void;
   /** Rebuilds the registered targets with or without dwell. */
   setDwellEnabled(enabled: boolean): void;
   update(dt: number, now: number, head: HeadPose | null): void;
@@ -412,6 +453,26 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
       render();
     },
     answer: record,
+    reset(): void {
+      const fresh = resetSheet({ answers, page, phase }, SUS_STATEMENTS.length);
+      // The panel owns its answer array in place (buttons and `record` close
+      // over it), so the cleared sheet is copied in rather than swapped.
+      answers.fill(null);
+      page = fresh.page;
+      phase = fresh.phase;
+      // A new sheet is read from the top, not resumed mid-pager.
+      spokenPage = -1;
+      if (open) {
+        needsPlacement = true;
+      }
+      render();
+      if (open) {
+        // The card changed under the gaze: fresh registrations drop the latch
+        // and any dwell progress, so a held look cannot answer item 1 with the
+        // previous respondent's choice.
+        registerTargets();
+      }
+    },
     setDwellEnabled(enabled: boolean): void {
       dwellEnabled = enabled;
       if (open) {

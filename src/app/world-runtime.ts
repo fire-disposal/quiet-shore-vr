@@ -277,7 +277,12 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (!ready) {
       return false;
     }
-    if (next === mix) {
+    // "Already there" is about the *applied* mix and the direction of travel,
+    // not the applied value alone: a ramp that has only just started still sits
+    // on its starting end while heading away from it. Comparing `next` with
+    // `mix` alone would read that as a no-op and leave the world moving the old
+    // way, so a reversal issued at the endpoint must still restart the ramp.
+    if (next === mix && !(moving && target !== next)) {
       return true;
     }
     from = mix;

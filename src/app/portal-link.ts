@@ -1,6 +1,11 @@
 import type { SceneSnapshot } from '../core/scene/snapshot';
 import type { ViewAnimState } from '../core/xr/view-motion';
 import type { Degrees, Metres, Mix01, QuatXyz, Vec3 } from '../core/units';
+import {
+  createReliableRecordOutbox,
+  type ReliableRecord,
+  type ReliableRecordMessage
+} from './reliable-records';
 
 export type RemoteCommandHandler = (command: string) => void;
 export type ControlModeHandler = (active: boolean) => void;
@@ -113,6 +118,69 @@ const RECONNECT_BASE_MS = 300;
 /** After this long without a socket the page reloads itself once. */
 const SELF_HEAL_MS = 15000;
 const RECONNECT_MAX_MS = 5000;
+/** The reload is deferred briefly so the close handler returns first. */
+const RELOAD_DELAY_MS = 200;
+/** A reload that did not help must not repeat immediately (per page session). */
+const RELOAD_MIN_GAP_MS = 30000;
+
+/**
+ * One continuous outage of the link, as a clock of its own.
+ *
+ * The self-heal window is measured from the moment this outage began, never
+ * from page load and never from the last good connection: a page that has been
+ * open for half a minute is not evidence that the socket is unreachable. Only
+ * a run of failed attempts that started *after* a proved connection counts,
+ * and a single recovered connection disarms the reload for the rest of the
+ * page's life (the reload is a last resort, not a loop).
+ */
+export interface OutageClock {
+  /** `performance.now()` of the first failed attempt, or null when idle. */
+  since: number | null;
+  /** A connection has been proved: the primary endpoint is not wrong. */
+  proved: boolean;
+  /** The reload has already been handed to the browser. */
+  reloadScheduled: boolean;
+}
+
+export function createOutageClock(): OutageClock {
+  return { since: null, proved: false, reloadScheduled: false };
+}
+
+/** A dropped socket: start the outage after a proved link, keep it otherwise. */
+export function noteOutageStart(clock: OutageClock, now: number): void {
+  if (clock.proved && clock.since === null) {
+    clock.since = now;
+  }
+}
+
+/** A failed attempt that followed a `close`: the outage is continuous. */
+export function noteOutageContinued(clock: OutageClock, now: number): void {
+  noteOutageStart(clock, now);
+}
+
+/** The socket opened: this outage is over, and a reload is no longer useful. */
+export function noteOutageRecovered(clock: OutageClock): void {
+  clock.since = null;
+  clock.proved = true;
+}
+
+/**
+ * Whether this failed attempt should reload the page: a continuous outage past
+ * the threshold, on a link that had already worked, and not yet reloaded.
+ */
+export function shouldSelfHeal(
+  clock: OutageClock,
+  now: number,
+  thresholdMs: number = SELF_HEAL_MS
+): boolean {
+  if (!clock.proved || clock.reloadScheduled) {
+    return false;
+  }
+  if (clock.since === null) {
+    return false;
+  }
+  return now - clock.since > thresholdMs;
+}
 
 /** Map the collected snapshot onto the widget state payload. */
 export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
@@ -213,18 +281,37 @@ export function planControlDispatch(
 /** Headset battery, 0–100 plus whether it is charging. */
 export type BatteryHandler = (level: number, charging: boolean) => void;
 
+let fallbackRecordSequence = 0;
+
+function nextRecordId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  fallbackRecordSequence += 1;
+  return `${Date.now().toString(36)}-${fallbackRecordSequence.toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function recordStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export class PortalLink {
   private socket: WebSocket | null = null;
   private retryTimer: number | null = null;
   private poseTimer: number | null = null;
   private stateTimer: number | null = null;
   private retries = 0;
-  private lastOpenAt = 0;
+  /** The current outage, measured on its own clock (see `OutageClock`). */
+  private readonly outage = createOutageClock();
   private running = false;
   private flushScheduled = false;
   private pending: PortalCommand[] = [];
   private lastSeq = -1;
   private controlMode = false;
+  private readonly records = createReliableRecordOutbox(recordStorage(), nextRecordId);
 
   constructor(
     private readonly onCommand: RemoteCommandHandler,
@@ -282,7 +369,7 @@ export class PortalLink {
   }
 
   sendSus(data: unknown): void {
-    this.send({ type: 'sus', data });
+    this.sendReliable({ type: 'sus', data });
   }
 
   /**
@@ -294,7 +381,7 @@ export class PortalLink {
    * go up as `log` and join the same ledger as the presses.
    */
   sendLog(app: string, kind: string, detail?: Record<string, unknown>): void {
-    this.send({ type: 'log', app, data: { kind, d: detail ?? {} } });
+    this.sendReliable({ type: 'log', app, data: { kind, d: detail ?? {} } });
   }
 
 
@@ -311,7 +398,16 @@ export class PortalLink {
    * page already keeps it locally; this is the copy the control side exports.
    */
   sendSession(summary: unknown): void {
-    this.send({ type: 'session', data: summary });
+    this.sendReliable({ type: 'session', data: summary });
+  }
+
+  private sendReliable(message: ReliableRecordMessage): void {
+    const record = this.records.add(message);
+    this.sendRecord(record);
+  }
+
+  private sendRecord(record: ReliableRecord): void {
+    this.send({ ...record.message, id: record.id });
   }
 
   /**
@@ -348,7 +444,7 @@ export class PortalLink {
       socket = new WebSocket(`${wsUrl()}?since=${this.lastSeq}`);
     } catch {
       this.onLinkStatus('closed');
-      this.scheduleReconnect();
+      this.noteAttemptFailed();
       return;
     }
     this.socket = socket;
@@ -357,22 +453,41 @@ export class PortalLink {
     socket.onclose = this.handleClose;
   }
 
+  /** A socket could not be created at all: one failed attempt, then back off. */
+  private noteAttemptFailed(): void {
+    this.noteFailedAttempt();
+    this.scheduleReconnect();
+  }
+
+  private noteFailedAttempt(): void {
+    noteOutageContinued(this.outage, performance.now());
+  }
+
   private scheduleReconnect(): void {
     if (!this.running || this.retryTimer != null) {
       return;
     }
     // A page whose socket never comes back is unreachable forever: the loopback
     // server can restart while the tab stays open. Reloading the tab is the only
-    // recovery the page can do by itself, so do it once per half minute.
+    // recovery the page can do by itself — but only once *this* outage, timed
+    // from its own start, has outlasted the threshold. Measuring from page load
+    // (or from a connection that never happened) turned any short glitch on an
+    // idle page into a reload that interrupts the session.
     const now = performance.now();
-    const since = this.lastOpenAt || 0;
-    if (since === 0 || now - since > SELF_HEAL_MS) {
+    if (shouldSelfHeal(this.outage, now, SELF_HEAL_MS)) {
+      // The reload is armed once per outage: if storage refuses the own-record
+      // write below, the second attempt is still the same outage.
+      this.outage.reloadScheduled = true;
       try {
         const KEY = 'qs:lastReload';
-        const last = Number(window.sessionStorage?.getItem(KEY) ?? '0');
-        if (now - last > 30000) {
+        // "No record" is not "reloaded at page start": reading a missing
+        // session value as 0 put a 30 s uptime gate in front of the reload and
+        // stalled a page that had only just loaded from ever healing itself.
+        const stored = window.sessionStorage?.getItem(KEY) ?? null;
+        const last = stored === null ? Number.NaN : Number(stored);
+        if (!Number.isFinite(last) || now - last > RELOAD_MIN_GAP_MS) {
           window.sessionStorage?.setItem(KEY, String(now));
-          window.setTimeout(() => window.location.reload(), 200);
+          window.setTimeout(() => window.location.reload(), RELOAD_DELAY_MS);
           return;
         }
       } catch {
@@ -393,9 +508,14 @@ export class PortalLink {
   private readonly handleOpen = (): void => {
     // A delivered connection proves the endpoint; forget past failures.
     this.retries = 0;
+    noteOutageRecovered(this.outage);
     this.onLinkStatus('open');
     // Refresh the readback the moment the link is usable again.
     this.sendStateNow();
+    // Records remain persisted until the portal acknowledges their forwarding.
+    for (const record of this.records.pending()) {
+      this.sendRecord(record);
+    }
   };
 
   private readonly handleClose = (event: CloseEvent): void => {
@@ -404,6 +524,7 @@ export class PortalLink {
       return;
     }
     this.socket = null;
+    this.noteFailedAttempt();
     if (!this.running) {
       return;
     }
@@ -450,6 +571,13 @@ export class PortalLink {
         replay: 'replay' in message && message.replay === true
       });
       this.scheduleFlush();
+      return;
+    }
+    if (type === 'recordAck') {
+      const id = 'id' in message ? message.id : undefined;
+      if (typeof id === 'string') {
+        this.records.acknowledge(id);
+      }
       return;
     }
     if (type === 'battery') {

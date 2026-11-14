@@ -88,6 +88,10 @@ internal class BluetoothControl(
 
         /** Bounded dedupe window: enough for every realistic retry burst. */
         const val SEQ_MEMO_DEPTH = 32
+
+        /** Log tags for the two callers of [publishDocument]. */
+        const val SUS = "sus"
+        const val TOPIC_OTHER = "json"
     }
 
     private val appContext: Context = context.applicationContext ?: context
@@ -136,8 +140,17 @@ internal class BluetoothControl(
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
     private var susCharacteristic: BluetoothGattCharacteristic? = null
-    /** Negotiated ATT MTU; the JSON channel sizes its chunks from it. */
-    private var mtu = 23
+
+    /**
+     * Chunk size for the JSON channel on the **current controller's** link.
+     *
+     * A property of one link, not of the server: every connection negotiates
+     * its own ATT MTU, and a value left behind by an old controller (517) made
+     * a new, un-negotiated link emit notifications the stack rejects. The
+     * policy lives in [MtuPolicy] so the rule is testable without a device.
+     */
+    private val mtuPolicy = MtuPolicy()
+
     /** Rotating chunk id for the JSON channel. */
     private var jsonChunkId = 0
     private var stateSeq = 0
@@ -148,8 +161,14 @@ internal class BluetoothControl(
 
     @Volatile
     private var lastState: ControlState = ControlState()
-    /** Last SUS sheet, so a tablet that reconnects can be handed the record. */
-    private var lastSus: String = ""
+
+    /**
+     * Last SUS sheet **document**, in the envelope the normal path sends
+     * (`{"t":"sus","d":{…}}`), so a tablet that subscribes late gets the same
+     * bytes a live publish would have produced: same envelope, same chunking,
+     * same controller-only delivery.
+     */
+    private var lastSusDocument: String = ""
 
     private var started = false
 
@@ -449,6 +468,10 @@ internal class BluetoothControl(
         stateCharacteristic = null
         susCharacteristic = null
         connected.clear()
+        // A new link starts un-negotiated: keeping the last controller's MTU
+        // would let the first notification after a restart overshoot the ATT
+        // limit, which the stack answers by dropping the link.
+        synchronized(controlLock) { mtuPolicy.onTeardown() }
         releaseControl(null)
     }
 
@@ -487,25 +510,64 @@ internal class BluetoothControl(
         notifyValue(telemetryCharacteristic, ControlProtocol.encodeTelemetry(pose))
     }
 
-    /** Forwards one SUS sheet as a JSON-channel document. */
-    fun publishSus(json: String) {
-        lastSus = json
-        publishJson("{\"t\":\"sus\",\"d\":$json}")
+    /**
+     * Forwards one SUS sheet as a JSON-channel document.
+     *
+     * The sheet is wrapped in the channel's envelope *once*, here, and that
+     * string is what both the live publish and the late-subscriber replay send.
+     */
+    fun publishSus(json: String): Boolean {
+        // The page's own keys and order, untouched: re-serialising here would
+        // rewrite every record just to add three bytes of envelope.
+        val document = "{\"t\":\"sus\",\"d\":$json}"
+        lastSusDocument = document
+        return publishDocument(document, SUS)
     }
 
     /**
      * Publishes one document on the JSON channel, split into chunks that fit
      * the negotiated MTU. Everything event-driven rides here, so adding a field
      * never costs a state-frame version.
+     *
+     * A document over [ControlProtocol.jsonDocumentLimitBytes] is refused with
+     * a log line instead of throwing: nothing upstream of this call (the WS
+     * reader, a GATT callback) can do anything useful with an exception, and
+     * the exception used to escape all the way out of the connection.
      */
-    fun publishJson(json: String) {
-        val payload = json.toByteArray(StandardCharsets.UTF_8)
-        val perChunk = (mtu - 3 - ControlProtocol.chunkHeaderBytes).coerceAtLeast(1)
+    fun publishJson(json: String): Boolean = publishDocument(json, TOPIC_OTHER)
+
+    private fun publishDocument(document: String, topic: String): Boolean {
+        val payload = document.toByteArray(StandardCharsets.UTF_8)
+        val linkMtu = synchronized(controlLock) { mtuPolicy.current }
+        val limit = ControlProtocol.jsonDocumentLimitBytes(linkMtu)
+        if (!ControlProtocol.fitsJsonChannel(payload.size, linkMtu)) {
+            // Refused whole, never truncated: half a document is worse than none.
+            Log.w(TAG, "json document refused: ${payload.size} B > $limit B ($topic)")
+            return false
+        }
+        val perChunk = ControlProtocol.jsonChunkPayload(linkMtu)
         val id = jsonChunkId
         jsonChunkId = (jsonChunkId + 1) and 0xFF
         for (chunk in ControlProtocol.encodeJsonChunks(payload, perChunk, id)) {
             notifyValue(susCharacteristic, chunk)
         }
+        return true
+    }
+
+    /**
+     * Replays the last SUS sheet to a tablet that has just subscribed.
+     *
+     * The CCCD write is the only "ready" signal there is, so this is the one
+     * chance to hand over the record the tablet missed. It goes through the
+     * normal document path — envelope, chunk headers, current MTU — and only to
+     * the controller: a non-controller tablet never sees a patient's answers.
+     */
+    private fun replaySus(device: BluetoothDevice) {
+        val document = lastSusDocument
+        if (document.isEmpty() || !isController(device)) {
+            return
+        }
+        publishDocument(document, SUS)
     }
 
     fun publishState(state: ControlState) {
@@ -583,7 +645,9 @@ internal class BluetoothControl(
                 true
             }
         }
+        // Nobody owns the console, so nothing is published at an owner's MTU.
         if (released) {
+            synchronized(controlLock) { mtuPolicy.onRelease() }
             watchdogHandler.removeCallbacks(controllerWatchdog)
             listener.onControlMode(false)
         }
@@ -616,24 +680,33 @@ internal class BluetoothControl(
     /** Grants control when free; idempotent for the current controller. */
     private fun handleClaim(device: BluetoothDevice): String {
         val address = addressOf(device) ?: return ControlProtocol.STATUS_CONTROL_REQUIRED
+        // `null` = refused (another live pad owns it); `true` = the owner changed;
+        // `false` = the same pad re-claimed, which only refreshes the lease.
         val changed = synchronized(controlLock) {
             val current = controller
-            if (current == null || current == address) {
-                if (current == null) {
+            val grant = when {
+                current == null -> {
                     resetProtocolStateLocked()
+                    controller = address
+                    true
                 }
-                controller = address
-                current == null
-            } else if (current !in connected) {
-                // The old controller is no longer on any live GATT link
-                // (BLE random address rotated or the pad process restarted).
-                resetProtocolStateLocked()
-                controller = address
-                true
-            } else {
-                return ControlProtocol.STATUS_CONTROL_BUSY
+                current == address -> false
+                current !in connected -> {
+                    // The old controller is no longer on any live GATT link
+                    // (BLE random address rotated or the pad process restarted).
+                    resetProtocolStateLocked()
+                    controller = address
+                    true
+                }
+                else -> null
             }
-        }
+            if (grant != null) {
+                // The console is published at the new owner's MTU from now on,
+                // defaulting until this link reports its own negotiation.
+                mtuPolicy.onClaim(address)
+            }
+            grant
+        } ?: return ControlProtocol.STATUS_CONTROL_BUSY
         // Re-claiming refreshes the lease even when the address already owns it;
         // a tablet that just reconnected must not inherit an expired watchdog.
         touchController()
@@ -705,10 +778,13 @@ internal class BluetoothControl(
                 replyWrite(device, requestId, ControlProtocol.STATUS_CONTROL_REQUIRED)
             else -> {
                 synchronized(controlLock) {
+                    // A retried handshake must not erase the dedupe window: the
+                    // tablet sends HELLO again when it missed the WELCOME, and
+                    // `seqResults` is what stops a repeated `#7 audio:toggle`
+                    // from running twice. Only a new owner starts a new window
+                    // (`resetProtocolStateLocked` in handleClaim/release).
                     handshakeAddress = address
                     handshakeVersion = version
-                    // A fresh handshake starts a fresh dedupe window.
-                    seqResults.clear()
                 }
                 replyWrite(device, requestId, ControlProtocol.welcomeCommand())
             }
@@ -884,11 +960,20 @@ internal class BluetoothControl(
             }
         }
 
-    override fun onMtuChanged(device: BluetoothDevice, negotiatedMtu: Int) {
-        mtu = negotiatedMtu.coerceAtLeast(23)
-    }
+        /**
+         * MTU is a property of one link. Only the current controller's link may
+         * change the chunk size the console is published at, and the value is
+         * kept per address so a controller that reconnects at a different
+         * negotiation restores its own number instead of inheriting a sibling's.
+         */
+        override fun onMtuChanged(device: BluetoothDevice, negotiatedMtu: Int) {
+            val address = addressOf(device) ?: return
+            synchronized(controlLock) {
+                mtuPolicy.onMtuChanged(address, negotiatedMtu, controller)
+            }
+        }
 
-    override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
+        override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val address = addressOf(device) ?: return
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 connected.add(address)
@@ -899,7 +984,11 @@ internal class BluetoothControl(
                 )
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 connected.remove(address)
-                // A dropped controller frees the console for the next pad.
+                // A dropped controller frees the console for the next pad, and
+                // its negotiated MTU leaves with the link.
+                synchronized(controlLock) {
+                    mtuPolicy.onDisconnected(address, controller)
+                }
                 releaseControl(address)
                 // Connectable advertising usually ends with the link; make the
                 // headset discoverable again for a reconnect or a new tablet.
@@ -973,16 +1062,11 @@ internal class BluetoothControl(
             // A tablet that just subscribed gets the sheet it missed while it
             // was away; the CCCD write is the only "ready" signal we get.
             val subscribed = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            if (
-                subscribed &&
-                descriptor.characteristic.uuid == ControlProtocol.susUuid &&
-                lastSus.isNotEmpty()
-            ) {
-                notifyValueTo(
-                    device,
-                    susCharacteristic,
-                    lastSus.toByteArray(StandardCharsets.UTF_8)
-                )
+            if (subscribed && descriptor.characteristic.uuid == ControlProtocol.susUuid) {
+                // Same envelope, same chunk headers, same MTU and the same
+                // controller check as a live publish: the old path sent the raw
+                // JSON document, unframed and to any subscriber.
+                replaySus(device)
             }
         }
     }

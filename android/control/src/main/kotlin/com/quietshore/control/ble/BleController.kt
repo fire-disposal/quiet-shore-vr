@@ -77,8 +77,13 @@ class BleController(
     /** One serialized writer: [outbound] decides what goes next. */
     private val sendLock = Any()
     private val outbound = CommandQueue()
-    private var writing = false
-    private var nextSeq = 0
+
+    /**
+     * Link and write identity. A write completion carries the pair it was
+     * started under, so a completion from a torn-down link cannot clear the new
+     * link's writer, delete its `inFlight` entry, or pump its queue.
+     */
+    private val tokens = WriteTokens()
 
     /** Capability mask from WELCOME; 0 until the handshake completes. */
     private var headsetCapabilities = 0
@@ -94,7 +99,6 @@ class BleController(
     private val stateFrames = java.util.concurrent.atomic.AtomicInteger()
 
     private var manualClose = false
-    private var autoScan = false
     private var reconnectAttempts = 0
     private var reconnectScheduled = false
     private var lastAddress: String? = null
@@ -130,19 +134,23 @@ class BleController(
         if (manualClose) {
             return@Runnable
         }
-        val address = lastAddress
-        if (reconnectAttempts <= 1 && address != null) {
-            connectInternal(address)
-        } else {
-            autoScan = true
-            startScanInternal()
+        // Every attempt retries the link the operator already chose. A scan
+        // here would only redraw the pairing list and, worse, end in
+        // "未找到头显" without ever asking the stack to connect again, so
+        // attempts 2 and 3 could never restore the link.
+        val plan = reconnectPlan(lastAddress, reconnectAttempts)
+        if (plan == null) {
+            // Nothing to go back to: the operator has to pick the headset.
+            setPhase(BlePhase.DISCONNECTED)
+            listener.onError("自动重连失败，请重新搜索")
+            return@Runnable
         }
+        connectInternal(plan.address)
     }
 
     private val scanWindow = Runnable {
-        val wasAuto = autoScan
         val seen = scanResultCount
-        Log.i(TAG, "scan window expired (auto=$wasAuto, results=$seen)")
+        Log.i(TAG, "scan window expired (results=$seen)")
         stopScan()
         if (!manualClose && seen == 0) {
             // Not one advertisement came back. On EMUI (and a few other stacks)
@@ -150,10 +158,6 @@ class BleController(
             // even with BLUETOOTH_SCAN granted: the radio filters everything.
             // Say it, instead of reporting "headset not found".
             listener.onError("未搜索到任何蓝牙设备：请开启定位服务后再试")
-        }
-        if (wasAuto && !manualClose) {
-            autoScan = false
-            scheduleReconnect("未找到头显")
         }
     }
     private val claimTimeout = Runnable {
@@ -178,7 +182,6 @@ class BleController(
         Log.i(TAG, "startScan (phase=${phase.name})")
         manualClose = false
         reconnectAttempts = 0
-        autoScan = false
         cancelReconnect()
         // A search must never lose to an earlier attempt. Before the operator
         // used to have to press 取消 first, because a pending connect or a live
@@ -264,10 +267,6 @@ class BleController(
                     mainHandler.removeCallbacks(scanWindow)
                     setPhase(BlePhase.IDLE)
                     listener.onError("搜索失败，错误码 $errorCode")
-                    if (autoScan && !manualClose) {
-                        autoScan = false
-                        scheduleReconnect("搜索失败")
-                    }
                 }
             }
         }
@@ -326,7 +325,6 @@ class BleController(
         Log.i(TAG, "connect($address)")
         manualClose = false
         reconnectAttempts = 0
-        autoScan = false
         cancelReconnect()
         // Same reasoning as startScan: a fresh manual connect supersedes any
         // previous attempt instead of queueing behind it.
@@ -390,7 +388,11 @@ class BleController(
 
     fun cancelConnect() {
         manualClose = true
-        autoScan = false
+        // Cancelling ends the recovery loop: lastAddress must not survive, or
+        // the next drop would silently reconnect to the headset the operator
+        // just walked away from.
+        lastAddress = null
+        reconnectAttempts = 0
         cancelReconnect()
         cancelPendingConnect()
         closeManager()
@@ -403,7 +405,6 @@ class BleController(
     fun disconnect() {
         Log.i(TAG, "disconnect: manual, auto-reconnect stays off")
         manualClose = true
-        autoScan = false
         lastAddress = null
         reconnectAttempts = 0
         cancelReconnect()
@@ -470,21 +471,30 @@ class BleController(
     /**
      * Writes at most one command at a time. The completion callback re-enters
      * the pump, so the queue is the only place that decides ordering.
+     *
+     * Every write carries the connection and write generation it was started
+     * under. A completion from an older link (a write abandoned by a drop, a
+     * timeout, or a cancelled request) must not clear the new link's writer,
+     * must not delete a seq number that now belongs to a newer write, and must
+     * not pump a queue that a newer link owns.
      */
     private fun pump() {
         var command: String? = null
         var payload: String? = null
         var seq = 0
+        var token = 0L
+        var writeConnection = 0L
         synchronized(sendLock) {
-            if (writing) {
+            if (tokens.writing) {
                 return
             }
             val next = outbound.poll() ?: return
-            writing = true
+            token = tokens.beginWrite()
+            writeConnection = tokens.connection
             command = next
             if (ControlProtocol.requiresSequencedAck(next)) {
-                seq = ++nextSeq
-                inFlight[seq] = InFlightCommand(next, SystemClock.elapsedRealtime())
+                seq = tokens.nextSeq()
+                inFlight[seq] = InFlightCommand(next, SystemClock.elapsedRealtime(), token)
                 payload = ControlProtocol.sequencedCommandPayload(seq, next)
             } else {
                 payload = next
@@ -492,28 +502,55 @@ class BleController(
         }
         val chosen = command ?: return
         val wire = payload ?: chosen
+        val writtenSeq = seq
+        val writtenToken = token
         val current = manager
         if (current == null || !current.isReady) {
-            synchronized(sendLock) { writing = false }
+            // The link cannot take this command. Give the slot back and stop:
+            // re-entering the pump here would only chew through the queue one
+            // command per callback while nobody can accept them.
+            retireWrite(writeConnection, writtenToken, writtenSeq)
             return
         }
-        val acked = seq > 0
+        val acked = writtenSeq > 0
         current.writeCommand(wire) { ok ->
-            synchronized(sendLock) { writing = false }
-            if (!ok) {
-                if (acked) {
-                    synchronized(sendLock) { inFlight.remove(seq) }
-                    listener.onError("发送命令失败：$chosen")
-                }
+            if (!retireWrite(writeConnection, writtenToken, writtenSeq)) {
+                // The link that started this write is gone: its queue, inFlight
+                // and pump belong to someone else now, and reporting an error
+                // would blame the new connection for the old one's fault.
+                return@writeCommand
+            }
+            if (!ok && acked) {
+                listener.onError("发送命令失败：$chosen")
             }
             mainHandler.post { pump() }
         }
     }
 
+    /**
+     * Gives the writer slot back for exactly one write.
+     *
+     * @return true when [token] — seen on [connection] — is still the write in
+     *   flight, so the caller may report a failure and pump the next command;
+     *   false when the completion belongs to a link that was torn down (or to a
+     *   write the ACK timeout already gave up on) and must change nothing.
+     */
+    private fun retireWrite(connection: Long, token: Long, seq: Int): Boolean =
+        synchronized(sendLock) {
+            tokens.settle(connection, token, seq) { releasedSeq ->
+                // Only the write that owns the slot may delete its seq: after a
+                // reconnect the same number belongs to a newer command.
+                if (releasedSeq > 0 && inFlight[releasedSeq]?.token == token) {
+                    inFlight.remove(releasedSeq)
+                }
+            }
+        }
+
     /** A dropped pitch sample is disposable; a missing ACK is not. */
     private fun expireInFlight() {
         val cutoff = SystemClock.elapsedRealtime() - ACK_TIMEOUT_MS
         val missing = ArrayList<String>(2)
+        var abandoned = false
         synchronized(sendLock) {
             val iterator = inFlight.entries.iterator()
             while (iterator.hasNext()) {
@@ -523,9 +560,20 @@ class BleController(
                     iterator.remove()
                 }
             }
+            // A write whose ACK ran out is not going to complete usefully: let
+            // the next command go now instead of waiting forever for a
+            // completion the link may never deliver. Its late completion then
+            // carries a retired token and changes nothing.
+            if (tokens.writing) {
+                tokens.abandonWrite()
+                abandoned = true
+            }
         }
         for (command in missing) {
             listener.onError("头显未确认命令：$command")
+        }
+        if (abandoned) {
+            mainHandler.post { pump() }
         }
     }
 
@@ -574,7 +622,6 @@ class BleController(
         cancelReconnect()
         awaitingControl = false
         manualClose = false
-        autoScan = false
         reconnectAttempts = 0
         setPhase(BlePhase.READY)
         listener.onControlGranted()
@@ -590,7 +637,6 @@ class BleController(
         // Reconnecting cannot fix a protocol mismatch: stop the loop and let
         // the operator update the headset app.
         manualClose = true
-        autoScan = false
         listener.onError(reason)
         setPhase(BlePhase.ERROR)
     }
@@ -598,10 +644,12 @@ class BleController(
     /** Lease loss / disconnect: nothing queued may outlive the session. */
     private fun abortCommands() {
         synchronized(sendLock) {
+            // The token moves first: every completion still outstanding belongs
+            // to the link that is being torn down and will be ignored, and seq
+            // numbering restarts for the next connection.
+            tokens.retireLink()
             outbound.clear()
             inFlight.clear()
-            writing = false
-            nextSeq = 0
         }
         headsetCapabilities = 0
         incompatibleReason = null
@@ -613,7 +661,6 @@ class BleController(
 
     fun close() {
         manualClose = true
-        autoScan = false
         cancelReconnect()
         stopHeartbeat()
         stopScan()
@@ -785,7 +832,6 @@ class BleController(
                 cancelReconnect()
                 awaitingControl = false
                 manualClose = false
-                autoScan = false
                 reconnectAttempts = 0
                 // Control is not usable until the protocol handshake succeeds:
                 // READY only flips after a matching WELCOME.
@@ -808,7 +854,6 @@ class BleController(
                 cancelClaimTimeout()
                 awaitingControl = false
                 manualClose = true
-                autoScan = false
                 cancelReconnect()
                 listener.onControlLost("控制连接已失效，请重新连接")
                 closeConnection()
@@ -816,7 +861,6 @@ class BleController(
 
             ControlProtocol.STATUS_CONTROL_RELEASED -> {
                 manualClose = true
-                autoScan = false
                 cancelReconnect()
                 listener.onControlLost("头显已释放控制权")
                 closeConnection()
@@ -959,8 +1003,14 @@ class BleController(
             }
         }
 
-    /** A discrete command written to the headset and awaiting its ACK. */
-    private class InFlightCommand(val command: String, val sentAt: Long)
+    /**
+     * A discrete command written to the headset and awaiting its ACK.
+     *
+     * [token] is the write generation that produced it: seq numbers restart
+     * with each link, so only the token can tell whether a completion still
+     * belongs to the entry sitting in the map.
+     */
+    private class InFlightCommand(val command: String, val sentAt: Long, val token: Long)
 
     private companion object {
         const val TAG = "QuietShoreBle"

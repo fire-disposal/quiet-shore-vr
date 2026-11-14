@@ -237,6 +237,7 @@ PING / RELEASE / CLAIM   # 存活与租约
 {"type":"cmd","seq":N,"command":"float:level:2","continuous":false}
 {"type":"cmd","seq":N,"command":"posture:rise"}
 {"type":"control","control":bool,"controller":string|null}
+{"type":"recordAck","id":string}
 ```
 
 页面 → 服务端：
@@ -246,9 +247,19 @@ PING / RELEASE / CLAIM   # 存活与租约
 {"type":"notice","text":"记录体位时无法切换场景，稍后再试","tone":"error"}
 {"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
 {"type":"ack","seq":N}
+{"type":"session","id":string,"data":{…}}
+{"type":"sus","id":string,"data":{…}}
+{"type":"log","id":string,"app":string,"data":{kind,d}}
 ```
 
 - 连接建立先发 `ready`，随后补发 `seq > since` 的命令；`since` 缺失按 `-1`。
+  **ready、电量与整段补发在同一个 `wsLock` 内入队**，订阅者加入广播集合之前就已完成，
+  因此实时命令永远排在补发之后；`ready.seq` 回显客户端水位，补发的每条都比它大。
+  命令的 `seq` 分配、保留区写入与实时广播也在同一个 `wsLock` 内完成，并发投递不会
+  出现“保留顺序与 seq 顺序不一致”。
+- `session`、`sus` 与 `log` 是持久记录：页面先写入本地 outbox，只有头显把文档成功送入 JSON 通道后才回 `recordAck`。断链或刷新前未确认的记录在下次连接时重发；重发允许重复，平板按会话结束时间、SUS 稳定键与页面事件 `id` 去重。状态、遥测和通知不进入 outbox。
+- 页面发来的每一帧都在解析前检查尺寸契约（默认 MTU 下 4335 字节，见
+  `docs/protocol-conformance.md` §2.1.1）；超限直接 `1009` 关闭，不解析、不写 prefs、不转发。
 - `notice` 是页面 → 服务端 → 平板的一句话：命令被拒绝时的原因、或状态帧放不下的一次性事实。服务把它原样转成 BLE JSON 通道的 `{"t":"notice","text","tone"}`，平板据此提示；页面本地状态行用的是同一句文案，避免两处措辞漂移。
 - `battery` 是头显自己的电量（`ACTION_BATTERY_CHANGED` 粘性值），`ready` 之后立即发一条，`level` 或 `charging` 真正变化时再发；`charging` 为 true 时也包含“已充满且接着电源”。`/status` 里有同名对象，壳层刚启动、还没拿到粘性值时为 `null`。入口页目前**不**显示它——电量栏在 APK 控制台首页。
 - 命令保留到页面 `ack`（≤64 条）；`view:anim:*` 只实时投递，不跨重连重放。
@@ -280,12 +291,18 @@ WebXR 的会话必须由头显内的一次可信手势开启，壳层无法代�
 | 阶段 | 时限 | 触发 | 结果 |
 | --- | --- | --- | --- |
 | 已拉起，页面未上线 | 25 s | 页面没有 state 帧 | 重新拉起（`?t=` 换新，`retry=N`） |
-| 页面上线，未进会话 | 20 s | state 帧 `session=false` | 同上 |
+| 页面上线，未进会话 | 20 s | state 帧 `session=false` | 先尝试一次自动点按（若可用），否则同上 |
 | 会话已上报 | — | `session=true` | 监督结束，之后的空闲页不再触发重拉 |
 | 连续重拉 | 2 次 | 上述时限到期 | `GIVE_UP`，日志留痕，等人工处置 |
 
+自动点按受两级预算约束，缺一不可：
+
+- **每次 launch 最多 2 次**（`TAP_ATTEMPTS_PER_WINDOW`）。平台拒绝时 `tapFailed()` 会把额度还回来，
+  但只还到这次配额用完为止；之后下一次时限必然进入重拉，不会停在无限点按循环里。
+- **重拉计数独立**（`retries`）。只有 `launch()` 与真正决定重拉的时限能改动它，点按失败不会清零，
+  所以 `RELAUNCH` 与 `GIVE_UP` 始终可达。
 - 页面侧读取 `?retry=N`，在入口页显示“请看向画面中央，再按一次头显右侧的按钮”；
-- 时限与判定在 `portal/EntryRetry.kt`（纯 Kotlin，无 Android 依赖；`ControlChannelCheck` 里有 `retryChecks()` 覆盖）；
+- 时限与判定在 `portal/EntryRetry.kt`（纯 Kotlin，无 Android 依赖；`ControlChannelCheck` 里 `retryChecks()` 与 `tapBudgetChecks()` 覆盖，含“点按持续失败仍能到达 RELAUNCH/GIVE_UP”的回归）；
 - 拉起来源（控制台按钮 / 平板 `enter` / 监督自身）统一经 `PortalActions.onLaunched` 报告给服务，计数只由监督自己持有。
 
 ## 7. 平板控制台流程
