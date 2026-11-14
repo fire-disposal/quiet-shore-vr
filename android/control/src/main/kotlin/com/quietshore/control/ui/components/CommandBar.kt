@@ -218,23 +218,14 @@ fun CommandBar(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column {
-                    Text(
-                        text = "断开链接 = 急停",
-                        style = MaterialTheme.typography.labelLarge,
-                        // Red ink in a hairline box, never a red fill: the same
-                        // language 结束会话 speaks, so two different objects (the
-                        // radio, the session) are recognisable as two ends.
-                        color = if (connected) QuietPalette.Danger else QuietPalette.InkSecondary,
-                        maxLines = 2
-                    )
-                    Text(
-                        text = "冻结会话，5 秒内重连继续",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = QuietPalette.InkSecondary,
-                        maxLines = 2
-                    )
-                }
+                Text(
+                    text = "断开连接",
+                    style = MaterialTheme.typography.labelLarge,
+                    // Red ink in a hairline box, never a red fill: the radio is
+                    // the emergency stop, and the key says only what it does.
+                    color = if (connected) QuietPalette.Danger else QuietPalette.InkSecondary,
+                    maxLines = 1
+                )
             }
         }
         // Line 2: the session's own state and its clock, on every page and at
@@ -352,9 +343,9 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
         Row(
             modifier = Modifier
                 // A minimum width, not a fixed one: the face's name is translated
-                // and the system font scale is the operator's, and both used to
-                // end in an ellipsis inside a 232 dp box.
-                .widthIn(min = 232.dp)
+                // and the system font scale is the operator's. A maximum keeps
+                // the selector from eating the battery fields and the link key.
+                .widthIn(min = 232.dp, max = 320.dp)
                 .heightIn(min = 48.dp)
                 .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
                 .border(

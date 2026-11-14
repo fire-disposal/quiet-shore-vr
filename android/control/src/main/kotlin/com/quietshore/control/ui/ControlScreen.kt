@@ -341,15 +341,6 @@ private fun SessionVerbsStrip(
                 enabled = ready && phase != SessionPhase.Stopping,
                 height = 56.dp
             )
-            ActionKey(
-                label = "断开连接 = 急停",
-                subLabel = "冻结；5 秒内重连继续",
-                onClick = actions.onDisconnect,
-                tone = ActionTone.Danger,
-                enabled = ready,
-                height = 56.dp,
-                textStyle = MaterialTheme.typography.titleSmall
-            )
         }
         Spacer(Modifier.weight(1f))
     }
@@ -1066,21 +1057,6 @@ private fun SessionColumn(
                 },
                 onClick = actions.onEnd,
                 modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            // The tablet link *is* the emergency stop: with the operator side
-            // gone the page freezes and holds for five seconds, then ends the
-            // session. The key says both halves, because a technician pressing
-            // it needs to know the patient is not left in a moving world.
-            ActionKey(
-                label = "断开连接 = 急停",
-                subLabel = "平板断开，头显冻结；5 秒内重连则继续",
-                onClick = actions.onDisconnect,
-                modifier = Modifier.fillMaxWidth(),
-                tone = ActionTone.Danger,
-                enabled = ready,
-                height = 64.dp,
-                textStyle = MaterialTheme.typography.titleSmall
             )
         }
     }
