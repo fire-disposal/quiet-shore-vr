@@ -144,7 +144,6 @@ fun ControlApp(viewModel: ControlViewModel) {
             onCancelLaunch = viewModel::cancelLaunch,
             onEnd = viewModel::endSession,
             onRecalibrate = viewModel::recalibrate,
-            onAdaptationSkip = viewModel::skipAdaptation,
             onToggleAudio = viewModel::toggleAudio,
             onFloatAmount = viewModel::setFloatAmount,
             onBreathChange = viewModel::setBreath,

@@ -774,7 +774,7 @@ private fun SessionColumn(
 ) {
     val ready = state.phase == BlePhase.READY
     val percent = state.floatPercent.coerceIn(0, 100)
-    val calibration = calibrationView(state, phase, ready)
+    val calibration = calibrationView(phase, ready)
     // The one posture number, as the operator reads it: a whole percent.
     val mixPercent = (state.mix.coerceIn(0f, 1f) * 100f).roundToInt()
     val mixEnabled = ready && phase.acceptsChanges && (state.caps.rise || state.caps.lie)
@@ -994,22 +994,6 @@ private fun SessionColumn(
                             color = QuietPalette.InkSecondary
                         )
                         Spacer(Modifier.weight(1f))
-                        // The adaptation window is the page's, and it used to
-                        // have no exit at all: the capture key sat at 适应中 while
-                        // the only way out was on a screen the operator had to go
-                        // find. The exit is here, beside the key it unlocks, and
-                        // only while the window is actually open.
-                        if (phase == SessionPhase.Calibrating && !state.adaptationDone) {
-                            Key(
-                                label = "结束适应",
-                                onClick = actions.onAdaptationSkip,
-                                kind = KeyKind.Outline,
-                                enabled = ready,
-                                height = TouchTarget,
-                                minWidth = 96.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
                         // Re-aiming the world shares the ramp's row: the row has
                         // the width, and the two are the same kind of decision —
                         // how the world is placed right now.
@@ -1139,7 +1123,7 @@ private fun ScenePage(
     // The list unlocks only inside XR after the posture is recorded; before
     // that the preparation room is the whole app surface.
     val scenesEnabled = ready && phase == SessionPhase.Running
-    val calibration = calibrationView(state, phase, ready)
+    val calibration = calibrationView(phase, ready)
     val selectedName = state.selectableScenes
         .firstOrNull { it.id == state.sceneIntent }
         ?.name
@@ -1238,7 +1222,7 @@ private fun StartBlock(
     phase: SessionPhase
 ) {
     val ready = state.phase == BlePhase.READY
-    val calibration = calibrationView(state, phase, ready)
+    val calibration = calibrationView(phase, ready)
     // A status line, not another board: the page already has one white work
     // surface on the right, and this line is where the whole page begins.
     Column(Modifier.fillMaxWidth()) {
@@ -1298,7 +1282,7 @@ private fun StandbySteps(
 ) {
     val ready = state.phase == BlePhase.READY
     val live = phase == SessionPhase.Running || phase == SessionPhase.Stopping
-    val calibration = calibrationView(state, phase, ready)
+    val calibration = calibrationView(phase, ready)
     Panel(modifier) {
         Column(Modifier.fillMaxSize().padding(QuietSpace.Panel)) {
             Text(

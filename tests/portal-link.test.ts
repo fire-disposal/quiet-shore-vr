@@ -216,7 +216,6 @@ describe('PortalLink', () => {
       voiceId: -1,
       elapsedSec: 0,
       rampMs: 10000,
-      adaptationDone: true,
       calibrationConfidence: 0,
       worldQ: { x: 0, y: 0, z: 0 },
       worldT: { x: metres(0), y: metres(0), z: metres(0) },

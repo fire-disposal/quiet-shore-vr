@@ -129,6 +129,7 @@ class CommandGrammarTest {
             "allapps",
             "status",
             "recalibrate",
+            "adapt:skip",
             "launch:the:missiles",
             "scene:moon",
             "float:level:101",

@@ -131,7 +131,7 @@ object ControlProtocol {
      */
     val CAPABILITIES: List<String> = listOf(
         "enter", "exit", "stop",
-        "calibrate", "adapt:skip",
+        "calibrate",
         "audio:on", "audio:off", "audio:toggle", "audio:volume:0-100",
         "float:level:0-100", "float:breath:on|off",
         "scene:<id>",
@@ -372,7 +372,6 @@ object ControlProtocol {
             normalized == "exit" ||
             normalized == "stop" ||
             normalized == "calibrate" ||
-            normalized == "adapt:skip" ||
             normalized == "audio:on" ||
             normalized == "audio:off" ||
             normalized == "audio:toggle" ||

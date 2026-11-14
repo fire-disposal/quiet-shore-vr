@@ -1392,7 +1392,6 @@ class PortalService : Service() {
             worldY = json.optJSONObject("worldT")?.optDouble("y", 0.0)?.toFloat() ?: 0f,
             worldZ = json.optJSONObject("worldT")?.optDouble("z", 0.0)?.toFloat() ?: 0f
         )
-        lastAdaptationDone = json.optBoolean("adaptationDone", true)
         lastRampMs = json.optInt("rampMs", 0).coerceIn(0, 60_000)
         lastState = state
         // Watchdog for the bug this replaced: if the page is running a scene
@@ -1478,10 +1477,6 @@ class PortalService : Service() {
     @Volatile
     private var lastRampMs: Int = 0
 
-    /** The page's orientation gate: false until the empty room has settled. */
-    @Volatile
-    private var lastAdaptationDone: Boolean = true
-
     @Volatile
     private var lastFlagsJson: String = ""
     @Volatile
@@ -1503,7 +1498,6 @@ class PortalService : Service() {
             put("scene", state.scene)
             put("session", state.session)
             put("calibrating", state.calibrating)
-            put("adaptationDone", lastAdaptationDone)
             put("rampMs", lastRampMs)
             put("moving", state.moving)
             // The tablet reads the headset's own battery from here: it talks

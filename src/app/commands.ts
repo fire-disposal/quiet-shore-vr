@@ -29,7 +29,6 @@ export type RemoteCommand =
   | { kind: 'susAnswer'; value: number }
   | { kind: 'susVoice'; on: boolean }
   | { kind: 'calibrate' }
-  | { kind: 'adaptationSkip' }
   | { kind: 'exit' }
   | { kind: 'audio'; state: 'on' | 'off' | 'toggle' }
   | { kind: 'audioVolume'; percent: number }
@@ -135,8 +134,6 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   switch (command) {
     case 'calibrate':
       return { kind: 'calibrate' };
-    case 'adapt:skip':
-      return { kind: 'adaptationSkip' };
     case 'exit':
     case 'stop':
       return { kind: 'exit' };

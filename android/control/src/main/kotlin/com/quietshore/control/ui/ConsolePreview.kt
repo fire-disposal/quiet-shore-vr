@@ -152,7 +152,6 @@ fun ConsolePreview(
         onCancelLaunch = noop,
         onEnd = noop,
         onRecalibrate = noop,
-        onAdaptationSkip = noop,
         onToggleAudio = noop,
         onFloatAmount = {},
         onBreathChange = {},

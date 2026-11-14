@@ -114,17 +114,6 @@ const SCENE_CUT_OUT_MS = 320;
  */
 /** Planned session length used by the voice auto plan until the wire carries it. */
 const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
-/** The stable window the operator starts. */
-/**
- * Orientation time before the capture may start.
- *
- * Putting a headset on is not the same as being ready to be somewhere: the
- * page holds the capture for a minute in the empty room. It is a gate, not a
- * clock — nothing on either screen counts down, because a number over a
- * patient's face invites the operator to watch it instead of them. The
- * technician can cut it short; the bedside is the authority.
- */
-const ADAPTATION_MS = 60_000;
 /** Hold-still window before the countdown starts (1.2 s × 1.5). */
 const CALIBRATION_HOLD_MS = 1800;
 /** Countdown, also the averaging window (2 s × 1.5). */
@@ -272,10 +261,6 @@ export class QuietShoreApp {
   };
   /** Patient pressed; waiting for the technician to start the capture. */
   private awaitingCalibration = false;
-  /** Wall clock when the orientation phase began; 0 while it is not running. */
-  private adaptationStartedAt = 0;
-  /** The operator ended the orientation phase early. */
-  private adaptationSkipped = false;
 
   private showPerf: boolean;
   /** Scene bed (water sound) default: on, at half the authored loudness. */
@@ -871,11 +856,6 @@ export class QuietShoreApp {
       this.input.setLayers(true, true);
       this.start.setStatus('');
 
-      // The orientation phase starts with the first frame the patient sees,
-      // not with the technician's later press: it is time in the room.
-      this.adaptationStartedAt = performance.now();
-      this.adaptationSkipped = false;
-
       if (this.config.skipCalibration) {
         if (this.handle) {
           this.handle.root.visible = true;
@@ -965,8 +945,6 @@ export class QuietShoreApp {
       }
     }
     this.sessionStartedAt = 0;
-    this.adaptationStartedAt = 0;
-    this.adaptationSkipped = false;
     this.link.sendLog(this.activeApp, 'session.stopped', {
       reason: this.lifecycle.stopReason ?? 'unknown'
     });
@@ -1911,12 +1889,6 @@ export class QuietShoreApp {
             this.susPanel?.close();
             return;
         }
-      case 'adaptationSkip':
-        this.adaptationSkipped = true;
-        this.link.sendLog(this.activeApp, 'adaptation.skipped');
-        this.start.setStatus('已结束适应，可以记录起始体位', 'ok');
-        this.link.sendStateNow();
-        return;
       case 'calibrate':
         if (this.awaitingCalibration) {
           this.beginCalibration();
@@ -2524,10 +2496,6 @@ export class QuietShoreApp {
       // The ramp the page holds, so the tablet's chosen length is a readback
       // and not a local guess that a page reload would silently invalidate.
       rampMs: Math.round(world.durationMs),
-      adaptationDone:
-        this.adaptationStartedAt <= 0 ||
-        this.adaptationSkipped ||
-        now - this.adaptationStartedAt >= ADAPTATION_MS,
       voiceId: playing ? this.voice.indexOf(playing) : -1,
       caps: this.plan?.capabilities ?? {
         rise: false,

@@ -63,7 +63,6 @@
     "exit",
     "stop",
     "calibrate",
-    "adapt:skip",
     "app:questionnaire",
     "record:outcome:attempt:yes",
     "record:outcome:success:no"

@@ -474,11 +474,6 @@ class ControlViewModel(application: Application) :
         sendCommand("calibrate")
     }
 
-    /** The bedside decides when the patient has had enough of the empty room. */
-    fun skipAdaptation() {
-        sendCommand("adapt:skip")
-    }
-
     /** Posture branch: only meaningful while the session runs in posture mode. */
     fun postureLower() {
         sendCommand(ControlProtocol.POSTURE_LOWER)
@@ -1172,7 +1167,6 @@ class ControlViewModel(application: Application) :
         _uiState.update { current ->
             current.copy(
                 app = reportedApp,
-                adaptationDone = json.optBoolean("adaptationDone", true),
                 rampMs = json.optInt("rampMs", current.rampMs).coerceIn(0, 60_000),
                 mix = json.optDouble("mix", current.mix.toDouble()).toFloat().coerceIn(0f, 1f),
                 breath = json.optBoolean("breath", current.breath),

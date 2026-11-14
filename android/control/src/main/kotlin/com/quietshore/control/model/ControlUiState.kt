@@ -149,14 +149,6 @@ data class ControlUiState(
      * confirmed it yet. Cleared by the state frame that reports `prep`.
      */
     val prepRequested: Boolean = false,
-    /**
-     * Whether the page's orientation gate has opened.
-     *
-     * The page owns the timing and publishes only the verdict: the tablet keeps
-     * the capture key closed until then and never counts anything down. True by
-     * default, so an older page that does not publish it cannot lock the key.
-     */
-    val adaptationDone: Boolean = true,
     /** Voice set the operator picked: "male" or "female". */
     val voiceSet: String = "female",
     /** Cue volume 0–100, independent of the scene bed. */

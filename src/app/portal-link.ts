@@ -56,8 +56,6 @@ export interface StateSnapshot {
   readonly elapsedSec: number;
   /** Ramp length the page will use next, milliseconds. */
   readonly rampMs: number;
-  /** True once the orientation phase is over; the capture key opens then. */
-  readonly adaptationDone: boolean;
   readonly calibrationConfidence: number;
   /** Applied world rotation, xyz only: `w` is derived by the reader. */
   readonly worldQ: QuatXyz;
@@ -195,7 +193,6 @@ export function stateFromSnapshot(snapshot: SceneSnapshot): StateSnapshot {
     voiceId: snapshot.voiceId,
     elapsedSec: snapshot.sessionSec,
     rampMs: snapshot.rampMs,
-    adaptationDone: snapshot.adaptationDone,
     calibrationConfidence: snapshot.calibrationConfidence,
     worldQ: {
       x: snapshot.worldQuat.x,

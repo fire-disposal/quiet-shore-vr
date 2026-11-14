@@ -58,8 +58,6 @@ data class ControlActions(
     val onCancelLaunch: () -> Unit,
     val onEnd: () -> Unit,
     val onRecalibrate: () -> Unit,
-    /** End the orientation phase early; the capture key then opens. */
-    val onAdaptationSkip: () -> Unit,
     val onToggleAudio: () -> Unit,
     /** Buoyancy as a whole percent of the envelope, 0–100. */
     val onFloatAmount: (Int) -> Unit,

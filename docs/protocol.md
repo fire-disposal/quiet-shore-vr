@@ -53,7 +53,7 @@ UUID 前缀统一为 `7a1e0001-6f3c-4f9a-9d2b-2f6a1c`。
 - 头显按控制者保存有界 seq 结果窗口，重复 seq 只重发原 ACK，不重复执行。
 - 命令是否合法以 `ControlProtocol.isAllowedCommand` 为唯一真值；`CAPABILITIES` 是 `/capabilities` 的人类可读镜像，并由测试校验不漂移。
 - 当前命令族：
-  - 壳层：`enter`、`exit`、`stop`、`calibrate`、`adapt:skip`。
+  - 壳层：`enter`、`exit`、`stop`、`calibrate`。
   - 场景：`scene:<id>`。会话中允许热切换，过渡由页面遮幕和斜坡处理。
   - 音频：环境声开关与音量。
   - 运动：`float:level:0-100`、`float:breath:*`、`anim:duration:*`、`posture:rise|lower|stop`、`posture:mix:0-100`。

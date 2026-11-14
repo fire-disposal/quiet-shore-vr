@@ -49,8 +49,6 @@ export interface SceneSnapshotInput {
   /** Applied buoyancy offset, millimetres (signed). */
   readonly floatMm: number;
   readonly sessionSec: number;
-  /** True once the orientation phase is over and the capture may start. */
-  readonly adaptationDone: boolean;
   readonly voiceId: number;
   readonly caps: MotionCapabilities;
 }
@@ -88,8 +86,6 @@ export class SceneSnapshot {
   sessionSec = 0;
   /** Posture ramp length the page holds; the tablet displays this, not its click. */
   rampMs = 6000;
-  /** The page's orientation gate; true until the empty room has settled. */
-  adaptationDone = true;
   voiceId = -1;
   calibrationConfidence = 0;
   caps: MotionCapabilities = {
@@ -132,7 +128,6 @@ export class SceneSnapshot {
     this.floatMm = input.floatMm;
     this.sessionSec = input.sessionSec;
     this.rampMs = input.rampMs;
-    this.adaptationDone = input.adaptationDone;
     this.voiceId = input.voiceId;
     this.calibrationConfidence = input.confidence;
     this.caps = input.caps;

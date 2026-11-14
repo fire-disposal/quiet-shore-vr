@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
-import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.SessionPhase
 
 /**
@@ -37,31 +36,24 @@ data class CalibrationView(
 
 /**
  * The capture has two moments and one verb: in the preparation room it makes
- * the first record, during a run it repeats it. The orientation gate only ever
- * applies to the first, because a recalibration mid-session happens on a body
- * that has been in the room for minutes.
+ * the first record, during a run it repeats it. The room is available at once;
+ * no orientation countdown gates the key.
  */
-fun calibrationView(state: ControlUiState, phase: SessionPhase, ready: Boolean): CalibrationView {
+fun calibrationView(phase: SessionPhase, ready: Boolean): CalibrationView {
     val capturing = phase == SessionPhase.Calibrating
-    val locked = capturing && !state.adaptationDone
     return CalibrationView(
         keyLabel = when {
-            locked -> "适应中"
             capturing -> "记录体位"
             else -> "重新校准"
         },
-        keyEnabled = ready && (
-            (capturing && state.adaptationDone) || phase == SessionPhase.Running
-            ),
+        keyEnabled = ready && (capturing || phase == SessionPhase.Running),
         stepValue = when {
-            locked -> "适应中"
             capturing -> "可记录"
             phase == SessionPhase.Running -> "已记录"
             else -> "未开始"
         },
-        stepDone = (capturing && state.adaptationDone) || phase == SessionPhase.Running,
+        stepDone = capturing || phase == SessionPhase.Running,
         headline = when {
-            locked -> "适应中"
             capturing -> "校准中"
             phase == SessionPhase.Running -> "训练中"
             phase == SessionPhase.Stopping -> "正在结束"
@@ -70,14 +62,13 @@ fun calibrationView(state: ControlUiState, phase: SessionPhase, ready: Boolean):
         },
         hint = when {
             !ready -> "头显未连接。返回配对页重连。"
-            locked -> "患者先熟悉画面；现在还不能记录。"
             capturing -> "校准中，患者保持不动。"
             phase == SessionPhase.Entry -> "等待患者按一次进入画面。"
             phase == SessionPhase.Running -> "会话在会话页调整。"
             else -> "尚未启动。"
         },
         unlockNote = when {
-            locked || capturing -> "标定未完成"
+            capturing -> "标定未完成"
             phase == SessionPhase.Stopping -> "正在结束"
             phase == SessionPhase.Running -> "可切换"
             else -> "未进入 VR"
