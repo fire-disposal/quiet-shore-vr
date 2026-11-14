@@ -198,7 +198,7 @@ fun ControlScreen(
                     QuestionnaireApp(
                         state = state,
                         actions = actions,
-                        event = event,
+                        phase = phase,
                         modifier = Modifier.fillMaxSize()
                     )
                     return@Box
@@ -218,14 +218,7 @@ fun ControlScreen(
                             .fillMaxHeight()
                     ) {
                         if (state.showControls) {
-                            LinkBanners(state = state, event = event, actions = actions)
-                        }
-                        if (phase.showsSessionVerbs && section != ConsoleSection.Session) {
-                            SessionVerbsStrip(
-                                state = state,
-                                actions = actions,
-                                phase = phase
-                            )
+                            ConsoleStatusBand(state = state, actions = actions)
                         }
                         Box(
                             Modifier
@@ -286,67 +279,6 @@ fun ControlScreen(
 }
 
 /**
- * The two session exits, on whatever page the operator is looking at.
- *
- * They are duplicated with the foot of the session column on purpose: the
- * session column is one tab away, and "stop the patient" is not a navigation.
- * The strip is a board, not a bar, so it reads as part of the page it sits on.
- *
- * The disconnect is drawn as the emergency it is. With the patient wearing the
- * headset and holding no controls, cutting the tablet *is* the stop: the page
- * freezes motion and voice immediately and holds the session for five seconds,
- * and only if that window closes with no reconnect does it end the session and
- * leave to the entry screen. Both halves are printed on the key, because the
- * difference between "frozen for five seconds" and "session over" is the whole
- * decision the operator is making.
- */
-@Composable
-private fun SessionVerbsStrip(
-    state: ControlUiState,
-    actions: ControlActions,
-    phase: SessionPhase
-) {
-    val ready = state.phase == BlePhase.READY
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(QuietPalette.Board)
-            .padding(horizontal = QuietSpace.Page, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = if (phase == SessionPhase.Stopping) "正在结束" else "会话进行中",
-            style = MaterialTheme.typography.labelMedium,
-            color = QuietPalette.InkSecondary,
-            modifier = Modifier.width(72.dp)
-        )
-        if (phase.awaitingPress) {
-            ActionKey(
-                label = "取消启动",
-                subLabel = "患者尚未进入",
-                onClick = actions.onCancelLaunch,
-                tone = ActionTone.Secondary,
-                height = 56.dp
-            )
-        } else {
-            ActionKey(
-                label = when (phase) {
-                    SessionPhase.Stopping -> "正在结束"
-                    else -> "结束会话"
-                },
-                onClick = actions.onEnd,
-                tone = ActionTone.Danger,
-                enabled = ready && phase != SessionPhase.Stopping,
-                height = 56.dp
-            )
-        }
-        Spacer(Modifier.weight(1f))
-    }
-    Rule()
-}
-
-/**
  * The questionnaire app's main area.
  *
  * Two jobs, one rail: answer the loaded instrument, or work the archive. The
@@ -358,7 +290,7 @@ private fun SessionVerbsStrip(
 private fun QuestionnaireApp(
     state: ControlUiState,
     actions: ControlActions,
-    event: UiEvent?,
+    phase: SessionPhase,
     modifier: Modifier = Modifier
 ) {
     var section by rememberSaveable { mutableStateOf(QuestionnaireSection.Answer) }
@@ -375,7 +307,7 @@ private fun QuestionnaireApp(
                 .fillMaxHeight()
         ) {
             if (state.showControls) {
-                LinkBanners(state = state, event = event, actions = actions)
+                ConsoleStatusBand(state = state, actions = actions)
             }
             Box(
                 Modifier
@@ -1309,40 +1241,54 @@ private fun StandbySteps(
                 },
                 live && !state.inSpecialScene
             )
-            // The chain sits at the top, the one key at the foot: the panel is
-            // the height of the column, so the target is where the thumb is.
+            // The chain sits at the top, the one key at the foot. That key is
+            // polymorphic by phase so the page never grows a second status bar
+            // or a second cancel/calibration control.
             Spacer(Modifier.weight(1f))
-            // The pre-session home of the calibration verb. The first capture
-            // happens while the operator is still on 场景, not on 会话; hiding
-            // the key there made 「记录体位」 unreachable exactly when the
-            // preparation room asked for it.
-            if (phase == SessionPhase.Calibrating) {
-                CalibrationKey(
-                    view = calibration,
-                    onClick = actions.onRecalibrate,
-                    modifier = Modifier.fillMaxWidth(),
-                    height = 72.dp
-                )
-            } else {
-                ActionKey(
-                    label = when (phase) {
-                        SessionPhase.Entry -> "等待确认"
-                        else -> "启动训练"
-                    },
-                    onClick = actions.onEnterTraining,
-                    modifier = Modifier.fillMaxWidth(),
-                    tone = ActionTone.Primary,
-                    height = 72.dp,
-                    enabled = ready && phase == SessionPhase.Idle,
-                    textStyle = MaterialTheme.typography.titleMedium
-                )
+            val verbLabel = when (phase) {
+                SessionPhase.Entry -> "取消启动"
+                SessionPhase.Calibrating -> "记录体位"
+                SessionPhase.Running -> "结束会话"
+                SessionPhase.Stopping -> "正在结束"
+                SessionPhase.Idle, SessionPhase.Ended -> "启动训练"
             }
-            if (phase == SessionPhase.Entry) {
-                // The countdown already lives in the page headline; the cancel
-                // is owned once by the session strip above the page so this
-                // board cannot grow a second copy of the same decision.
-                Spacer(Modifier.height(4.dp))
+            val verbSubLabel = when (phase) {
+                SessionPhase.Entry -> "患者尚未进入"
+                SessionPhase.Calibrating -> "保持不动"
+                SessionPhase.Running -> "冻结并结束"
+                SessionPhase.Stopping -> null
+                SessionPhase.Idle, SessionPhase.Ended -> null
             }
+            val verbTone = when (phase) {
+                SessionPhase.Entry -> ActionTone.Secondary
+                SessionPhase.Running -> ActionTone.Danger
+                SessionPhase.Stopping -> ActionTone.Quiet
+                SessionPhase.Idle, SessionPhase.Calibrating, SessionPhase.Ended -> ActionTone.Primary
+            }
+            val verbEnabled = when (phase) {
+                SessionPhase.Entry -> ready
+                SessionPhase.Calibrating -> ready
+                SessionPhase.Running -> ready
+                SessionPhase.Stopping -> false
+                SessionPhase.Idle, SessionPhase.Ended -> ready
+            }
+            val verbAction: () -> Unit = when (phase) {
+                SessionPhase.Entry -> actions.onCancelLaunch
+                SessionPhase.Calibrating -> actions.onRecalibrate
+                SessionPhase.Running -> actions.onEnd
+                SessionPhase.Stopping -> actions.onEnd
+                SessionPhase.Idle, SessionPhase.Ended -> actions.onEnterTraining
+            }
+            ActionKey(
+                label = verbLabel,
+                subLabel = verbSubLabel,
+                onClick = verbAction,
+                modifier = Modifier.fillMaxWidth(),
+                tone = verbTone,
+                height = 72.dp,
+                enabled = verbEnabled,
+                textStyle = MaterialTheme.typography.titleMedium
+            )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = calibration.hint,
@@ -1445,13 +1391,13 @@ private fun TwoColumns(
 // ---------------------------------------------------------------------------
 
 /**
- * The link, when it needs saying: a banner above the content, never a dialog.
- * Red never appears here — red belongs to the stop.
+ * The link, when it needs saying. This is the only band above the page: normal
+ * events and session verbs do not get their own row. Entry cancel and the
+ * calibration verb live in the page's bottom-right polymorphic key.
  */
 @Composable
-private fun LinkBanners(
+private fun ConsoleStatusBand(
     state: ControlUiState,
-    event: UiEvent?,
     actions: ControlActions
 ) {
     val offline = state.phase == BlePhase.DISCONNECTED ||
@@ -1461,15 +1407,12 @@ private fun LinkBanners(
         (state.phase == BlePhase.RECONNECTING ||
             state.phase == BlePhase.SCANNING ||
             state.phase == BlePhase.CONNECTING)
-    if (!offline && !reconnecting && event == null) {
+    if (!offline && !reconnecting) {
         return
     }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            // Match the session-verb band below: full-width board surface,
-            // inner page gutter. The old inset-only banner floated between the
-            // command bar and the rail and read as a third, misaligned layer.
             .background(QuietPalette.Board)
     ) {
         Column(
@@ -1486,7 +1429,7 @@ private fun LinkBanners(
                     actionLabel = "返回配对",
                     onAction = actions.onLeave
                 )
-            } else if (offline) {
+            } else {
                 BannerRow(
                     title = "头显已断开",
                     body = "打开头显应用，再点“重新连接”。",
@@ -1494,13 +1437,6 @@ private fun LinkBanners(
                     onAction = actions.onReconnect,
                     secondaryLabel = "返回配对",
                     onSecondary = actions.onLeave
-                )
-            } else if (event != null) {
-                // One alert slot. Stacking the event under a link banner produced
-                // two competing levels and pushed the page down twice.
-                NoticeRow(
-                    text = OperatorCopy.operatorText(event),
-                    danger = event is UiEvent.Error
                 )
             }
         }
