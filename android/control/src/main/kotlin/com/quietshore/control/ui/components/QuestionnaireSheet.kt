@@ -118,6 +118,8 @@ private fun AnswerBody(
     val answered = answers.count { it != 0 }
     val current = state.questionnaireIndex
     val questions = instrument.questions
+    val inScene = state.sessionActive
+    val sheetOpen = state.questionnaireOpen
 
     Band(
         title = "量表",
@@ -161,61 +163,94 @@ private fun AnswerBody(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Key(
-                    label = "打开量表",
-                    onClick = actions.onQuestionnaireOpen,
-                    modifier = Modifier.weight(1f),
-                    kind = KeyKind.Fill,
-                    enabled = connected
+            if (!inScene) {
+                Text(
+                    text = "先进入场景。患者按一次头显按钮进入画面后，再按需显示问卷。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextPrimary
                 )
-                Key(
-                    label = "关闭量表",
-                    onClick = actions.onQuestionnaireClose,
-                    modifier = Modifier.weight(1f),
-                    enabled = connected
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Key(
+                        label = "启动问卷",
+                        onClick = actions.onEnterQuestionnaire,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Fill,
+                        enabled = state.phase == BlePhase.READY
+                    )
+                    Key(
+                        label = "结束问卷",
+                        onClick = actions.onEnd,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Quiet,
+                        enabled = state.phase == BlePhase.READY
+                    )
+                }
+            } else if (!sheetOpen) {
+                Text(
+                    text = "患者已进入画面。需要作答时再显示问卷。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = QuietPalette.TextPrimary
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Key(
+                        label = "显示问卷",
+                        onClick = actions.onQuestionnaireOpen,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Fill,
+                        enabled = connected
+                    )
+                    Key(
+                        label = "结束问卷",
+                        onClick = actions.onEnd,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Quiet,
+                        enabled = state.phase == BlePhase.READY
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Key(
+                        label = "关闭问卷",
+                        onClick = actions.onQuestionnaireClose,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Outline,
+                        enabled = connected
+                    )
+                    Key(
+                        label = "结束问卷",
+                        onClick = actions.onEnd,
+                        modifier = Modifier.weight(1f),
+                        kind = KeyKind.Quiet,
+                        enabled = state.phase == BlePhase.READY
+                    )
+                }
+                Text(
+                    text = if (current in 1..questions.size) {
+                        "当前第 $current 题。"
+                    } else {
+                        "未开始。由患者目视或操作员逐题显示。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.TextSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
-            // Launching the face is not the same as opening the sheet: a
-            // questionnaire launch deliberately skips the preparation room and
-            // the calibration capture, so this is the only door onto it when
-            // the page is not already up. It is enabled below READY because the
-            // headset can boot the page with no tablet link at all.
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Key(
-                    label = "启动问卷",
-                    onClick = actions.onEnterQuestionnaire,
-                    modifier = Modifier.weight(1f),
-                    kind = KeyKind.Outline,
-                    enabled = state.phase == BlePhase.READY
-                )
-                Key(
-                    label = "结束问卷",
-                    onClick = actions.onEnd,
-                    modifier = Modifier.weight(1f),
-                    kind = KeyKind.Quiet,
-                    enabled = state.phase == BlePhase.READY &&
-                        (state.sessionActive || state.app == "questionnaire")
-                )
-            }
-            Text(
-                text = if (current in 1..questions.size) {
-                    "当前第 $current 题。"
-                } else {
-                    "未开始。打开量表逐题出现。"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = QuietPalette.TextSecondary,
-                modifier = Modifier.padding(top = 8.dp)
-            )
         }
+    }
+
+    if (!inScene || !sheetOpen) {
+        return
     }
 
     Band(title = "作答方式") {

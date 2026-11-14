@@ -1045,8 +1045,8 @@ export class QuietShoreApp {
     // sheet is allowed to run in and what `canSwitchApp` expects.
     this.comfort?.reset();
     this.input.setLayers(true, true);
+    this.questionnairePanel?.close();
     this.resetQuestionnaireSheet();
-    this.openQuestionnaire();
     this.start.setStatus(this.strings.modeQuestionnaire, 'ok');
   }
 
@@ -1091,10 +1091,10 @@ export class QuietShoreApp {
       this.refuse(`未发布的问卷：${id}`);
       return;
     }
+    const wasOpen = this.questionnairePanel?.isOpen() === true;
     if (next.id === this.activeQuestionnaire.id && this.questionnairePanel) {
-      // Already loaded: selecting it again means "show me this one", not "throw
-      // away the answers I have".
-      this.openQuestionnaire();
+      // Already loaded: selecting it again changes nothing. Opening the sheet
+      // is an explicit command, not a side effect of the selector.
       return;
     }
     // Whatever was answered on the outgoing instrument is a record in its own
@@ -1107,7 +1107,9 @@ export class QuietShoreApp {
     this.questionnaireAnswers = emptyAnswers(next);
     this.questionnaireFiled = false;
     if (this.activeApp === 'questionnaire') {
-      this.openQuestionnaire();
+      if (wasOpen) {
+        this.openQuestionnaire();
+      }
       this.report(`问卷：${next.name.zh}`);
     }
     this.publishQuestionnaireState();
@@ -1910,10 +1912,10 @@ export class QuietShoreApp {
       }
       // Re-entering the face is a new respondent: the previous sheet — its
       // answers, its page and the panel's cached draft — belongs to them, not
-      // to the person about to answer.
+      // to the person about to answer. Showing the sheet is a separate,
+      // explicit operator action once the patient is inside XR.
+      this.questionnairePanel?.close();
       this.resetQuestionnaireSheet();
-      // The sheet is the face's content, not a modal it has to summon.
-      this.openQuestionnaire();
     } else {
       // A face switch is a deliberate exit: archive whatever the patient has
       // answered before the panel is hidden and the answers are cleared.
