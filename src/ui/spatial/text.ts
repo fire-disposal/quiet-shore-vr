@@ -11,6 +11,8 @@ export interface TextTextureOptions {
   align?: 'left' | 'center';
   paddingPx?: number;
   lineHeight?: number;
+  /** Body text grows its canvas; a fixed-height title keeps its declared box. */
+  autoHeight?: boolean;
 }
 
 /**
@@ -100,6 +102,7 @@ export class TextTexture {
       align: options.align ?? 'left',
       paddingPx: options.paddingPx ?? 24,
       lineHeight: options.lineHeight ?? 1.25,
+      autoHeight: options.autoHeight ?? true,
       theme: options.theme
     };
 
@@ -148,7 +151,9 @@ export class TextTexture {
     // Grow the canvas to the text instead of letting long copy fall outside
     // it: the surfaces scale the mesh by this texture's aspect, so a clipped
     // texture means text drawn under the card.
-    const nextHeight = Math.max(48, Math.ceil(totalHeight + paddingPx * 2));
+    const nextHeight = this.options.autoHeight
+      ? Math.max(48, Math.ceil(totalHeight + paddingPx * 2))
+      : canvas.height;
     if (canvas.height !== nextHeight) {
       canvas.height = nextHeight;
       ctx.font = `${weight} ${sizePx}px ${theme.fontFamily}`;

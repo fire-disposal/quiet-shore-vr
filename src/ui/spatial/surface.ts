@@ -168,6 +168,7 @@ export class SpatialSurface {
         theme: this.options.theme,
         sizePx: this.options.titlePx ?? this.options.theme.titlePx,
         heightPx: Math.round((this.options.titlePx ?? this.options.theme.titlePx) * (this.options.titleEm ?? 1.35)),
+        autoHeight: false,
         weight: 650,
         align: 'left'
       });

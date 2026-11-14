@@ -79,19 +79,20 @@ export function createQuestionnairePanel(
   anchor.object.add(root);
 
   const CARD_WIDTH = 1.5;
-  const CARD_TOP = 0.4;
+  const CARD_TOP = 0.86;
   const BOTTOM_PAD = 0.045;
-  const OPTION_HALF = 0.065;
+  const OPTION_HEIGHT = 0.105;
+  const OPTION_GAP = 0.012;
   const PAGER_HALF = 0.055;
   const HEADER_PX = 26;
   const HEADER_EM = 1.05;
-  const HEADER_TOP = CARD_TOP - 0.03;
-  const HEADER_GAP = 0.045;
-  const BODY_PX = 60;
-  const BODY_LINE_HEIGHT = 1.3;
-  const PAGER_Y = -0.255;
-  const OPTION_Y = PAGER_Y + PAGER_HALF + 0.03 + OPTION_HALF;
-  const BODY_BOTTOM = OPTION_Y + OPTION_HALF + 0.03;
+  const HEADER_TOP = CARD_TOP - 0.04;
+  const HEADER_GAP = 0.03;
+  const BODY_PX = 40;
+  const BODY_LINE_HEIGHT = 1.25;
+  const PAGER_Y = -0.69;
+  const OPTIONS_BOTTOM = PAGER_Y + PAGER_HALF + 0.06;
+  const BODY_BOTTOM = 0.30;
   const CARD_BOTTOM = PAGER_Y - PAGER_HALF - BOTTOM_PAD;
   const CARD_HEIGHT = CARD_TOP - CARD_BOTTOM;
 
@@ -125,19 +126,18 @@ export function createQuestionnairePanel(
   let offs: Array<() => void> = [];
 
   const optionCount = questionnaire.options.length;
-  const buttonWidth = 0.216;
-  const pitch = Math.min(0.248, (CARD_WIDTH - 0.1 - buttonWidth) / Math.max(1, optionCount - 1));
-  const left = -((optionCount - 1) * pitch) / 2;
+  const buttonWidth = CARD_WIDTH - 0.12;
+  const optionsTop = OPTIONS_BOTTOM + (optionCount - 1) * (OPTION_HEIGHT + OPTION_GAP);
   const optionButtons = questionnaire.options.map((option, index) => {
     const button = new SpatialButton({
       width: buttonWidth,
-      height: OPTION_HALF * 2,
+      height: OPTION_HEIGHT,
       label: option.label.zh,
       theme,
       renderOrder: 1310,
       dwellTime: QUESTIONNAIRE_DWELL_SECONDS
     });
-    button.object.position.set(left + index * pitch, OPTION_Y, 0.002);
+    button.object.position.set(0, optionsTop - index * (OPTION_HEIGHT + OPTION_GAP), 0.002);
     button.onSelect = () => record(option.value);
     root.add(button.object);
     return button;

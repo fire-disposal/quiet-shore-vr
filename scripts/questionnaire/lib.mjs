@@ -69,7 +69,7 @@ function normalize(raw, file) {
     questionIds.add(questionId);
     const clipId = voiceId(question.voiceId, file, `${label}.voiceId`);
     if (!clipId.startsWith(`v-${questionnaireId}-`)) fail(file, `${clipId} 必须以 v-${questionnaireId}- 开头`);
-    return { id: questionId, text: localized(question.text, file, `${label}.text`, 120), voiceId: clipId };
+    return { id: questionId, text: localized(question.text, file, `${label}.text`, 90), voiceId: clipId };
   });
   const values = new Set();
   const options = source.options.map((rawOption, index) => {
