@@ -58,11 +58,15 @@ class JsonChannelLimitTest {
     }
 
     @Test
-    fun `the websocket limit is the json channel limit`() {
-        assertEquals(ControlProtocol.jsonDocumentLimitBytes(), ControlProtocol.wsMessageLimitBytes())
+    fun `the json channel limit is the one number both directions use`() {
+        // The headset refuses to accept a document it could not relay at the
+        // default MTU, so "the page sent it" implies "the tablet can receive
+        // it": the accept check and the limits agree at the boundary.
+        assertTrue(ControlProtocol.fitsJsonChannel(ControlProtocol.jsonDocumentLimitBytes()))
+        assertFalse(ControlProtocol.fitsJsonChannel(ControlProtocol.jsonDocumentLimitBytes() + 1))
         assertEquals(
             ControlProtocol.jsonDocumentLimitBytes(96),
-            ControlProtocol.wsMessageLimitBytes(96)
+            ControlProtocol.jsonChunkPayload(96) * ControlProtocol.maxChunks
         )
     }
 }

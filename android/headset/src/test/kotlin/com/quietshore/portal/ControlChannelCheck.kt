@@ -2,6 +2,7 @@ package com.quietshore.portal
 
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.JsonAssembler
+import com.quietshore.control.protocol.JsonEnvelope
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -26,6 +27,7 @@ import java.util.Base64
  *   android/headset/src/main/kotlin/com/quietshore/portal/EntryRetry.kt \
  *   android/headset/src/main/kotlin/com/quietshore/portal/MtuPolicy.kt \
  *   android/protocol/src/main/kotlin/com/quietshore/control/protocol/ControlProtocol.kt \
+ *   android/protocol/src/main/kotlin/com/quietshore/control/protocol/JsonEnvelope.kt \
  *   android/headset/src/test/kotlin/com/quietshore/portal/ControlChannelCheck.kt \
  *   -d /tmp/control-check
  * java -cp "/tmp/control-check:$KOTLINC_JARS" com.quietshore.portal.ControlChannelCheckKt
@@ -430,9 +432,16 @@ private fun jsonSizeChecks() {
         ).size == ControlProtocol.maxChunks
     )
 
-    // The page-facing number is the same number, so "the page sent it" implies
-    // "the tablet can receive it".
-    checkEquals("ws limit equals the json channel limit", limit, ControlProtocol.wsMessageLimitBytes())
+    // The accept check and the encoder agree at the boundary, so "the page sent
+    // it" implies "the tablet can receive it".
+    check(
+        "the ws accept boundary is the json channel limit",
+        ControlProtocol.fitsJsonChannel(limit, mtu)
+    )
+    check(
+        "one byte over the json channel limit is refused on the way in",
+        !ControlProtocol.fitsJsonChannel(limit + 1, mtu)
+    )
 }
 
 /**
@@ -445,7 +454,8 @@ private fun jsonSizeChecks() {
  */
 private fun susReplayChecks() {
     val sheet = "{\"answers\":[{" + (1..10).joinToString(",") { "\"q$it\":${it % 5 + 1}" } + "]}"
-    val document = "{\"t\":\"sus\",\"d\":$sheet}"
+    // The producer's own envelope call: the live publish and the replay share it.
+    val document = JsonEnvelope.document("sus", sheet)
 
     // Live path and replay path are the same document, so the tablet's
     // assembler produces the same bytes either way.
@@ -462,8 +472,10 @@ private fun susReplayChecks() {
     checkEquals("the replay reassembles to the enveloped document", document, reassembled?.toString(StandardCharsets.UTF_8))
     check("every replay chunk fits the mtu", chunks.all { it.size <= ControlProtocol.ATT_MTU_MIN })
 
-    // The envelope is what makes it a channel document rather than a bare record.
+    // The envelope is what makes it a channel document rather than a bare
+    // record, and the body is spliced verbatim — no re-encoding of the sheet.
     check("the doc states its topic", document.startsWith("{\"t\":\"sus\",\"d\":"))
+    check("the sheet survives the envelope byte for byte", document == "{\"t\":\"sus\",\"d\":$sheet}")
 }
 
 /**

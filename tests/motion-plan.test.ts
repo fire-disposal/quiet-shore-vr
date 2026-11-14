@@ -4,6 +4,7 @@ import { planCapabilities, planMotion, type MotionPlanInput } from '../src/app/m
 function input(overrides: Partial<MotionPlanInput> = {}): MotionPlanInput {
   return {
     session: true,
+    floatCap: 1,
     presenting: true,
     capturing: false,
     correctionMix: 0,

@@ -87,15 +87,15 @@ function fakeAudio(this: unknown, src: string): FakeElement {
     paused: true,
     onended: null,
     play: () => {
-      const deferred = Promise.withResolvers<void>();
+      const deferredPlay = Promise.withResolvers<void>();
       pending.push({
         resolve: () => {
           element.paused = false;
-          deferred.resolve();
+          deferredPlay.resolve();
         },
-        reject: deferred.reject
+        reject: deferredPlay.reject
       });
-      return deferred.promise;
+      return deferredPlay.promise;
     },
     pause() {
       element.paused = true;

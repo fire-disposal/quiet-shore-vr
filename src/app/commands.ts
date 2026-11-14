@@ -1,5 +1,4 @@
 import { isViewPresetId, type ViewPresetId } from '../core/xr/view-motion';
-import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN } from './config';
 import { SUS_ITEMS } from './sus';
 
 /**
@@ -14,7 +13,6 @@ import { SUS_ITEMS } from './sus';
  */
 
 export type RemoteCommand =
-  | { kind: 'eyeHeight'; meters: number }
   | { kind: 'viewAnim'; name: ViewPresetId }
   | { kind: 'viewStop' }
   | { kind: 'scene'; id: string }
@@ -28,10 +26,8 @@ export type RemoteCommand =
   | { kind: 'susOpen' }
   | { kind: 'susClose' }
   | { kind: 'susShow'; index: number }
-  | { kind: 'susMove'; delta: 1 | -1 }
   | { kind: 'susAnswer'; value: number }
   | { kind: 'susVoice'; on: boolean }
-  | { kind: 'preview' }
   | { kind: 'calibrate' }
   | { kind: 'adaptationSkip' }
   | { kind: 'exit' }
@@ -39,18 +35,9 @@ export type RemoteCommand =
   | { kind: 'audioVolume'; percent: number }
   | { kind: 'posture'; target: 'rise' | 'lower' | 'stop' }
   | { kind: 'postureMix'; percent: number }
-  | { kind: 'status' }
-  | { kind: 'start' }
   /** Recognised prefix, invalid payload; the message is operator-facing. */
   | { kind: 'invalid'; message: string }
   | { kind: 'unknown' };
-
-/**
- * Strict wire form for `settings:eyeheight:<m>`: plain decimal, no sign,
- * exponent, padding or locale comma. One or two integer digits so the whole
- * 1.0–2.4 m band is expressible; the band itself is checked in `parseEyeHeight`.
- */
-export const EYE_HEIGHT_ARG = /^\d{1,2}(?:\.\d{1,3})?$/;
 
 /**
  * Strict wire form for `posture:mix:<0-100>`: whole percent only. `07`, `1.5`,
@@ -73,9 +60,6 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
     return null;
   }
 
-  if (command.startsWith('settings:eyeheight:')) {
-    return parseEyeHeight(command.slice('settings:eyeheight:'.length));
-  }
   if (command.startsWith('posture:mix:')) {
     const payload = command.slice('posture:mix:'.length);
     if (!POSTURE_MIX_ARG.test(payload)) {
@@ -140,9 +124,6 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
       ? { kind: 'susShow', index }
       : { kind: 'invalid', message: 'SUS 题号无效' };
   }
-  if (command === 'sus:next' || command === 'sus:prev') {
-    return { kind: 'susMove', delta: command === 'sus:next' ? 1 : -1 };
-  }
   if (command.startsWith('sus:answer:')) {
     // Exactly one digit: "sus:answer:01" is a malformed frame, not a 1.
     const payload = command.slice('sus:answer:'.length);
@@ -152,8 +133,6 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   }
 
   switch (command) {
-    case 'preview':
-      return { kind: 'preview' };
     case 'calibrate':
       return { kind: 'calibrate' };
     case 'adapt:skip':
@@ -173,22 +152,7 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
       return { kind: 'posture', target: 'lower' };
     case 'posture:stop':
       return { kind: 'posture', target: 'stop' };
-    case 'status':
-      return { kind: 'status' };
-    case 'start':
-      return { kind: 'start' };
     default:
       return { kind: 'unknown' };
   }
-}
-
-function parseEyeHeight(payload: string): RemoteCommand {
-  if (!EYE_HEIGHT_ARG.test(payload)) {
-    return { kind: 'invalid', message: `视点高度无效：${payload}` };
-  }
-  const meters = Number(payload);
-  if (!Number.isFinite(meters) || meters < EYE_HEIGHT_MIN || meters > EYE_HEIGHT_MAX) {
-    return { kind: 'invalid', message: `视点高度无效：${payload}` };
-  }
-  return { kind: 'eyeHeight', meters };
 }

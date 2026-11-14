@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EYE_HEIGHT_MAX, EYE_HEIGHT_MIN, readConfig, type AppConfig } from './config';
+import { readConfig, type AppConfig } from './config';
 import { createRenderer } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
 import {
@@ -181,7 +181,6 @@ export class QuietShoreApp {
   /** The operator's scene, kept while the questionnaire face shows its own. */
   private trainingSceneId = '';
 
-  private eyeHeight: number;
   /** Lying eye of the loaded scene; the rise is measured from it. */
   private sceneLyingEyeY = 0;
   /** Correction the loaded scene rests in (0 supine, 1 standing). */
@@ -309,7 +308,6 @@ export class QuietShoreApp {
   constructor() {
     this.config = readConfig(window.location.search);
     this.activeApp = this.config.initialApp;
-    this.eyeHeight = this.config.eyeHeight;
     this.strings = getStrings(this.config.lang);
     this.showPerf = this.config.showPerf;
     if (this.config.initialScene) {
@@ -330,7 +328,7 @@ export class QuietShoreApp {
     );
     // The eye is the origin of this frame, not a height above it: the content is
     // dropped by the applied eye height (`floating.setBaseOffset(-eyeY)`), so
-    // placing the camera at `eyeHeight` as well put it 3.4 m above the room's
+    // placing the camera at the standing eye as well put it 3.4 m above the room's
     // floor at `mix = 1` — above the washroom's own ceiling.
     this.camera.position.set(0, 0, 0);
     this.camera.rotation.order = 'YXZ';
@@ -757,7 +755,7 @@ export class QuietShoreApp {
     this.sceneRestMix = restMixOf(definition.posture);
     this.world.setScene({
       lyingEyeY: this.sceneLyingEyeY,
-      standingEyeY: this.eyeHeight,
+      standingEyeY: this.config.eyeHeight,
       restMix: this.sceneRestMix
     });
     this.world.apply();
@@ -1799,9 +1797,6 @@ export class QuietShoreApp {
       return;
     }
     switch (command.kind) {
-      case 'eyeHeight':
-        this.applyEyeHeight(command.meters);
-        return;
       case 'viewAnim':
         if (!this.viewCommandsAllowed()) {
           this.refuse('当前无法切换视角');
@@ -1874,7 +1869,6 @@ export class QuietShoreApp {
         return;
       case 'susOpen':
       case 'susShow':
-      case 'susMove':
       case 'susAnswer':
       case 'susClose':
         if (this.activeApp !== 'questionnaire') {
@@ -1889,9 +1883,6 @@ export class QuietShoreApp {
             this.openSus();
             this.susPanel?.show(command.index - 1);
             return;
-          case 'susMove':
-            this.susPanel?.move(command.delta);
-            return;
           case 'susAnswer':
             this.susPanel?.answer(command.value);
             return;
@@ -1899,9 +1890,6 @@ export class QuietShoreApp {
             this.susPanel?.close();
             return;
         }
-      case 'preview':
-        this.startPreview();
-        return;
       case 'adaptationSkip':
         this.adaptationSkipped = true;
         this.link.sendLog(this.activeApp, 'adaptation.skipped');
@@ -1953,13 +1941,6 @@ export class QuietShoreApp {
         }
         this.setVirtualPosture(command.target === 'rise');
         return;
-      case 'status':
-        // The link refreshes the readback after every discrete command, so a
-        // newly claiming controller is never left with a stale snapshot.
-        return;
-      case 'start':
-        this.start.setStatus(this.strings.remoteStartNeedsGesture, 'ok');
-        return;
       case 'invalid':
         this.start.setStatus(command.message, 'error');
         return;
@@ -1969,33 +1950,6 @@ export class QuietShoreApp {
     }
   }
 
-  /**
-   * `settings:eyeheight:<m>`: this is the patient's **standing eye height** —
-   * the far end of the rise and the height the art is placed for at mix = 1.
-   * It is a session parameter, not a world offset: changing it re-places the
-   * art through the same `posture` formula the rise uses.
-   */
-  private applyEyeHeight(next: number): void {
-    if (this.capturePending) {
-      this.refuse('记录体位时无法调整站立足高');
-      return;
-    }
-    if (!Number.isFinite(next) || next < EYE_HEIGHT_MIN || next > EYE_HEIGHT_MAX) {
-      this.refuse(`站立足高需在 ${EYE_HEIGHT_MIN.toFixed(1)}–${EYE_HEIGHT_MAX.toFixed(1)} m 之间`);
-      return;
-    }
-    // Hot, but deferred: the runtime adopts it when the next ramp starts and
-    // blends it across that ramp. Re-placing the art on the spot would be a
-    // vertical jump under a patient who is lying still.
-    this.eyeHeight = next;
-    this.world.setStandingEyeY(next);
-    this.start.setStatus(
-      `站立足高 ${next.toFixed(2)} m，下次调整体位时生效`,
-      'ok'
-    );
-  }
-
-  /** Rejected during calibration and whenever the patient is not in XR. */
   /**
    * Composed once per frame; every consumer reads this instead of re-deriving
    * "can I move" from whichever field happens to be nearby.

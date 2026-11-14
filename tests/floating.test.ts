@@ -7,19 +7,19 @@ import type { SceneHandle } from '../src/core/scene/contract';
 
 function harness(options: {
   gate?: Partial<BuoyancyGate>;
-  axis?: THREE.Vector3;
+  axis?: THREE.Vector3 | null;
   amount?: number;
 } = {}) {
   const content = new THREE.Group();
   const backdrop = new THREE.Group();
   /** What the heave wrote, in order: the content's position, per applied frame. */
   const applied: { x: number; y: number; z: number }[] = [];
-  const gate: BuoyancyGate = {
+  const gate = {
     active: true,
     capturePending: false,
     rising: false,
     ...options.gate
-  };
+  } satisfies BuoyancyGate;
   // One mechanism: every scene moves its content and every scene keeps a
   // backdrop still. The handle no longer has a say in how.
   const handle = { controls: { setMotion: () => {} } } as unknown as SceneHandle;

@@ -10,6 +10,7 @@ import {
   type PoseSnapshot,
   type StateSnapshot
 } from '../src/app/portal-link';
+import { degrees, metres, mix01 } from '../src/core/units';
 
 const POSE: PoseSnapshot = { x: 0, y: 1.6, z: 0, yaw: 0.1, pitch: -0.2, roll: 0.05 };
 
@@ -136,8 +137,6 @@ describe('planControlDispatch', () => {
     const plan = planControlDispatch(
       [
         // @ts-expect-error malformed wire data must not crash the link
-        { seq: Number.NaN, command: 'scene:ward' },
-        // @ts-expect-error malformed wire data must not crash the link
         { seq: 3, command: 42 },
         { seq: 4, command: 'view:stop' }
       ],
@@ -201,20 +200,35 @@ describe('PortalLink', () => {
   function state(): StateSnapshot {
     return {
       scene: 'washroom',
+      app: 'training',
       session: false,
       calibrating: false,
       audio: false,
-      eyeHeight: 1.6,
-      posturePitch: 0,
-      postureRoll: 0,
-      postureRise: 0,
-      postureProgress: 0,
-      viewPitch: 0,
+      moving: false,
+      eyeHeight: metres(1.6),
+      mix: mix01(0),
+      floatAmount: 1,
+      breath: true,
+      floatMm: 0,
+      viewPitch: degrees(0),
+      viewYaw: degrees(0),
       viewAnim,
-      viewPreset: 'none',
-      cueEnabled: false,
-      cueIntensity: 0,
-      calibrationConfidence: 0
+      voiceId: -1,
+      elapsedSec: 0,
+      rampMs: 10000,
+      adaptationDone: true,
+      calibrationConfidence: 0,
+      worldQ: { x: 0, y: 0, z: 0 },
+      worldT: { x: metres(0), y: metres(0), z: metres(0) },
+      caps: {
+        rise: false,
+        lie: false,
+        stop: false,
+        float: true,
+        view: true,
+        blocked: '',
+        floatCap: 1
+      }
     };
   }
 
@@ -424,7 +438,7 @@ describe('PortalLink', () => {
     vi.advanceTimersByTime(3000);
     expect(socket.sent.filter((message) => message.type === 'state').length).toBe(3);
 
-    viewAnim = 'pitch';
+    viewAnim = 'playing';
     // The next tick sees the animation and re-arms the cadence at 200 ms.
     vi.advanceTimersByTime(1000);
     socket.sent.length = 0;

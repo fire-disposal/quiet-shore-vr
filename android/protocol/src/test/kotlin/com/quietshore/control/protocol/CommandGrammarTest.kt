@@ -1,11 +1,13 @@
 package com.quietshore.control.protocol
 
+import org.json.JSONObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.File
 
 /**
  * The headset's allowlist and the page's parser (`src/app/commands.ts`) must
@@ -13,6 +15,39 @@ import org.junit.jupiter.api.Test
  * one for one; when one side gains a rule, the other gains the same case.
  */
 class CommandGrammarTest {
+
+    private fun sharedFixture(): JSONObject {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        repeat(6) {
+            val current = dir ?: error("repository root not found")
+            val candidate = File(current, "tests/fixtures/command-grammar.json")
+            if (candidate.isFile) {
+                return JSONObject(candidate.readText())
+            }
+            dir = current.parentFile
+        }
+        error("tests/fixtures/command-grammar.json not found above ${System.getProperty("user.dir")}")
+    }
+
+    private fun JSONObject.commands(name: String): List<String> {
+        val array = getJSONArray(name)
+        return buildList {
+            for (index in 0 until array.length()) {
+                add(array.getString(index))
+            }
+        }
+    }
+
+    @Test
+    fun `matches the shared page-headset contract fixture`() {
+        val fixture = sharedFixture()
+        for (raw in fixture.commands("sharedAccepted") + fixture.commands("headsetOnlyAccepted")) {
+            assertTrue(ControlProtocol.isAllowedCommand(raw), raw)
+        }
+        for (raw in fixture.commands("sharedRejected") + fixture.commands("headsetRejectedOnly")) {
+            assertFalse(ControlProtocol.isAllowedCommand(raw), raw)
+        }
+    }
 
     @Test
     fun `view presets are named, never parameterised`() {

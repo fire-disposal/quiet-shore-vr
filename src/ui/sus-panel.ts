@@ -50,7 +50,7 @@ export type SusPhase = 'questions' | 'finish' | 'thanks';
  * This is the part of the panel a new respondent must never inherit: the
  * finished answers, the page they had paged to, and the phase (a closed sheet
  * left in `thanks` reopened on the thank-you page). Closing is not a boundary —
- * a closed sheet is resumed — so only `resetSheet` clears it.
+ * a closed sheet is resumed — so only `emptySusSheet` clears it.
  */
 export interface SusSheetState {
   readonly answers: SusAnswers;
@@ -60,18 +60,6 @@ export interface SusSheetState {
 
 export function emptySusSheet(slots: number): SusSheetState {
   return { answers: new Array<number | null>(slots).fill(null), page: 0, phase: 'questions' };
-}
-
-/**
- * Start a new sheet: every answer cleared, back to the first statement.
- *
- * Kept pure and exported because the rule is the fix: a page-level answer array
- * that is reset without this leaves the cached panel still on the last
- * patient's page, and a panel reset without the array leaves the page with
- * their answers. Both halves are asserted in tests.
- */
-export function resetSheet(sheet: SusSheetState, slots: number): SusSheetState {
-  return emptySusSheet(slots);
 }
 
 export interface SusPanelApi {
@@ -454,9 +442,9 @@ export function createSusPanel(options: SusPanelOptions): SusPanelApi {
     },
     answer: record,
     reset(): void {
-      const fresh = resetSheet({ answers, page, phase }, SUS_STATEMENTS.length);
       // The panel owns its answer array in place (buttons and `record` close
       // over it), so the cleared sheet is copied in rather than swapped.
+      const fresh = emptySusSheet(SUS_STATEMENTS.length);
       answers.fill(null);
       page = fresh.page;
       phase = fresh.phase;

@@ -109,11 +109,6 @@ export interface WorldRuntimeApi {
   setMixTarget(next: number): boolean;
   stopRise(): void;
   setDuration(ms: number): void;
-  /**
-   * Hot-set the end eye (where the eye is at `mix = 1`); adopted when the next
-   * ramp starts, so nothing on screen moves at the moment of the command.
-   */
-  setStandingEyeY(next: number): boolean;
   /** True while the correction ramp is moving; the cue and the cadence read this. */
   isRising(): boolean;
   /** Re-place the art from the current scene / eye height. */
@@ -132,7 +127,6 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
   let standingFrom = 0;
   let standingNow = 0;
   /** A hot-set end eye, adopted when the next ramp begins. */
-  let pendingStanding: number | null = null;
   /** True while the operator's slider owns `mix`; a key command takes it back. */
   let sliderDriven = false;
   let sliderTarget = 0;
@@ -292,12 +286,7 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     // A key command takes the correction back from the slider, starting from
     // what is applied, so the two inputs never write against each other.
     sliderDriven = false;
-    // A hot-set end eye joins the ramp it is about to start.
     standingFrom = standingNow;
-    if (pendingStanding !== null) {
-      standingEyeY = pendingStanding;
-      pendingStanding = null;
-    }
     moving = true;
     return true;
   }
@@ -320,10 +309,6 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
       mixTrack.velocity = 0;
       standingTrack.value = standingNow;
       standingTrack.velocity = 0;
-      if (pendingStanding !== null) {
-        standingEyeY = pendingStanding;
-        pendingStanding = null;
-      }
     }
     sliderTarget = Math.min(1, Math.max(0, next));
     return true;
@@ -348,22 +333,6 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     if (Number.isFinite(ms) && ms > 0) {
       durationMs = ms;
     }
-  }
-
-  /**
-   * Hot-set the end eye, i.e. where the eye sits at `mix = 1` (fully stood up).
-   *
-   * Deferred to the next ramp on purpose: this height re-places the art, and
-   * doing that the moment the command lands would be a vertical jump under a
-   * patient who is not moving. Instead the value is adopted when the next rise
-   * or lie-back starts and blended across it, so nothing on screen steps.
-   */
-  function setStandingEyeY(next: number): boolean {
-    if (!Number.isFinite(next) || next <= 0) {
-      return false;
-    }
-    pendingStanding = next;
-    return true;
   }
 
   /**
@@ -408,10 +377,9 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
       lyingEyeY = Number.isFinite(eyes.lyingEyeY) ? eyes.lyingEyeY : 0;
       standingEyeY = Number.isFinite(eyes.standingEyeY) ? eyes.standingEyeY : lyingEyeY;
       // A scene switch places the art from scratch: no ramp is running, so the
-      // end eye takes effect at once and any deferred value is dropped.
+      // end eye takes effect at once.
       standingFrom = standingEyeY;
       standingNow = standingEyeY;
-      pendingStanding = null;
       restMix = eyes.restMix === 1 ? 1 : 0;
       // With no calibration the mix has no frame to rotate: its only meaning is
       // where the art sits, so place it at the eye it was drawn from. That is
@@ -440,7 +408,6 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     setMixTarget,
     stopRise,
     setDuration,
-    setStandingEyeY,
     isRising: movingNow,
     apply,
     state

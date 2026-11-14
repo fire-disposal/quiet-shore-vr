@@ -1,7 +1,26 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseRemoteCommand } from '../src/app/commands';
 
+interface CommandFixture {
+  readonly sharedAccepted: readonly string[];
+  readonly sharedRejected: readonly string[];
+}
+const fixture = JSON.parse(
+  readFileSync(new URL('./fixtures/command-grammar.json', import.meta.url), 'utf8')
+) as CommandFixture;
+
 describe('remote command grammar', () => {
+  it('matches the shared page/headset contract fixture', () => {
+    for (const command of fixture.sharedAccepted) {
+      expect(parseRemoteCommand(command)?.kind, command).not.toBe('unknown');
+      expect(parseRemoteCommand(command)?.kind, command).not.toBe('invalid');
+    }
+    for (const command of fixture.sharedRejected) {
+      expect(['unknown', 'invalid'], command).toContain(parseRemoteCommand(command)?.kind);
+    }
+  });
+
   it('turns the float channel into typed commands', () => {
     expect(parseRemoteCommand('float:level:60')).toEqual({ kind: 'floatLevel', percent: 60 });
     // The profile and breathing-layer presets were deleted: the only choice
@@ -21,33 +40,6 @@ describe('remote command grammar', () => {
   it('rejects out-of-range or mistyped values whole', () => {
     for (const raw of ['float:level:101', 'float:level:-1', 'float:level:1.5', 'float:level:x']) {
       expect(parseRemoteCommand(raw)).toEqual({ kind: 'invalid', message: '漂浮强度无效' });
-    }
-  });
-
-  it('keeps the end eye strict, inside the 1.0–2.4 m band', () => {
-    expect(parseRemoteCommand('settings:eyeheight:1.55')).toEqual({
-      kind: 'eyeHeight',
-      meters: 1.55
-    });
-    expect(parseRemoteCommand('settings:eyeheight:1.700')).toEqual({
-      kind: 'eyeHeight',
-      meters: 1.7
-    });
-    // The whole band is expressible: a taller patient's end eye is not a typo.
-    expect(parseRemoteCommand('settings:eyeheight:2.4')).toEqual({
-      kind: 'eyeHeight',
-      meters: 2.4
-    });
-    for (const raw of [
-      'settings:eyeheight:1.',
-      'settings:eyeheight:0.99',
-      'settings:eyeheight:2.41',
-      'settings:eyeheight:11.7',
-      'settings:eyeheight:-1.6',
-      'settings:eyeheight:1.7m',
-      'settings:eyeheight:1,7'
-    ]) {
-      expect(parseRemoteCommand(raw)?.kind).toBe('invalid');
     }
   });
 
@@ -74,23 +66,21 @@ describe('remote command grammar', () => {
     expect(parseRemoteCommand('sus:answer:01')?.kind).toBe('invalid');
     expect(parseRemoteCommand('sus:show:0')?.kind).toBe('invalid');
     expect(parseRemoteCommand('sus:show:11')?.kind).toBe('invalid');
-    expect(parseRemoteCommand('sus:next')).toEqual({ kind: 'susMove', delta: 1 });
-    expect(parseRemoteCommand('sus:prev')).toEqual({ kind: 'susMove', delta: -1 });
+    // Paging is the headset's own prev/next: there is no tablet verb for it.
+    expect(parseRemoteCommand('sus:next')?.kind).toBe('unknown');
+    expect(parseRemoteCommand('sus:prev')?.kind).toBe('unknown');
   });
 
   it('maps the discrete verbs', () => {
     const cases: Array<[string, string]> = [
       ['scene:shore', 'scene'],
-      ['preview', 'preview'],
       ['calibrate', 'calibrate'],
       ['stop', 'exit'],
       ['exit', 'exit'],
       ['audio:toggle', 'audio'],
       ['posture:rise', 'posture'],
       ['posture:stop', 'posture'],
-      ['gaze:dwell:off', 'gazeDwell'],
-      ['status', 'status'],
-      ['start', 'start']
+      ['gaze:dwell:off', 'gazeDwell']
     ];
     for (const [raw, kind] of cases) {
       expect(parseRemoteCommand(raw)?.kind).toBe(kind);
@@ -104,6 +94,6 @@ describe('remote command grammar', () => {
   });
 
   it('normalises case and padding before parsing', () => {
-    expect(parseRemoteCommand('  PREVIEW  ')).toEqual({ kind: 'preview' });
+    expect(parseRemoteCommand('  EXIT  ')).toEqual({ kind: 'exit' });
   });
 });

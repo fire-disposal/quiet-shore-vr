@@ -2,6 +2,7 @@ package com.quietshore.control.ble
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 /**
@@ -18,18 +19,18 @@ class ReconnectPlanTest {
 
     @Test
     fun `the second attempt still connects instead of scanning`() {
-        assertEquals(ReconnectPlan.Connect(address), reconnectPlan(address, attempt = 2))
+        assertEquals(address, reconnectAddress(address, attempt = 2))
     }
 
     @Test
     fun `the third attempt still connects`() {
-        assertEquals(ReconnectPlan.Connect(address), reconnectPlan(address, attempt = 3))
+        assertEquals(address, reconnectAddress(address, attempt = 3))
     }
 
     @Test
     fun `every attempt keeps retrying the same address`() {
         for (attempt in 1..3) {
-            assertEquals(ReconnectPlan.Connect(address), reconnectPlan(address, attempt))
+            assertEquals(address, reconnectAddress(address, attempt))
         }
     }
 
@@ -37,6 +38,13 @@ class ReconnectPlanTest {
     fun `without a known address the operator gets the screen back`() {
         // A headset that could not be resolved leaves nothing to reconnect to;
         // reporting failure beats scanning silently on the recovery path.
-        assertNull(reconnectPlan(null, attempt = 2))
+        assertNull(reconnectAddress(null, attempt = 2))
+    }
+
+    @Test
+    fun `attempts are 1-based`() {
+        // The counter is a retry-bridge readback, not something the address
+        // may silently reinterpret: 0 means the caller lost track.
+        assertThrows(IllegalArgumentException::class.java) { reconnectAddress(address, 0) }
     }
 }

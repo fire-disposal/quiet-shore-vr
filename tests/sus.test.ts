@@ -3,7 +3,6 @@ import { SUS_ITEMS, buildSusPayload } from '../src/app/sus';
 import {
   SUS_DWELL_SECONDS,
   emptySusSheet,
-  resetSheet,
   type SusAnswers,
   type SusSheetState
 } from '../src/ui/sus-panel';
@@ -72,25 +71,19 @@ describe('SUS sheet boundary', () => {
     expect(sheet.phase).toBe('questions');
   });
 
-  it('clears the answers, the page and the phase on a new sheet', () => {
+  it('gives a new respondent a clean sheet, not the previous one', () => {
     // The previous respondent paged to statement 6 and left it in the thanks
     // page; the next one must not open on either.
-    const previous: SusSheetState = {
-      answers: answered(6, 5),
-      page: 5,
-      phase: 'thanks'
-    };
-    expect(resetSheet(previous, SUS_ITEMS)).toEqual({
+    expect(emptySusSheet(SUS_ITEMS)).toEqual({
       answers: new Array(SUS_ITEMS).fill(null),
       page: 0,
       phase: 'questions'
     });
   });
 
-  it('does not mutate the sheet it resets', () => {
+  it('does not mutate the sheet it replaces', () => {
     const answers = answered(3, 2);
-    const previous: SusSheetState = { answers, page: 2, phase: 'questions' };
-    const fresh = resetSheet(previous, SUS_ITEMS);
+    const fresh = emptySusSheet(SUS_ITEMS);
     // The old record stays intact for whoever still holds it…
     expect(answers[0]).toBe(2);
     // …and the new sheet is a separate array, not a view of it.

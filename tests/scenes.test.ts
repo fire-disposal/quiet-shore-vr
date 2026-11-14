@@ -389,7 +389,7 @@ describe('the ward', () => {
 describe('scene budgets', () => {
   it('keeps every scene inside the one-device frame budget', () => {
     for (const scene of SCENES) {
-      const { handle, registry } = build(scene.id);
+      const { handle } = build(scene.id);
       try {
         const stats = measureObject(handle.root);
         expect(stats.drawCalls).toBeLessThanOrEqual(10);

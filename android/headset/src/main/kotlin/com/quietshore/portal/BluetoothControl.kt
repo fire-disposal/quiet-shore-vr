@@ -25,6 +25,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
+import com.quietshore.control.protocol.JsonEnvelope
 import com.quietshore.control.protocol.TelemetryPose
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -517,7 +518,7 @@ internal class BluetoothControl(
     fun publishSus(json: String): Boolean {
         // The page's own keys and order, untouched: re-serialising here would
         // rewrite every record just to add three bytes of envelope.
-        val document = "{\"t\":\"sus\",\"d\":$json}"
+        val document = JsonEnvelope.document("sus", json)
         lastSusDocument = document
         return publishDocument(document, SUS)
     }

@@ -96,10 +96,6 @@ internal object PortalActions {
         context.startForegroundService(Intent(context, PortalService::class.java))
     }
 
-    /**
-     * 进入训练：确保服务在跑，然后用显式 Intent 拉起 Firefox Reality。
-     * `scene` 选择初始场景，`skipCalibration` 映射为 `nocal=1`。
-     */
     /** True only when the one WebXR-capable browser on this device exists. */
     fun isFirefoxAvailable(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(FIREFOX_PACKAGE, 0)

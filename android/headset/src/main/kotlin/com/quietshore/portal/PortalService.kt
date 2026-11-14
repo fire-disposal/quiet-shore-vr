@@ -16,6 +16,7 @@ import android.os.Looper
 import android.util.Log
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.ControlState
+import com.quietshore.control.protocol.JsonEnvelope
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.protocol.ViewAnim
 import org.json.JSONArray
@@ -111,7 +112,7 @@ class PortalService : Service() {
         /** 单帧上限（文本 JSON）；更大的输入视为坏客户端。
          *
          * This is the transport cap. The *semantic* cap is smaller and comes
-         * from the protocol: a document over [ControlProtocol.wsMessageLimitBytes]
+         * from the protocol: a document over [ControlProtocol.jsonDocumentLimitBytes]
          * (4335 B at the default MTU) could never be relayed to the tablet, so
          * `handleClientText` closes 1009 without applying it. A frame between
          * the two sizes is legal on the wire and refused on content.
@@ -760,34 +761,35 @@ class PortalService : Service() {
             closeWith(sink, output, ControlProtocol.WS_CLOSE_TOO_BIG)
             return false
         }
-        val json = try {
-            JSONObject(String(payload, StandardCharsets.UTF_8))
-        } catch (error: JSONException) {
+        // The page's records carry their identity in the envelope (t, d, id);
+        // the headset re-wraps them for the tablet instead of re-shaping them.
+        val envelope = try {
+            JsonEnvelope.parse(String(payload, StandardCharsets.UTF_8))
+        } catch (error: IllegalArgumentException) {
+            // Not JSON, or JSON without an envelope type: not a channel message.
             closeWith(sink, output, WsFrameCodec.CLOSE_UNSUPPORTED)
             return false
         }
-        when (json.optString("type")) {
-            "state" -> json.optJSONObject("data")?.let(::applyState)
-            "telemetry" -> json.optJSONObject("data")?.let(::applyTelemetry)
-            "ack" -> json.optInt("seq", -1).takeIf { it >= 0 }?.let(::ackCommands)
+        val data = envelope.data
+        when (envelope.type) {
+            "state" -> data?.let(::applyState)
+            "telemetry" -> data?.let(::applyTelemetry)
+            "ack" -> data?.optInt("seq", -1)?.takeIf { it >= 0 }?.let(::ackCommands)
             // Completed SUS sheets ride the JSON channel: the state frame is
             // a fixed size and has no room for a record.
-            "sus" -> json.optJSONObject("data")?.let { data ->
-                if (bluetooth?.publishSus(data.toString()) == true) {
-                    acknowledgeRecord(sink, json.optString("id"))
+            "sus" -> data?.let { sheet ->
+                if (bluetooth?.publishSus(sheet.toString()) == true) {
+                    acknowledgeRecord(sink, envelope.id)
                 }
             }
             // The scene catalogue: the page owns it, both apps render it. It
             // rides the same JSON channel as SUS, so adding a scene costs no
             // protocol version.
-            "catalog" -> json.optJSONObject("data")?.let { data ->
-                val document = data.toString()
+            "catalog" -> data?.let { scenes ->
                 // The local copy feeds command validation and the home card
                 // before the page next connects; the relay feeds the tablet.
-                PageCatalog.update(this, document)
-                bluetooth?.publishJson(
-                    org.json.JSONObject().put("t", "catalog").put("d", data).toString()
-                )
+                PageCatalog.update(this, scenes.toString())
+                bluetooth?.publishJson(JsonEnvelope.document("catalog", scenes))
                 // The console may be showing the home card right now.
                 try {
                     sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
@@ -797,54 +799,34 @@ class PortalService : Service() {
             }
             // One finished training session: the tablet stores it beside the
             // questionnaire sheets, in the same record file.
-            "session" -> json.optJSONObject("data")?.let { data ->
-                val forwarded = bluetooth?.publishJson(
-                    org.json.JSONObject().put("t", "session").put("d", data).toString()
-                ) == true
-                if (forwarded) {
-                    acknowledgeRecord(sink, json.optString("id"))
+            "session" -> data?.let { record ->
+                if (bluetooth?.publishJson(JsonEnvelope.document("session", record)) == true) {
+                    acknowledgeRecord(sink, envelope.id)
                 }
             }
             // Questionnaire catalogue: one source on the page, rendered by the
             // tablet's answer sheet and record list.
-            "questionnaire" -> json.optJSONObject("data")?.let { data ->
-                bluetooth?.publishJson(
-                    org.json.JSONObject().put("t", "questionnaire").put("d", data).toString()
-                )
+            "questionnaire" -> data?.let { sheets ->
+                bluetooth?.publishJson(JsonEnvelope.document("questionnaire", sheets))
             }
             // A behaviour event the page witnessed: a calibration capture, a
             // scene change, the patient's own stop. The tablet appends it to
             // the one cross-app log next to its own commands.
-            "log" -> json.optJSONObject("data")?.let { data ->
-                val recordId = json.optString("id")
+            "log" -> data?.let { event ->
+                val recordId = envelope.id
                 if (recordId.isNotEmpty()) {
-                    data.put("id", recordId)
+                    event.put(JsonEnvelope.ID, recordId)
                 }
-                val forwarded = bluetooth?.publishJson(
-                    org.json.JSONObject()
-                        .put("t", "log")
-                        .put("d", data)
-                        .put("app", json.optString("app", "training"))
-                        .toString()
-                ) == true
-                if (forwarded) {
+                if (bluetooth?.publishJson(JsonEnvelope.document("log", event)) == true) {
                     acknowledgeRecord(sink, recordId)
                 }
             }
             // A refusal or one-off report from the page: the page knows why a
             // command did not take effect, the tablet is what the operator is
             // holding. Relayed verbatim on the JSON channel.
-            "notice" -> {
-                val text = json.optString("text")
-                if (text.isNotEmpty()) {
-                    val tone = if (json.optString("tone") == "error") "error" else "ok"
-                    bluetooth?.publishJson(
-                        org.json.JSONObject().apply {
-                            put("t", "notice")
-                            put("text", text)
-                            put("tone", tone)
-                        }.toString()
-                    )
+            "notice" -> data?.let { notice ->
+                if (notice.optString("text").isNotEmpty()) {
+                    bluetooth?.publishJson(JsonEnvelope.document("notice", notice))
                 }
             }
             // Unknown message types are ignored: forward compatibility beats a
@@ -1188,7 +1170,6 @@ class PortalService : Service() {
     private val VOICE_MANIFEST = "manifest.json"
     private val VOICE_LINES = "lines.json"
 
-    /** Allowlisted command router shared by BLE, loopback HTTP and future intents. */
     /** Commands the service can satisfy without a page (launch, prefs, media). */
     private fun isHostCommand(command: String): Boolean =
         command == "enter" ||
@@ -1376,8 +1357,6 @@ class PortalService : Service() {
         scheduleEntryCheck()
         fun finite(name: String, fallback: Float): Float =
             json.optDouble(name, fallback.toDouble()).toFloat().takeIf { it.isFinite() } ?: fallback
-        fun vec(name: String): Float =
-            (json.optJSONObject(name)?.optDouble("x", 0.0) ?: 0.0).toFloat()
 
         val app = json.optString("app", pageApp)
             .takeIf { it in ControlProtocol.APP_IDS } ?: pageApp
@@ -1495,7 +1474,6 @@ class PortalService : Service() {
         scheduleEntryCheck()
     }
 
-    /** Last flags document published on the JSON channel, and when. */
     /** Posture ramp the page holds, milliseconds; 0 until it reports one. */
     @Volatile
     private var lastRampMs: Int = 0

@@ -49,6 +49,9 @@ jobs:
       - name: Type check
         run: npm run check
 
+      - name: Type check tests
+        run: npm run check:tests
+
       - name: Unit tests
         run: npm test
 

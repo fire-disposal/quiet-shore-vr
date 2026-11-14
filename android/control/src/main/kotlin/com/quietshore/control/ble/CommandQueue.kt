@@ -24,12 +24,6 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
 
     val isEmpty: Boolean get() = stops.isEmpty() && discrete.isEmpty() && move == null
 
-    val pendingMoves: Int get() = if (move == null) 0 else 1
-
-    val pendingDiscrete: Int get() = discrete.size + stops.size
-
-    val newestMove: String? get() = move
-
     /**
      * @return false when the discrete lane is full and the command was refused.
      */

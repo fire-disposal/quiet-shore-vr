@@ -84,18 +84,11 @@ export interface PortalCommand {
   replay?: boolean;
 }
 
-export interface PlannedCommand {
-  seq: number;
-  command: string;
-  /** Replayed history: `view:anim:*` is one-shot and is skipped. */
-  replay?: boolean;
-}
-
 export interface DispatchPlan {
   /** Highest seq consumed; feed this back as `since` on the next connect. */
   nextSeq: number;
   /** Commands to deliver, in order, already deduped. */
-  commands: PlannedCommand[];
+  commands: PortalCommand[];
 }
 
 function wsUrl(): string {
@@ -233,7 +226,7 @@ export function planControlDispatch(
   batch: readonly PortalCommand[],
   lastSeq: number
 ): DispatchPlan {
-  const frames: PlannedCommand[] = [];
+  const frames: PortalCommand[] = [];
   for (const entry of batch) {
     if (!entry || typeof entry !== 'object') {
       continue;
@@ -251,7 +244,7 @@ export function planControlDispatch(
   // lower seq behind `lastSeq` forever.
   frames.sort((a, b) => a.seq - b.seq);
 
-  const commands: PlannedCommand[] = [];
+  const commands: PortalCommand[] = [];
   let nextSeq = lastSeq;
   for (const frame of frames) {
     if (frame.seq <= nextSeq) {

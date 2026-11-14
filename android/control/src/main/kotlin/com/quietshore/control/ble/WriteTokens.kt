@@ -24,8 +24,8 @@ internal class WriteTokens {
     var write: Long = 0L
         private set
 
-    var written: Int = 0
-        private set
+    /** Wire sequence counter for the current link; see [nextSeq]. */
+    private var written: Int = 0
 
     /** True while one command occupies the writer. */
     var writing: Boolean = false

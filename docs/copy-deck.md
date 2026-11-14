@@ -113,16 +113,9 @@
 
 | 键 / 位置 | 旧 | 新 |
 | --- | --- | --- |
-| `modeXR` | WebXR | 头显 |
 | `modePreview` | 2D 预览 | 预览 |
-| `hudCalibration` | 校准 | 体位 |
-| `hudFps` | FPS | 帧率 |
-| `hudTriangles` | 三角面 | 面数 |
-| `hudDrawCalls` | Draw call | 批次 |
 | `dwellHint` | 保持注视 3 秒以选择 | 保持注视，即可选择 |
 | `xrUnsupported` | 当前浏览器不支持沉浸模式，请用 Firefox Reality | 请用 Firefox Reality 打开本页（与 `noXR` 同句） |
-| `calibrationDone` | 校准完成，慢慢看向场景 | 已记录，请看向场景 |
-| `calibrationFailed` | 方向校准失败 | 记录失败，请重试 |
 | `skippedCalibration` | 已跳过方向校准 | 已跳过记录 |
 | `recalibrateNeedsSession` | 请在训练中重新校准 | 请在体验中重新校准 |
 | `enterFailed` | 进入失败，请重试 | 进入失败，请再按一次 |
@@ -151,7 +144,6 @@
 | --- | --- | --- | --- |
 | `strings.entering` | 正在进入 VR | 正在进入场景 | "VR"是内部说法；场景是全系统唯一的说法 |
 | `strings.checking` `#status-text` | 正在检测设备… | 正在检测设备 | 页面已经在等，句末省略号是催促 |
-| `strings.xrReady` | 设备已就绪，戴上头显开始 | 设备已就绪 | 患者已经戴着；"开始"是承诺 |
 | `strings.recalibrateNeedsSession` | 请在体验中重新校准 | 请在体验中重新记录体位 | "校准"是技术员侧词 |
 | `strings.dwellHint` / `input.DEFAULT_HINT` | 保持注视以选择 / 保持注视 3 秒以选择 | 保持注视，即可选择 | 同一动作两处两种说法；秒数不进患者侧 |
 | 入口页重试提示 | 没有等到确认。请看向画面中央，再按一下按钮。 | 没有等到确认。请看向画面中央，再按一下头显右侧的按钮。 | 与主句同一动作要同一说法 |

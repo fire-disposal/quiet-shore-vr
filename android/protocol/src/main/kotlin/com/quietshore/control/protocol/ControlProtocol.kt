@@ -597,15 +597,6 @@ object ControlProtocol {
         bytes <= jsonDocumentLimitBytes(mtu)
 
     /**
-     * Largest frame the page may send on the control channel, in UTF-8 bytes.
-     *
-     * One number for both directions: the headset refuses to accept a document
-     * it could not relay at the default MTU, so "the page sent it" implies "the
-     * tablet can receive it".
-     */
-    fun wsMessageLimitBytes(mtu: Int = ATT_MTU_MIN): Int = jsonDocumentLimitBytes(mtu)
-
-    /**
      * Only QS2 schema 1 exists. A different schema or length is rejected whole.
      *
      * [sceneIds] is the catalogue in the order the page announced it. An index

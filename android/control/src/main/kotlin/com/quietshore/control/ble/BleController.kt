@@ -138,14 +138,14 @@ class BleController(
         // here would only redraw the pairing list and, worse, end in
         // "未找到头显" without ever asking the stack to connect again, so
         // attempts 2 and 3 could never restore the link.
-        val plan = reconnectPlan(lastAddress, reconnectAttempts)
-        if (plan == null) {
+        val address = reconnectAddress(lastAddress, reconnectAttempts)
+        if (address == null) {
             // Nothing to go back to: the operator has to pick the headset.
             setPhase(BlePhase.DISCONNECTED)
             listener.onError("自动重连失败，请重新搜索")
             return@Runnable
         }
-        connectInternal(plan.address)
+        connectInternal(address)
     }
 
     private val scanWindow = Runnable {

@@ -50,11 +50,6 @@ class SusStore(context: Context) {
         return outcome
     }
 
-    fun clear(): List<SusResult> {
-        preferences.edit().remove(KEY).apply()
-        return emptyList()
-    }
-
     private fun write(list: List<SusResult>) {
         preferences.edit()
             .putString(KEY, SusResultCodec.encodeList(list))

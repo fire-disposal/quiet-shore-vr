@@ -21,6 +21,7 @@ function createHandle(settings: Partial<SceneSettings> = {}): {
   const state: HandleState = { updates: 0, lastDt: 0, lastElapsed: 0, disposed: 0 };
   const handle: SceneHandle = {
     root,
+    backdrop: null,
     settings: {
       background: settings.background ?? null,
       fog: settings.fog ?? null
@@ -30,6 +31,7 @@ function createHandle(settings: Partial<SceneSettings> = {}): {
       state.lastDt = dt;
       state.lastElapsed = elapsed;
     },
+    controls: { setMotion: (): void => {} },
     dispose: (): void => {
       state.disposed += 1;
     }
@@ -39,7 +41,7 @@ function createHandle(settings: Partial<SceneSettings> = {}): {
 
 function createDefinition(
   id: string,
-  build: (ctx: SceneBuildContext) => SceneHandle
+  build: () => SceneHandle
 ): SceneDefinition {
   return {
     id,
@@ -47,6 +49,11 @@ function createDefinition(
     tagline: { zh: '', en: '' },
     description: { zh: '', en: '' },
     audio: { track: 'lake' },
+    posture: {
+      standingEyeY: 1.7,
+      supine: 'mattress',
+      viewer: 'supine'
+    },
     build
   };
 }

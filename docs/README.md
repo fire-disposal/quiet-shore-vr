@@ -27,9 +27,7 @@
 | `rotation-contract.md` | 姿态角度契约与分层 |
 | `voice-script.md` | 引导语音脚本、触发与 TTS 生成规范 |
 | `copy-deck.md` | 患者侧与技术员侧文案对照 |
-| `calibration.md` | 校准窗口、取样与落地规则 |
 | `ui-system.md` | 界面结构、字号与状态规则 |
-| `ui-acceptance.md` | 界面验收与复现 |
 
 ## 交付物
 

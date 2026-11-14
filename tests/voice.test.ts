@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SEQUENCES, expandSequence } from '../src/audio/voice';
+import { SEQUENCES } from '../src/audio/voice';
 
 const lines = JSON.parse(
   readFileSync(join(process.cwd(), 'voice/lines.json'), 'utf8')
@@ -15,14 +15,6 @@ describe('voice sequences', () => {
         expect(knownIds.has(step.id), `${name} -> ${step.id}`).toBe(true);
       }
     }
-  });
-
-  it('schedules clips back to back, with the gap after each clip', () => {
-    const at = expandSequence('close', () => 4000);
-    expect(at).toEqual([
-      { id: 'v-close-1', atMs: 0 },
-      { id: 'v-close-2', atMs: 10000 }
-    ]);
   });
 
   it('leaves gaps at zero on the last step so a sequence cannot trail silence', () => {

@@ -142,7 +142,10 @@ describe('session log', () => {
       level: 1,
       mix: 0,
       stop: 'patient',
-      confidence: 50
+      confidence: 50,
+      peakMix: 0,
+      peakUpGazeDeg: 0,
+      segments: []
     })).toHaveLength(1);
   });
 

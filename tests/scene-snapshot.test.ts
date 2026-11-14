@@ -26,6 +26,7 @@ function neutralInput(): SceneSnapshotInput {
     viewAnim: 'idle',
     floorOffset: metres(-0.66),
     floatAmount: 1,
+    floatBreath: 1,
     floatMm: 0,
     sessionSec: 0,
     rampMs: 6000,
@@ -37,7 +38,8 @@ function neutralInput(): SceneSnapshotInput {
       stop: false,
       float: true,
       view: true,
-      blocked: ''
+      blocked: '',
+      floatCap: 1
     }
   };
 }

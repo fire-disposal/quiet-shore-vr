@@ -1,6 +1,5 @@
 import type { Strings } from './strings';
 import { element } from './dom';
-import { DevicePictogram } from './device-pictogram';
 import { HintLine } from './hint-line';
 import { InstructionTarget } from './instruction-target';
 import { StateRow } from './state-row';
@@ -12,9 +11,8 @@ export interface StartScreenHandlers {
 /**
  * Entry page and stage shell, in one object because they swap as one.
  *
- * It is orchestration only: the sentence is [InstructionTarget], its picture is
- * [DevicePictogram], the device state is [StateRow] and the report under it is
- * [HintLine]. This class owns the two things that belong to the screen as a
+ * It is orchestration only: the sentence is [InstructionTarget], the device
+ * state is [StateRow] and the report under it is [HintLine]. This class owns the two things that belong to the screen as a
  * whole — where a press may come from, and which of the two surfaces is up.
  *
  * The page does **not** announce the scene. A scene can be switched from the
@@ -29,7 +27,6 @@ export class StartScreen {
   private readonly state = new StateRow();
   private readonly hint = new HintLine();
   private readonly battery = element<HTMLElement>('headset-battery');
-  private readonly pictures = new DevicePictogram();
   private readonly handlers: StartScreenHandlers;
   private readonly strings: Strings;
 

@@ -75,7 +75,6 @@ class CommandQueueTest {
         queue.enqueue(ControlProtocol.POSTURE_MIX + "80")
         queue.enqueue("stop")
 
-        assertEquals(0, queue.pendingMoves)
         assertEquals(listOf("stop"), drain(queue))
     }
 

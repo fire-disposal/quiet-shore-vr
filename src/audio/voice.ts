@@ -105,20 +105,6 @@ export const SEQUENCES: Readonly<Record<SequenceName, readonly SequenceStep[]>> 
   ]
 };
 
-/** Absolute times for a session planner, derived from the clip lengths. */
-export function expandSequence(
-  name: SequenceName,
-  durationOf: (id: string) => number
-): { id: string; atMs: number }[] {
-  const out: { id: string; atMs: number }[] = [];
-  let cursor = 0;
-  for (const step of SEQUENCES[name]) {
-    out.push({ id: step.id, atMs: cursor });
-    cursor += durationOf(step.id) + step.gapMs;
-  }
-  return out;
-}
-
 export interface VoicePlayerApi {
   load(): Promise<boolean>;
   /** Manifest index of a cue id, or -1; the wire carries this byte. */

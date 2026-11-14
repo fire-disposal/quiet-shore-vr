@@ -14,7 +14,8 @@
 
 ```bash
 npm ci
-npm run check        # tsc 类型检查
+npm run check        # 源码类型检查
+npm run check:tests  # 测试夹具类型检查
 npm test             # vitest
 npm run build        # 输出 dist/（含 catalog.json、voice/）
 npm run standalone   # 单文件离线页

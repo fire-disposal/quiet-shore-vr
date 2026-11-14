@@ -63,20 +63,6 @@ class EventLog(context: Context) {
         return next
     }
 
-    fun clear(): List<JSONObject> {
-        preferences.edit().remove(KEY).apply()
-        return emptyList()
-    }
-
-    /** Every event as one JSON array, newest last: the export's own section. */
-    fun toJsonArray(): JSONArray {
-        val array = JSONArray()
-        for (event in load()) {
-            array.put(event)
-        }
-        return array
-    }
-
     private fun write(list: List<JSONObject>) {
         val array = JSONArray()
         for (item in list) {
