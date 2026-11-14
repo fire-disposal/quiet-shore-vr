@@ -94,6 +94,7 @@ fun CommandBar(
     state: ControlUiState,
     onAppSelect: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onLeave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
@@ -215,15 +216,15 @@ fun CommandBar(
                         androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp)
                     )
                     .clickable(
-                        enabled = connected,
-                                                                        role = Role.Button,
-                        onClick = onDisconnect
+                        enabled = true,
+                        role = Role.Button,
+                        onClick = if (connected) onDisconnect else onLeave
                     )
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "断开连接",
+                    text = if (connected) "断开连接" else "返回配对",
                     style = MaterialTheme.typography.labelLarge,
                     // Red ink in a hairline box, never a red fill: the radio is
                     // the emergency stop, and the key says only what it does.

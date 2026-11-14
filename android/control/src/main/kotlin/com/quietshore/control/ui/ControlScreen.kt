@@ -172,7 +172,8 @@ fun ControlScreen(
             CommandBar(
                 state = state,
                 onAppSelect = actions.onAppSelect,
-                onDisconnect = actions.onDisconnect
+                onDisconnect = actions.onDisconnect,
+                onLeave = actions.onLeave
             )
             // Alerts and session verbs live inside the content column, never
             // above the rail. The top bar and left tabs keep one fixed origin
@@ -1533,18 +1534,14 @@ private fun ConsoleStatusBand(
                     title = "连接中断",
                     body = "第 ${state.reconnectAttempt.coerceAtLeast(1)}/" +
                         "${state.reconnectMax.coerceAtLeast(1)} 次重连。保持头显开机。",
-                    loading = true,
-                    actionLabel = "返回配对",
-                    onAction = actions.onLeave
+                    loading = true
                 )
             } else {
                 BannerRow(
                     title = "头显已断开",
                     body = "打开头显应用，再点“重新连接”。",
                     actionLabel = "重新连接",
-                    onAction = actions.onReconnect,
-                    secondaryLabel = "返回配对",
-                    onSecondary = actions.onLeave
+                    onAction = actions.onReconnect
                 )
             }
         }
@@ -1555,10 +1552,8 @@ private fun ConsoleStatusBand(
 private fun BannerRow(
     title: String,
     body: String,
-    actionLabel: String,
-    onAction: () -> Unit,
-    secondaryLabel: String? = null,
-    onSecondary: (() -> Unit)? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
     loading: Boolean = false
 ) {
     Row(
@@ -1588,10 +1583,8 @@ private fun BannerRow(
             )
         }
         Spacer(Modifier.width(16.dp))
-        ActionKey(label = actionLabel, onClick = onAction, tone = ActionTone.Secondary)
-        if (secondaryLabel != null && onSecondary != null) {
-            Spacer(Modifier.width(8.dp))
-            ActionKey(label = secondaryLabel, onClick = onSecondary, tone = ActionTone.Quiet)
+        if (actionLabel != null && onAction != null) {
+            ActionKey(label = actionLabel, onClick = onAction, tone = ActionTone.Secondary)
         }
     }
 }
