@@ -34,18 +34,30 @@ import com.quietshore.control.ui.theme.QuietPalette
 import com.quietshore.control.ui.theme.QuietSpace
 
 /**
- * The console's four faces, in a left rail.
+ * The console's faces, in a left rail.
  *
  * A bottom bar on a 10" landscape tablet wastes the one dimension that is short
  * (height) and puts the targets where a hand holding the tablet cannot reach
  * without moving it. A left rail uses the width the page already has, keeps the
  * labels in a column that reads top-to-bottom like the procedure itself, and —
  * because it scrolls — it survives a short window without clipping.
+ *
+ * The order is the shift's order: what the patient is doing, where, what sounds
+ * they hear, what they said about it afterwards, then the manual.
  */
 enum class ConsoleSection(val label: String, val latin: String) {
     Session("会话", "SESSION"),
     Scene("场景", "SCENE"),
     Audio("音频", "AUDIO"),
+    /**
+     * The operator's observation sheet: filled in once the headset is off.
+     *
+     * It sits after 音频 and before 说明 because that is when it is used — after
+     * the session, when the technician is still at the bedside and before they
+     * open the manual again. It is an operator tool, so it lives on this rail
+     * and nowhere in the questionnaire app.
+     */
+    Experience("体验", "EXPERIENCE"),
     /** The manual, as a page: it used to be an overlay reached from the bar. */
     Guide("说明", "GUIDE")
 }

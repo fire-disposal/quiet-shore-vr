@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the app's FileProvider may hand out.
+
+  Exactly one directory: the share cache the CSV export writes into, and
+  nothing else. The preferences file that holds the records and the app's own
+  cache root stay out of it, so a share intent can only ever leak a sheet the
+  operator asked for.
+-->
+<paths>
+    <cache-path
+        name="experience"
+        path="experience/" />
+</paths>

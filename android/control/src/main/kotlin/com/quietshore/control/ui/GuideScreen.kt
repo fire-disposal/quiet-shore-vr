@@ -120,7 +120,7 @@ private val STEPS: List<Step> = listOf(
     Step(1, "连接头显", "搜索 → 连接 → 接管",
         "点«搜索头显»，等«已连接»", "被占用：对方点«断开»"),
     Step(2, "启动", "进准备间",
-        "点«启动训练»，患者按一次右侧按钮", "‹20 秒›未按将重开页面"),
+        "点«启动训练»，患者按一次右侧按钮进入画面", "‹20 秒›未进入将重开页面"),
     Step(3, "标定", "准备间里做",
         "技术员点«记录起始体位»，患者保持不动", "未标定时场景不可选"),
     Step(4, "选场景", "标定以后",
@@ -142,7 +142,7 @@ private class StateRow(
 /** Cells stay under 14 characters: three columns, one glance, no re-reading. */
 private val STATES: List<StateRow> = listOf(
     StateRow("待机", "«未开始»", "选场景，点«启动训练»"),
-    StateRow("等待按压", "«等待确认»", "患者按右侧按钮"),
+    StateRow("等待进入", "«等待进入»", "患者按一次右侧按钮"),
     StateRow("校准", "«校准中»", "请患者保持不动"),
     StateRow("训练中", "«训练中»", "按需调强度与语音"),
     StateRow("正在结束", "«正在结束»", "等淡出"),

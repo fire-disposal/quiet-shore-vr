@@ -37,7 +37,7 @@ object OperatorCopy {
     }
 
     private fun notice(raw: String): String = when {
-        raw.startsWith("已请求启动") -> "请患者按头显右侧按钮。"
+        raw.startsWith("已请求启动") -> "请患者按一次头显按钮进入画面。"
         raw.startsWith("头显已接收") -> "头显已接收指令。"
         raw == "已释放控制" -> "已断开接管。"
         raw.startsWith("SUS 已记录") -> raw

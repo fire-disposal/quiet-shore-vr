@@ -108,7 +108,10 @@ fun MirrorSlot(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary,
-                maxLines = 1,
+                // Two lines: the caption is a sentence and the camera keys now
+                // take the height the font scale asks for, so a single line here
+                // was the first thing to be ellipsised.
+                maxLines = 2,
                 modifier = Modifier.weight(1f)
             )
             // The two cameras, inline: selection is an outline, never a fill.
@@ -122,7 +125,7 @@ fun MirrorSlot(
                         // outline, the other one is a word on paper. Two boxes
                         // side by side were two primaries beside a picture.
                         kind = if (state.mirrorMode == mode) KeyKind.Selected else KeyKind.Quiet,
-                        height = 40.dp,
+                        height = TouchTarget,
                         minWidth = 88.dp
                     )
                     Spacer(Modifier.width(4.dp))
@@ -187,7 +190,7 @@ fun MirrorSlot(
                         else -> "正在载入镜像"
                     }
                     val note = when {
-                        !hasFrame && phase == SessionPhase.Entry -> "头显在入口页，等待患者按压。"
+                        !hasFrame && phase == SessionPhase.Entry -> "头显在入口页，等待患者进入。"
                         !hasFrame -> "头显未连接，或未收到状态帧。"
                         else -> "画面还没有到。"
                     }

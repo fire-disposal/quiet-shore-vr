@@ -4,9 +4,12 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.TelemetryPose
 
+/** The built-in neutral room the page ships; not a scene card. */
+const val PREPARATION_SCENE: String = "prep"
+
 /**
  * Session mode. Chosen by the operator before a session and never switched in
- * flight; the patient's confirm key only starts and stops.
+ * flight; the patient only enters WebXR once.
  */
 /** Which camera the mirror uses: the patient's own, or a pulled-back view. */
 /**
@@ -125,6 +128,28 @@ data class ControlUiState(
     /** Milliseconds since the headset reported a running session. */
     val sessionElapsedMs: Long = 0L,
     /**
+     * Length of the session that just ended, kept after the session flag drops.
+     *
+     * [sessionElapsedMs] is the *running* clock and returns to 0 with the
+     * session; deriving "did one run" from it erased the closing panel in the
+     * same frame the page reported 会话结束. This is the value the panel prints,
+     * and it survives until another launch is requested.
+     */
+    val lastSessionElapsedMs: Long = 0L,
+    /**
+     * The bedside question, as the page has *confirmed* it.
+     *
+     * Nothing here is written optimistically: a tap sends `record:outcome:*`
+     * and the panel shows "等待回执" until the page's own
+     * `log kind=outcome.recorded` names that slot. See [OutcomeState].
+     */
+    val outcome: OutcomeState = OutcomeState(),
+    /**
+     * A switch to the preparation room has been sent and the frames have not
+     * confirmed it yet. Cleared by the state frame that reports `prep`.
+     */
+    val prepRequested: Boolean = false,
+    /**
      * Whether the page's orientation gate has opened.
      *
      * The page owns the timing and publishes only the verdict: the tablet keeps
@@ -149,7 +174,7 @@ data class ControlUiState(
     /** Every sheet the headset has filed, newest last. Persisted on the tablet. */
     val susHistory: List<com.quietshore.control.protocol.SusResult> = emptyList(),
     val scanAttempted: Boolean = false,
-    /** Launch requested, waiting for the patient's confirm key. */
+    /** Launch requested, waiting for the patient to enter the XR view. */
     val startPending: Boolean = false,
     /**
      * The tablet has asked to end the session and the page has not reported the
@@ -189,7 +214,26 @@ data class ControlUiState(
 
     /** Record filters: null = all questionnaires, 0 = all time. */
     val susFilterQuestionnaire: String? = null,
-    val susFilterDays: Int = 0
+    val susFilterDays: Int = 0,
+
+    /**
+     * The 体验 sheet the operator is filling in, if any.
+     *
+     * Null means "not answering": the form is a single sheet with one save, and
+     * a draft that survived a page change would be a second, invisible record
+     * waiting to be filed. It is opened on the 体验 page and cleared by the
+     * save.
+     */
+    val experienceDraft: com.quietshore.control.model.ExperienceDraft? = null,
+
+    /**
+     * Filed 体验 records, newest last. Persisted on the tablet.
+     *
+     * It rides the state (like [susHistory]) so the list under the form updates
+     * in the same frame the record is filed — the point of the form is seeing
+     * the row appear.
+     */
+    val experienceHistory: List<com.quietshore.control.model.ExperienceRecord> = emptyList()
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 
@@ -211,6 +255,21 @@ data class ControlUiState(
     /** True when the operator's choice has not been confirmed by the headset. */
     val sceneIntentDiverges: Boolean
         get() = sceneIntent.isNotEmpty() && sceneIntent != control.scene
+
+    /**
+     * True once a preparation-room switch is on the wire and unconfirmed.
+     *
+     * The 准备间 key is an *action*, not a state: it used to hide itself as soon
+     * as the operator's marked scene was no longer `prep`, which left a session
+     * running in a formal scene with no way back to the neutral room — the one
+     * setting the patient can be left in safely.
+     */
+    val prepScenePending: Boolean
+        get() = prepRequested && control.scene != PREPARATION_SCENE
+
+    /** The key may point at the preparation room again. */
+    val canReturnToPrep: Boolean
+        get() = control.scene != PREPARATION_SCENE || prepScenePending
 
     /** The cue the headset reports, resolved against the shipped catalog. */
     val voiceLine: com.quietshore.control.voice.VoiceCatalog.Line?

@@ -20,6 +20,24 @@
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true">
 
+        <!--
+          Hands the exported 体验 CSV to the share sheet as a real file.
+
+          Not exported and not grantable beyond the intent that names it: the
+          provider exists so `ACTION_SEND` can carry an `application/csv`
+          attachment (a `file://` URI is refused from API 24 on), and its paths
+          file exposes only the one share-cache directory the export writes to.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.quietshore.control.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

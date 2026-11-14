@@ -65,14 +65,14 @@ fun calibrationView(state: ControlUiState, phase: SessionPhase, ready: Boolean):
             capturing -> "校准中"
             phase == SessionPhase.Running -> "训练中"
             phase == SessionPhase.Stopping -> "正在结束"
-            phase == SessionPhase.Entry -> "已启动，等待按压"
+            phase == SessionPhase.Entry -> "已启动，等待进入"
             else -> "准备本次训练"
         },
         hint = when {
             !ready -> "头显未连接。返回配对页重连。"
             locked -> "患者先熟悉画面；现在还不能记录。"
             capturing -> "校准中，患者保持不动。"
-            phase == SessionPhase.Entry -> "等待患者按下确认键。"
+            phase == SessionPhase.Entry -> "等待患者按一次进入画面。"
             phase == SessionPhase.Running -> "会话在会话页调整。"
             else -> "尚未启动。"
         },

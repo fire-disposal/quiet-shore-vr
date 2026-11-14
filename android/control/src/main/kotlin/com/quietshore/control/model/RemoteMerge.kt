@@ -43,6 +43,19 @@ fun mergeRemoteFrame(
         // the tablet keeps refusing scene and strength, which is what the page
         // is doing too.
         stopRequested = running && current.stopRequested,
-        sessionElapsedMs = elapsedMs
+        sessionElapsedMs = elapsedMs,
+        // The closing panel reads this, so the length must outlive the falling
+        // edge: the running clock is 0 the moment the page drops the flag, and a
+        // panel keyed on it would vanish in that same frame.
+        lastSessionElapsedMs = when {
+            !running && current.control.session ->
+                maxOf(current.lastSessionElapsedMs, current.sessionElapsedMs)
+            running && !current.control.session -> elapsedMs
+            running -> maxOf(current.lastSessionElapsedMs, current.sessionElapsedMs, elapsedMs)
+            else -> current.lastSessionElapsedMs
+        },
+        // A preparation-room switch stops being pending when the page reports
+        // the neutral room — the confirmation, not a timer, clears it.
+        prepRequested = current.prepRequested && frame.scene != PREPARATION_SCENE
     )
 }

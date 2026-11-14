@@ -11,6 +11,7 @@ shell/android/assets/index.html
 .DS_Store
 coverage/
 .vitest/
+.quarto/
 
 android/.gradle/
 android/.kotlin/

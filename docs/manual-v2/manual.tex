@@ -205,9 +205,15 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 \section{一页速查}\label{ux4e00ux9875ux901fux67e5}
 
 {\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}ll@{}}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}@{}}
 \toprule\noalign{}
-要做的事 & 在哪里 \\
+\begin{minipage}[b]{\linewidth}\raggedright
+要做的事
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+在哪里
+\end{minipage} \\
 \midrule\noalign{}
 \endhead
 \bottomrule\noalign{}
@@ -217,14 +223,15 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 看当前应用的说明书 & 左侧 \texttt{说明} 页签 \\
 开始训练 & 场景化排尿引导器 → 场景页右侧「启动训练」 \\
 结束会话 & 会话页底部「结束会话」 \\
-断开链接 & 顶栏右侧「断开链接」；约 5 秒后头显回到静岸入口 \\
+断开链接（急停） & 顶栏右侧；立即冻结，5 秒未重连则头显退出场景回首页 \\
 作答与归档 & 顶栏切到「场景化问卷作答器」 \\
 导出记录 & 场景化问卷作答器 → 归档 → 导出 \\
+导出体验 CSV & 场景化排尿引导器 → 体验 → 导出 CSV \\
 \end{longtable}
 }
 
-\textbf{患者只做一件事：戴上头显后，按一次右侧按钮确认开始。}
-其余操作都在平板上。
+\textbf{患者只做一件事：戴上头显后，按一次头显右侧按钮进入画面。}
+开始、停止、体位与场景都由平板操作员控制。
 
 \section{1
 这套系统怎么用}\label{ux8fd9ux5957ux7cfbux7edfux600eux4e48ux7528}
@@ -248,7 +255,7 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 \bottomrule\noalign{}
 \endlastfoot
 \textbf{场景化排尿引导器} &
-选场景与分段流程、标定体位、运行会话、调节强度与语音 \\
+选场景、标定体位、运行会话、调节起伏与体位、看患者的视野 \\
 \textbf{场景化问卷作答器} &
 加载问卷、在头显内作答、按次归档、筛选与导出 \\
 \end{longtable}
@@ -336,7 +343,7 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 
 }
 
-\caption{场景页。左侧是场景与流程；右侧是启动前的准备链。}
+\caption{场景页。左侧是场景清单；右侧是启动前的准备链，唯一的主键在链的脚下。}
 
 \end{figure}%
 
@@ -368,19 +375,30 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 \subsection{3.2 启动与标定}\label{ux542fux52a8ux4e0eux6807ux5b9a}
 
 {\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}lll@{}}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
 \toprule\noalign{}
-步 & 动作 & 说明 \\
+\begin{minipage}[b]{\linewidth}\raggedright
+步
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+动作
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+说明
+\end{minipage} \\
 \midrule\noalign{}
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
 1 & 右侧点「启动训练」 & 头显页面被拉起 \\
-2 & 患者按一次头显右侧按钮 & 20 秒未按会重开页面 \\
-3 & 患者先进入准备间 & 调整躺姿与头显位置 \\
+2 & 患者按一次头显右侧按钮进入画面 & 这是浏览器强制手势；20
+秒未按会重开页面 \\
+3 & 患者进入准备间 & 调整躺姿与头显位置 \\
 4 & 技术员点「记录起始体位」 & 记录期间世界静止，患者保持不动 \\
 5 & 场景卡解锁，选卡后点「进入正式场景」 & 校准帧保留，只换世界内容 \\
-6 & 按需选起身时长，点「起身」 & 6 / 8 / 10 / 12 秒 \\
+6 & 填「时长」，点「修正 · 起身」 & 整数秒 4--20，默认
+10；正反两个方向同速 \\
 \end{longtable}
 }
 
@@ -392,7 +410,7 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 
 }
 
-\caption{会话页。上方是分段状态，左侧是患者视野与姿态，右侧是四个现场控制块。}
+\caption{会话页。标题卡、患者画面、读数卡与水声卡在左列；场景、起伏、体位与结束在右列。}
 
 \end{figure}%
 
@@ -485,7 +503,33 @@ PICO G2 4K 头显 ＋ 10 英寸 Android 平板
 语音播放时环境声自动压低 12
 dB。问卷题干的朗读开关在场景化问卷作答器里，不在训练语音页。
 
-\subsection{3.5 结束与断开}\label{ux7ed3ux675fux4e0eux65adux5f00}
+\subsection{3.5 体验记录}\label{ux4f53ux9a8cux8bb0ux5f55}
+
+左栏新增 \textbf{体验} 页，用于会话结束后的床边访谈。
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  点「填写体验表」。场景、日期与会话时长自动带入，不需要手填。
+\item
+  受试者编号可选；不填则记录为匿名。
+\item
+  八项 0--10
+  评分：失重强度、方向感错乱、场景真实感、身体对齐、舒适度、头晕、恶心、再次体验意愿。
+\item
+  漂浮方向四选一：上升、下沉、漂浮、无明显方向。
+\item
+  备注可选，可记录患者原话、体位或设备异常。
+\item
+  点「保存记录」。记录立即出现在下方列表，可展开查看全部字段。
+\item
+  点「导出 CSV」生成表格文件，UTF-8 BOM，中文列名，可直接用 Excel 打开。
+\end{enumerate}
+
+CSV 一行一份体验记录。受试者编号和备注允许为空，其余评分按 0--10 归档。
+
+\subsection{3.6 结束与断开}\label{ux7ed3ux675fux4e0eux65adux5f00}
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
@@ -498,10 +542,10 @@ dB。问卷题干的朗读开关在场景化问卷作答器里，不在训练语
   帮患者摘头显，先让其躺一会儿再起身。
 \end{enumerate}
 
-\textbf{结束会话}与\textbf{断开链接}是两个动作：前者结束患者的体验，后者只是断掉蓝牙。断链期间头显冻结在当前画面，留出约
-5 秒的重连窗口；5 秒内没连回，头显回到静岸入口。
+\textbf{结束会话}是正常停止。\textbf{断开链接}是急停：头显立即冻结，等待
+5 秒重连；5 秒内没有连回，头显退出场景回到首页。
 
-本版本没有「退出系统」或「离开系统」按钮。需要离开时用「断开链接」，不要直接强退头显应用。
+患者不操作头显。患者说停或直接取下头显时，技术员在平板点「结束会话」。本版本没有独立急停按钮。
 
 \section{4
 场景化问卷作答器}\label{ux573aux666fux5316ux95eeux5377ux4f5cux7b54ux5668}
@@ -606,15 +650,25 @@ dB。问卷题干的朗读开关在场景化问卷作答器里，不在训练语
 记录与会话台账}\label{ux8bb0ux5f55ux4e0eux4f1aux8bddux53f0ux8d26}
 
 {\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}lll@{}}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
 \toprule\noalign{}
-记录 & 位置 & 内容 \\
+\begin{minipage}[b]{\linewidth}\raggedright
+记录
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+位置
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+内容
+\end{minipage} \\
 \midrule\noalign{}
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-会话摘要 & 本机 & 时长、场景、强度、语音使用情况 \\
-分段台账 & 本机 & 段序号、场景、实际秒数、峰值 \\
+会话摘要 & 本机 & 时长、场景、起伏、语音使用情况 \\
+分段台账 & 本机 &
+段序号、场景、实际秒数、峰值（换场与回准备间各成一段） \\
 问卷记录 & 本机 & 题目答案、完成时间、来源应用、是否完整 \\
 导出 & 场景化问卷作答器 → 归档 & JSON，经系统分享 \\
 \end{longtable}

@@ -50,7 +50,8 @@ npm run android      # 构建配对的两个 APK
 - 浏览器：WebXR 仅在内置 Firefox Reality 10 可用，系统 Chromium 67 无法创建会话。
 - 认证：回环 HTTP 与 BLE 均无应用层密码，设计为受控环境下一台头显对一台平板。
 - 协议：`QS2` generation，state schema `1`，28 字节，不向后兼容；没有 QS1 旧客户端，也没有已部署的旧包。头显与平板必须同批升级。
-- 记录：训练会话、问卷答卷与行为事件写同一份本机 JSON，系统分享导出，默认不上传，不做 OTA。
+- 断链：平板断开即急停，头显冻结；5 秒内重连可继续，超时退出到首页。
+- 记录：训练会话、问卷答卷与行为事件写同一份本机 JSON；APP1 体验记录在「体验」页单独保存并导出 CSV，默认不上传，不做 OTA。
 - 签名：当前 APK 为 debug 签名，生产化前需建持久化 Release Keystore。
 
 ## 文档
@@ -58,6 +59,7 @@ npm run android      # 构建配对的两个 APK
 - [docs/core.md](docs/core.md) — 范围、场景接口、功能与验收（权威口径）
 - [docs/protocol.md](docs/protocol.md) — QS2 协议：GATT、命令、state 帧、JSON 通道、入口监督
 - [docs/session-flow.md](docs/session-flow.md) — 一次会话从准备间到场景再到问卷的流程
+- [docs/app1-pilot.md](docs/app1-pilot.md) — 健康成人 APP1 早期体验预实验规程
 - [docs/scenes.md](docs/scenes.md) — 三场景的边界、画面、用途与选择规则
 - [docs/animation.md](docs/animation.md) — 漂浮、起身、俯仰修正的分层与帧规则
 - [docs/README.md](docs/README.md) — 全部文档分类入口

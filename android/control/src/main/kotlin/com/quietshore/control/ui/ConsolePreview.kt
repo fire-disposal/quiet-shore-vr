@@ -138,6 +138,7 @@ fun ConsolePreview(
         onStartTraining = noop,
         onAppSelect = {},
         onSceneSelect = {},
+        onScenePrep = noop,
         onSceneApply = noop,
         onAnimDuration = {},
         onPostureMix = {},
@@ -148,6 +149,7 @@ fun ConsolePreview(
         onSusOpen = noop,
         onSusClose = noop,
         onEnterTraining = noop,
+        onCancelLaunch = noop,
         onEnd = noop,
         onRecalibrate = noop,
         onAdaptationSkip = noop,
@@ -175,7 +177,15 @@ fun ConsolePreview(
         onExportRecords = noop,
         onSusFilterQuestionnaire = noop,
         onSusFilterDays = noop,
-        onOutcome = { _, _ -> }
+        onOutcome = { _, _ -> },
+        onExperienceOpen = noop,
+        onExperienceCancel = noop,
+        onExperienceParticipant = {},
+        onExperienceRating = { _, _ -> },
+        onExperienceDirection = {},
+        onExperienceNotes = {},
+        onExperienceSave = noop,
+        onExperienceExportCsv = noop
     )
     ControlScreen(
         state = state,

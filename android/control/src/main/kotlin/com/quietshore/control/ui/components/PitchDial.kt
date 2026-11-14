@@ -62,7 +62,10 @@ fun PitchDial(
     }
     Canvas(
         modifier
-            .height(46.dp)
+            // A reading, not a target, but it shares the strip's baseline: 46 dp
+            // sat a hairline under the 48 dp floor and the whole strip looked
+            // slightly misaligned because of it.
+            .height(TouchTarget)
             .semantics { contentDescription = description }
     ) {
         val cx = size.width * 0.5f

@@ -12,6 +12,7 @@
 | `protocol.md` | QS2 generation 与 state schema 1：GATT、控制权、命令族、28 字节 state 帧、遥测、JSON 通道、WebSocket、入口监督、HTTP、不变式 |
 | `session-flow.md` | 一次会话从准备间到正式场景，再到问卷与结束 |
 | `scenes.md` | 三个正式场景的边界、画面、用途与选择规则 |
+| `app1-pilot.md` | APP1 健康成人早期体验预实验：角色、步骤、指标、停止与访谈 |
 
 ## 当前现状
 

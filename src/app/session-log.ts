@@ -32,7 +32,14 @@ export interface SessionSummary {
   scene: string;
   /** Whole seconds between "running" and the stop. */
   seconds: number;
-  /** Buoyancy level the page was applying. */
+  /**
+   * Buoyancy the page was applying, as a 0..1 fraction of the envelope.
+   *
+   * The tablet speaks percent and the page applies a fraction, so the ledger
+   * keeps the fraction the page actually ran: rounding it to a 0..3 step threw
+   * away every value between the four notches and made "12%" and "30%" the same
+   * row.
+   */
   level: number;
   /** Posture correction (mix) at the end, 0..1. */
   mix: number;
@@ -96,7 +103,7 @@ export function summarize(input: SessionInput): SessionSummary {
     at: Number.isFinite(input.at) ? Math.round(input.at) : Date.now(),
     scene: typeof input.scene === 'string' ? input.scene : '',
     seconds: Math.max(0, Math.round(clamp(input.seconds, 0, 24 * 3600))),
-    level: Math.round(clamp(input.level, 0, 3)),
+    level: Number(clamp(input.level, 0, 1).toFixed(3)),
     mix: Number(clamp(input.mix, 0, 1).toFixed(3)),
     stop: typeof input.stop === 'string' ? input.stop : '',
     confidence: Math.round(clamp(input.confidence, 0, 100)),

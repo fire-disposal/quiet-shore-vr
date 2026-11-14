@@ -6,12 +6,18 @@
  * (the `mix` that rotates the world and lifts the eye) plus optional buoyancy
  * and view offsets. The machine only tracks *whether motion may run*, and every
  * stop path converges on `stopping` → `idle`.
+ *
+ * The patient has exactly one control: the click that enters WebXR. Everything
+ * inside the session is the tablet operator's, so the machine has no patient
+ * stop reason and no patient confirm event — a session ends when the operator
+ * ends it, when the link is gone long enough (see `link-guard`), or when the
+ * runtime itself ends the session.
  */
 
 export type SessionPhase = 'idle' | 'calibrating' | 'running' | 'stopping';
 
+/** Why a session stopped. Every one of these is the operator's or the rig's. */
 export type StopReason =
-  | 'patient'
   | 'technician'
   | 'link-lost'
   | 'headset-removed'
@@ -25,7 +31,6 @@ export interface SessionState {
 
 export type SessionEvent =
   | { readonly type: 'start' }
-  | { readonly type: 'confirm' }
   | { readonly type: 'calibrated' }
   | { readonly type: 'stop'; readonly reason: StopReason }
   | { readonly type: 'faded' };
@@ -55,17 +60,6 @@ export function reduceSession(state: SessionState, event: SessionEvent): Session
       }
       return { phase: 'running', stopReason: null };
 
-    case 'confirm':
-      // Patient button: records the heading while calibrating, otherwise only
-      // ever stops.
-      if (state.phase === 'calibrating') {
-        return reduceSession(state, { type: 'calibrated' });
-      }
-      if (isActive(state)) {
-        return { phase: 'stopping', stopReason: 'patient' };
-      }
-      return state;
-
     case 'stop':
       // Stop precedence: every reason is honoured from any running phase.
       if (state.phase === 'idle' || state.phase === 'stopping') {
@@ -78,5 +72,11 @@ export function reduceSession(state: SessionState, event: SessionEvent): Session
         return state;
       }
       return { phase: 'idle', stopReason: state.stopReason };
+
+    default:
+      // Total by construction: an event this build does not know — a stale
+      // frame from an older page, or the removed patient `confirm` — is
+      // ignored rather than returning `undefined` through the lifecycle.
+      return state;
   }
 }

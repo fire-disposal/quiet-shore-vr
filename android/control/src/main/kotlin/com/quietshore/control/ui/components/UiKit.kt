@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -236,7 +238,11 @@ fun Key(
     Box(
         modifier = modifier
             .defaultMinSize(minWidth = maxOf(minWidth, TouchTarget), minHeight = TouchTarget)
-            .height(height)
+            // A floor, never a cap. `.height(height)` clipped the label at any
+            // font scale above 1.0 — the text scaled, the box did not, and an
+            // ellipsised key reads as a broken one. The declared height is the
+            // *minimum* the design asks for; the content may take more.
+            .heightIn(min = height)
             .clip(KeyShape)
             .background(fill)
             .then(if (border != null) Modifier.border(border, KeyShape) else Modifier)
@@ -247,7 +253,9 @@ fun Key(
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick
             )
-            .padding(horizontal = 20.dp),
+            // Vertical padding is the room the second line and the system's
+            // own font scale need; the declared height carries the rest.
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -272,7 +280,12 @@ fun Key(
                     style = textStyle ?: MaterialTheme.typography.labelLarge,
                     fontWeight = if (kind == KeyKind.Selected) FontWeight.Medium else null,
                     color = labelColor,
-                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    // Two lines before ellipsis: at 1.3× the longest verb on the
+                    // console ("断开连接 = 急停") needs the second one, and a key
+                    // that wraps is still a key while one that ends in "…" is a
+                    // guess.
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -281,7 +294,8 @@ fun Key(
                     text = subLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (enabled) QuietPalette.InkSecondary else QuietPalette.Disabled,
-                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }

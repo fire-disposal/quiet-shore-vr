@@ -2,14 +2,37 @@ package com.quietshore.control.ui
 
 import com.quietshore.control.model.MirrorMode
 
+/**
+ * The eight 0–10 rows of the 体验 form, in sheet order.
+ *
+ * The enum exists so the form, the state update and the CSV cannot disagree
+ * about which scale is which: a field is identified by this name, never by its
+ * position in a row of strings.
+ */
+enum class ExperienceField(val label: String) {
+    FloatStrength("失重强度"),
+    Disorientation("方向感错乱"),
+    SceneRealism("场景真实感"),
+    BodyAlignment("身体对齐"),
+    Comfort("舒适度"),
+    Dizziness("头晕"),
+    Nausea("恶心"),
+    RepeatWish("再次体验意愿")
+}
+
 /** Callbacks the control screen needs; keeps screens free of the ViewModel. */
 data class ControlActions(
-    /** Opens the training page on the headset (the patient still confirms once). */
+    /** Opens the training page on the headset (the patient still enters once). */
     val onStartTraining: () -> Unit,
     /** Switches the product face; the top bar follows the headset's report. */
     val onAppSelect: (String) -> Unit,
     /** Marks a scene as the operator's next choice; nothing is sent yet. */
     val onSceneSelect: (String) -> Unit,
+    /**
+     * The way back to the neutral room. It switches immediately: leaving a
+     * performance is not the two-step a scene entry is.
+     */
+    val onScenePrep: () -> Unit,
     /** Applies the marked scene: the only way content changes mid-session. */
     val onSceneApply: () -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
@@ -28,6 +51,11 @@ data class ControlActions(
     val onSusOpen: () -> Unit,
     val onSusClose: () -> Unit,
     val onEnterTraining: () -> Unit,
+    /**
+     * Withdraws a launch the patient has not opened yet. Local + the page's
+     * own `exit`; never a session stop and never a link drop.
+     */
+    val onCancelLaunch: () -> Unit,
     val onEnd: () -> Unit,
     val onRecalibrate: () -> Unit,
     /** End the orientation phase early; the capture key then opens. */
@@ -72,4 +100,39 @@ data class ControlActions(
     val onSusFilterDays: () -> Unit,
     /** Bedside answer: "attempt" | "success", yes/no. */
     val onOutcome: (String, Boolean) -> Unit,
+
+    // ---- 体验 (experience observation) -------------------------------------
+
+    /**
+     * Opens a fresh 体验 form, stamped with the session that just ran.
+     *
+     * The capture belongs to the *press*: a scene or a length that changes while
+     * the operator is typing must not be rewritten underneath the sheet.
+     */
+    val onExperienceOpen: () -> Unit,
+    /** Abandons the open form; nothing is filed. */
+    val onExperienceCancel: () -> Unit,
+    /** 受试者编号; free text, may be blank. */
+    val onExperienceParticipant: (String) -> Unit,
+    /**
+     * One 0–10 rating, addressed by [ExperienceField].
+     *
+     * A single callback per field keeps the form a list of rows in one column
+     * instead of eight near-identical function types on this class.
+     */
+    val onExperienceRating: (ExperienceField, Int) -> Unit,
+    /** 漂浮方向: one of `up` / `down` / `float` / `none`. */
+    val onExperienceDirection: (String) -> Unit,
+    /** 备注; free text, may be blank. */
+    val onExperienceNotes: (String) -> Unit,
+    /** Files the open draft; the record appears in the list immediately. */
+    val onExperienceSave: () -> Unit,
+    /**
+     * Shares every filed 体验 record as a CSV attachment.
+     *
+     * This is the 体验 page's only export: a spreadsheet the operator can open,
+     * not a JSON blob. The JSON export still exists for the whole local ledger,
+     * but it is reached from the guides.
+     */
+    val onExperienceExportCsv: () -> Unit,
 )

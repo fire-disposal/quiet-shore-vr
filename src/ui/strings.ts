@@ -19,7 +19,6 @@ export interface Strings {
   linkLostGrace: string;
   /** Shown when that grace expired and the session was unwound. */
   linkLostExit: string;
-  patientStop: string;
 }
 
 export const ZH: Strings = {
@@ -37,11 +36,10 @@ export const ZH: Strings = {
   modePreview: '预览',
   dwellHint: '保持注视，即可选择',
   remoteUnknown: '未知蓝牙命令',
-  controlModeOn: '平板控制中，按一次确认键开始',
-  controlModeOff: '平板已断开，恢复患者界面',
-  linkLostGrace: '连接中断，5 秒后退出',
-  linkLostExit: '与平板断开，已退出画面',
-  patientStop: '已由患者停止训练'
+  controlModeOn: '平板控制中',
+  controlModeOff: '平板已断开，等待重连',
+  linkLostGrace: '连接中断，5 秒内未重连将退出',
+  linkLostExit: '与平板断开，已退出画面'
 };
 
 export const EN: Strings = {
@@ -59,11 +57,10 @@ export const EN: Strings = {
   modePreview: 'Preview',
   dwellHint: 'Keep looking to select',
   remoteUnknown: 'Unknown Bluetooth command',
-  controlModeOn: 'Tablet control on, press confirm once to start',
-  controlModeOff: 'Tablet disconnected, patient UI restored',
-  linkLostGrace: 'Connection lost. Exiting in 5 s',
-  linkLostExit: 'Disconnected from the tablet; scene closed',
-  patientStop: 'Session stopped by patient'
+  controlModeOn: 'Tablet in control',
+  controlModeOff: 'Tablet disconnected, waiting to reconnect',
+  linkLostGrace: 'Connection lost. Exiting in 5 s unless it returns',
+  linkLostExit: 'Disconnected from the tablet; scene closed'
 };
 
 export function getStrings(lang: 'zh' | 'en'): Strings {

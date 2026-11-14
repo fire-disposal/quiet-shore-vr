@@ -14,11 +14,18 @@ import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.mergeRemoteFrame
 import com.quietshore.control.model.MirrorMode
+import com.quietshore.control.model.OutcomeReceipt
+import com.quietshore.control.model.OutcomeState
+import com.quietshore.control.model.PREPARATION_SCENE
 import com.quietshore.control.model.ScannedHeadset
 import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.SceneCatalogDocument
 import com.quietshore.control.data.SusStore
+import com.quietshore.control.data.ExperienceCsv
+import com.quietshore.control.data.ExperienceStore
+import com.quietshore.control.model.ExperienceDraft
+import com.quietshore.control.ui.ExperienceField
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.SusResult
 import org.json.JSONException
@@ -51,13 +58,15 @@ class ControlViewModel(application: Application) :
         application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     private val susStore = SusStore(application)
+    private val experienceStore = ExperienceStore(application)
     private val trainingStore = com.quietshore.control.data.TrainingStore(application)
     private val eventLog = com.quietshore.control.data.EventLog(application)
 
     private val _uiState = MutableStateFlow(
         ControlUiState(
             lastDeviceAddress = preferences.getString(LAST_DEVICE_KEY, null),
-            susHistory = susStore.load()
+            susHistory = susStore.load(),
+            experienceHistory = experienceStore.load()
         )
     )
     val uiState: StateFlow<ControlUiState> = _uiState.asStateFlow()
@@ -240,7 +249,14 @@ class ControlViewModel(application: Application) :
             sendCommand(ControlProtocol.SCENE_PREFIX + wanted)
         }
         _uiState.update {
-            it.copy(startPending = true).also { notice("已请求启动，等待患者按确认键") }
+            it.copy(
+                startPending = true,
+                // A new launch asks a new question: the previous session's
+                // confirmed answer belongs to that session's row in the ledger
+                // and must not be drawn beside the pending launch.
+                lastSessionElapsedMs = 0L,
+                outcome = outcomeForNewSession(it)
+            ).also { notice("已请求启动，等待患者进入画面") }
         }
         sendCommand(ControlProtocol.ENTER)
         enterPendingJob?.cancel()
@@ -251,10 +267,28 @@ class ControlViewModel(application: Application) :
     }
 
     /**
-     * End the session. There is one stop: the page freezes motion and fades out
-     * inside a second, and the patient's own confirm key sends the same verb.
-     * The tablet flips to [SessionPhase.Stopping] on the press, not on a reply,
-     * because the next frame that drops the session flag is what clears it.
+     * Back out of a launch the patient has not opened yet.
+     *
+     * [SessionPhase.Entry] is the only window in which nothing has been entered:
+     * the page is sitting on its entry screen and the patient has pressed
+     * nothing. So the cancel is the page's own `exit` (which returns it to that
+     * screen) plus dropping the tablet's pending flag — never a session stop,
+     * and never a link drop. The previous session's closing panel comes back
+     * with its length, since nothing new has run.
+     */
+    fun cancelLaunch() {
+        if (!_uiState.value.startPending) {
+            return
+        }
+        enterPendingJob?.cancel()
+        _uiState.update { it.copy(startPending = false) }
+        sendCommand("exit")
+        notice("已取消启动")
+    }
+
+    /** End the session. There is one stop: the page freezes motion and fades out
+     * inside a second. The tablet flips to [SessionPhase.Stopping] on the press,
+     * not on a reply, because the next frame that drops the session flag clears it.
      */
     fun endSession() {
         requestStop()
@@ -322,6 +356,34 @@ class ControlViewModel(application: Application) :
     }
 
     /**
+     * The one key that switches immediately: the neutral preparation room.
+     *
+     * Every other scene is a two-step (mark, then 切换场景) because entering a
+     * performance is deliberate. Leaving one is not: the room that stops the
+     * bed, the voice and the heave is the way *out*, and it has no calibrating
+     * requirement of its own. Routing it through `selectScene` was what made the
+     * key dead — `selectScene` refuses ids outside the *selectable* list, and the
+     * preparation room is excluded from that list by construction, so the press
+     * was dropped before anything was sent.
+     *
+     * Mid-session it is a live scene switch like any other; outside a session it
+     * is simply refused, since there is nothing to leave.
+     */
+    fun enterPreparationRoom() {
+        val state = _uiState.value
+        if (!state.control.session || state.control.calibrating || state.stopRequested) {
+            return
+        }
+        if (state.control.scene == PREPARATION_SCENE && !state.prepRequested) {
+            return
+        }
+        _uiState.update {
+            it.copy(sceneIntent = PREPARATION_SCENE, prepRequested = true)
+        }
+        sendCommand(ControlProtocol.SCENE_PREFIX + PREPARATION_SCENE)
+    }
+
+    /**
      * Applies the marked scene. The page switches content under the recorded
      * calibration, which is the whole point of the preparation room; before
      * that calibration there is nothing to preserve, so the command waits for
@@ -333,10 +395,16 @@ class ControlViewModel(application: Application) :
             return
         }
         val target = current.sceneIntent
-        if (target.isEmpty() ||
-            target == current.control.scene ||
-            target !in selectableSceneIds(current)
-        ) {
+        if (target.isEmpty() || target == current.control.scene) {
+            return
+        }
+        // The preparation room is a valid destination but not a selectable
+        // card, so the allowlist is "the catalogue, plus the way out".
+        if (target != PREPARATION_SCENE && target !in selectableSceneIds(current)) {
+            return
+        }
+        if (target == PREPARATION_SCENE) {
+            enterPreparationRoom()
             return
         }
         sendCommand(ControlProtocol.SCENE_PREFIX + target)
@@ -495,14 +563,66 @@ class ControlViewModel(application: Application) :
      * The two facts the operator records after the headset is off.
      *
      * They travel to the page because the ledger lives there (it is the only
-     * place that saw the whole session, link or no link).
+     * place that saw the whole session, link or no link). What is *not* here is
+     * any local success: the panel only shows "已记录" when the page answers
+     * with its own `log kind=outcome.recorded` receipt (see [handlePageEvent]),
+     * because a command acknowledgement says the write was received, not that
+     * it was filed.
      */
     fun recordOutcome(kind: String, yes: Boolean) {
-        if (kind != "attempt" && kind != "success") {
+        if (!OutcomeReceipt.isSlot(kind)) {
             return
         }
-        sendCommand("record:outcome:$kind:${if (yes) "yes" else "no"}")
+        val state = _uiState.value
+        if (state.outcome.pending) {
+            // One write in flight per question: a second tap before the receipt
+            // would make the two answers indistinguishable in the log.
+            notice("上一次记录还在等待页面回执")
+            return
+        }
+        if (kind == OutcomeReceipt.SLOT_SUCCESS && !state.outcome.canReportSuccess) {
+            notice("先确认是否尝试过")
+            return
+        }
+        if (state.phase != BlePhase.READY) {
+            error("头显未连接，无法记录")
+            return
+        }
+        _uiState.update {
+            it.copy(outcome = it.outcome.copy(pending = true))
+        }
+        sendCommand(OutcomeReceipt.command(kind, yes))
     }
+
+    /**
+     * One outcome receipt from the page: the only event that may turn a tap
+     * into "已记录". A late or duplicated frame is applied whole — the fold is
+     * idempotent and ordered by the page's own `at`.
+     */
+    private fun applyOutcomeReceipt(detail: JSONObject) {
+        val record = OutcomeReceipt.parse(detail) ?: return
+        _uiState.update { state ->
+            val next = OutcomeReceipt.fold(record, state.outcome)
+            state.copy(
+                outcome = next.copy(
+                    recordedAt = maxOf(record.at, state.outcome.recordedAt),
+                    pending = false
+                )
+            )
+        }
+    }
+
+    /**
+     * The question for the session about to start is a clean one.
+     *
+     * A write still in flight belongs to the ledger row of the session that just
+     * ended; its receipt is folded into that row on the page. Carrying the
+     * `pending` flag across a launch would lock the *next* panel behind a
+     * receipt that will never be attributed to it.
+     */
+    private fun outcomeForNewSession(state: ControlUiState): OutcomeState =
+        if (state.outcome.isEmpty) state.outcome else OutcomeState()
+
 
     fun susAnswer(value: Int) {
         val v = value.coerceIn(1, 5)
@@ -572,6 +692,11 @@ class ControlViewModel(application: Application) :
             detail.put("id", recordId)
         }
         eventLog.append(app, "page.$kind", detail)
+        // The one behaviour event that changes tablet state instead of merely
+        // being logged: the page confirming it filed the bedside answer.
+        if (kind == OutcomeReceipt.LOG_KIND) {
+            applyOutcomeReceipt(detail)
+        }
     }
 
     /**
@@ -657,6 +782,168 @@ class ControlViewModel(application: Application) :
         }
     }
 
+    // -----------------------------------------------------------------------
+    // 体验 (experience observation)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Opens a 体验 form, stamped with the session that just ran.
+     *
+     * The two captured facts are read once, here: the scene the patient was
+     * actually inside (`control.scene`, the headset's own report, not the
+     * bench's intent) and the length of the session that just ended
+     * ([ControlUiState.lastSessionElapsedMs], which survives the flag drop). The
+     * form then holds them, so a scene switch mid-typing cannot rewrite the row.
+     *
+     * An already-open form is replaced rather than stacked: one sheet, one save.
+     */
+    fun openExperience() {
+        val state = _uiState.value
+        _uiState.update {
+            it.copy(
+                experienceDraft = ExperienceDraft(
+                    openedAt = System.currentTimeMillis(),
+                    scene = state.control.scene,
+                    sessionSec = (state.lastSessionElapsedMs / 1000L).toInt()
+                )
+            )
+        }
+    }
+
+    fun cancelExperience() {
+        _uiState.update { it.copy(experienceDraft = null) }
+    }
+
+    fun setExperienceParticipant(text: String) {
+        _uiState.update { state ->
+            val draft = state.experienceDraft ?: return@update state
+            // Eight characters is a subject code, not a name: the record is
+            // filed on a ward tablet and carries no patient identifier.
+            state.copy(experienceDraft = draft.copy(participant = text.take(8)))
+        }
+    }
+
+    /** One 0–10 rating. The field is addressed by name, never by position. */
+    fun setExperienceRating(field: ExperienceField, value: Int) {
+        val v = value.coerceIn(0, com.quietshore.control.model.EXPERIENCE_MAX_RATING)
+        _uiState.update { state ->
+            val draft = state.experienceDraft ?: return@update state
+            state.copy(
+                experienceDraft = when (field) {
+                    ExperienceField.FloatStrength -> draft.copy(floatStrength = v)
+                    ExperienceField.Disorientation -> draft.copy(disorientation = v)
+                    ExperienceField.SceneRealism -> draft.copy(sceneRealism = v)
+                    ExperienceField.BodyAlignment -> draft.copy(bodyAlignment = v)
+                    ExperienceField.Comfort -> draft.copy(comfort = v)
+                    ExperienceField.Dizziness -> draft.copy(dizziness = v)
+                    ExperienceField.Nausea -> draft.copy(nausea = v)
+                    ExperienceField.RepeatWish -> draft.copy(repeatWish = v)
+                }
+            )
+        }
+    }
+
+    fun setExperienceDirection(direction: String) {
+        val sanitized = com.quietshore.control.model.FloatDirection.sanitize(direction)
+        _uiState.update { state ->
+            val draft = state.experienceDraft ?: return@update state
+            state.copy(experienceDraft = draft.copy(direction = sanitized))
+        }
+    }
+
+    fun setExperienceNotes(text: String) {
+        _uiState.update { state ->
+            val draft = state.experienceDraft ?: return@update state
+            state.copy(experienceDraft = draft.copy(notes = text))
+        }
+    }
+
+    /**
+     * Files the open form.
+     *
+     * The record is written and the draft cleared in one state update, so the
+     * list under the form gains its row in the same frame the form empties —
+     * there is no window in which the sheet looks lost. A save with no draft is
+     * a no-op rather than an empty record: an all-zero sheet is not an
+     * observation.
+     */
+    fun saveExperience() {
+        val draft = _uiState.value.experienceDraft ?: return
+        val record = draft.toRecord()
+        val next = experienceStore.append(record)
+        _uiState.update { it.copy(experienceDraft = null, experienceHistory = next) }
+        notice("已记录 ${record.participantLabel} 的体验")
+    }
+
+    /**
+     * Shares every filed 体验 record as a CSV file.
+     *
+     * A real file with a Chinese header and a BOM, handed over as
+     * `application/csv` through the app's own `FileProvider`: the operator opens
+     * it in Excel on the spot, or sends it on with whatever messenger the ward
+     * already uses. Nothing here depends on the headset or on the other product
+     * face being installed.
+     */
+    fun exportExperienceCsv() {
+        val state = _uiState.value
+        val records = state.experienceHistory
+        if (records.isEmpty()) {
+            error("还没有体验记录，先填一张表再导出")
+            return
+        }
+        val scenes = state.scenes
+        val name = ExperienceCsv.fileName()
+        val uri = try {
+            shareExperienceFile(name, ExperienceCsv.bytes(records, scenes))
+        } catch (failure: Exception) {
+            error("无法写入导出文件")
+            return
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/csv"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            putExtra(
+                android.content.Intent.EXTRA_SUBJECT,
+                "体验记录 ${records.size} 条"
+            )
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            getApplication<Application>().startActivity(
+                android.content.Intent.createChooser(intent, "导出体验记录")
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            notice("已生成 ${records.size} 条体验记录")
+        } catch (failure: RuntimeException) {
+            error("没有可接收导出的应用")
+        }
+    }
+
+    /**
+     * Writes the sheet into the share cache and returns its content URI.
+     *
+     * The file is rewritten per export: a cache that accumulated one CSV per
+     * export would grow with the trial, and the operator only ever wants the
+     * latest. The `experience/` subdirectory is the one `res/xml/file_paths.xml`
+     * declares, so the authority below is the only thing that has to match.
+     */
+    private fun shareExperienceFile(name: String, bytes: ByteArray): android.net.Uri {
+        val context = getApplication<Application>()
+        val dir = java.io.File(context.cacheDir, EXPERIENCE_EXPORT_DIR)
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw java.io.IOException("cannot create $dir")
+        }
+        dir.listFiles()?.forEach { stale -> stale.delete() }
+        val file = java.io.File(dir, name)
+        file.writeBytes(bytes)
+        return androidx.core.content.FileProvider.getUriForFile(
+            context,
+            EXPERIENCE_AUTHORITY,
+            file
+        )
+    }
+
     fun stopVoice() {
         sendCommand(ControlProtocol.VOICE_PREFIX + "stop")
     }
@@ -727,7 +1014,8 @@ class ControlViewModel(application: Application) :
                 phase = phase,
                 poseStale = if (settled) state.poseStale else true,
                 reconnectAttempt = if (settled) 0 else state.reconnectAttempt,
-                reconnectMax = if (settled) 0 else state.reconnectMax
+                reconnectMax = if (settled) 0 else state.reconnectMax,
+                battery = if (settled) state.battery else null
             )
         }
     }
@@ -758,7 +1046,8 @@ class ControlViewModel(application: Application) :
             it.copy(
                 controlGranted = false,
                 sessionActive = false,
-                poseStale = true
+                poseStale = true,
+                battery = null
             ).also { error(reason) }
         }
     }
@@ -768,7 +1057,8 @@ class ControlViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 controlGranted = false,
-                poseStale = true
+                poseStale = true,
+                battery = null
             ).also { error(reason) }
         }
     }
@@ -780,7 +1070,8 @@ class ControlViewModel(application: Application) :
             it.copy(
                 controlGranted = false,
                 poseStale = true,
-                rssi = null
+                rssi = null,
+                battery = null
             )
         }
     }
@@ -1035,5 +1326,11 @@ class ControlViewModel(application: Application) :
 
         const val PREFERENCES = "quiet-shore-control"
         const val LAST_DEVICE_KEY = "lastDeviceAddress"
+
+        /** Must equal the `authorities` in AndroidManifest's provider. */
+        const val EXPERIENCE_AUTHORITY = "com.quietshore.control.fileprovider"
+
+        /** The one cache subdirectory `res/xml/file_paths.xml` exposes. */
+        const val EXPERIENCE_EXPORT_DIR = "experience"
     }
 }

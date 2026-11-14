@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.tappableElement
@@ -38,8 +39,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.OutcomeReceipt
+import com.quietshore.control.model.PREPARATION_SCENE
 import com.quietshore.control.model.SessionPhase
 import com.quietshore.control.model.UiEvent
+import com.quietshore.control.model.outcomePanelVisible
 import com.quietshore.control.model.sessionPhaseOf
 import com.quietshore.control.ui.components.ActionTone
 import com.quietshore.control.ui.components.ActionKey
@@ -78,6 +82,7 @@ import com.quietshore.control.ui.components.SusSheet
 import com.quietshore.control.ui.components.SwitchRow
 import com.quietshore.control.ui.components.TouchTarget
 import com.quietshore.control.ui.components.AudioPanel
+import com.quietshore.control.ui.components.ExperiencePanel
 import com.quietshore.control.ui.components.clock
 import com.quietshore.control.ui.components.tabularFigures
 import com.quietshore.control.ui.components.nextVoiceId
@@ -89,17 +94,21 @@ import com.quietshore.control.ui.theme.QuietSpace
  * The console, as four destinations under one app bar.
  *
  * The bar is the only thing that never moves: state, the two charges, the
- * menu and the stop. Everything else is one of four pages, chosen by what the
+ * menu and the stop. Everything else is one of five pages, chosen by what the
  * operator is doing rather than by what fits on a screen:
  *
  * ```text
  *   会话  the patient's picture, the figures, the dials — plus the live
  *         controls (scene, strength, voice, posture) and the end.
  *   场景  the preparation bench: scene, rise length, posture, start.
- *   语音  the full cue panel: sequences, single cues, volume, water, tone.
+ *   音频  the full cue panel: sequences, single cues, volume, water, tone.
+ *   体验  the operator's observation sheet, filled in after the headset is
+ *         off; records list under the form, CSV out of it.
+ *   说明  the manual, as a page.
  *
  * The questionnaire (SUS) is its own application face; it is not a training
- * destination, so the training rail has three tabs.
+ * destination. The 体验 sheet is the operator's, not the patient's, so it is
+ * not offered there either.
  * ```
  *
  * The page the app opens on follows the phase — the bench before a session,
@@ -162,7 +171,8 @@ fun ControlScreen(
             CommandBar(
                 state = state,
                 onAppSelect = actions.onAppSelect,
-                onDisconnect = actions.onDisconnect
+                onDisconnect = actions.onDisconnect,
+                onCancelLaunch = actions.onCancelLaunch
             )
             // No link banners on the initial page: the device list is the
             // action, and a banner offering "重新连接" beside it is a second
@@ -200,53 +210,73 @@ fun ControlScreen(
                 }
                 // Navigation on the left, as a rail: a landscape tablet is
                 // short on height, and the rail scrolls instead of clipping.
-                Row(Modifier.fillMaxSize()) {
-                    ConsoleRail(
-                        current = section,
-                        onSelect = { chosen = it }
-                    )
-                    RailRule()
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .then(pagePadding)
-                            .padding(bottom = 12.dp)
-                    ) {
-                        val back = if (phase.inSession) {
-                            ConsoleSection.Session
-                        } else {
-                            ConsoleSection.Scene
-                        }
-                        when (section) {
-                            ConsoleSection.Session -> SessionPage(
-                                state = state,
-                                actions = actions,
-                                phase = phase,
-                                wide = wide
-                            )
-                            ConsoleSection.Scene -> ScenePage(
-                                state = state,
-                                actions = actions,
-                                phase = phase,
-                                wide = wide
-                            )
-                            ConsoleSection.Guide -> GuideScreen(
-                                onBack = {},
-                                app = "training",
-                                // The chrome is the console's own: this is a page
-                                // in the main area, not an overlay over it.
-                                withChrome = false,
-                                onExport = actions.onExportRecords
-                            )
-                            ConsoleSection.Audio -> PanelPage(
-                                title = "音频",
-                                note = "提示语与水声，都在这一页",
-                                onBack = { chosen = back }
-                            ) {
-                                AudioPanel(state = state, actions = actions)
+                Column(Modifier.fillMaxSize()) {
+                    // While a session runs, the two exits ride above the page —
+                    // whichever destination the operator is on — so nobody has
+                    // to navigate back to 会话 to stop the patient. The session
+                    // page carries them at the foot of its own column instead.
+                    if (phase.showsSessionVerbs && section != ConsoleSection.Session) {
+                        SessionVerbsStrip(
+                            state = state,
+                            actions = actions,
+                            phase = phase
+                        )
+                    }
+                    Row(Modifier.weight(1f).fillMaxWidth()) {
+                        ConsoleRail(
+                            current = section,
+                            onSelect = { chosen = it }
+                        )
+                        RailRule()
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .then(pagePadding)
+                                .padding(bottom = 12.dp)
+                        ) {
+                            val back = if (phase.inSession) {
+                                ConsoleSection.Session
+                            } else {
+                                ConsoleSection.Scene
                             }
+                            when (section) {
+                                ConsoleSection.Session -> SessionPage(
+                                    state = state,
+                                    actions = actions,
+                                    phase = phase,
+                                    wide = wide
+                                )
+                                ConsoleSection.Scene -> ScenePage(
+                                    state = state,
+                                    actions = actions,
+                                    phase = phase,
+                                    wide = wide
+                                )
+                                ConsoleSection.Guide -> GuideScreen(
+                                    onBack = {},
+                                    app = "training",
+                                    // The chrome is the console's own: this is a page
+                                    // in the main area, not an overlay over it.
+                                    withChrome = false,
+                                    onExport = actions.onExportRecords
+                                )
+                                ConsoleSection.Audio -> PanelPage(
+                                    title = "音频",
+                                    note = "提示语与水声，都在这一页",
+                                    onBack = { chosen = back }
+                                ) {
+                                    AudioPanel(state = state, actions = actions)
+                                }
+                                ConsoleSection.Experience -> PanelPage(
+                                    title = "体验",
+                                    note = "取下头显后填写；导出为 CSV 表格",
+                                    onBack = { chosen = back }
+                                ) {
+                                    ExperiencePanel(state = state, actions = actions)
+                                }
 
+                            }
                         }
                     }
                 }
@@ -254,6 +284,76 @@ fun ControlScreen(
 
         }
     }
+}
+
+/**
+ * The two session exits, on whatever page the operator is looking at.
+ *
+ * They are duplicated with the foot of the session column on purpose: the
+ * session column is one tab away, and "stop the patient" is not a navigation.
+ * The strip is a board, not a bar, so it reads as part of the page it sits on.
+ *
+ * The disconnect is drawn as the emergency it is. With the patient wearing the
+ * headset and holding no controls, cutting the tablet *is* the stop: the page
+ * freezes motion and voice immediately and holds the session for five seconds,
+ * and only if that window closes with no reconnect does it end the session and
+ * leave to the entry screen. Both halves are printed on the key, because the
+ * difference between "frozen for five seconds" and "session over" is the whole
+ * decision the operator is making.
+ */
+@Composable
+private fun SessionVerbsStrip(
+    state: ControlUiState,
+    actions: ControlActions,
+    phase: SessionPhase
+) {
+    val ready = state.phase == BlePhase.READY
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(QuietPalette.Board)
+            .padding(horizontal = QuietSpace.Page, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (phase == SessionPhase.Stopping) "正在结束" else "会话进行中",
+            style = MaterialTheme.typography.labelMedium,
+            color = QuietPalette.InkSecondary,
+            modifier = Modifier.width(72.dp)
+        )
+        if (phase.awaitingPress) {
+            ActionKey(
+                label = "取消启动",
+                subLabel = "患者尚未进入",
+                onClick = actions.onCancelLaunch,
+                tone = ActionTone.Secondary,
+                height = 56.dp
+            )
+        } else {
+            ActionKey(
+                label = when (phase) {
+                    SessionPhase.Stopping -> "正在结束"
+                    else -> "结束会话"
+                },
+                onClick = actions.onEnd,
+                tone = ActionTone.Danger,
+                enabled = ready && phase != SessionPhase.Stopping,
+                height = 56.dp
+            )
+            ActionKey(
+                label = "断开连接 = 急停",
+                subLabel = "冻结；5 秒内重连继续",
+                onClick = actions.onDisconnect,
+                tone = ActionTone.Danger,
+                enabled = ready,
+                height = 56.dp,
+                textStyle = MaterialTheme.typography.titleSmall
+            )
+        }
+        Spacer(Modifier.weight(1f))
+    }
+    Rule()
 }
 
 /**
@@ -350,16 +450,34 @@ private fun QuestionnaireApp(
  * try" are different clinical results — collapsing them loses the only signal
  * that the therapy is being attempted at all. The answer travels to the page,
  * which owns the ledger.
+ *
+ * **Nothing here is optimistic.** A tap sends `record:outcome:*` and the row
+ * shows "等待页面回执"; the button turns into "已记录" only when the page's own
+ * `log kind=outcome.recorded` names that half of the question. The command
+ * acknowledgement is not a receipt: it says the write reached the page's inbox,
+ * which is exactly the thing that was true in the bug this replaces.
  */
 @Composable
-private fun OutcomePrompt(state: ControlUiState, actions: ControlActions) {
-    if (state.sessionElapsedMs <= 0L || state.control.session) {
+private fun OutcomePrompt(
+    state: ControlUiState,
+    phase: SessionPhase,
+    actions: ControlActions
+) {
+    if (!outcomePanelVisible(
+            lastSessionElapsedMs = state.lastSessionElapsedMs,
+            sessionRunning = state.control.session,
+            phase = phase
+        )
+    ) {
         return
     }
-    var answered by remember(state.sessionElapsedMs) { mutableStateOf(false) }
-    var attempted by remember(state.sessionElapsedMs) { mutableStateOf<Boolean?>(null) }
-    var succeeded by remember(state.sessionElapsedMs) { mutableStateOf<Boolean?>(null) }
-    SectionHead(title = "本次结果", note = "取下头显后记录")
+    val outcome = state.outcome
+    val ready = state.phase == BlePhase.READY
+    SectionHead(
+        title = "本次结果",
+        note = "上一轮 ${clock(state.lastSessionElapsedMs)}，取下头显后记录",
+        modifier = Modifier.fillMaxWidth()
+    )
     Panel(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(QuietSpace.Panel)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -370,37 +488,28 @@ private fun OutcomePrompt(state: ControlUiState, actions: ControlActions) {
                         color = QuietPalette.Ink
                     )
                     Text(
-                        text = when {
-                            succeeded == true -> "已记录：成功"
-                            attempted == false -> "已记录：没有尝试"
-                            attempted == true -> "已记录：尝试了"
-                            else -> "患者取下头显后，按实际回答"
-                        },
+                        text = outcome.summary,
                         style = MaterialTheme.typography.labelSmall,
                         color = QuietPalette.InkSecondary
                     )
                 }
+                // The word keys are the *commands*: enabled while the answer is
+                // still unknown and no write is in flight, and off once the page
+                // has spoken — an answer the page already filed is not a question
+                // the operator can answer differently from this screen.
                 BarWordKey(
                     label = "试了",
-                    onClick = {
-                        attempted = true
-                        answered = true
-                        actions.onOutcome("attempt", true)
-                    },
-                    enabled = !answered
+                    onClick = { actions.onOutcome(OutcomeReceipt.SLOT_ATTEMPT, true) },
+                    enabled = ready && !outcome.pending && outcome.attempted == null
                 )
                 Spacer(Modifier.width(12.dp))
                 BarWordKey(
                     label = "没试",
-                    onClick = {
-                        attempted = false
-                        answered = true
-                        actions.onOutcome("attempt", false)
-                    },
-                    enabled = !answered
+                    onClick = { actions.onOutcome(OutcomeReceipt.SLOT_ATTEMPT, false) },
+                    enabled = ready && !outcome.pending && outcome.attempted == null
                 )
             }
-            if (attempted == true) {
+            if (outcome.canReportSuccess) {
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -411,22 +520,33 @@ private fun OutcomePrompt(state: ControlUiState, actions: ControlActions) {
                     )
                     BarWordKey(
                         label = "成功",
-                        onClick = {
-                            succeeded = true
-                            actions.onOutcome("success", true)
-                        },
-                        enabled = succeeded != true
+                        onClick = { actions.onOutcome(OutcomeReceipt.SLOT_SUCCESS, true) },
+                        enabled = ready && !outcome.pending && outcome.succeeded == null
                     )
                     Spacer(Modifier.width(12.dp))
                     BarWordKey(
                         label = "未成功",
-                        onClick = {
-                            succeeded = false
-                            actions.onOutcome("success", false)
-                        },
-                        enabled = succeeded == null
+                        onClick = { actions.onOutcome(OutcomeReceipt.SLOT_SUCCESS, false) },
+                        enabled = ready && !outcome.pending && outcome.succeeded == null
                     )
                 }
+            }
+            if (outcome.succeeded != null) {
+                Spacer(Modifier.height(10.dp))
+                Rule()
+                Text(
+                    text = "结果已记入页面账本；本页不再改动这一轮。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = QuietPalette.InkSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            } else if (!ready) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "头显未连接：结果要在页面的账本上记录，先重新连接。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = QuietPalette.InkSecondary
+                )
             }
         }
     }
@@ -628,7 +748,7 @@ private fun SessionAudio(
                     onClick = actions.onToggleAudio,
                     kind = if (muted) KeyKind.Selected else KeyKind.Outline,
                     enabled = ready,
-                    height = 40.dp,
+                    height = TouchTarget,
                     minWidth = 72.dp
                 )
             }
@@ -692,15 +812,26 @@ private fun SessionColumn(
                         // The neutral room is not a scene card — it is the way
                         // out of the performance: entering it stops the bed,
                         // the voice and the heave, and leaves the patient in a
-                        // grey room with the calibration intact.
-                        if (!state.inSpecialScene && state.sceneIntent != "prep") {
+                        // grey room with the calibration intact. So it is always
+                        // here once a session is live (a state-dependent key
+                        // moved everything under the hand, and hid the only way
+                        // back), and it is a *verb*: it sends the switch itself
+                        // instead of marking an intent that the 切换场景 key then
+                        // refused, because the preparation room is not a
+                        // selectable card.
+                        if (phase.inSession) {
                             Spacer(Modifier.width(10.dp))
                             Key(
-                                label = "准备间",
-                                onClick = { actions.onSceneSelect("prep") },
-                                kind = KeyKind.Quiet,
-                                enabled = ready && phase.acceptsChanges,
-                                height = 40.dp
+                                label = if (state.prepScenePending) "准备间…" else "准备间",
+                                onClick = actions.onScenePrep,
+                                kind = if (state.inSpecialScene) {
+                                    KeyKind.Selected
+                                } else {
+                                    KeyKind.Quiet
+                                },
+                                enabled = ready && phase.acceptsChanges && state.canReturnToPrep,
+                                height = TouchTarget,
+                                minWidth = 88.dp
                             )
                         }
                     }
@@ -717,7 +848,9 @@ private fun SessionColumn(
                                 // 56 dp strips at arm's length were a gamble.
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(72.dp),
+                                    // A floor: three names of two lines at 1.3×
+                                    // were cut by the fixed 72 dp.
+                                    .heightIn(min = 72.dp),
                                 showBlurb = false
                             )
                         }
@@ -861,13 +994,29 @@ private fun SessionColumn(
                             color = QuietPalette.InkSecondary
                         )
                         Spacer(Modifier.weight(1f))
+                        // The adaptation window is the page's, and it used to
+                        // have no exit at all: the capture key sat at 适应中 while
+                        // the only way out was on a screen the operator had to go
+                        // find. The exit is here, beside the key it unlocks, and
+                        // only while the window is actually open.
+                        if (phase == SessionPhase.Calibrating && !state.adaptationDone) {
+                            Key(
+                                label = "结束适应",
+                                onClick = actions.onAdaptationSkip,
+                                kind = KeyKind.Outline,
+                                enabled = ready,
+                                height = TouchTarget,
+                                minWidth = 96.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
                         // Re-aiming the world shares the ramp's row: the row has
                         // the width, and the two are the same kind of decision —
                         // how the world is placed right now.
                         CalibrationKey(
                             view = calibration,
                             onClick = actions.onRecalibrate,
-                            height = 40.dp,
+                            height = TouchTarget,
                             modifier = Modifier.width(116.dp)
                         )
                     }
@@ -909,19 +1058,47 @@ private fun SessionColumn(
             }
         }
         Spacer(Modifier.height(10.dp))
-        // One key at the foot now that calibration lives on the strip: the
-        // session's only exit takes the whole width and the thumb's reach.
-        EndKey(
-            enabled = ready && phase != SessionPhase.Stopping,
-            label = when (phase) {
-                SessionPhase.Stopping -> "正在结束"
-                // It ends the session, not the link: the bar's 断开链接 is a
-                // different object and says so.
-                else -> "结束会话"
-            },
-            onClick = actions.onEnd,
-            modifier = Modifier.fillMaxWidth()
-        )
+        // The foot of the column is the session's verbs, and they are present on
+        // the *page* rather than only in the bar: during a session the operator
+        // must never have to find another tab to stop the patient.
+        if (phase.awaitingPress) {
+            // Nothing has been entered, so this is not a stop: the launch is
+            // withdrawn before the patient moves.
+            ActionKey(
+                label = "取消启动",
+                subLabel = "患者尚未进入",
+                onClick = actions.onCancelLaunch,
+                modifier = Modifier.fillMaxWidth(),
+                tone = ActionTone.Secondary,
+                enabled = true,
+                height = 64.dp
+            )
+        } else if (phase.inSession) {
+            EndKey(
+                enabled = ready && phase != SessionPhase.Stopping,
+                label = when (phase) {
+                    SessionPhase.Stopping -> "正在结束"
+                    else -> "结束会话"
+                },
+                onClick = actions.onEnd,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            // The tablet link *is* the emergency stop: with the operator side
+            // gone the page freezes and holds for five seconds, then ends the
+            // session. The key says both halves, because a technician pressing
+            // it needs to know the patient is not left in a moving world.
+            ActionKey(
+                label = "断开连接 = 急停",
+                subLabel = "平板断开，头显冻结；5 秒内重连则继续",
+                onClick = actions.onDisconnect,
+                modifier = Modifier.fillMaxWidth(),
+                tone = ActionTone.Danger,
+                enabled = ready,
+                height = 64.dp,
+                textStyle = MaterialTheme.typography.titleSmall
+            )
+        }
     }
 }
 
@@ -979,7 +1156,7 @@ private fun ScenePage(
             Spacer(Modifier.height(QuietSpace.Section))
             // The question comes first: it is about the session that just
             // ended, and the bench below is about the next one.
-            OutcomePrompt(state = state, actions = actions)
+            OutcomePrompt(state = state, phase = phase, actions = actions)
             Spacer(Modifier.height(QuietSpace.Section))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1090,6 +1267,18 @@ private fun StartBlock(
             // two identical ice blocks would be two primaries on one page.
             if (phase == SessionPhase.Entry) {
                 LoadingDots(color = QuietPalette.Ink)
+                Spacer(Modifier.width(16.dp))
+                // The launch wait is up to twenty seconds of a page that cannot
+                // otherwise be backed out of. This is not a stop: nothing has
+                // been entered yet, so it only withdraws the request.
+                Key(
+                    label = "取消启动",
+                    onClick = actions.onCancelLaunch,
+                    kind = KeyKind.Outline,
+                    enabled = true,
+                    height = TouchTarget,
+                    minWidth = 96.dp
+                )
             }
         }
         Rule()
@@ -1119,7 +1308,7 @@ private fun StandbySteps(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "患者按一次确认键，进入准备间。",
+                text = "患者按一次头显按钮，进入画面。",
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary
             )
@@ -1132,7 +1321,7 @@ private fun StandbySteps(
             StepLine(
                 "启动训练",
                 when (phase) {
-                    SessionPhase.Entry -> "等待患者按压"
+                    SessionPhase.Entry -> "等待患者进入"
                     SessionPhase.Calibrating -> "准备间，记录中"
                     SessionPhase.Running -> "已在准备间"
                     else -> "未启动"
@@ -1175,6 +1364,16 @@ private fun StandbySteps(
                 // The countdown already lives in the page headline; repeating it
                 // under the key made the same sentence appear twice on one screen.
                 Spacer(Modifier.height(8.dp))
+                // The wait is the operator's to call off: the patient has not
+                // pressed yet, so nothing about this is a session decision.
+                ActionKey(
+                    label = "取消启动",
+                    onClick = actions.onCancelLaunch,
+                    modifier = Modifier.fillMaxWidth(),
+                    tone = ActionTone.Secondary,
+                    height = TouchTarget,
+                    textStyle = MaterialTheme.typography.titleSmall
+                )
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -1182,13 +1381,13 @@ private fun StandbySteps(
                 style = MaterialTheme.typography.bodySmall,
                 color = QuietPalette.InkSecondary
             )
-            if (phase == SessionPhase.Idle && state.sessionElapsedMs > 0L) {
+            if (phase == SessionPhase.Idle && state.lastSessionElapsedMs > 0L) {
                 // The session that just ended is recorded; the scale is a
                 // separate application face and is not offered from training.
                 Spacer(Modifier.height(16.dp))
                 Rule()
                 Text(
-                    text = "上一轮已记录。量表在「问卷」应用内。",
+                    text = "上一轮 ${clock(state.lastSessionElapsedMs)} 已记录。量表在「问卷」应用内。",
                     style = MaterialTheme.typography.bodySmall,
                     color = QuietPalette.InkSecondary,
                     modifier = Modifier.padding(top = 8.dp)

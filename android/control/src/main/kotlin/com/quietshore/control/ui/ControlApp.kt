@@ -130,6 +130,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onStartTraining = viewModel::enterTraining,
             onAppSelect = viewModel::selectApp,
             onSceneSelect = viewModel::selectScene,
+            onScenePrep = viewModel::enterPreparationRoom,
             onSceneApply = viewModel::applyScene,
             onAnimDuration = viewModel::setAnimDuration,
             onPostureMix = viewModel::setPostureMix,
@@ -140,6 +141,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onSusOpen = viewModel::openSus,
             onSusClose = viewModel::closeSus,
             onEnterTraining = viewModel::enterTraining,
+            onCancelLaunch = viewModel::cancelLaunch,
             onEnd = viewModel::endSession,
             onRecalibrate = viewModel::recalibrate,
             onAdaptationSkip = viewModel::skipAdaptation,
@@ -167,7 +169,15 @@ fun ControlApp(viewModel: ControlViewModel) {
             onOutcome = viewModel::recordOutcome,
             onDisconnect = viewModel::disconnect,
             onReconnect = viewModel::reconnect,
-            onLeave = viewModel::leaveControl
+            onLeave = viewModel::leaveControl,
+            onExperienceOpen = viewModel::openExperience,
+            onExperienceCancel = viewModel::cancelExperience,
+            onExperienceParticipant = viewModel::setExperienceParticipant,
+            onExperienceRating = viewModel::setExperienceRating,
+            onExperienceDirection = viewModel::setExperienceDirection,
+            onExperienceNotes = viewModel::setExperienceNotes,
+            onExperienceSave = viewModel::saveExperience,
+            onExperienceExportCsv = viewModel::exportExperienceCsv
         )
     )
 }

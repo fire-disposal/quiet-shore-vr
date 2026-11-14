@@ -31,6 +31,7 @@ dependencies {
     implementation(project(":protocol"))
     testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
+    testImplementation("com.vaadin.external.google:android-json:0.0.20131108.vaadin1")
 
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)

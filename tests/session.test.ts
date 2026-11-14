@@ -3,7 +3,8 @@ import {
   INITIAL_SESSION,
   isActive,
   reduceSession,
-  type SessionEvent
+  type SessionEvent,
+  type StopReason
 } from '../src/app/session';
 
 const RUNNING = [
@@ -38,36 +39,40 @@ describe('session reducer', () => {
     expect(isActive(running)).toBe(true);
   });
 
-  it('patient confirm records heading while calibrating', () => {
-    const started = reduceSession(INITIAL_SESSION, { type: 'start' });
-    const running = reduceSession(started, { type: 'confirm' });
-    expect(running.phase).toBe('running');
-    expect(isActive(running)).toBe(true);
+  it('has no patient stop reason: the patient only enters and leaves the headset', () => {
+    // The bedside has one control — the click that enters XR. Every reason the
+    // reducer accepts is the operator's or the rig's, so a headset press can
+    // never be written into the ledger as a stop.
+    const reasons: readonly StopReason[] = [
+      'technician',
+      'link-lost',
+      'headset-removed',
+      'pose-lost',
+      'session-end'
+    ];
+    expect(reasons).not.toContain('patient');
+    for (const reason of reasons) {
+      expect(reduceSession(INITIAL_SESSION, { type: 'stop', reason })).toBe(INITIAL_SESSION);
+    }
   });
 
-  it('patient confirm stops a running session', () => {
+  it('accepts no confirm event at all', () => {
+    // `confirm` used to start the capture and stop the session from the
+    // headset button. It is gone from the event union, so this is a compile
+    // -time guarantee that also holds at runtime for a stale wire frame.
+    const stale = { type: 'confirm' } as unknown as SessionEvent;
+    expect(reduceSession(INITIAL_SESSION, stale)).toBe(INITIAL_SESSION);
     const running = RUNNING.reduce(reduceSession, INITIAL_SESSION);
-    const stopped = reduceSession(running, { type: 'confirm' });
-    expect(stopped.phase).toBe('stopping');
-    expect(stopped.stopReason).toBe('patient');
-  });
-
-  it('confirm does nothing when idle or already stopping', () => {
-    expect(reduceSession(INITIAL_SESSION, { type: 'confirm' })).toBe(INITIAL_SESSION);
-    const stopping = reduceSession(
-      RUNNING.reduce(reduceSession, INITIAL_SESSION),
-      { type: 'stop', reason: 'technician' }
-    );
-    expect(reduceSession(stopping, { type: 'confirm' })).toBe(stopping);
+    expect(reduceSession(running, stale)).toBe(running);
   });
 
   it('keeps the first stop reason while fading', () => {
     const running = RUNNING.reduce(reduceSession, INITIAL_SESSION);
-    const stopping = reduceSession(running, { type: 'stop', reason: 'patient' });
-    // A second reason cannot overwrite the first: the patient asked first.
+    const stopping = reduceSession(running, { type: 'stop', reason: 'technician' });
+    // A second reason cannot overwrite the first.
     const again = reduceSession(stopping, { type: 'stop', reason: 'link-lost' });
     expect(again).toBe(stopping);
-    expect(reduceSession(again, { type: 'faded' }).stopReason).toBe('patient');
+    expect(reduceSession(again, { type: 'faded' }).stopReason).toBe('technician');
   });
 
   it('does not treat a stop from idle as a session', () => {

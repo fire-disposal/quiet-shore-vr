@@ -73,4 +73,35 @@ class SessionPhaseTest {
         val pending = phaseOf(ControlState(), ble = BlePhase.CONNECTING, startPending = true)
         assertEquals(SessionPhase.Idle, pending)
     }
+
+    @Test
+    fun `only the pre-press window counts as awaiting the press`() {
+        // The cancel is offered exactly here and nowhere else: once the patient
+        // has pressed, backing out is a session stop, not a withdrawn launch.
+        val entry = phaseOf(ControlState(), startPending = true)
+        assertTrue(entry.awaitingPress)
+        assertTrue(entry.showsSessionVerbs)
+
+        for (control in listOf(
+            ControlState(),
+            ControlState(session = true, calibrating = true),
+            ControlState(session = true)
+        )) {
+            assertFalse(phaseOf(control).awaitingPress, "$control must not await a press")
+        }
+        assertFalse(phaseOf(ControlState(session = true), stopRequested = true).awaitingPress)
+    }
+
+    @Test
+    fun `the session verbs are reachable on every page a session occupies`() {
+        // 结束会话 and the emergency disconnect must be present on whichever
+        // destination the operator happens to be on, so every in-session phase
+        // asks for the strip.
+        assertTrue(phaseOf(ControlState(session = true, calibrating = true)).showsSessionVerbs)
+        assertTrue(phaseOf(ControlState(session = true)).showsSessionVerbs)
+        assertTrue(phaseOf(ControlState(session = true), stopRequested = true).showsSessionVerbs)
+        // Outside a session there is nothing to end, and the initial page owns
+        // its own layout.
+        assertFalse(phaseOf(ControlState()).showsSessionVerbs)
+    }
 }

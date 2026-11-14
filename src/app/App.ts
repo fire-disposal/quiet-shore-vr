@@ -62,6 +62,27 @@ import {
 import { SceneSnapshot, type SceneSnapshotInput } from '../core/scene/snapshot';
 import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent, type SessionState } from './session';
 import {
+  INITIAL_LINK,
+  LINK_LOST_GRACE_MS,
+  isFrozen,
+  isLost,
+  reduceLink,
+  type LinkEvent,
+  type LinkGuardState
+} from './link-guard';
+import {
+  OUTCOME_RECORDED,
+  type OutcomeReceipt,
+  type OutcomeSlot
+} from './outcome-receipt';
+import {
+  AUTO_RISE_CUE,
+  AUTO_RISE_CUE_MS,
+  PREP_SCENE_ID,
+  autoRiseDelayMs,
+  shouldScheduleAutoRise
+} from './auto-rise';
+import {
   createLayoutToken,
   invalidateLayout,
   isLayoutCurrent,
@@ -70,12 +91,6 @@ import {
 import { canSwitchApp, shouldFileSusSheet } from './app-switch';
 
 const MAX_DT = 0.25;
-/** The built-in neutral room; not a scene card, but a place to return to. */
-const PREP_SCENE_ID = 'prep';
-/** Calibration → the "imagine sitting up" cue. */
-const AUTO_RISE_CUE_MS = 6000;
-/** The cue ends → the world starts turning. */
-const AUTO_RISE_GAP_MS = 2000;
 /**
  * A supine head looks up: the preview's resting aim, radians. The camera's
  * +X rotation tilts the view up (its forward is -Z), so this is positive.
@@ -94,18 +109,14 @@ const STOP_FADE_MS = 1000;
 const SCENE_CUT_IN_MS = 220;
 const SCENE_CUT_OUT_MS = 320;
 /**
- * How long a session survives without its tablet.
- *
- * A dropped link used to leave the patient inside a frozen world until someone
- * walked over. Five seconds is long enough for a reconnect to be invisible and
- * short enough that nobody is left staring at a stopped picture.
+ * How long a session survives without its tablet is `LINK_LOST_GRACE_MS` from
+ * `link-guard`: one definition, shared with the state machine and its tests.
  */
-const LINK_LOST_GRACE_MS = 5000;
 /** Planned session length used by the voice auto plan until the wire carries it. */
 const VOICE_PLAN_SESSION_MS = 10 * 60 * 1000;
-/** The stable window the operator (or the patient's button) starts. */
+/** The stable window the operator starts. */
 /**
- * Orientation time after the patient's first press.
+ * Orientation time before the capture may start.
  *
  * Putting a headset on is not the same as being ready to be somewhere: the
  * page holds the capture for a minute in the empty room. It is a gate, not a
@@ -146,6 +157,8 @@ export class QuietShoreApp {
   private linkOnline = false;
   /** The link has been up once, so a later drop is a real disconnect. */
   private linkEverOnline = false;
+  /** online → frozen (5 s) → lost; see `link-guard`. */
+  private linkGuard: LinkGuardState = INITIAL_LINK;
   /** The 5 s "the tablet is gone" timer; cleared the moment the link returns. */
   private linkLostTimer = 0;
   /** True while a link loss is unwinding the session. */
@@ -264,8 +277,6 @@ export class QuietShoreApp {
   /** The operator ended the orientation phase early. */
   private adaptationSkipped = false;
 
-  /** Debounce for the single physical confirm: `select*` plus DOM fallbacks. */
-  private selectHandledAt = 0;
   private showPerf: boolean;
   /** Scene bed (water sound) default: on, at half the authored loudness. */
   private sceneBedOn = true;
@@ -300,7 +311,6 @@ export class QuietShoreApp {
   private lastSubtitleId: string | null | undefined = undefined;
   private started = false;
   private enterPending = false;
-  private patientStopped = false;
   private lifecycle: SessionState = INITIAL_SESSION;
   /** Loaded scene id; the operator changes it from the tablet, never mid-session. */
   private sceneId: string = SCENE.id;
@@ -359,7 +369,7 @@ export class QuietShoreApp {
       host: this.host,
       handle: () => this.handle,
       gate: () => ({
-        active: isActive(this.lifecycle),
+        active: isActive(this.lifecycle) && this.linkGuard.phase === 'online',
         capturePending: this.capturePending,
         rising: this.world.isRising()
       }),
@@ -671,32 +681,6 @@ export class QuietShoreApp {
       const message = event.message || '未知错误';
       this.start.setStatus(`页面出错：${message}`, 'error');
     });
-    // The headset's physical button reaches a page in two different shapes
-    // depending on the runtime: an XR `select` (bound in enterVR) or a DOM
-    // event. Both mean "the patient pressed confirm"; both are debounced by
-    // onSelectEnd, so wiring all of them cannot double-fire.
-    // The headset button has reached the page as a DOM key or click in some
-    // builds and as an XR select in others; every channel lands in the same
-    // debounced handler, and the handler itself decides what the phase means.
-    const onConfirmKey = (event: KeyboardEvent): void => {
-      if (
-        event.key === 'Enter' ||
-        event.key === ' ' ||
-        event.code === 'Enter' ||
-        event.code === 'Space' ||
-        event.keyCode === 13
-      ) {
-        this.onSelectShort('keydown');
-      }
-    };
-    window.addEventListener('keydown', onConfirmKey, { capture: true });
-    document.addEventListener('keydown', onConfirmKey, { capture: true });
-    document.addEventListener('click', () => this.onSelectShort('click'), {
-      capture: true
-    });
-    document.addEventListener('pointerdown', () => this.onSelectShort('pointer'), {
-      capture: true
-    });
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
@@ -731,12 +715,6 @@ export class QuietShoreApp {
     });
     window.addEventListener('pointerup', () => {
       dragging = false;
-    });
-
-    window.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        this.onSelectShort();
-      }
     });
   }
 
@@ -866,7 +844,6 @@ export class QuietShoreApp {
     try {
       // Do not await a paint here: requestSession must stay in the same
       // transient user-activation window as the right-side confirm click.
-      this.patientStopped = false;
       const next = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor']
       });
@@ -876,10 +853,10 @@ export class QuietShoreApp {
       this.lastFrame = 0;
       this.renderer.setAnimationLoop(this.onFrame);
       next.addEventListener('end', () => this.onSessionEnd());
-      next.addEventListener('selectstart', () => this.onSelectStart());
-      next.addEventListener('selectend', () => this.onSelectEnd('xr-select'));
-      next.addEventListener('select', () => this.onSelectEnd('xr-select'));
-
+      // No select listeners: the entry click above is the patient's only
+      // control. Everything inside the session is the tablet operator's, and
+      // the patient must not be able to start, stop or confirm anything by
+      // pressing the headset.
       this.start.showStage();
       this.start.setEnterEnabled(false);
       // A page that opened before the cue route was ready retries here: the
@@ -908,10 +885,11 @@ export class QuietShoreApp {
         this.dispatch({ type: 'calibrated' });
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
-        // Calibration is the technician's decision, not a side effect of the
-        // patient's press: the card asks the patient to hold still and waits
-        // for `calibrate` from the tablet. The patient's own press still works
-        // as a fallback, so a broken tablet does not strand the session.
+        // Calibration is the technician's decision: the card asks the patient
+        // to hold still and waits for `calibrate` from the tablet. There is no
+        // patient-side fallback any more — the patient does nothing once they
+        // are in, and `beginCalibration` refuses to run without a live
+        // presenting session, so a stray press cannot start a capture.
         this.awaitingCalibration = true;
         this.startCalibrationOverlay();
       }
@@ -957,6 +935,7 @@ export class QuietShoreApp {
     // scheduled in: a scene swap still behind the curtain must not land in the
     // stopping scene, restart its audio or open a posture ramp.
     invalidateLayout(this.layout);
+    this.cancelAutoRise();
     this.viewMotion.stop();
     this.stopSitUp();
     this.voice.stop();
@@ -998,27 +977,21 @@ export class QuietShoreApp {
     this.dispatch({ type: 'stop', reason: 'session-end' });
     this.dispatch({ type: 'faded' });
     this.session = null;
-    // A patient stop freezes first, then the end-of-session reset zeroes the
-    // pitch: stop never eases and never recenters on its own.
-    if (this.patientStopped) {
-      this.viewMotion.stop();
-    }
+    // The link guard starts clean with the session: a frozen or lost link
+    // describes a run that no longer exists.
+    this.resetLinkGuard();
     this.stopSceneAudio();
     this.resetWorldToRest();
     this.renderer.setAnimationLoop(null);
     // The session is over: do not invite the patient to start again. A session
     // abandoned after a link loss lands here too, which is exactly the state it
     // should land in — entry screen, world unloaded, readings at zero.
-    if (this.abandoned) {
-      this.abandoned = false;
-      this.start.setStatus(this.strings.linkLostExit);
-    }
     this.start.showEnded();
     this.input.setLayers(true, true);
     this.start.setStatus(
-      this.patientStopped ? this.strings.patientStop : this.strings.sessionEnded
+      this.abandoned ? this.strings.linkLostExit : this.strings.sessionEnded
     );
-    this.patientStopped = false;
+    this.abandoned = false;
     this.link.sendStateNow();
     this.updateHud(performance.now());
   }
@@ -1304,8 +1277,11 @@ export class QuietShoreApp {
   private switchSceneLive(definition: SceneDefinition): void {
     const previousLevel = this.floating.getAmount();
     const previousRestMix = this.sceneRestMix;
+    // Read before the host takes the new scene: this is the "were we in prep"
+    // fact the scheduled rise is gated on.
+    const previousId = this.host.definition?.id ?? this.sceneId;
     this.link.sendLog(this.activeApp, 'scene.switched', {
-      from: this.host.definition?.id ?? '',
+      from: previousId,
       to: definition.id
     });
     // A switch ends the dwell in the old scene: the ledger's segments are what
@@ -1336,6 +1312,14 @@ export class QuietShoreApp {
       this.world.rise(this.sceneRestMix);
     }
     this.startSceneAudio();
+    // Leaving the preparation room for a supine scene is the moment the rise
+    // belongs to: the patient has settled, the capture landed in prep, and the
+    // scene now on screen is the one the performance is about. `auto-rise`
+    // refuses a standing scene, a scene with no capture, or a re-entry to prep.
+    const fromPrep = previousId === PREP_SCENE_ID;
+    if (fromPrep && this.session && this.world.state().ready) {
+      this.scheduleAutoRise();
+    }
     this.start.setStatus(`已切换：${definition.name[this.config.lang]}`, 'ok');
     this.link.sendStateNow();
     this.updateHud(performance.now());
@@ -1397,7 +1381,18 @@ export class QuietShoreApp {
     this.link.sendStateNow();
   }
 
+  /**
+   * Start the capture. Guarded: a capture is only ever started inside a live
+   * presenting session, so a stale command — the tablet's `calibrate` arriving
+   * after the headset left XR, or one queued behind a link loss — cannot open a
+   * card over an empty stage and then hold the world frozen forever.
+   */
   private beginCalibration(skipSettle = false): void {
+    if (!this.session || !this.xr.isPresenting) {
+      this.awaitingCalibration = false;
+      this.refuse('不在 VR 会话中，无法记录体位');
+      return;
+    }
     this.awaitingCalibration = false;
     if (!this.handle) {
       return;
@@ -1538,30 +1533,45 @@ export class QuietShoreApp {
    * two seconds after that line ends, the world begins its rise. The cue comes
    * before the motion on purpose — a world that turns without warning is the
    * one thing a supine patient cannot brace for.
+   *
+   * The ramp is scheduled from the cue's *settled* promise, so a refused or
+   * missing line cannot start a silent turn: `play` resolves `true` only when
+   * the clip is actually sounding. No cue, no rise.
    */
   private scheduleAutoRise(): void {
-    // A standing scene already rests corrected: the cue would announce a turn
-    // that never happens, and the rise would be a no-op. Supine scenes keep it
-    // — that ramp is the whole "you are standing" performance.
-    if (this.sceneRestMix >= 1) {
+    // The preparation room is where the patient settles; a standing scene has
+    // nothing to lift; a scene without a landed capture has no frame to build
+    // on. `auto-rise` owns those rules so they can be tested without a headset.
+    if (!shouldScheduleAutoRise({
+      sceneId: this.sceneId,
+      restMix: this.sceneRestMix,
+      session: this.session !== null,
+      calibrated: this.world.state().ready
+    })) {
       return;
     }
     const token = ++this.autoRiseToken;
-    const cancelled = (): boolean => token !== this.autoRiseToken || !this.session;
+    const cancelled = (): boolean =>
+      token !== this.autoRiseToken || !this.session || !this.world.state().ready;
 
     this.after(AUTO_RISE_CUE_MS, () => {
       if (cancelled()) {
         return;
       }
-      const clipMs = this.voice.clipMs('v-rise-1') || 3500;
-      void this.voice.play('v-rise-1');
-      this.after(clipMs + AUTO_RISE_GAP_MS, () => {
-        if (cancelled() || !this.world.state().ready) {
+      void this.voice.play(AUTO_RISE_CUE).then((played) => {
+        // `played === false` means nothing sounded: the patient got no
+        // warning, so the world stays where it is instead of turning silently.
+        if (!played || cancelled()) {
           return;
         }
-        if (this.world.rise(1)) {
-          this.start.setStatus('正在进入站立视角', 'ok');
-        }
+        this.after(autoRiseDelayMs(this.voice.clipMs(AUTO_RISE_CUE)), () => {
+          if (cancelled()) {
+            return;
+          }
+          if (this.world.rise(1)) {
+            this.start.setStatus('正在进入站立视角', 'ok');
+          }
+        });
       });
     });
   }
@@ -1625,6 +1635,11 @@ export class QuietShoreApp {
     invalidateLayout(this.layout);
     this.cancelAutoRise();
     this.capturePending = false;
+    // The "waiting for the technician" card is a session state, and it used to
+    // survive a stop: the next session opened with the tablet's first
+    // `calibrate` taking the `beginCalibration` branch of a stale wait.
+    this.awaitingCalibration = false;
+    this.resetLinkGuard();
     this.world.hold(false);
     // A panel is session furniture: leaving the world at rest closes it, or a
     // stopped session would keep a SUS card floating in front of the patient.
@@ -1733,8 +1748,8 @@ export class QuietShoreApp {
     // technician wait before the first capture is `calibrating` with no
     // `capturePending`, so a switch there used to carry `awaitingCalibration`
     // and the hold-still card into the questionnaire — the card and the sheet
-    // on screen together, and the patient's confirm starting a calibration
-    // nobody asked for. Entering or leaving a session owns the face.
+    // on screen together, and a capture starting from a face that has no
+    // training session behind it. Entering or leaving a session owns the face.
     if (!canSwitchApp(this.lifecycle.phase, this.capturePending)) {
       this.refuse('先结束会话，再切换应用');
       return;
@@ -1782,10 +1797,16 @@ export class QuietShoreApp {
     // so it arrives as a command rather than as part of the session itself.
     const outcome = /^record:outcome:(attempt|success):(yes|no)$/.exec(raw);
     if (outcome) {
-      const which = outcome[1] === 'attempt' ? 'attempted' : 'succeeded';
+      const slot: OutcomeSlot = outcome[1] === 'attempt' ? 'attempt' : 'success';
+      const which = slot === 'attempt' ? 'attempted' : 'succeeded';
       const value = outcome[2] === 'yes';
       this.sessions = annotateOutcome(sessionStorageSafe(), { [which]: value });
       this.start.setStatus(value ? '已记录：是' : '已记录：否', 'ok');
+      // The tablet flips its own button on this receipt, never on the command
+      // acknowledgement: "I sent it" and "it was written" are different facts,
+      // and a refused storage write would otherwise look like a success.
+      const receipt: OutcomeReceipt = { slot, value, at: Date.now() };
+      this.link.sendLog(this.activeApp, OUTCOME_RECORDED, { ...receipt });
       return;
     }
     if (raw.startsWith('app:')) {
@@ -2017,12 +2038,7 @@ export class QuietShoreApp {
     this.start.setHint(status === 'open' ? '' : '平板未连接');
     if (status === 'open') {
       this.linkEverOnline = true;
-      // A reconnect inside the grace period is not an event: cancel and say
-      // nothing. The session never stopped.
-      if (this.linkLostTimer !== 0) {
-        window.clearTimeout(this.linkLostTimer);
-        this.linkLostTimer = 0;
-      }
+      this.returnLink();
       return;
     }
     if (!wasOnline) {
@@ -2033,38 +2049,127 @@ export class QuietShoreApp {
     if (!this.linkEverOnline) {
       return;
     }
-    this.dispatch({ type: 'stop', reason: 'link-lost' });
-    this.start.setStatus(this.strings.controlModeOff, 'error');
-    if (!this.session) {
+    this.dropLink();
+  }
+
+  /** Feed one event into the link guard and act on the state it lands in. */
+  private advanceLink(event: LinkEvent): LinkGuardState {
+    const before = this.linkGuard.phase;
+    this.linkGuard = reduceLink(this.linkGuard, event);
+    const after = this.linkGuard.phase;
+    if (after === before) {
+      return this.linkGuard;
+    }
+    if (after === 'frozen') {
+      this.freezeForLinkLoss();
+    }
+    if (after === 'lost') {
+      this.abandonSession();
+    }
+    return this.linkGuard;
+  }
+
+  /**
+   * The tablet is gone: freeze the session, do not end it.
+   *
+   * This is the emergency stop as well as the disconnect — there is no separate
+   * e-stop on the tablet, so a frozen world *is* the stop. Motion is frozen
+   * where it stands (no recenter: the pitch target is held), the sit-up brakes
+   * at its current angle, voice stops mid-clip and the ambience is silenced.
+   * The session keeps running underneath, so a reconnect continues it.
+   */
+  private freezeForLinkLoss(): void {
+    // One line, and it is the same whether or not a session is live: outside
+    // one there is nothing frozen, only a tablet that is not answering.
+    this.start.setStatus(this.session ? this.strings.linkLostGrace : this.strings.controlModeOff, 'error');
+    this.cancelAutoRise();
+    this.viewMotion.stop();
+    this.stopSitUp();
+    this.voice.stop();
+    this.stopSceneAudio();
+    // A capture in flight dies with the operator: the hold-still card must not
+    // stay up over a frozen world, and `capturePending` would otherwise keep
+    // the world held after the tablet comes back. The frame it would have
+    // recorded is taken again when the operator asks, on a live link.
+    if (this.capturePending) {
+      this.capturePending = false;
+      this.calibrationOverlay?.hide();
+      this.world.hold(false);
+      this.awaitingCalibration = false;
+    }
+  }
+
+  /** The tablet is back inside the window: continue exactly where we were. */
+  private returnLink(): void {
+    const wasFrozen = isFrozen(this.linkGuard);
+    if (this.linkLostTimer !== 0) {
+      window.clearTimeout(this.linkLostTimer);
+      this.linkLostTimer = 0;
+    }
+    // Resuming is not a new session: the clock, the peaks and the segments all
+    // keep their values; only the frozen outputs are re-armed.
+    this.linkGuard = reduceLink(this.linkGuard, { type: 'return' });
+    if (!wasFrozen || !this.session) {
       return;
     }
-    // The patient is still in the world. Say what is happening, once, in the
-    // same neutral voice as every other status line — and give the tablet five
-    // seconds to come back. During calibrating and during the ending fade this
-    // is the same rule: the timer does not care what phase the session is in.
-    this.start.setStatus(this.strings.linkLostGrace);
+    this.startSceneAudio();
+    this.start.setStatus('已恢复连接', 'ok');
+    this.link.sendStateNow();
+    this.updateHud(performance.now());
+  }
+
+  /** A session ended for its own reasons; the guard starts clean. */
+  private resetLinkGuard(): void {
+    if (this.linkLostTimer !== 0) {
+      window.clearTimeout(this.linkLostTimer);
+      this.linkLostTimer = 0;
+    }
+    this.linkGuard = reduceLink(this.linkGuard, { type: 'reset' });
+  }
+
+  /**
+   * The socket closed while a session was live.
+   *
+   * Outside a session this is only a hint; inside one it starts the five-second
+   * window. The timer is the guard's clock: it fires `elapse` for the whole
+   * grace period, so "reconnected at 4.9 s" and "reconnected at 5.1 s" are
+   * decided by one state machine instead of by two timers racing.
+   */
+  private dropLink(): void {
+    // Nothing to freeze outside a session, and a flapping socket must not
+    // restart the window: a broken link cannot hold a patient forever.
+    if (!this.session || this.linkGuard.phase !== 'online') {
+      if (!this.session) {
+        this.linkGuard = INITIAL_LINK;
+      }
+      return;
+    }
+    this.advanceLink({ type: 'drop' });
     if (this.linkLostTimer !== 0) {
       window.clearTimeout(this.linkLostTimer);
     }
     this.linkLostTimer = window.setTimeout(() => {
       this.linkLostTimer = 0;
-      if (!this.linkOnline) {
-        this.abandonSession();
+      if (this.linkOnline) {
+        return;
       }
+      this.advanceLink({ type: 'elapse', ms: LINK_LOST_GRACE_MS });
     }, LINK_LOST_GRACE_MS);
   }
 
   /**
-   * The tablet is not coming back: leave the immersive session the same way a
-   * planned stop does, so nothing about the exit is a second code path.
+   * The tablet is not coming back: the session is over.
    *
-   * `end()` runs the renderer's own teardown, which fires the session's `end`
-   * event; that path lands in `onSessionEnd` and returns the patient to the
-   * entry screen with the world unloaded and the readings at zero.
+   * This is the only path a link loss takes to a stop, and it stops for the one
+   * reason `link-lost` — never `session-end`. The reducer is asked first so the
+   * ledger records why, then `end()` runs the renderer's own teardown, which
+   * fires the session's `end` event; that path lands in `onSessionEnd` and
+   * returns the patient to the entry screen with the world unloaded.
    */
   private abandonSession(): void {
     this.start.setStatus(this.strings.linkLostExit);
     this.abandoned = true;
+    this.dispatch({ type: 'stop', reason: 'link-lost' });
     const session = this.session;
     if (session) {
       void session.end();
@@ -2079,17 +2184,19 @@ export class QuietShoreApp {
     this.controlMode = active;
     document.body.classList.toggle('control-mode', active);
     if (active) {
+      // Re-claiming the tablet is the reconnect for a BLE-only outage: the
+      // socket may never have closed, so the five-second window must be
+      // cancelled here as well as on a WebSocket open.
+      this.returnLink();
       if (this.session) {
         this.input.setLayers(false, false);
       }
       this.start.setStatus(this.strings.controlModeOn, 'ok');
     } else {
-      this.dispatch({ type: 'stop', reason: 'link-lost' });
-      // Losing the tablet must never leave motion latched on. Freeze the view
-      // where it is (no recenter: the pitch target is held), brake the comfort
-      // posture and stop the sit-up performance at its current angle.
-      this.viewMotion.stop();
-      this.stopSitUp();
+      // The tablet stopped driving: that is a link loss, and it takes the same
+      // path as a dead socket — freeze now, and let the five-second window
+      // decide whether this was a pause or the end of the session.
+      this.dropLink();
       if (this.session) {
         this.input.setLayers(true, true);
       }
@@ -2158,47 +2265,6 @@ export class QuietShoreApp {
 
   private stopSceneAudio(): void {
     stopAudio();
-  }
-
-  private onSelectStart(): void {
-    // The press itself is not an action; `selectend`/`select` decide.
-  }
-
-  private onSelectEnd(source: string = 'xr'): void {
-    // One action per press regardless of how many event shapes the runtime
-    // delivers (selectstart/selectend/select, plus the DOM fallbacks).
-    const now = performance.now();
-    if (now - this.selectHandledAt < 250) {
-      return;
-    }
-    this.selectHandledAt = now;
-    this.onSelectShort(source);
-  }
-
-  /** Firefox emits `select` after `selectend`; this is only a fallback. */
-
-
-  /**
-   * The only in-headset click: start (after calibration) or stop the session.
-   * It never switches mode. Scene targets are still chosen by 6 s gaze dwell.
-   */
-  private onSelectShort(source: string = 'xr'): void {
-    if (this.awaitingCalibration) {
-      // Fallback path: the patient pressed while the card waits for the
-      // technician. Same result, one fewer thing to go wrong.
-      this.beginCalibration();
-      return;
-    }
-    if (this.lifecycle.phase === 'calibrating') {
-      // The flow runs by itself; a confirm simply ends the wait early.
-      this.calibrationOverlay?.setHint(`确认来源：${source}`);
-      this.applyCalibration(this.headPose.quaternion);
-      return;
-    }
-    // Outside a session the confirm key is the entry gesture; nothing else.
-    if (isActive(this.lifecycle)) {
-      this.dispatch({ type: 'confirm' });
-    }
   }
 
   private onFrame = (frameTime?: number): void => {

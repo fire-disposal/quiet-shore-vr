@@ -28,6 +28,12 @@ import no.nordicsemi.android.ble.observer.ConnectionObserver
  * Control is first-claim: after notifications are enabled the tablet sends
  * CLAIM and waits for CONTROL_OK. The headset grants exactly one controller,
  * so a second tablet receives CONTROL_BUSY and stays in pairing.
+ *
+ * Ordering lives in [CommandQueue] (stops jump, sliders keep one sample per
+ * channel); this class only serialises the writes. One extra rule lives here
+ * because it is about frames on the wire rather than about the queue: voice
+ * cues are written strictly one at a time, so `voice:stop` can never overtake
+ * the `voice:play` it is meant to silence.
  */
 class BleController(
     context: Context,
@@ -77,6 +83,18 @@ class BleController(
     /** One serialized writer: [outbound] decides what goes next. */
     private val sendLock = Any()
     private val outbound = CommandQueue()
+
+    /**
+     * Voice-cue frame currently on the wire, and whether any voice frame is.
+     *
+     * The voice channel is one story — play, sequence, stop, level — and the
+     * headset runs it in write order. Writing the next voice frame only after
+     * the current one finished is what keeps `voice:stop` behind the cue it
+     * interrupts instead of ahead of it. Other lanes are not held up: the
+     * `voiceInFlight` check only stops the *next voice* frame.
+     */
+    private var voice = false
+    private var voiceInFlight = false
 
     /**
      * Link and write identity. A write completion carries the pair it was
@@ -427,10 +445,13 @@ class BleController(
     /**
      * Queues one page command.
      *
-     * Pitch samples coalesce to the newest one, stop commands jump the queue,
-     * and discrete commands are written one at a time and acked by the headset
-     * (`ACK <seq> ...`), so nothing is dropped silently. A headset whose
-     * protocol version or capabilities do not match is never driven at all.
+     * Slider samples coalesce per channel (the newest of `posture:mix`,
+     * `float:level`, `audio:volume`, `voice:volume`, `voice:mix:duck`),
+     * stop commands jump the queue, and discrete commands are written one at a
+     * time and acked by the headset (`ACK <seq> ...`), so nothing is dropped
+     * silently. `voice:stop` is a stop: it drops the voice volume and duck
+     * samples still queued. A headset whose protocol version or capabilities do
+     * not match is never driven at all.
      */
     fun sendCommand(command: String) {
         val blocked = incompatibleReason
@@ -458,6 +479,14 @@ class BleController(
         enqueueCommand(command)
     }
 
+    /**
+     * The whole voice-cue channel, from play/sequence to stop and the two
+     * sliders. Frames on it are written in the order they were asked for, so a
+     * cue can never be started after the stop that silenced it.
+     */
+    private fun isVoiceFrame(command: String): Boolean =
+        command.startsWith(ControlProtocol.VOICE_PREFIX)
+
     /** Internal frames (HELLO, heartbeat) share the same single writer. */
     private fun enqueueCommand(command: String) {
         val accepted = synchronized(sendLock) { outbound.enqueue(command) }
@@ -472,6 +501,11 @@ class BleController(
      * Writes at most one command at a time. The completion callback re-enters
      * the pump, so the queue is the only place that decides ordering.
      *
+     * While a voice frame is being written nothing else is taken from the queue
+     * (the writer is busy anyway), and after it only a non-voice frame may
+     * overtake the next voice frame — the voice lane waits for its own previous
+     * frame, so it keeps the order the operator asked for.
+     *
      * Every write carries the connection and write generation it was started
      * under. A completion from an older link (a write abandoned by a drop, a
      * timeout, or a cancelled request) must not clear the new link's writer,
@@ -485,10 +519,11 @@ class BleController(
         var token = 0L
         var writeConnection = 0L
         synchronized(sendLock) {
-            if (tokens.writing) {
+            if (tokens.writing || voiceInFlight) {
                 return
             }
             val next = outbound.poll() ?: return
+            voice = isVoiceFrame(next)
             token = tokens.beginWrite()
             writeConnection = tokens.connection
             command = next
@@ -499,6 +534,10 @@ class BleController(
             } else {
                 payload = next
             }
+            // Shut for the whole life of this write; retireWrite opens it again.
+            // Set inside the lock so a completion that lands before writeCommand
+            // returns still clears exactly this write's gate.
+            voiceInFlight = voice
         }
         val chosen = command ?: return
         val wire = payload ?: chosen
@@ -510,6 +549,15 @@ class BleController(
             // re-entering the pump here would only chew through the queue one
             // command per callback while nobody can accept them.
             retireWrite(writeConnection, writtenToken, writtenSeq)
+            // retireWrite is a no-op for a link that is already gone, so the
+            // voice gate must be opened here too or the voice lane would stay
+            // shut for the session.
+            synchronized(sendLock) {
+                if (voice) {
+                    voice = false
+                    voiceInFlight = false
+                }
+            }
             return
         }
         val acked = writtenSeq > 0
@@ -543,6 +591,12 @@ class BleController(
                 if (releasedSeq > 0 && inFlight[releasedSeq]?.token == token) {
                     inFlight.remove(releasedSeq)
                 }
+                // Both gates belong to the write that just ended. A completion
+                // from an older link must not open them for the new one.
+                if (voice) {
+                    voice = false
+                    voiceInFlight = false
+                }
             }
         }
 
@@ -566,6 +620,12 @@ class BleController(
             // carries a retired token and changes nothing.
             if (tokens.writing) {
                 tokens.abandonWrite()
+                // A voice frame whose write never completed must not block the
+                // voice lane for the rest of the session.
+                if (voice) {
+                    voice = false
+                    voiceInFlight = false
+                }
                 abandoned = true
             }
         }
@@ -654,6 +714,9 @@ class BleController(
             tokens.retireLink()
             outbound.clear()
             inFlight.clear()
+            // The queue no longer holds voice frames, so neither does the wire.
+            voice = false
+            voiceInFlight = false
         }
         headsetCapabilities = 0
         incompatibleReason = null

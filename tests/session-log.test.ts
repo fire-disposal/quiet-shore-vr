@@ -31,9 +31,9 @@ function entry(at: number): SessionSummary {
     at,
     scene: 'shore',
     seconds: 60,
-    level: 2,
+    level: 0.42,
     mix: 0.5,
-    stop: 'patient',
+    stop: 'link-lost',
     confidence: 80,
     peakMix: 0.62,
     peakUpGazeDeg: 24,
@@ -48,7 +48,7 @@ describe('session log', () => {
       at: 1000.6,
       scene: 'washroom',
       seconds: 61.4,
-      level: 9,
+      level: 1.7,
       mix: 1.7,
       stop: 'technician',
       confidence: -4,
@@ -65,7 +65,7 @@ describe('session log', () => {
       at: 1001,
       scene: 'washroom',
       seconds: 61,
-      level: 3,
+      level: 1,
       mix: 1,
       stop: 'technician',
       confidence: 0,
@@ -87,7 +87,7 @@ describe('session log', () => {
       at: 1,
       scene: 'shore',
       seconds: 540,
-      level: 2,
+      level: 0.5,
       mix: 0.5,
       stop: 'technician',
       confidence: 90,
@@ -139,9 +139,9 @@ describe('session log', () => {
       at: 2,
       scene: 'ward',
       seconds: 10,
-      level: 1,
+      level: 0.25,
       mix: 0,
-      stop: 'patient',
+      stop: 'link-lost',
       confidence: 50,
       peakMix: 0,
       peakUpGazeDeg: 0,
@@ -155,7 +155,7 @@ describe('session log', () => {
       at: 10,
       scene: 'shore',
       seconds: 30,
-      level: 1,
+      level: 0.25,
       mix: 0.4,
       stop: 'technician',
       confidence: 100,
@@ -167,9 +167,9 @@ describe('session log', () => {
       at: 20,
       scene: 'washroom',
       seconds: 40,
-      level: 2,
+      level: 0.6,
       mix: 0.7,
-      stop: 'patient',
+      stop: 'link-lost',
       confidence: 100,
       peakMix: 0.7,
       peakUpGazeDeg: 20,
@@ -181,6 +181,29 @@ describe('session log', () => {
     // A later "did not try" cannot coexist with a recorded success.
     list = annotateOutcome(storage, { attempted: false });
     expect(list[1]?.outcome).toEqual({ attempted: true, succeeded: true });
+  });
+
+  it('keeps the buoyancy level as a 0..1 fraction, not a 0..3 step', () => {
+    // The page applies a fraction and the tablet speaks percent; rounding the
+    // ledger to four notches made 12% and 30% the same row.
+    const base = {
+      at: 1,
+      scene: 'shore',
+      seconds: 30,
+      mix: 0,
+      stop: 'technician',
+      confidence: 100,
+      peakMix: 0,
+      peakUpGazeDeg: 0,
+      segments: []
+    } as const;
+    expect(summarize({ ...base, level: 0.12 }).level).toBe(0.12);
+    expect(summarize({ ...base, level: 0.3 }).level).toBe(0.3);
+    expect(summarize({ ...base, level: 0.3456 }).level).toBe(0.346);
+    // Clamped, never scaled into another unit.
+    expect(summarize({ ...base, level: 4 }).level).toBe(1);
+    expect(summarize({ ...base, level: -2 }).level).toBe(0);
+    expect(summarize({ ...base, level: Number.NaN }).level).toBe(0);
   });
 
   it('keeps working when there is nothing to annotate', () => {

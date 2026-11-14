@@ -49,7 +49,11 @@ fun HeaveBar(
     Box(
         modifier
             .fillMaxWidth()
-            .height(44.dp)
+            // The *touch* surface is the whole band, not the 5 dp ink: at 44 dp
+            // a fingertip aimed at the handle had 13 dp of tolerance above and
+            // below it, and the session's main continuous control was the least
+            // forgiving target on the page.
+            .height(TouchTarget)
             .alpha(if (enabled) 1f else 0.35f)
             .semantics { contentDescription = "起伏 $percent%，本场景上限 $ceiling%" }
             .pointerInput(enabled, ceiling) {
@@ -133,7 +137,9 @@ fun LevelBar(
 
     Box(
         modifier
-            .height(32.dp)
+            // Same rule as the heave band: the band is the target. The 4 dp line
+            // is the reading; 32 dp of it could not be hit while talking.
+            .height(TouchTarget)
             .alpha(if (enabled) 1f else 0.35f)
             .semantics { contentDescription = "音量 $percent%" }
             .pointerInput(enabled) {

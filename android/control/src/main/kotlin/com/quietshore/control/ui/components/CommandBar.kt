@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
@@ -49,6 +51,8 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.AppCatalog
 import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
+import com.quietshore.control.model.SessionPhase
+import com.quietshore.control.model.sessionPhaseOf
 import com.quietshore.control.ui.theme.QuietPalette
 
 /** Bar height: one row — app name, link, the two doors, the stop. */
@@ -89,6 +93,8 @@ fun CommandBar(
     state: ControlUiState,
     onAppSelect: (String) -> Unit,
     onDisconnect: () -> Unit,
+    /** Withdraws a launch that is still waiting for the patient's press. */
+    onCancelLaunch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
@@ -102,8 +108,12 @@ fun CommandBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(CommandBarHeight)
-                .padding(start = 20.dp, end = 20.dp),
+                // A floor: the bar's own copy scales with the system font, and a
+                // fixed 72 dp cut the second line of the device field off as soon
+                // as the setting was above 1.0. The height the design asks for is
+                // the minimum, not the maximum.
+                .heightIn(min = CommandBarHeight)
+                .padding(horizontal = 20.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // A terminal line, not a brand header: the app's name is not
@@ -179,13 +189,18 @@ fun CommandBar(
             Spacer(Modifier.width(16.dp))
             // The link's own exit, and a different object from the session's
             // 结束会话: this one drops the radio, that one ends the patient's
-            // experience. Two terminal actions drawn at the same weight read as
-            // two ways to stop everything, so this one is a quiet word on paper
-            // — amber fill is for a stop-like interruption, and a link drop is
-            // housekeeping: the page freezes and can be reconnected.
+            // experience. **The radio is the emergency stop**: the patient holds
+            // no controls, so cutting the tablet is how the session is stopped
+            // from the other side — the page freezes motion and voice at once
+            // and keeps the session for five seconds, which is the whole
+            // reconnect window either way.
             Box(
                 modifier = Modifier
-                    .height(44.dp)
+                    // 48 dp, not 44: it is a terminal control, not a caption, and
+                    // a key under the floor is exactly what a panicking hand
+                    // misses. Inline text scales with the system font, so the
+                    // height grows with the label instead of clipping it.
+                    .heightIn(min = 48.dp)
                     .clip(androidx.compose.foundation.shape.CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
                     .background(QuietPalette.Board)
                     .border(
@@ -200,22 +215,127 @@ fun CommandBar(
                         role = Role.Button,
                         onClick = onDisconnect
                     )
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "断开链接",
-                    style = MaterialTheme.typography.labelLarge,
-                    // Red ink in a hairline box, never a red fill: the same
-                    // language 结束会话 speaks, so two different objects (the
-                    // radio, the session) are recognisable as two ends.
-                    color = if (connected) QuietPalette.Danger else QuietPalette.InkSecondary,
-                    maxLines = 1
-                )
+                Column {
+                    Text(
+                        text = "断开链接 = 急停",
+                        style = MaterialTheme.typography.labelLarge,
+                        // Red ink in a hairline box, never a red fill: the same
+                        // language 结束会话 speaks, so two different objects (the
+                        // radio, the session) are recognisable as two ends.
+                        color = if (connected) QuietPalette.Danger else QuietPalette.InkSecondary,
+                        maxLines = 2
+                    )
+                    Text(
+                        text = "冻结会话，5 秒内重连继续",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = QuietPalette.InkSecondary,
+                        maxLines = 2
+                    )
+                }
             }
         }
-
+        // Line 2: the session's own state and its clock, on every page and at
+        // every phase. The console documents this line but never drew it, so
+        // "is a session running, and for how long" was answerable only from the
+        // 会话 tab — the one page an operator staring at 音频 is not on.
+        BarSessionLine(state = state, onCancelLaunch = onCancelLaunch)
     }
+}
+
+/**
+ * `会话 运行中 03:12 │ 已结束 12:04 │ 等患者按压 00:20 │ …`
+ *
+ * One line, always in the same place, never inside a scroll container: the two
+ * facts that decide whether the operator may leave the bedside. The elapsed
+ * figure is the running session's clock; after it ends the line names the
+ * length of the session that just ran, which is the number the closing panel
+ * asks the bedside question about.
+ */
+@Composable
+private fun BarSessionLine(state: ControlUiState, onCancelLaunch: (() -> Unit)?) {
+    val phase = sessionPhaseOf(
+        state.control,
+        state.phase,
+        state.startPending,
+        state.stopRequested
+    )
+    val status = when {
+        state.phase != BlePhase.READY && state.lastSessionElapsedMs > 0L ->
+            "未连接，上一轮 ${clock(state.lastSessionElapsedMs)}"
+        state.phase != BlePhase.READY -> "头显未连接"
+        phase == SessionPhase.Stopping -> "正在结束"
+        phase == SessionPhase.Calibrating -> "标定中 ${clock(state.sessionElapsedMs)}"
+        phase == SessionPhase.Running -> "会话进行中 ${clock(state.sessionElapsedMs)}"
+        phase == SessionPhase.Entry -> "等患者进入"
+        state.lastSessionElapsedMs > 0L -> "上一轮 ${clock(state.lastSessionElapsedMs)}"
+        else -> "未开始"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            // The scene the headset reports, not the operator's mark: this line
+            // is a read-back, and a mark ahead of the frame would claim a room
+            // the patient is not in.
+            text = sceneLabel(state),
+            style = MaterialTheme.typography.bodySmall,
+            color = QuietPalette.InkSecondary,
+            maxLines = 1
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(
+            Modifier
+                .width(1.dp)
+                .height(12.dp)
+                .background(QuietPalette.Hairline)
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = status,
+            style = MaterialTheme.typography.bodySmall.tabularFigures(),
+            color = if (phase.inSession) QuietPalette.Ink else QuietPalette.InkSecondary,
+            maxLines = 1,
+            modifier = Modifier.weight(1f)
+        )
+        // The launch wait has its own way out here too: the bar is the one
+        // surface visible from every destination, and a twenty-second wait
+        // with no cancel on the page the operator happens to be on is a trap.
+        if (phase == SessionPhase.Entry && onCancelLaunch != null) {
+            Text(
+                text = "取消启动",
+                style = MaterialTheme.typography.labelLarge,
+                color = QuietPalette.Ink,
+                maxLines = 1,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .clickable(
+                        role = Role.Button,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onCancelLaunch
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
+/** The scene the headset reports, named from its own catalogue. */
+private fun sceneLabel(state: ControlUiState): String {
+    val id = state.control.scene
+    if (id.isEmpty()) {
+        return "无场景"
+    }
+    val name = state.scenes.firstOrNull { it.id == id }?.name
+        ?: com.quietshore.control.model.SceneCatalog.scene(id)?.name
+        ?: id
+    return "场景 $name"
 }
 
 /**
@@ -231,8 +351,11 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
     Box {
         Row(
             modifier = Modifier
-                .width(232.dp)
-                .height(44.dp)
+                // A minimum width, not a fixed one: the face's name is translated
+                // and the system font scale is the operator's, and both used to
+                // end in an ellipsis inside a 232 dp box.
+                .widthIn(min = 232.dp)
+                .heightIn(min = 48.dp)
                 .clip(CutCornerShape(0.dp, 0.dp, 10.dp, 0.dp))
                 .border(
                     1.dp,

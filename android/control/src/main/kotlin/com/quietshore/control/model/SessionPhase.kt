@@ -8,9 +8,9 @@ import com.quietshore.control.protocol.ControlState
  * `docs/ux-tree.md` §1.
  *
  * ```text
- *   idle ──技术员开始──> entry ──患者按压──> calibrating ──> running
+ *   idle ──技术员开始──> entry ──患者进入──> calibrating ──> running
  *     ▲                                                        │
- *     └── ended <── stopping <── 停 / 急停 / 链路断 / 摘下 ─────┘
+ *     └── ended <── stopping <── 结束 / 断链超时 / 摘下 ───────┘
  * ```
  *
  * The page reports a session flag and a calibration flag; `stopping` is the one
@@ -47,7 +47,41 @@ enum class SessionPhase {
     /** Scene and strength may be changed now; see the trigger table. */
     val acceptsChanges: Boolean
         get() = this == Idle || this == Entry || this == Running
+
+    /**
+     * A launch is on the wire and the patient has not pressed yet.
+     *
+     * It is the only phase the operator can still back out of without touching
+     * the patient: nothing has been entered, so the cancel is a local decision
+     * plus the page's own `exit`, and no fade is involved.
+     */
+    val awaitingPress: Boolean
+        get() = this == Entry
+
+    /**
+     * A page is drawn in the main area that the session verbs must stay
+     * reachable from, whichever destination the operator is on.
+     */
+    val showsSessionVerbs: Boolean
+        get() = inSession || awaitingPress
 }
+
+/**
+ * Whether the end-of-session panel belongs on the screen.
+ *
+ * It belongs *after* a session that actually ran, and it stops belonging the
+ * moment the next launch is requested — a panel offering 试了/没试 beside a
+ * pending launch is an answer to the wrong question. [lastSessionElapsedMs] is
+ * kept past the ending on purpose: the running clock resets with the session
+ * flag, so re-deriving "did one run" from `sessionElapsedMs` lost the panel the
+ * instant the page dropped the flag.
+ */
+fun outcomePanelVisible(
+    lastSessionElapsedMs: Long,
+    sessionRunning: Boolean,
+    phase: SessionPhase
+): Boolean =
+    !sessionRunning && phase != SessionPhase.Entry && lastSessionElapsedMs > 0L
 
 /**
  * Folds the wire into [SessionPhase]. [stopRequested] is the tablet's own
