@@ -6,7 +6,7 @@ import { SUS_ITEMS } from './sus';
  * The remote command grammar, as data.
  *
  * Tablet → page is a flat string channel over WebSocket: `scene:shore`,
- * `float:level:2`, `view:orient:0,12`. While this lived inside the app it read
+ * `float:level:60`, `posture:mix:37`. While this lived inside the app it read
  * as one 330-line function with the validation, the status text and the side
  * effects interleaved. Here the string becomes a typed command or an error, and
  * nothing else; `App` decides what each kind does. Every rule below is

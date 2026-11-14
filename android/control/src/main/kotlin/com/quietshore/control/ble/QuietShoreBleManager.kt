@@ -18,10 +18,10 @@ import java.nio.charset.StandardCharsets
  *
  * The peripheral exposes one writable command characteristic and four
  * notifying characteristics. Telemetry is a fixed 24 byte little endian
- * payload (x, y, z, yaw, pitch, roll) and the v13 state frame is 28 bytes, so
- * bring-up requests a widened ATT MTU before notifications start: at the
- * default MTU 23 a notification carries 20 bytes and every state frame would
- * be truncated.
+ * payload (x, y, z, yaw, pitch, roll) and the QS2 schema 1 state frame is 28
+ * bytes, so bring-up requests a widened ATT MTU before notifications start:
+ * at the default MTU 23 a notification carries 20 bytes and every state frame
+ * would be truncated.
  *
  * Every write is `WRITE_TYPE_DEFAULT` (write with response): a discrete command
  * is acked by the headset over the status characteristic, and the ATT response
@@ -152,7 +152,7 @@ class QuietShoreBleManager(
                 }
             }
 
-            // v12 state frames are 40 bytes, which needs an ATT MTU of 43+.
+            // QS2 state frames are 28 bytes, requiring an ATT MTU above 31.
             // Negotiate it *first* and only then enable notifications: a
             // request enqueued alongside an atomic queue can be dropped, and a
             // dropped MTU silently truncated every state frame afterwards.
@@ -321,7 +321,7 @@ class QuietShoreBleManager(
     private companion object {
         const val TAG = "QuietShoreBle"
         const val WRITE_TIMEOUT_MS = 6000L
-        /** Covers the 28-byte v13 state frame with room for the SUS JSON split. */
+        /** Covers the 28-byte QS2 state frame with room for JSON chunks. */
         const val REQUEST_MTU = 128
         /** Huawei/EMUI and a few other stacks refuse the first ask or two. */
         const val HIGH_PRIORITY_ATTEMPTS = 3

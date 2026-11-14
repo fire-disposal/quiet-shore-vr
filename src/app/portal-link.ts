@@ -22,7 +22,7 @@ export interface PoseSnapshot {
 }
 
 /**
- * `/state` payload (v13): the documented wire fields only, built from the
+ * `/state` payload: the documented QS2 wire fields only, built from the
  * collected scene snapshot. Units are branded, so a centimetre/degree slip is
  * a compile error. `mix` is the one posture scalar (rotation and eye height),
  * `worldQ`/`worldT` are the applied world transform the mirror inverts, and the

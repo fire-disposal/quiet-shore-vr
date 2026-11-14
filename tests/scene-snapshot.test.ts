@@ -82,7 +82,7 @@ describe('scene snapshot', () => {
     expect(snapshot.capture(input)).toBe(snapshot);
   });
 
-  it('emits exactly the v14 wire keys', () => {
+  it('emits exactly the QS2 wire keys', () => {
     const snapshot = new SceneSnapshot();
     snapshot.capture({
       ...neutralInput(),

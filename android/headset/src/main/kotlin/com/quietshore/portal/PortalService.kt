@@ -48,15 +48,15 @@ import java.util.concurrent.locks.ReentrantLock
  *     服务端 -> 页面
  *       {"type":"ready","seq":N,"control":bool,"controller":string|null}
  *       {"type":"battery","data":{"level":0..100,"charging":bool}}
- *       {"type":"cmd","seq":N,"command":"...","continuous":bool}
+ *       {"type":"cmd","seq":N,"command":"..."}
  *       {"type":"control","control":bool,"controller":string|null}
  *     页面 -> 服务端
  *       {"type":"state","data":{scene,session,...,calibrating,audio,...}}
  *       {"type":"telemetry","data":{"x":n,"y":n,"z":n,"yaw":n,"pitch":n}}
  *       {"type":"ack","seq":N}
  *   连接建立先发 ready（`seq` 回显客户端的 since，可安全当作去重水位），
- *   再补 `seq > since` 的未确认命令（离散按序，连续只发最新一个样本）。
- *   离散命令在被 ack 之前一直保留；`view:orient` 不参与 ack，只保留最新样本；
+ *   再补 `seq > since` 的未确认命令（离散按序）。
+ *   离散命令在被 ack 之前一直保留；
  *   `view:anim:*` 是一次性事件，不入保留区，重连不重放。
  *   控制权变化（CLAIM/RELEASE/断开/停 BLE）立即推一条 control 消息。
  *   每 15 s ping 一次，30 s 没收到 pong 即关闭通道。
@@ -899,7 +899,7 @@ class PortalService : Service() {
     private fun gapFillFrames(since: Int): List<ByteArray> {
         // Every command is discrete now: there is no movement slot to replay.
         val pending = synchronized(controlLock) { controlLog.pendingSince(since) }
-        return pending.map { textFrame(commandJson(it, isContinuous = false)) }
+        return pending.map { textFrame(commandJson(it)) }
     }
 
     /**
@@ -925,7 +925,7 @@ class PortalService : Service() {
             }
             // Every retained command is discrete; `view:anim:*` is delivered
             // live only, which retention already decided by not recording it.
-            val frame = textFrame(commandJson(ControlEntry(seq, command), isContinuous = false))
+            val frame = textFrame(commandJson(ControlEntry(seq, command)))
             for (sink in wsSinks) {
                 offer(sink, FrameKind.DISCRETE, frame)
             }
@@ -995,11 +995,10 @@ class PortalService : Service() {
         put("controller", bluetooth?.controllerAddress() ?: JSONObject.NULL)
     }
 
-    private fun commandJson(entry: ControlEntry, isContinuous: Boolean): JSONObject = JSONObject().apply {
+    private fun commandJson(entry: ControlEntry): JSONObject = JSONObject().apply {
         put("type", "cmd")
         put("seq", entry.seq)
         put("command", entry.command)
-        put("continuous", isContinuous)
     }
 
     private fun textFrame(json: JSONObject): ByteArray =
@@ -1279,7 +1278,8 @@ class PortalService : Service() {
             commands.put(command)
         }
         val body = JSONObject()
-        body.put("version", 1)
+        body.put("protocol", ControlProtocol.PROTOCOL_GENERATION)
+        body.put("stateSchema", ControlProtocol.STATE_SCHEMA_VERSION)
         body.put("commands", commands)
         body.put("control", controlMode)
         return jsonResponse(body)
@@ -1528,8 +1528,6 @@ class PortalService : Service() {
             put("adaptationDone", lastAdaptationDone)
             put("rampMs", lastRampMs)
             put("moving", state.moving)
-            put("hold", state.hold)
-            put("voiceAuto", state.voiceAuto)
             // The tablet reads the headset's own battery from here: it talks
             // BLE, and the WS `battery` frame only reaches the page.
             put("battery", battery?.toJson() ?: JSONObject.NULL)

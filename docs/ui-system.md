@@ -53,7 +53,7 @@
 - 数据来自 `ACTION_BATTERY_CHANGED` 粘性广播，Activity 自己注册（`onResume`/`onPause`），拿不到值就整条隐藏——不画假数据。
 - 进度条铺满卡片内容区、高 10–12dp、圆角 0、ice 填充；数字等宽。
 - `≥100%` 且接着电源写「已充满」，其余接电写「充电中」；`≤20%` 时数字与标签换成 ice（需注意），不用红色。
-- 同一条数据也在 `/status.battery` 与 WS 的 `battery` 消息里（见 `docs/control-plane.md` §5.1），供诊断与将来的镜像/平板使用。
+- 同一条数据也在 `/status.battery` 与 WS 的 `battery` 消息里（见 `docs/protocol.md` §9），供诊断与将来的镜像/平板使用。
 
 ## 3 这一轮改了什么
 

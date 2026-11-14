@@ -600,9 +600,13 @@ class BleController(
             failProtocol("头显握手响应无效，请更新头显应用")
             return
         }
-        if (welcome.version != ControlProtocol.protocolVersion) {
+        if (
+            welcome.generation != ControlProtocol.PROTOCOL_GENERATION ||
+            welcome.schema != ControlProtocol.STATE_SCHEMA_VERSION
+        ) {
             failProtocol(
-                "头显协议版本不兼容（头显 v${welcome.version}，平板 v${ControlProtocol.protocolVersion}），请更新头显应用"
+                "头显协议代际不兼容：头显 ${welcome.generation}/${welcome.schema}，" +
+                    "平板 ${ControlProtocol.PROTOCOL_GENERATION}/${ControlProtocol.STATE_SCHEMA_VERSION}，请更新应用"
             )
             return
         }
@@ -817,13 +821,9 @@ class BleController(
         }
         if (raw.startsWith(ControlProtocol.STATUS_PROTOCOL_MISMATCH)) {
             failProtocol(
-                "头显协议版本不兼容（头显 v${raw.substringAfter(' ', "")}，" +
-                    "平板 v${ControlProtocol.protocolVersion}），请更新头显应用"
+                "头显协议代际不兼容：头显 ${raw.substringAfter(ControlProtocol.STATUS_PROTOCOL_MISMATCH).trim()}，" +
+                    "平板 ${ControlProtocol.PROTOCOL_GENERATION}/${ControlProtocol.STATE_SCHEMA_VERSION}，请更新应用"
             )
-            return
-        }
-        if (raw == ControlProtocol.STATUS_PROTOCOL_REQUIRED) {
-            failProtocol("头显要求先完成协议握手（HELLO），请更新平板应用")
             return
         }
         when (raw) {

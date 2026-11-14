@@ -6,7 +6,7 @@ import { mix01, type Degrees, type Metres, type Mix01, type Quat, type Vec3 } fr
  * One collected view of the patient world, filled in place whenever the link,
  * the HUD or a command handler needs the facts.
  *
- * v13 rule: **nothing is measured back out of a transform.** The posture is the
+ * QS2 rule: **nothing is measured back out of a transform.** The posture is the
  * `mix` scalar that poses it, the eye is the height that scalar produced, and
  * the world transform is the quaternion + translation actually written. Units
  * are branded (`Metres`, `Degrees`, `Mix01`) so a centimetre/degree slip is a

@@ -241,7 +241,7 @@ export class QuietShoreApp {
   private gazeDwellEnabled = true;
   /** Highest buoyancy the loaded scene allows, 0–1 (its own ceiling). */
   private sceneComfort = 1;
-  /** SUS answers live on the headset; the 20-byte state frame has no room. */
+  /** SUS answers live on the headset; the 28-byte state frame has no room. */
   private readonly susAnswers: (number | null)[] = new Array(10).fill(null);
   /**
    * This sheet has already been filed once. The answers stay for the rest of
@@ -1689,7 +1689,7 @@ export class QuietShoreApp {
   }
 
   /**
-   * Hand one SUS sheet to the tablet. The state frame is fixed at 20 bytes, so
+   * Hand one SUS sheet to the tablet. The state frame is fixed at 28 bytes, so
    * this rides the page's JSON socket and the headset app forwards it on its
    * own characteristic; the tablet scores and persists it.
    */

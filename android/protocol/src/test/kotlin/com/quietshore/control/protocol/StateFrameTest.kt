@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * v14 state frame: 28 bytes, one posture scalar, no derivable duplicates.
+ * QS2 state schema 1: 28 bytes, one posture scalar, no derivable duplicates.
  *
  * Every offset is pinned here because this array is the only thing the two
  * ends share; a test that merely round-trips would pass with the fields in any
@@ -20,14 +20,12 @@ class StateFrameTest {
         ((bytes[offset].toInt() and 0xFF) or ((bytes[offset + 1].toInt() and 0xFF) shl 8)).toShort().toInt()
 
     @Test
-    fun `v14 frame is 28 bytes with the documented offsets`() {
+    fun `QS2 schema 1 is 28 bytes with the documented offsets`() {
         val state = ControlState(
             session = true,
             calibrating = true,
             audioMuted = true,
             moving = true,
-            hold = true,
-            voiceAuto = true,
             scene = ControlProtocol.SCENE_IDS[2],
             viewAnim = ViewAnim.PLAYING,
             eyeHeight = 0.71f,
@@ -48,9 +46,9 @@ class StateFrameTest {
         val bytes = ControlProtocol.encodeState(state, nowMs = 0x1234, seq = 0x0042)
 
         assertEquals(28, bytes.size)
-        assertEquals(14, bytes[0].toInt())
-        // session | calibrating | audio | moving | hold | voiceAuto
-        assertEquals(1 or 2 or 4 or 8 or 16 or 32, bytes[1].toInt() and 0xFF)
+        assertEquals(1, bytes[0].toInt())
+        // session | calibrating | audio | moving; bits 4-7 unused.
+        assertEquals(1 or 2 or 4 or 8, bytes[1].toInt() and 0xFF)
         // scene index 2 | (bits 4–5 retired, always 0) | anim playing 1 << 6
         assertEquals(2 or (1 shl 6), bytes[2].toInt() and 0xFF)
         assertEquals(71, bytes[3].toInt() and 0xFF)
@@ -78,8 +76,6 @@ class StateFrameTest {
             calibrating = false,
             audioMuted = false,
             moving = true,
-            hold = false,
-            voiceAuto = true,
             scene = "shore",
             viewAnim = ViewAnim.HELD,
             eyeHeight = 1.13f,
@@ -103,7 +99,6 @@ class StateFrameTest {
 
         assertEquals(state.session, decoded.session)
         assertEquals(state.moving, decoded.moving)
-        assertEquals(state.voiceAuto, decoded.voiceAuto)
         assertEquals(state.scene, decoded.scene)
         assertEquals(state.viewAnim, decoded.viewAnim)
         assertEquals(state.eyeHeight, decoded.eyeHeight, 0.005f)
@@ -148,16 +143,18 @@ class StateFrameTest {
         val frame = ControlProtocol.encodeState(ControlState())
         assertNull(ControlProtocol.decodeState(ByteArray(40)))
         assertNull(ControlProtocol.decodeState(frame.copyOf(27)))
-        // A v12 frame is not upgraded: both ends ship together.
-        val wrongVersion = frame.copyOf()
-        wrongVersion[0] = 12
-        assertNull(ControlProtocol.decodeState(wrongVersion))
+        // Only QS2 schema 1 exists. A retired schema is rejected whole.
+        val wrongSchema = frame.copyOf()
+        wrongSchema[0] = 0
+        assertNull(ControlProtocol.decodeState(wrongSchema))
+        wrongSchema[0] = 14
+        assertNull(ControlProtocol.decodeState(wrongSchema))
     }
 
     @Test
     fun `a lying eye survives the wire`() {
         // 0.08 m on water is the lowest eye the model produces; the byte range
-        // must not clip it the way v12's 120..190 cm clamp did.
+        // must not clip it the way the retired 120..190 cm clamp did.
         for (height in listOf(0.08f, 0.66f, 0.71f, 1.13f, 2.4f)) {
             val decoded = requireNotNull(
                 ControlProtocol.decodeState(ControlProtocol.encodeState(ControlState(eyeHeight = height)))

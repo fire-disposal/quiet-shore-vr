@@ -46,7 +46,7 @@ Kotlin + Compose 操作台，职责是“中心 + 控制”，不承载 XR：
 
 ### 2.3 共享契约 `:protocol`
 
-纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、20 字节遥测编解码、20 字节 state v10 都定义在这里，头显与平板共用。协议细节见 `docs/control-plane.md`。
+纯 Kotlin JVM 模块，没有 Android 依赖。UUID、`CLAIM`/`RELEASE`、`HELLO`/`WELCOME`/`ACK`、命令白名单、24 字节遥测与 QS2 schema 1 的 28 字节 state 都定义在这里，头显与平板共用。协议细节见 `docs/protocol.md`。
 
 ## 3. 方案矩阵
 
@@ -71,7 +71,7 @@ Kotlin + Compose 操作台，职责是“中心 + 控制”，不承载 XR：
 - 头显 APK 仍是薄壳，但承担四件事：轻量控制台、静态资源服务、BLE 外设、患者页面与 BLE 之间的回环桥。控制台只显示状态并提供“进入训练/全部应用/返回桌面”，不是完整 2D 主界面。
 - 平板 APK 独立发布，负责操作台；它不承载 XR，只通过 BLE 控制和观察头显。
 - Web 内容只构建一次：`standalone.html` 给头显单文件页面。平板已无 WebView，`controller.html` 与 `src/controller/` 已删除。
-- 控制权先到先得，没有控制码；细节见 `docs/control-plane.md`。
+- 控制权先到先得，没有控制码；细节见 `docs/protocol.md`。
 - 保留 `adb reverse` 开发路径；生产走 APK 内置资产。
 - 26s 退出问题是已知限制；用通知栏重新进入，不在本轮解决。
 

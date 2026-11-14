@@ -1,6 +1,6 @@
 # 语音提示（Voice Cues）
 
-状态：设计稿，尚未实现（协议没有 voice 命令）。展示侧见 `docs/ux-plan.md` §8.2。
+状态：当前实现。命令、播放与字幕见 `docs/protocol.md` 与 `docs/core.md` §7。
 
 ## 1 语气
 
@@ -172,7 +172,7 @@
 | `voice:mix:duck:<0..18>` | 水声压低深度 |
 | `voice:set:male\|female` | 切换音色集（下一句生效） |
 
-状态回读（v11）：`voiceId` 1 字节 + flags 两位（playing、auto）。
+状态回读使用 QS2 schema 1 的 `voiceId`，字段见 `docs/protocol.md`。
 
 ## 5 打包与播放
 

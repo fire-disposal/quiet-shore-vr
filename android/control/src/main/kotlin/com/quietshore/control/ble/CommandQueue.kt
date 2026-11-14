@@ -12,7 +12,7 @@ import com.quietshore.control.protocol.ControlProtocol
  *   ([SUPERSEDED_BY_STOP]) — anything enqueued after it is kept;
  * - discrete lane: FIFO, every command is delivered (bounded only to keep a
  *   wedged link from growing without limit; refusal is explicit, never silent);
- * - movement lane: exactly one `view:orient` sample, always the newest.
+ * - movement lane: exactly one `posture:mix` sample, always the newest.
  *
  * Not thread safe: [com.quietshore.control.ble.BleController] serialises access.
  */

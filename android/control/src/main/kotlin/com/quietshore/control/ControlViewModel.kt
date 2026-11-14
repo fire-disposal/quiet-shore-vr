@@ -896,9 +896,7 @@ class ControlViewModel(application: Application) :
                     scene = json.optString("scene", current.control.scene),
                     session = json.optBoolean("session", current.control.session),
                     calibrating = json.optBoolean("calibrating", current.control.calibrating),
-                    moving = json.optBoolean("moving", current.control.moving),
-                    hold = json.optBoolean("hold", current.control.hold),
-                    voiceAuto = json.optBoolean("voiceAuto", current.control.voiceAuto)
+                    moving = json.optBoolean("moving", current.control.moving)
                 )
             )
         }
@@ -987,11 +985,8 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onStatus(raw: String) {
-        when {
-            raw.startsWith(OK_PREFIX) -> notice("头显已接收指令")
-            raw == ControlProtocol.STATUS_CONTROL_RELEASED ->
-                notice("已释放控制")
-            else -> Unit
+        if (raw == ControlProtocol.STATUS_CONTROL_RELEASED) {
+            notice("已释放控制")
         }
     }
 
@@ -1040,8 +1035,5 @@ class ControlViewModel(application: Application) :
 
         const val PREFERENCES = "quiet-shore-control"
         const val LAST_DEVICE_KEY = "lastDeviceAddress"
-
-        /** Headset acknowledgement prefix for accepted commands. */
-        const val OK_PREFIX = "OK:"
     }
 }

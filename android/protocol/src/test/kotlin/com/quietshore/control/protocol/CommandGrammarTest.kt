@@ -47,11 +47,31 @@ class CommandGrammarTest {
     }
 
     @Test
+    fun `the published capability list names commands the allowlist accepts`() {
+        val concrete = mapOf(
+            "scene:<id>" to "scene:ward",
+            "app:training|questionnaire" to "app:questionnaire",
+            "gaze:dwell:on|off" to "gaze:dwell:on",
+            "float:level:0-100" to "float:level:60"
+        )
+        for (entry in ControlProtocol.CAPABILITIES) {
+            val sample = concrete[entry] ?: entry
+            if (sample.contains('<') || sample.contains('|') || sample.contains('-') ||
+                sample.endsWith(":0-100")
+            ) {
+                continue
+            }
+            assertTrue(ControlProtocol.isAllowedCommand(sample), entry)
+        }
+    }
+
+    @Test
     fun `the allowlist accepts what the tablet sends and rejects the rest`() {
         for (raw in listOf(
             "enter", "exit", "stop", "calibrate",
             "audio:on", "audio:off", "audio:toggle",
-            "float:level:0", "float:level:3", "float:breath:on", "float:breath:off",
+            "float:level:0", "float:level:4", "float:level:60", "float:level:100",
+            "float:breath:on", "float:breath:off",
             "scene:washroom", "scene:shore", "scene:ward", "scene:prep",
             "anim:duration:4000", "anim:duration:10000", "anim:duration:20000",
             "posture:rise", "posture:lower", "posture:stop",
@@ -76,7 +96,8 @@ class CommandGrammarTest {
             "recalibrate",
             "launch:the:missiles",
             "scene:moon",
-            "float:level:4",
+            "float:level:101",
+            "float:level:-1",
             "float:breath:1",
             "float:profile:b",
             "mode:float",

@@ -386,10 +386,14 @@ private fun retentionChecks() {
         listOf(3, 5),
         outOfOrder.pendingSince(-1).map { it.seq }
     )
-    // The 10 Hz `view:orient` stream is gone: every retained command is
-    // discrete now, and an animation never enters retention at all.
-    checkEquals("view target is discrete", ControlKind.DISCRETE, outOfOrder.record(9, "view:orient:0,60"))
-    checkEquals("view stop is discrete", ControlKind.DISCRETE, outOfOrder.record(10, "view:stop"))
+    // A one-shot animation is delivered live and never enters retention.
+    outOfOrder.record(9, "view:anim:up")
+    outOfOrder.record(10, "view:stop")
+    checkEquals(
+        "animations are not retained",
+        listOf(3, 5, 10),
+        outOfOrder.pendingSince(-1).map { it.seq }
+    )
 }
 
 /**
@@ -521,33 +525,13 @@ private fun mtuPolicyChecks() {
 }
 
 private fun queueChecks() {
-    val queue = CoalescingQueue<String>(4)
-    repeat(50) {
-        queue.offer(FrameKind.CONTINUOUS, "move$it")
-    }
-    checkEquals("continuous frames coalesce to one", 1, queue.size)
-    checkEquals("coalescing keeps the newest sample", "move49", queue.pollFirst())
-    checkEquals("queue is empty", true, queue.isEmpty)
-
-    val ordered = CoalescingQueue<String>(4)
-    ordered.offer(FrameKind.DISCRETE, "scene")
-    ordered.offer(FrameKind.CONTINUOUS, "move1")
-    ordered.offer(FrameKind.CONTINUOUS, "move2")
-    checkEquals(
-        "discrete frames keep their position",
-        listOf(FrameKind.DISCRETE, FrameKind.CONTINUOUS),
-        ordered.kinds()
-    )
-    checkEquals("discrete frame is delivered first", "scene", ordered.pollFirst())
-    checkEquals("latest sample follows", "move2", ordered.pollFirst())
-
     val full = CoalescingQueue<String>(3)
     full.offer(FrameKind.DISCRETE, "d1")
-    full.offer(FrameKind.CONTINUOUS, "c1")
+    full.offer(FrameKind.SNAPSHOT, "ready")
     full.offer(FrameKind.STATE, "s1")
     full.offer(FrameKind.DISCRETE, "d2")
     checkEquals(
-        "a full queue evicts continuous before discrete",
+        "a full queue evicts snapshot before discrete",
         listOf(FrameKind.DISCRETE, FrameKind.STATE, FrameKind.DISCRETE),
         full.kinds()
     )
@@ -698,22 +682,23 @@ private fun codecChecks() {
 private fun protocolGrammarChecks() {
     checkEquals(
         "hello payload",
-        "HELLO ${ControlProtocol.protocolVersion}",
+        "HELLO QS2 1",
         ControlProtocol.helloCommand()
     )
-    checkEquals(
-        "hello parses",
-        ControlProtocol.protocolVersion,
-        ControlProtocol.parseHello("HELLO ${ControlProtocol.protocolVersion}")
-    )
+    val hello = ControlProtocol.parseHello("HELLO QS2 1")
+    check(hello != null)
+    checkEquals("hello generation", ControlProtocol.PROTOCOL_GENERATION, hello.generation)
+    checkEquals("hello schema", ControlProtocol.STATE_SCHEMA_VERSION, hello.schema)
     checkEquals("hello is not a command", null, ControlProtocol.parseHello("scene:ward"))
     checkEquals("hello rejects junk", null, ControlProtocol.parseHello("HELLO x"))
+    checkEquals("hello rejects retired numbering", null, ControlProtocol.parseHello("HELLO 2"))
 
     val welcome = ControlProtocol.parseWelcome(ControlProtocol.welcomeCommand())
     check(welcome != null)
-    checkEquals("welcome version", ControlProtocol.protocolVersion, welcome.version)
+    checkEquals("welcome generation", ControlProtocol.PROTOCOL_GENERATION, welcome.generation)
+    checkEquals("welcome schema", ControlProtocol.STATE_SCHEMA_VERSION, welcome.schema)
     checkEquals("welcome capabilities", ControlProtocol.CAPABILITIES_MASK, welcome.capabilities)
-    checkEquals("welcome rejects missing caps", null, ControlProtocol.parseWelcome("WELCOME 1"))
+    checkEquals("welcome rejects missing caps", null, ControlProtocol.parseWelcome("WELCOME QS2 1"))
 
     val wire = ControlProtocol.sequencedCommandPayload(7, "scene:ward")
     checkEquals("sequenced payload", "#7 scene:ward", wire)
@@ -741,14 +726,12 @@ private fun protocolGrammarChecks() {
     check(ControlProtocol.parseAck("ACK 7 BUSY")?.result == ControlProtocol.RESULT_BUSY)
 
     check("discrete needs an ack", ControlProtocol.requiresSequencedAck("scene:ward"))
-    // Every command that is retained needs an ack; the 10 Hz `view:orient`
-    // stream that used to be exempt is gone.
-    check("view:orient needs an ack", ControlProtocol.requiresSequencedAck("view:orient:0,30"))
+    // Every retained command is discrete and needs an ack.
     check("ping needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.PING))
     check("hello needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.helloCommand()))
 
     checkEquals("view anim capability", ControlProtocol.CAP_VIEW_ANIM, ControlProtocol.capabilityFor("view:anim:up"))
-    checkEquals("sus capability", ControlProtocol.CAP_SUS, ControlProtocol.capabilityFor("sus:next"))
+    checkEquals("sus capability", ControlProtocol.CAP_SUS, ControlProtocol.capabilityFor("sus:show:3"))
     checkEquals("always-available command", 0, ControlProtocol.capabilityFor("stop"))
     checkEquals(
         "capability names",

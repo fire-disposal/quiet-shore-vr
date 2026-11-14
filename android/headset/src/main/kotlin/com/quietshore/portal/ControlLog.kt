@@ -8,20 +8,8 @@ import com.quietshore.control.protocol.ControlProtocol
  */
 internal class ControlEntry(val seq: Int, val command: String)
 
-/** How a recorded command has to be pushed to the page. */
-internal enum class ControlKind {
-    /** Scene/posture/cue/view:stop and friends: stays pending until acked. */
-    DISCRETE,
-
-    /** `view:orient:*` sample: ack-free, newest absolute target wins. */
-    CONTINUOUS
-}
-
-/** Kinds of frames a subscriber can hold; drives queue coalescing. */
+/** Kinds of frames a subscriber can hold. */
 internal enum class FrameKind {
-    /** A `cmd` message carrying only a fresh `view:orient` sample. */
-    CONTINUOUS,
-
     /** A `cmd` message carrying a discrete command; never dropped by the queue. */
     DISCRETE,
 
@@ -36,8 +24,7 @@ internal enum class FrameKind {
  * Ack-based command retention for the page.
  *
  * Commands stay resident until the page acks them (`ack.seq` prunes everything
- * at or below it), so a reconnect with `since` can be gap-filled. Every command
- * is discrete: the 10 Hz `view:orient` stream is gone.
+ * at or below it), so a reconnect with `since` can be gap-filled.
  *
  * `view:anim:*` is deliberately absent: it is a one-shot event, delivered live
  * and never retained, so a reconnect cannot replay an animation.
@@ -54,14 +41,13 @@ internal class ControlLog(private val depth: Int = PENDING_DEPTH) {
     /** Number of discrete commands still awaiting an ack. */
     val pendingSize: Int get() = pending.size
 
-    fun record(seq: Int, command: String): ControlKind {
+    fun record(seq: Int, command: String) {
         if (command.startsWith(ControlProtocol.VIEW_ANIM)) {
             // One shot: delivered live only, never retained for replay.
-            return ControlKind.DISCRETE
+            return
         }
         pending[seq] = ControlEntry(seq, command)
         trim()
-        return ControlKind.DISCRETE
     }
 
     /** Drops every pending discrete command at or below [seq]. */
@@ -130,11 +116,10 @@ internal object SubscriberHandshake {
 /**
  * Per-subscriber outbound queue.
  *
- * Continuous frames replace each other in place, discrete frames are never
- * dropped, and a full queue evicts the oldest continuous frame first, then the
- * oldest state/ready frame. Dropping an old *discrete* frame needs
- * [depth] unacked discrete frames queued, i.e. more than [ControlLog.PENDING_DEPTH]
- * can retain: at that point the peer is gone and the socket write will fail.
+ * Discrete frames are never dropped. When full, the queue evicts the oldest
+ * snapshot, then the oldest state frame. Dropping a discrete frame requires
+ * [depth] unacked frames queued, i.e. more than [ControlLog.PENDING_DEPTH] can
+ * retain: at that point the peer is gone and the socket write will fail.
  */
 internal class CoalescingQueue<T>(private val depth: Int) {
 
@@ -145,15 +130,6 @@ internal class CoalescingQueue<T>(private val depth: Int) {
     val isNotEmpty: Boolean get() = frames.isNotEmpty()
 
     fun offer(kind: FrameKind, payload: T) {
-        if (kind == FrameKind.CONTINUOUS) {
-            // A newer sample supersedes every queued sample; discrete frames stay.
-            val iterator = frames.iterator()
-            while (iterator.hasNext()) {
-                if (iterator.next().kind == FrameKind.CONTINUOUS) {
-                    iterator.remove()
-                }
-            }
-        }
         if (frames.size >= depth) {
             evictOne()
         }
@@ -170,7 +146,6 @@ internal class CoalescingQueue<T>(private val depth: Int) {
     fun kinds(): List<FrameKind> = frames.map { it.kind }
 
     private fun evictOne() {
-        if (removeFirstOf(FrameKind.CONTINUOUS)) return
         if (removeFirstOf(FrameKind.SNAPSHOT)) return
         if (removeFirstOf(FrameKind.STATE)) return
         if (frames.isNotEmpty()) {

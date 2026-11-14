@@ -1,7 +1,6 @@
 package com.quietshore.control.protocol
 
 import java.nio.ByteBuffer
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -10,8 +9,9 @@ import java.util.UUID
 /**
  * Wire contract shared by the headset peripheral and the tablet central.
  *
- * The GATT payloads are deliberately tiny: telemetry is exactly 20 bytes so
- * it fits the default ATT MTU without chunking.
+ * The GATT payloads are deliberately tiny: telemetry is exactly 24 bytes and
+ * the QS2 state schema is 28 bytes. A 31-byte ATT payload carries the frame
+ * without chunking.
  */
 object ControlProtocol {
     val serviceUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000001")
@@ -36,9 +36,12 @@ object ControlProtocol {
     const val deviceName: String = "QuietShore"
     /** Six floats: x, y, z, yaw, pitch, roll. The mirror needs the roll too. */
     const val telemetryBytes: Int = 24
-    /** v14 frame size; fits a 30-byte MTU, so no chunking on the state path. */
+    /** QS2 protocol generation. No QS1 peer is supported or shipped. */
+    const val PROTOCOL_GENERATION: String = "QS2"
+    /** State-frame schema inside generation QS2. */
+    const val STATE_SCHEMA_VERSION: Int = 1
+    /** QS2 schema 1 is 28 bytes; fits a 31-byte ATT payload without chunking. */
     const val stateMaxBytes: Int = 28
-    const val stateVersion: Int = 14
     /** i16 quaternion scale: components live in [-1, 1]. */
     const val QUAT_SCALE: Int = 32767
 
@@ -77,7 +80,7 @@ object ControlProtocol {
     const val VIEW_ANIM: String = "view:anim:"
     val VIEW_ANIM_NAMES: Set<String> = setOf("up", "down", "recenter")
 
-    /** Buoyancy intensity: `float:level:<0-3>` (0 = off). */
+    /** Buoyancy intensity: `float:level:<0-100>` percent of the envelope. */
     const val FLOAT_LEVEL: String = "float:level:"
 
     /**
@@ -122,11 +125,6 @@ object ControlProtocol {
     const val RAMP_MS_MIN: Int = RAMP_S_MIN * 1000
     const val RAMP_MS_MAX: Int = RAMP_S_MAX * 1000
 
-    /** Absolute up-gaze envelope, in degrees. */
-    const val VIEW_PITCH_MAX_DEG: Float = 90f
-    /** Absolute yaw envelope, in degrees. */
-    const val VIEW_YAW_MAX_DEG: Float = 180f
-
     /**
      * The whole command surface, for the manual and the console. Anything not
      * listed here is rejected by [isAllowedCommand]; there is no second list.
@@ -135,8 +133,10 @@ object ControlProtocol {
         "enter", "exit", "stop",
         "calibrate", "adapt:skip",
         "audio:on", "audio:off", "audio:toggle", "audio:volume:0-100",
-        "float:level:0-3", "float:breath:on|off",
+        "float:level:0-100", "float:breath:on|off",
         "scene:<id>",
+        "app:training|questionnaire",
+        "gaze:dwell:on|off",
         "anim:duration:$RAMP_MS_MIN-$RAMP_MS_MAX", "posture:rise", "posture:lower", "posture:stop",
         "posture:mix:0-100",
         "sus:open", "sus:close",
@@ -157,29 +157,23 @@ object ControlProtocol {
     const val STATUS_CONTROL_REQUIRED: String = "CONTROL_REQUIRED"
     const val STATUS_COMMAND_REJECTED: String = "COMMAND_REJECTED"
 
-    /**
-     * GATT grammar revision. The tablet sends `HELLO <version>` right after
-     * CONTROL_OK and drives the console only after a matching `WELCOME`.
-     * Bump this whenever the command/ack/status grammar changes: an old
-     * tablet must refuse to drive a new headset (and say why) instead of
-     * silently mis-parsing acknowledgements.
-     */
-    const val protocolVersion: Int = 2
-
-    /** Capability bits the headset advertises in `WELCOME <version> <mask>`. */
+    /** Capability bits advertised in `WELCOME <generation> <schema> <mask>`. */
     const val CAP_VIEW_ANIM: Int = 1 shl 0
-    /** Scene switching from the tablet; absent means a single fixed scene. */
     const val CAP_SCENE: Int = 1 shl 1
     const val CAP_POSTURE: Int = 1 shl 2
-    /** Float/motion envelope: level, profile, breath. (Was CAP_CUE before the
-     * near-field particle cue was removed; the bit is unchanged on the wire.) */
+    /** Continuous buoyancy: amount and breath. */
     const val CAP_MOTION: Int = 1 shl 3
     const val CAP_SUS: Int = 1 shl 4
-    /** Gaze dwell selection exists and can be switched by the operator. */
     const val CAP_GAZE_DWELL: Int = 1 shl 5
     const val CAPABILITIES_MASK: Int =
         CAP_VIEW_ANIM or CAP_SCENE or CAP_POSTURE or CAP_MOTION or CAP_SUS or CAP_GAZE_DWELL
 
+    /**
+     * QS2 protocol identity. The tablet sends `HELLO QS2 1` after CONTROL_OK
+     * and drives the console only after a matching `WELCOME`. The symbolic
+     * generation prevents a retired numeric prototype from being mistaken for
+     * a supported peer.
+     */
     const val HELLO: String = "HELLO"
     const val WELCOME: String = "WELCOME"
 
@@ -191,10 +185,7 @@ object ControlProtocol {
     /** The command never reached a page: nothing is listening on the socket. */
     const val RESULT_OFFLINE: String = "OFFLINE"
 
-    /** The controller wrote a command before completing HELLO. */
-    const val STATUS_PROTOCOL_REQUIRED: String = "PROTOCOL_REQUIRED"
-
-    /** `PROTOCOL_MISMATCH <headsetVersion>`: versions cannot interoperate. */
+    /** `PROTOCOL_MISMATCH <generation> <schema>`: the peer cannot interoperate. */
     const val STATUS_PROTOCOL_MISMATCH: String = "PROTOCOL_MISMATCH"
 
     private val SEQUENCED_COMMAND = Regex("""#(\d{1,9}) (\S.*)""")
@@ -202,41 +193,46 @@ object ControlProtocol {
     /** A discrete command carrying its monotonic sequence number. */
     data class SequencedCommand(val seq: Int, val command: String)
 
-    /** Parsed `WELCOME <version> <capabilityMask>`. */
-    data class Welcome(val version: Int, val capabilities: Int)
+    /** Parsed `HELLO <generation> <schema>`. */
+    data class Hello(val generation: String, val schema: Int)
+
+    /** Parsed `WELCOME <generation> <schema> <capabilityMask>`. */
+    data class Welcome(val generation: String, val schema: Int, val capabilities: Int)
 
     /** Parsed `ACK <seq> <result>`. */
     data class Ack(val seq: Int, val result: String)
 
-    fun helloCommand(): String = "$HELLO $protocolVersion"
+    fun helloCommand(): String = "$HELLO $PROTOCOL_GENERATION $STATE_SCHEMA_VERSION"
 
-    fun welcomeCommand(): String = "$WELCOME $protocolVersion $CAPABILITIES_MASK"
+    fun welcomeCommand(): String =
+        "$WELCOME $PROTOCOL_GENERATION $STATE_SCHEMA_VERSION $CAPABILITIES_MASK"
 
-    fun statusProtocolMismatch(): String = "$STATUS_PROTOCOL_MISMATCH $protocolVersion"
+    fun statusProtocolMismatch(): String =
+        "$STATUS_PROTOCOL_MISMATCH $PROTOCOL_GENERATION $STATE_SCHEMA_VERSION"
 
-    /** Returns the peer's protocol version, or null when [raw] is not a HELLO. */
-    fun parseHello(raw: String): Int? {
+    /** Returns the peer's generation and schema, or null for a malformed HELLO. */
+    fun parseHello(raw: String): Hello? {
         val parts = raw.trim().split(' ')
-        if (parts.size != 2 || parts[0] != HELLO) {
+        if (parts.size != 3 || parts[0] != HELLO || parts[1].isEmpty()) {
             return null
         }
-        return parts[1].toIntOrNull()?.takeIf { it > 0 }
+        val schema = parts[2].toIntOrNull()?.takeIf { it > 0 } ?: return null
+        return Hello(parts[1], schema)
     }
 
     fun parseWelcome(raw: String): Welcome? {
         val parts = raw.trim().split(' ')
-        if (parts.size != 3 || parts[0] != WELCOME) {
+        if (parts.size != 4 || parts[0] != WELCOME || parts[1].isEmpty()) {
             return null
         }
-        val version = parts[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
-        val capabilities = parts[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
-        return Welcome(version, capabilities)
+        val schema = parts[2].toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val capabilities = parts[3].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+        return Welcome(parts[1], schema, capabilities)
     }
 
     /**
-     * Wire form of a discrete command: `#<seq> <command>`. `view:orient` samples
-     * stay unsequenced (latest-wins, no ack); every other discrete command is
-     * acked and deduped by the headset.
+     * Wire form of the only command frame: `#<seq> <command>`. Every command
+     * that carries state is acked and deduped by the headset.
      */
     fun sequencedCommandPayload(seq: Int, command: String): String = "#$seq $command"
 
@@ -270,7 +266,6 @@ object ControlProtocol {
     /**
      * Whether [payload] (the exact string about to be written) expects an ACK:
      * only the liveness probe is fire-and-forget, HELLO is answered by WELCOME.
-     * (The 10 Hz `view:orient` stream is gone: every command is discrete.)
      */
     fun requiresSequencedAck(payload: String): Boolean =
         payload != PING && parseHello(payload) == null
@@ -320,13 +315,6 @@ object ControlProtocol {
         return normalized.takeIf { it.isNotEmpty() && it.length <= 200 && !it.contains('\n') }
     }
 
-    /**
-     * Plain decimal axis, identical to the page's `^-?\d+(?:\.\d+)?$`:
-     * "NaN", "Infinity", exponents, a leading dot (`.5`), a leading plus and a
-     * trailing dot never match. Two parsers must accept exactly one grammar.
-     */
-    private val NORMALIZED_AXIS = Regex("""-?\d+(?:\.\d+)?""")
-
     /** Parses `sus:show:<1..10>`; the page clamps to the item list afterwards. */
     fun parseSusShow(command: String): Int? {
         if (!command.startsWith(SUS_SHOW)) {
@@ -362,14 +350,6 @@ object ControlProtocol {
         return command.substring(VIEW_ANIM.length).takeIf { it in VIEW_ANIM_NAMES }
     }
 
-    private fun parseAngle(raw: String, limitDeg: Float): Float? {
-        if (!NORMALIZED_AXIS.matches(raw)) {
-            return null
-        }
-        val value = raw.toFloatOrNull() ?: return null
-        return value.takeIf { it.isFinite() && abs(it) <= limitDeg }
-    }
-
     /** `record:outcome:attempt|success:yes|no` — the post-session question. */
     private fun isOutcomeCommand(command: String): Boolean =
         command.startsWith("record:outcome:") &&
@@ -399,7 +379,7 @@ object ControlProtocol {
             (normalized.startsWith(AUDIO_VOLUME) &&
                 normalized.removePrefix(AUDIO_VOLUME).toIntOrNull() in 0..100) ||
             (normalized.startsWith(FLOAT_LEVEL) &&
-                normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..3) ||
+                normalized.removePrefix(FLOAT_LEVEL).toIntOrNull() in 0..100) ||
             normalized == "float:breath:on" ||
             normalized == "float:breath:off" ||
             (normalized.startsWith(SCENE_PREFIX) &&
@@ -475,13 +455,13 @@ object ControlProtocol {
     }
 
     /**
-     * 28-byte state frame (v14), little endian:
+     * 28-byte QS2 state schema 1, little endian:
      *
      * | byte | field |
      * | --- | --- |
-     * | 0 | version (14) |
-     * | 1 | flags: session, calibrating, audio muted, moving, hold, voice auto, 2 spare |
-     * | 2 | scene index 4b | float level 2b | view anim 2b |
+     * | 0 | schema (1) |
+     * | 1 | flags: session, calibrating, audio muted, moving; bits 4-7 unused |
+     * | 2 | scene index 4b | bits 4-5 reserved | view anim 2b |
      * | 3 | applied eye height (cm) |
      * | 4 | posture mix (0..250 = 0..100 %) |
      * | 5 | buoyancy offset (mm, signed) |
@@ -495,10 +475,8 @@ object ControlProtocol {
      * | 16–21 | world quaternion x, y, z (i16 ÷ 32767; w derived) |
      * | 22–27 | world translation x, y, z (i16, cm) |
      *
-     * Everything that can be derived is gone: the posture angle and progress
-     * are `90° · mix` and `mix`, the rise is part of the eye height, and the
-     * session has no mode. This layer only guarantees the bit width; envelopes
-     * are enforced once, in the page.
+     * Everything derivable is absent: posture angle and progress are
+     * `90° · mix` and `mix`, and the rise is folded into eye height.
      */
     fun encodeState(
         state: ControlState,
@@ -513,8 +491,6 @@ object ControlProtocol {
         if (state.calibrating) flags = flags or 2
         if (state.audioMuted) flags = flags or 4
         if (state.moving) flags = flags or 8
-        if (state.hold) flags = flags or 16
-        if (state.voiceAuto) flags = flags or 32
 
         val packed = (sceneIndex(state.scene, sceneIds) and 0xF) or
             // Bits 4–5 are retired: the heave is a percentage and it rides the
@@ -524,7 +500,7 @@ object ControlProtocol {
             ((state.viewAnim.code and 0x3) shl 6)
 
         val buffer = ByteBuffer.wrap(target).order(ByteOrder.LITTLE_ENDIAN)
-        buffer.put(stateVersion.toByte())
+        buffer.put(STATE_SCHEMA_VERSION.toByte())
         buffer.put(flags.toByte())
         buffer.put(packed.toByte())
         buffer.put((state.eyeHeight * 100f).roundToInt().coerceIn(0, 250).toByte())
@@ -630,12 +606,12 @@ object ControlProtocol {
     fun wsMessageLimitBytes(mtu: Int = ATT_MTU_MIN): Int = jsonDocumentLimitBytes(mtu)
 
     /**
-     * Only the v14 shape exists: the frame is not backward compatible.
+     * Only QS2 schema 1 exists. A different schema or length is rejected whole.
      *
-     * [sceneIds] is the catalogue in the order the page announced it; an index
+     * [sceneIds] is the catalogue in the order the page announced it. An index
      * outside it resolves to [fallbackScene], which the tablet sets to the last
-     * scene the JSON channel named. [fallbackScene]'s default keeps the v1
-     * behaviour for an old tablet or a catalogue that has not arrived yet.
+     * scene the JSON channel named. The default only covers a fresh link before
+     * the catalogue arrives.
      */
     fun decodeState(
         bytes: ByteArray,
@@ -644,7 +620,7 @@ object ControlProtocol {
     ): ControlState? {
         if (bytes.size != stateMaxBytes) return null
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        if ((buffer.get().toInt() and 0xFF) != stateVersion) return null
+        if ((buffer.get().toInt() and 0xFF) != STATE_SCHEMA_VERSION) return null
         val flags = buffer.get().toInt() and 0xFF
         val packed = buffer.get().toInt() and 0xFF
         val eyeHeight = (buffer.get().toInt() and 0xFF) / 100f
@@ -668,8 +644,6 @@ object ControlProtocol {
             calibrating = flags and 2 != 0,
             audioMuted = flags and 4 != 0,
             moving = flags and 8 != 0,
-            hold = flags and 16 != 0,
-            voiceAuto = flags and 32 != 0,
             scene = sceneIds.getOrElse(packed and 0xF) { fallbackScene },
 
             viewAnim = ViewAnim.fromCode((packed shr 6) and 0x3),
@@ -693,9 +667,9 @@ object ControlProtocol {
     }
 
     /**
-     * Fallback scene order for a link whose page has not announced a catalogue
-     * yet. The live catalogue is authoritative; this table must still be
-     * append-only, because it is what an old tablet decodes the frame with.
+     * Fallback scene order before the page announces a catalogue. The live
+     * catalogue is authoritative, but this order remains append-only because
+     * it is the initial wire index for the frame.
      */
     val SCENE_IDS: List<String> = listOf("washroom", "shore", "ward", "prep")
 
@@ -765,16 +739,6 @@ data class TelemetryPose(
 )
 
 /**
- * Parsed `view:orient:<yaw>,<pitch>` in degrees. +[lookYawDeg] turns the
- * patient's view left, +[upGazeDeg] shows more sky. Both are absolute and
- * already range-checked; there is no translation channel.
- */
-data class ViewOrientation(
-    val lookYawDeg: Float,
-    val upGazeDeg: Float
-)
-
-/**
  * Coarse phase of the page's view-animation player. The tablet only displays
  * it; the page owns the actual playback and its fixed durations.
  */
@@ -799,13 +763,8 @@ data class ControlState(
     val audioMuted: Boolean = false,
     /** The posture ramp (or a view animation) is running right now. */
     val moving: Boolean = false,
-    /** Motion frozen without ending the session. */
-    val hold: Boolean = false,
-    /** Voice auto mode is driving the cue schedule. */
-    val voiceAuto: Boolean = false,
     /** Scene currently loaded on the page; the tablet shows this as its choice. */
     val scene: String = ControlProtocol.DEFAULT_SCENE,
-    /** Buoyancy intensity the page is actually applying, 0–3. */
 
     /** Coarse view-animation phase reported by the page; see [ViewAnim]. */
     val viewAnim: ViewAnim = ViewAnim.IDLE,
