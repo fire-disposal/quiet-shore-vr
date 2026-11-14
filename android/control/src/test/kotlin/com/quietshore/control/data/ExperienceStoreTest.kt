@@ -127,6 +127,24 @@ class ExperienceStoreTest {
     }
 
     @Test
+    fun `removing one record keeps the survivors in order`() {
+        val history = listOf(
+            record(id = 1L),
+            record(id = 2L),
+            record(id = 3L)
+        )
+
+        assertEquals(listOf(1L, 3L), removeExperience(history, id = 2L).map { it.id })
+    }
+
+    @Test
+    fun `removing an unknown record changes nothing`() {
+        val history = listOf(record(id = 1L), record(id = 2L))
+
+        assertEquals(history, removeExperience(history, id = 9L))
+    }
+
+    @Test
     fun `a draft saves with the captured scene and length, blank participant allowed`() {
         val draft = ExperienceDraft(
             openedAt = 1_700_000_000_000L,

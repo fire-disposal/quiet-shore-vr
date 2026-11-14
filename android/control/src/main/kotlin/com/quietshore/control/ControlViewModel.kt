@@ -870,6 +870,20 @@ class ControlViewModel(application: Application) :
         notice("已记录 ${record.participantLabel} 的体验")
     }
 
+    /** Removes one filed observation; the CSV and list read the same state. */
+    fun deleteExperience(id: Long) {
+        val next = experienceStore.remove(id)
+        _uiState.update { it.copy(experienceHistory = next) }
+        notice("体验记录已删除")
+    }
+
+    /** Clears every filed observation after the two-step key in the list. */
+    fun clearExperience() {
+        val next = experienceStore.clear()
+        _uiState.update { it.copy(experienceHistory = next) }
+        notice("体验记录已清空")
+    }
+
     /**
      * Shares every filed 体验 record as a CSV file.
      *

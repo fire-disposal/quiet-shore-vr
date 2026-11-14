@@ -46,6 +46,19 @@ class ExperienceStore(context: Context) {
         return next
     }
 
+    /** Removes one row by id; an unknown id changes nothing. */
+    fun remove(id: Long): List<ExperienceRecord> {
+        val next = removeExperience(load(), id)
+        write(next)
+        return next
+    }
+
+    /** Clears every filed observation. */
+    fun clear(): List<ExperienceRecord> {
+        write(emptyList())
+        return emptyList()
+    }
+
     private fun write(list: List<ExperienceRecord>) {
         preferences.edit()
             .putString(KEY, ExperienceCodec.encodeList(list))
@@ -73,6 +86,12 @@ internal fun mergeExperience(
     val others = history.filterNot { it.id == record.id }
     return (others + record).takeLast(keep)
 }
+
+/** Removes one observation; the order of the survivors is unchanged. */
+internal fun removeExperience(
+    history: List<ExperienceRecord>,
+    id: Long
+): List<ExperienceRecord> = history.filterNot { it.id == id }
 
 /**
  * The stored form of an [ExperienceRecord].

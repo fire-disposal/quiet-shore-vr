@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.quietshore.control.data.EXPERIENCE_RECORDS
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.EXPERIENCE_MAX_RATING
 import com.quietshore.control.model.ExperienceDraft
@@ -98,7 +99,9 @@ fun ExperiencePanel(
         ExperienceList(
             records = state.experienceHistory,
             scenes = state.scenes,
-            onExport = actions.onExperienceExportCsv
+            onExport = actions.onExperienceExportCsv,
+            onDelete = actions.onExperienceDelete,
+            onClear = actions.onExperienceClear
         )
     }
 }
@@ -461,9 +464,13 @@ private fun DirectionRow(current: String, onSelect: (String) -> Unit) {
 private fun ExperienceList(
     records: List<ExperienceRecord>,
     scenes: List<com.quietshore.control.model.SceneCatalog.Scene>,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+    onDelete: (Long) -> Unit,
+    onClear: () -> Unit
 ) {
     var expanded by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var confirmClear by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf<Long?>(null) }
     Band(
         title = "记录",
         trailing = {
@@ -472,6 +479,21 @@ private fun ExperienceList(
                 style = MaterialTheme.typography.bodySmall.tabularFigures(),
                 color = QuietPalette.InkSecondary
             )
+            if (records.isNotEmpty()) {
+                Key(
+                    label = if (confirmClear) "确认清空" else "清空",
+                    onClick = {
+                        if (confirmClear) {
+                            onClear()
+                            confirmClear = false
+                        } else {
+                            confirmClear = true
+                        }
+                    },
+                    kind = KeyKind.Danger,
+                    minWidth = 76.dp
+                )
+            }
             Key(
                 label = "导出 CSV",
                 onClick = onExport,
@@ -490,6 +512,12 @@ private fun ExperienceList(
                 EmptyNote("还没有记录。填一张体验表，保存后出现在这里，再导出为 CSV。")
                 return@Column
             }
+            Text(
+                text = "本机最多保留 $EXPERIENCE_RECORDS 条；超出后最旧记录自动移除。",
+                style = MaterialTheme.typography.bodySmall,
+                color = QuietPalette.InkSecondary,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
             val shown = records.asReversed()
             for (index in shown.indices) {
                 val record = shown[index]
@@ -497,11 +525,22 @@ private fun ExperienceList(
                     record = record,
                     scenes = scenes,
                     open = record.id in expanded,
+                    deleteArmed = confirmDelete == record.id,
                     onToggle = {
+                        confirmDelete = null
                         expanded = if (record.id in expanded) {
                             expanded - record.id
                         } else {
                             expanded + record.id
+                        }
+                    },
+                    onDelete = {
+                        if (confirmDelete == record.id) {
+                            onDelete(record.id)
+                            confirmDelete = null
+                            expanded = expanded - record.id
+                        } else {
+                            confirmDelete = record.id
                         }
                     }
                 )
@@ -519,7 +558,9 @@ private fun ExperienceRow(
     record: ExperienceRecord,
     scenes: List<com.quietshore.control.model.SceneCatalog.Scene>,
     open: Boolean,
-    onToggle: () -> Unit
+    deleteArmed: Boolean,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Column(
         Modifier
@@ -628,6 +669,18 @@ private fun ExperienceRow(
                         text = "备注：${record.notes}",
                         style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.Ink
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Key(
+                        label = if (deleteArmed) "确认删除" else "删除",
+                        onClick = onDelete,
+                        kind = KeyKind.Danger,
+                        minWidth = 88.dp
                     )
                 }
             }

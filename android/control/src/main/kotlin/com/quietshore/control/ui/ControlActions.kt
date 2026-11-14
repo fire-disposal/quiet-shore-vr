@@ -125,6 +125,10 @@ data class ControlActions(
     val onExperienceNotes: (String) -> Unit,
     /** Files the open draft; the record appears in the list immediately. */
     val onExperienceSave: () -> Unit,
+    /** Removes one filed observation by its stable id. */
+    val onExperienceDelete: (Long) -> Unit,
+    /** Clears every filed observation. */
+    val onExperienceClear: () -> Unit,
     /**
      * Shares every filed 体验 record as a CSV attachment.
      *

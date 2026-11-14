@@ -184,6 +184,8 @@ fun ConsolePreview(
         onExperienceDirection = {},
         onExperienceNotes = {},
         onExperienceSave = noop,
+        onExperienceDelete = {},
+        onExperienceClear = noop,
         onExperienceExportCsv = noop
     )
     ControlScreen(

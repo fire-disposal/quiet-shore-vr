@@ -176,6 +176,8 @@ fun ControlApp(viewModel: ControlViewModel) {
             onExperienceDirection = viewModel::setExperienceDirection,
             onExperienceNotes = viewModel::setExperienceNotes,
             onExperienceSave = viewModel::saveExperience,
+            onExperienceDelete = viewModel::deleteExperience,
+            onExperienceClear = viewModel::clearExperience,
             onExperienceExportCsv = viewModel::exportExperienceCsv
         )
     )
