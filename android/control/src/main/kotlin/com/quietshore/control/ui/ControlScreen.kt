@@ -41,6 +41,7 @@ import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.model.OutcomeReceipt
 import com.quietshore.control.model.PREPARATION_SCENE
+import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.model.SessionPhase
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.outcomePanelVisible
@@ -171,8 +172,7 @@ fun ControlScreen(
             CommandBar(
                 state = state,
                 onAppSelect = actions.onAppSelect,
-                onDisconnect = actions.onDisconnect,
-                onCancelLaunch = actions.onCancelLaunch
+                onDisconnect = actions.onDisconnect
             )
             // No link banners on the initial page: the device list is the
             // action, and a banner offering "重新连接" beside it is a second
@@ -633,6 +633,10 @@ private fun SessionMain(
 /** Share of the left column the patient's picture takes. */
 private const val MIRROR_HEIGHT_SHARE = 0.66f
 
+/** The preparation room as a pickable card, not a header verb. */
+private val PREPARATION_CARD =
+    SceneCatalog.Scene(PREPARATION_SCENE, "准备间", "", special = true)
+
 /** Scene name from the live catalogue, falling back to the built-in table. */
 private fun sceneName(state: ControlUiState, id: String): String =
     state.scenes.firstOrNull { it.id == id }?.name
@@ -862,31 +866,15 @@ private fun SessionColumn(
                             color = QuietPalette.InkSecondary,
                             maxLines = 1
                         )
-                        // The neutral room is not a scene card — it is the way
-                        // out of the performance: entering it stops the bed,
-                        // the voice and the heave, and leaves the patient in a
-                        // grey room with the calibration intact. So it is always
-                        // here once a session is live (a state-dependent key
-                        // moved everything under the hand, and hid the only way
-                        // back), and it is a *verb*: it sends the switch itself
-                        // instead of marking an intent that the 切换场景 key then
-                        // refused, because the preparation room is not a
-                        // selectable card.
-                        if (phase.inSession) {
-                            Spacer(Modifier.width(10.dp))
-                            Key(
-                                label = if (state.prepScenePending) "准备间…" else "准备间",
-                                onClick = actions.onScenePrep,
-                                kind = if (state.inSpecialScene) {
-                                    KeyKind.Selected
-                                } else {
-                                    KeyKind.Quiet
-                                },
-                                enabled = ready && phase.acceptsChanges && state.canReturnToPrep,
-                                height = TouchTarget,
-                                minWidth = 88.dp
-                            )
-                        }
+                        Spacer(Modifier.width(10.dp))
+                        Key(
+                            label = if (state.inSpecialScene) "进入场景" else "切换场景",
+                            onClick = actions.onSceneApply,
+                            kind = KeyKind.Fill,
+                            enabled = ready && phase.acceptsChanges && state.sceneIntentDiverges,
+                            height = 40.dp,
+                            minWidth = 96.dp
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -897,31 +885,28 @@ private fun SessionColumn(
                                 enabled = ready && phase.acceptsChanges,
                                 onSelect = actions.onSceneSelect,
                                 // Taller than the kit floor: this is the block
-                                // the hand reaches for mid-session, and three
-                                // 56 dp strips at arm's length were a gamble.
+                                // the hand reaches for mid-session, and the
+                                // preparation room now sits in the same row.
                                 modifier = Modifier
                                     .weight(1f)
-                                    // A floor: three names of two lines at 1.3×
-                                    // were cut by the fixed 72 dp.
-                                    .heightIn(min = 72.dp),
+                                    .heightIn(min = 96.dp),
+                                showBlurb = false
+                            )
+                        }
+                        if (phase.inSession) {
+                            SceneCardView(
+                                scene = PREPARATION_CARD,
+                                current = state.prepScenePending ||
+                                    state.control.scene == PREPARATION_SCENE,
+                                enabled = ready && phase.acceptsChanges && state.canReturnToPrep,
+                                onSelect = { actions.onScenePrep() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 96.dp),
                                 showBlurb = false
                             )
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    // The key is always here, and off while the selection already
-                    // is the scene the patient is in: a key that appears and
-                    // disappears moves everything under the hand, and an idling
-                    // key that says nothing is what its `blocked` note is for.
-                    ActionKey(
-                        label = if (state.inSpecialScene) "进入正式场景" else "切换场景",
-                        subLabel = if (state.sceneIntentDiverges) null else "已在此场景",
-                        onClick = actions.onSceneApply,
-                        modifier = Modifier.fillMaxWidth(),
-                        tone = ActionTone.Primary,
-                        enabled = ready && phase.acceptsChanges && state.sceneIntentDiverges,
-                        height = 56.dp
-                    )
                 }
             }
 

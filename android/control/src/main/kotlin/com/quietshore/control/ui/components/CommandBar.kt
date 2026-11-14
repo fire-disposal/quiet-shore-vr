@@ -51,8 +51,6 @@ import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.AppCatalog
 import com.quietshore.control.model.Battery
 import com.quietshore.control.model.ControlUiState
-import com.quietshore.control.model.SessionPhase
-import com.quietshore.control.model.sessionPhaseOf
 import com.quietshore.control.ui.theme.QuietPalette
 
 /** Bar height: one row — app name, link, the two doors, the stop. */
@@ -93,8 +91,6 @@ fun CommandBar(
     state: ControlUiState,
     onAppSelect: (String) -> Unit,
     onDisconnect: () -> Unit,
-    /** Withdraws a launch that is still waiting for the patient's press. */
-    onCancelLaunch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val connected = state.phase == BlePhase.READY
@@ -228,105 +224,9 @@ fun CommandBar(
                 )
             }
         }
-        // Line 2: the session's own state and its clock, on every page and at
-        // every phase. The console documents this line but never drew it, so
-        // "is a session running, and for how long" was answerable only from the
-        // 会话 tab — the one page an operator staring at 音频 is not on.
-        BarSessionLine(state = state, onCancelLaunch = onCancelLaunch)
+        // No second line: the scene, clock and entry state already have owners
+        // on the page, and the bar returns that height to the main area.
     }
-}
-
-/**
- * `会话 运行中 03:12 │ 已结束 12:04 │ 等患者按压 00:20 │ …`
- *
- * One line, always in the same place, never inside a scroll container: the two
- * facts that decide whether the operator may leave the bedside. The elapsed
- * figure is the running session's clock; after it ends the line names the
- * length of the session that just ran, which is the number the closing panel
- * asks the bedside question about.
- */
-@Composable
-private fun BarSessionLine(state: ControlUiState, onCancelLaunch: (() -> Unit)?) {
-    val phase = sessionPhaseOf(
-        state.control,
-        state.phase,
-        state.startPending,
-        state.stopRequested
-    )
-    val status = when {
-        state.phase != BlePhase.READY && state.lastSessionElapsedMs > 0L ->
-            "未连接，上一轮 ${clock(state.lastSessionElapsedMs)}"
-        state.phase != BlePhase.READY -> "头显未连接"
-        phase == SessionPhase.Stopping -> "正在结束"
-        phase == SessionPhase.Calibrating -> "标定中 ${clock(state.sessionElapsedMs)}"
-        phase == SessionPhase.Running -> "会话进行中 ${clock(state.sessionElapsedMs)}"
-        phase == SessionPhase.Entry -> "等患者进入"
-        state.lastSessionElapsedMs > 0L -> "上一轮 ${clock(state.lastSessionElapsedMs)}"
-        else -> "未开始"
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            // The scene the headset reports, not the operator's mark: this line
-            // is a read-back, and a mark ahead of the frame would claim a room
-            // the patient is not in.
-            text = sceneLabel(state),
-            style = MaterialTheme.typography.bodySmall,
-            color = QuietPalette.InkSecondary,
-            maxLines = 1
-        )
-        Spacer(Modifier.width(10.dp))
-        Box(
-            Modifier
-                .width(1.dp)
-                .height(12.dp)
-                .background(QuietPalette.Hairline)
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = status,
-            style = MaterialTheme.typography.bodySmall.tabularFigures(),
-            color = if (phase.inSession) QuietPalette.Ink else QuietPalette.InkSecondary,
-            maxLines = 1,
-            modifier = Modifier.weight(1f)
-        )
-        // The launch wait has its own way out here too: the bar is the one
-        // surface visible from every destination, and a twenty-second wait
-        // with no cancel on the page the operator happens to be on is a trap.
-        if (phase == SessionPhase.Entry && onCancelLaunch != null) {
-            Text(
-                text = "取消启动",
-                style = MaterialTheme.typography.labelLarge,
-                color = QuietPalette.Ink,
-                maxLines = 1,
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .clickable(
-                        role = Role.Button,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onCancelLaunch
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            )
-        }
-    }
-}
-
-/** The scene the headset reports, named from its own catalogue. */
-private fun sceneLabel(state: ControlUiState): String {
-    val id = state.control.scene
-    if (id.isEmpty()) {
-        return "无场景"
-    }
-    val name = state.scenes.firstOrNull { it.id == id }?.name
-        ?: com.quietshore.control.model.SceneCatalog.scene(id)?.name
-        ?: id
-    return "场景 $name"
 }
 
 /**
