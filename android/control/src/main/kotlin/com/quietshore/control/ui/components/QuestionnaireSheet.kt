@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.quietshore.control.ble.BlePhase
 import com.quietshore.control.model.ControlUiState
 import com.quietshore.control.protocol.QuestionnaireCatalogDocument
 import com.quietshore.control.ui.ControlActions
@@ -192,14 +193,16 @@ private fun AnswerBody(
                     label = "启动问卷",
                     onClick = actions.onEnterQuestionnaire,
                     modifier = Modifier.weight(1f),
-                    kind = KeyKind.Outline
+                    kind = KeyKind.Outline,
+                    enabled = state.phase == BlePhase.READY
                 )
                 Key(
                     label = "结束问卷",
                     onClick = actions.onEnd,
                     modifier = Modifier.weight(1f),
                     kind = KeyKind.Quiet,
-                    enabled = state.sessionActive
+                    enabled = state.phase == BlePhase.READY &&
+                        (state.sessionActive || state.app == "questionnaire")
                 )
             }
             Text(

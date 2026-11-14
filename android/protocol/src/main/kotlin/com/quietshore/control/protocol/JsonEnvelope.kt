@@ -122,7 +122,11 @@ object JsonEnvelope {
         }
         return Envelope(
             type = type,
-            data = json.optJSONObject(DATA) ?: json.optJSONObject(PAGE_DATA),
+            // The page's flat messages (`ack`, `notice`) carry their fields at
+            // the top level. Falling back to the root object is what lets
+            // `seq`, `text` and `tone` reach their handlers instead of being
+            // swallowed as a null body.
+            data = json.optJSONObject(DATA) ?: json.optJSONObject(PAGE_DATA) ?: json,
             id = json.optString(ID)
         )
     }

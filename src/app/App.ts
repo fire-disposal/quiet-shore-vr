@@ -1023,6 +1023,13 @@ export class QuietShoreApp {
    * switch back to training still has the operator's scene and its state.
    */
   private enterQuestionnaireFace(): void {
+    // `enterVR` dispatches `start` before either face is selected. APP2 has no
+    // posture capture, so leaving the machine in `calibrating` made the face
+    // look frozen in calibration and refused every app switch. `suspend` is
+    // the idle transition without stop/fade/session-record side effects.
+    if (this.lifecycle.phase === 'calibrating') {
+      this.dispatch({ type: 'suspend' });
+    }
     const survey = getSceneDefinition('survey');
     if (survey && survey.id !== this.sceneId) {
       this.trainingSceneId = this.sceneId;
@@ -1166,19 +1173,17 @@ export class QuietShoreApp {
         onFinish: () => {
           // The patient dwelled "完成": thank them, tell them they can take the
           // headset off and to share feedback with the staff.
-          void this.speak(`v-${questionnaire.completionVoiceId}`, '结束语');
+          void this.speak(questionnaire.completionVoiceId, '结束语');
         },
         onClose: () => {
           // Give the layers back to whatever the session mode dictates.
           this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
           const filled = this.questionnaireAnswers.filter((answer) => answer !== null).length;
           const total = this.activeQuestionnaire.questions.length;
-          // A half-finished sheet is still worth keeping: the tablet records it
-          // as incomplete rather than losing what the patient did answer. A
-          // sheet already filed is not sent again — reopening and closing it
-          // must not hand the tablet a second copy of the same answers.
-          this.fileQuestionnaireSheet();
-          this.start.setStatus(`${this.activeQuestionnaire.name.zh} 已记录 ${filled}/${total}`, 'ok');
+          // Closing is hide, not filing. Filing here made a half sheet look
+          // complete, and the next open discarded its answers. Leaving the
+          // face or ending the session is the deliberate archive point.
+          this.start.setStatus(`${this.activeQuestionnaire.name.zh} 已暂停 ${filled}/${total}`, 'ok');
           this.publishQuestionnaireState();
         }
       });
@@ -1204,7 +1209,7 @@ export class QuietShoreApp {
     if (!question) {
       return;
     }
-    await this.speak(`v-${question.voiceId}`, `第 ${index + 1} 题语音`);
+    await this.speak(question.voiceId, `第 ${index + 1} 题语音`);
   }
 
   private async speak(voiceId: string, what: string): Promise<void> {
@@ -1775,6 +1780,8 @@ export class QuietShoreApp {
     this.world.hold(false);
     // A panel is session furniture: leaving the world at rest closes it, or a
     // stopped session would keep a sheet floating in front of the patient.
+    // This is a deliberate exit, so a partial sheet is filed here.
+    this.fileQuestionnaireSheet();
     this.questionnairePanel?.close();
     this.viewMotion.reset();
     this.world.clearBase();
@@ -1943,9 +1950,12 @@ export class QuietShoreApp {
       // The sheet is the face's content, not a modal it has to summon.
       this.openQuestionnaire();
     } else {
+      // A face switch is a deliberate exit: archive whatever the patient has
+      // answered before the panel is hidden and the answers are cleared.
+      this.fileQuestionnaireSheet();
       this.questionnairePanel?.close();
       this.resetQuestionnaireSheet();
-      const back = getSceneDefinition(this.trainingSceneId);
+      const back = getSceneDefinition(this.trainingSceneId) ?? SCENE;
       if (back && back.id !== this.sceneId) {
         this.sceneId = back.id;
         this.loadScene();
@@ -2378,7 +2388,8 @@ export class QuietShoreApp {
       // cancelled here as well as on a WebSocket open.
       this.returnLink();
       if (this.session) {
-        this.input.setLayers(false, false);
+        const sheetOpen = this.questionnairePanel?.isOpen() ?? false;
+        this.input.setLayers(sheetOpen, false);
       }
       this.start.setStatus(this.strings.controlModeOn, 'ok');
     } else {

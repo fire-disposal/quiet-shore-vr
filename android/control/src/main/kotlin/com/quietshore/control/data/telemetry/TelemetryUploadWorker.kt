@@ -119,7 +119,10 @@ object TelemetryScheduler {
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             TelemetryUploadWorker.ONESHOT_WORK,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            // One worker reads the current outbox when it runs. Appending a new
+            // copy per event turned a busy session into hundreds of no-op jobs
+            // ahead of the next real upload.
+            ExistingWorkPolicy.KEEP,
             request
         )
     }

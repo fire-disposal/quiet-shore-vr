@@ -544,6 +544,14 @@ internal class BluetoothControl(
             Log.w(TAG, "json document refused: ${payload.size} B > $limit B ($topic)")
             return false
         }
+        // A record may only be acknowledged after it actually reached a
+        // controller. `notifyValue` silently returns when nobody owns the
+        // link, and the old unconditional success deleted the page's durable
+        // copy on that no-op.
+        if (synchronized(controlLock) { controller } == null) {
+            Log.w(TAG, "json document dropped: no controller ($topic)")
+            return false
+        }
         val perChunk = ControlProtocol.jsonChunkPayload(linkMtu)
         val id = jsonChunkId
         jsonChunkId = (jsonChunkId + 1) and 0xFF
@@ -835,7 +843,7 @@ internal class BluetoothControl(
             replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
             return
         }
-        if (!ControlProtocol.isAllowedCommand(command)) {
+        if (!ControlProtocol.isAllowedCommand(command, PageCatalog.idSet(appContext))) {
             replyAck(device, requestId, sequenced.seq, ControlProtocol.RESULT_REJECTED)
             return
         }

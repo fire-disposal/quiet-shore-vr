@@ -102,9 +102,11 @@ export class SpatialButton {
     this.height = options.height;
     this.canvas = document.createElement('canvas');
     this.canvas.width = 512;
-    // Match the metre aspect so the label is not stretched across a 4:1 canvas.
+    // Match the metre aspect so the label is not stretched. The floor is only
+    // there to keep a canvas valid; a fixed 64 px floor squashed wide, short
+    // option rows by up to 1.6×.
     this.canvas.height = Math.max(
-      64,
+      24,
       Math.round((512 * options.height) / Math.max(0.01, options.width))
     );
     const ctx = this.canvas.getContext('2d');

@@ -1,7 +1,6 @@
 package com.quietshore.control.protocol
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -61,9 +60,11 @@ class JsonEnvelopeTest {
     fun `a document without a type is not an envelope`() {
         assertThrows(IllegalArgumentException::class.java) { JsonEnvelope.parse("{\"d\":{}}") }
         assertThrows(IllegalArgumentException::class.java) { JsonEnvelope.parse("[]") }
-        // A type but no body is still parseable: `ack` carries no `d` at all.
+        // A type with no nested body is a flat page message. Its fields are
+        // the body: swallowing them turned every real `ack` and `notice` into
+        // a no-op downstream.
         val bare = JsonEnvelope.parse("{\"t\":\"ack\",\"seq\":3}")
-        assertNull(bare.data)
+        assertEquals(3, bare.data?.optInt("seq"))
         assertEquals("", bare.id)
     }
 

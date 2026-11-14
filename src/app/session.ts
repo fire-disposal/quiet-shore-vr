@@ -32,6 +32,7 @@ export interface SessionState {
 export type SessionEvent =
   | { readonly type: 'start' }
   | { readonly type: 'calibrated' }
+  | { readonly type: 'suspend' }
   | { readonly type: 'stop'; readonly reason: StopReason }
   | { readonly type: 'faded' };
 
@@ -59,6 +60,12 @@ export function reduceSession(state: SessionState, event: SessionEvent): Session
         return state;
       }
       return { phase: 'running', stopReason: null };
+
+    case 'suspend':
+      // APP2 enters XR through the same `start` event as training but has no
+      // calibration to finish. Return to idle without the stop side effects:
+      // no fade, no session record, and the face can switch back freely.
+      return state.phase === 'calibrating' ? INITIAL_SESSION : state;
 
     case 'stop':
       // Stop precedence: every reason is honoured from any running phase.

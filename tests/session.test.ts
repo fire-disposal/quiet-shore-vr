@@ -39,6 +39,14 @@ describe('session reducer', () => {
     expect(isActive(running)).toBe(true);
   });
 
+  it('suspends the never-calibrated questionnaire face back to idle', () => {
+    const started = reduceSession(INITIAL_SESSION, { type: 'start' });
+    expect(reduceSession(started, { type: 'suspend' })).toEqual(INITIAL_SESSION);
+    // It is not a second way to stop a running training session.
+    const running = RUNNING.reduce(reduceSession, INITIAL_SESSION);
+    expect(reduceSession(running, { type: 'suspend' })).toBe(running);
+  });
+
   it('has no patient stop reason: the patient only enters and leaves the headset', () => {
     // The bedside has one control — the click that enters XR. Every reason the
     // reducer accepts is the operator's or the rig's, so a headset press can

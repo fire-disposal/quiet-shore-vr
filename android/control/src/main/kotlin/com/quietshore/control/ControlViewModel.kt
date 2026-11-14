@@ -374,6 +374,17 @@ class ControlViewModel(application: Application) :
      * not on a reply, because the next frame that drops the session flag clears it.
      */
     fun endSession() {
+        val state = _uiState.value
+        // A questionnaire launch is not a session: the page deliberately stays
+        // idle, so `stop` has nothing to freeze and the old path returned
+        // without sending anything. `exit` is the host's way back to the
+        // entry screen and also works before any calibration.
+        if (state.app == "questionnaire" && !state.control.session) {
+            if (sendCommand("exit")) {
+                notice("已发送退出问卷")
+            }
+            return
+        }
         requestStop()
     }
 
@@ -420,6 +431,18 @@ class ControlViewModel(application: Application) :
         } else {
             announced
         }
+    }
+
+    /**
+     * Every scene the last catalogue announced, including built-in rooms.
+     *
+     * Command validation is broader than the picker: APP2 leaves the page on
+     * `survey`, and a later training launch may ask the page for that same id
+     * before the operator picks a card. The page still owns the final check.
+     */
+    private fun commandSceneIds(): Set<String> {
+        val announced = _uiState.value.scenes.mapTo(HashSet()) { it.id }
+        return announced.ifEmpty { ControlProtocol.SCENE_LABELS.keys }
     }
 
     /**
@@ -677,6 +700,10 @@ class ControlViewModel(application: Application) :
      */
     fun selectQuestionnaire(id: String) {
         val state = _uiState.value
+        if (state.phase != BlePhase.READY) {
+            error("头显未连接，未切换问卷")
+            return
+        }
         val target = state.questionnaires.firstOrNull { it.id == id } ?: return
         _uiState.update {
             it.copy(
@@ -763,6 +790,10 @@ class ControlViewModel(application: Application) :
      */
     fun questionnaireAnswer(value: Int) {
         val state = _uiState.value
+        if (state.phase != BlePhase.READY) {
+            error("头显未连接，未记录答案")
+            return
+        }
         val instrument = state.questionnaire ?: return
         val index = state.questionnaireIndex
         if (index < 1 || !instrument.accepts(value)) {
@@ -1130,15 +1161,15 @@ class ControlViewModel(application: Application) :
         sendCommand("audio:toggle")
     }
 
-    fun sendCommand(command: String) {
+    fun sendCommand(command: String): Boolean {
         val normalized = command.trim().lowercase(Locale.US)
-        if (normalized.isEmpty() || !ControlProtocol.isAllowedCommand(normalized)) {
+        if (normalized.isEmpty() || !ControlProtocol.isAllowedCommand(normalized, commandSceneIds())) {
             error("不支持的命令")
-            return
+            return false
         }
         if (_uiState.value.phase != BlePhase.READY) {
             error("头显未连接")
-            return
+            return false
         }
         // One event per accepted command, in the face it was pressed in: this
         // is the seam the split record stores cannot see on their own.
@@ -1152,6 +1183,7 @@ class ControlViewModel(application: Application) :
         // like a command that simply did nothing. The panels already show the
         // applied state.
         ble.sendCommand(normalized)
+        return true
     }
 
     fun reportError(message: String) {

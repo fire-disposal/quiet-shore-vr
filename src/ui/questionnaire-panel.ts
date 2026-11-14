@@ -214,6 +214,10 @@ export function createQuestionnairePanel(
       nextButton.setLabel('完成');
     }
     registerTargets();
+    // A new question appears under the same gaze. A fresh registration alone
+    // only resets the object latch; the patient still needs time to read the
+    // new wording before any option can collect dwell again.
+    input.lockDwell(1.5);
     if (open && phase === 'questions' && spokenPage !== page) {
       const firstTime = spokenPage === -1;
       spokenPage = page;

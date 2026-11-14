@@ -148,6 +148,8 @@ class PortalService : Service() {
         const val CONTENT_TYPE_MP3 = "audio/mpeg"
         /** Two missed state frames: commands are refused instead of queued. */
         const val PAGE_OFFLINE_MS = 2000L
+        /** Stop may outlive that window, but never into a later launch. */
+        const val SAFETY_QUEUE_MS = 5000L
         /** Stop-fade breathing room before the console comes forward. */
         const val SESSION_RETURN_MS = 2000L
         /** A short control break (tablet 断开) returns home after this grace. */
@@ -1190,16 +1192,26 @@ class PortalService : Service() {
             command.startsWith(ControlProtocol.SCENE_PREFIX) ||
             command.startsWith(ControlProtocol.APP_PREFIX)
 
+    /** Safety commands survive a short page-silence window instead of dropping. */
+    private fun isAlwaysQueueable(command: String): Boolean {
+        if (command == "enter") return true
+        if (command != "stop" && command != ControlProtocol.POSTURE_STOP) return false
+        // A stale stop replayed into a later launch is as harmful as a dropped
+        // one. Keep it only while the page is plausibly alive but throttled.
+        val age = System.currentTimeMillis() - lastPageFrameAt
+        return lastPageFrameAt > 0 && age in 0..SAFETY_QUEUE_MS
+    }
+
     private fun dispatchControl(raw: String): Boolean {
         val command = ControlProtocol.normalize(raw) ?: return false
         if (!ControlProtocol.isAllowedCommand(command, PageCatalog.idSet(this))) {
             Log.w(TAG, "rejected command: $raw")
             return false
         }
-        if (!isHostCommand(command) && !isPageOnline() && command != "enter") {
-            // Only `enter` may bring the page up. A knob or a cue sent while the
-            // page is closed is dropped with a log line: entering a scene is the
-            // operator's decision, never a side effect of a stray command.
+        if (!isHostCommand(command) && !isPageOnline() && !isAlwaysQueueable(command)) {
+            // Only `enter` may bring the page up. Stop is retained even while
+            // the page looks offline: a throttled frame is not a dead page,
+            // and dropping a safety command is worse than a late one.
             Log.w(TAG, "page offline, dropped: $command")
             return false
         }
@@ -1233,6 +1245,11 @@ class PortalService : Service() {
                         // No visible activity.
                     }
                     Log.i(TAG, "app persisted: $app")
+                    // The page may not exist yet, so its state echo cannot be
+                    // the tablet's only source. Publish the persisted face now;
+                    // otherwise the tablet stays on the training console while
+                    // the next launch boots straight into APP2.
+                    publishFlags(lastState, null)
                 }
                 queued = true
             }
