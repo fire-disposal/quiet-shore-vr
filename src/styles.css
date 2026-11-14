@@ -33,22 +33,24 @@
    */
   /* The headset's panel is 4K but the optics are not: nothing smaller than
      18 px survives the lens, and the reader may not have good vision. */
-  --fs-copy: clamp(40px, 4.2vw, 52px);
-  --fs-body: clamp(24px, 2.1vw, 30px);
-  --fs-label: clamp(22px, 1.65vw, 26px);
+  /* Width alone was not enough: Firefox Reality's 2D viewport loses height to
+     browser chrome. Every size that affects vertical fit takes the smaller of
+     the viewport width and height terms. */
+  --fs-copy: clamp(30px, min(4.2vw, 7.2vh), 52px);
+  --fs-body: clamp(18px, min(2.1vw, 4.2vh), 30px);
+  --fs-label: clamp(16px, min(1.65vw, 3.1vh), 26px);
+
+  --sp-1: clamp(6px, min(.8vw, 1.4vh), 13px);
+  --sp-2: clamp(8px, min(1.28vw, 2.2vh), 21px);
+  --sp-3: clamp(10px, min(2.05vw, 3vh), 34px);
+  --sp-4: clamp(14px, min(4.2vw, 4.5vh), 64px);
+  --page-x: clamp(20px, min(5vw, 6vh), 96px);
+  --page-y: clamp(10px, min(4vw, 2.5vh), 56px);
 
   /*
-   * 间距阶梯：4 档，比例 1.6，全部 clamp 在两个目标视口之间连续。
-   * 1 = 0.5em（句子到它的下文）、2 = 0.8em（图例行内）、3 = 1.28em（板块之间的最小
-   * 呼吸）、4 = 2.05em（指令与图解之间唯一的大间隔）。间距跟排版走，不跟窗口高度
-   * 走：头显里浏览器有地址栏，vh 会塌到 433，按 vh 算的档会互相咬死。
+   * 间距阶梯：4 档，比例 1.6。所有档位都取宽高中较小的一项，二维浏览器
+   * 有地址栏和工具栏时也不会把页脚顶出视口。
    */
-  --sp-1: clamp(9px, .8vw, 13px);
-  --sp-2: clamp(14px, 1.28vw, 21px);
-  --sp-3: clamp(20px, 2.05vw, 34px);
-  --sp-4: clamp(34px, 4.2vw, 64px);
-  --page-x: clamp(28px, 5vw, 96px);
-  --page-y: clamp(18px, 4vw, 56px);
 
   /* 三条曲线、三档时长（endfield-ui motion）。calm 变体：只在状态与按下时用。 */
   --ease-snap: cubic-bezier(.16, 1, .3, 1);
@@ -75,13 +77,17 @@ html, body {
 .start {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   padding: var(--page-y) var(--page-x);
   display: flex;
   flex-direction: column;
 }
 .frame {
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -96,9 +102,9 @@ html, body {
   /* The sentence on the left, the drawing it describes on the right. Equal
      columns: after the plumbing lines left, the drawing is what the page is
      about, so it gets half the width and grows to use it. */
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
-  gap: clamp(32px, 6vw, 120px);
+  gap: var(--sp-4);
   padding-block: var(--sp-3);
 }
 /* One column, three bands: the sentence, its supporting fact, then the two
@@ -108,6 +114,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  min-width: 0;
   gap: var(--sp-1);
 }
 .entry-copy > .target-sub { margin-top: var(--sp-1); }
@@ -168,13 +175,17 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(20px, 3.2vh, 40px);
+  gap: var(--sp-3);
   min-width: 0;
+  max-width: 100%;
 }
 .entry-pictures {
   display: flex;
+  width: 100%;
+  max-width: 100%;
   align-items: center;
-  gap: var(--sp-4);
+  justify-content: center;
+  gap: var(--sp-3);
   font-size: var(--fs-body);
   pointer-events: none;
 }
@@ -186,9 +197,14 @@ html, body {
 /* The headset is the wide drawing and the controller the tall one. Sized so
    both stand the same height in the same thin weight: 160×99 and 88×160 at
    1024. One stroke width, one vertical extent — neither is a leftover. */
-.headset-guide { display: flex; }
+.headset-guide {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 11em;
+}
 .headset-guide svg {
-  width: 11em;
+  width: 100%;
   height: auto;
   overflow: visible;
 }
@@ -214,7 +230,7 @@ html, body {
 /* The controller keeps its own 8:14.6154 outline, scaled to the headset's
    height. Its stroke is the page's 1px line and its mark is the accent,
    filled — the same two weights as the drawing beside it. */
-.controller-guide { display: flex; }
+.controller-guide { display: flex; flex: 0 0 auto; }
 .controller-outline {
   position: relative;
   width: 4.4em;

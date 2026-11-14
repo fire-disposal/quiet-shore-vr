@@ -13,13 +13,14 @@ type XRContextAttributes = WebGLContextAttributes & { xrCompatible: boolean };
  */
 
 /**
- * XR framebuffer scale: supersampling is the only anti-aliasing lever WebXR
- * leaves us on this generation (Gecko 78 exposes no MSAA layer), so the scene
- * budget buys pixels instead of geometry. 1.25 costs 1.56× the fill of 1.0 and
- * is affordable only because the scene draws six calls and one full-screen
- * dome; raising it further needs a new measurement on the device.
+ * XR framebuffer scale.
+ *
+ * The G2 panel is 4K and the Adreno 540 is fill-rate bound: rendering above
+ * 1.0 doubled the eye buffers at 1.25× (1.56× the pixels) for an anti-aliasing
+ * benefit the optics mostly hide. Keep native XR resolution and spend the
+ * budget on a stable frame; the room geometry is already tiny.
  */
-const XR_FRAMEBUFFER_SCALE = 1.25;
+export const XR_FRAMEBUFFER_SCALE = 1.0;
 
 /**
  * Chromium 67 / Gecko 78 both require the context itself to be marked
@@ -30,7 +31,10 @@ export function createRenderer(container: HTMLElement): THREE.WebGLRenderer {
   const canvas = document.createElement('canvas');
   const attributes: XRContextAttributes = {
     xrCompatible: true,
-    antialias: true,
+    // Gecko 78's XR path does not get MSAA through WebXR Layers, and asking
+    // the GL context for it still risks a multisampled back buffer on a
+    // fill-bound Adreno 540. The lens is the low-pass filter here.
+    antialias: false,
     alpha: false,
     depth: true
   };
@@ -46,8 +50,8 @@ export function createRenderer(container: HTMLElement): THREE.WebGLRenderer {
   }
 
   const renderer = gl
-    ? new THREE.WebGLRenderer({ canvas, context: gl, antialias: true })
-    : new THREE.WebGLRenderer({ antialias: true });
+    ? new THREE.WebGLRenderer({ canvas, context: gl, antialias: false })
+    : new THREE.WebGLRenderer({ antialias: false });
 
   // Declared, not inherited: the whole look is authored in sRGB textures with
   // lights that stay below clipping, so a tone map would only compress the

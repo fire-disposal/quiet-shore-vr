@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { readConfig, type AppConfig } from './config';
-import { createRenderer } from '../core/xr/renderer';
+import { createRenderer, XR_FRAMEBUFFER_SCALE } from '../core/xr/renderer';
 import { readHeadPose } from '../core/xr/pose';
 import {
   createComfort,
@@ -2595,7 +2595,7 @@ export class QuietShoreApp {
       mode,
       this.host.definition?.name[this.config.lang] ?? SCENE.name[this.config.lang],
       calibrationState,
-      '1.25x',
+      `${XR_FRAMEBUFFER_SCALE.toFixed(2)}x`,
       `${(render.triangles / 1000).toFixed(1)}k 面`,
       `${render.calls} 批次`,
       `p95 ${budget.p95Ms.toFixed(0)}ms`,

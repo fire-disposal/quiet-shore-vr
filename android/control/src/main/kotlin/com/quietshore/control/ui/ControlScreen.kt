@@ -1304,19 +1304,31 @@ private fun StandbySteps(
             // The chain sits at the top, the one key at the foot: the panel is
             // the height of the column, so the target is where the thumb is.
             Spacer(Modifier.weight(1f))
-            ActionKey(
-                label = when (phase) {
-                    SessionPhase.Entry -> "等待确认"
-                    SessionPhase.Calibrating -> calibration.headline
-                    else -> "启动训练"
-                },
-                onClick = actions.onEnterTraining,
-                modifier = Modifier.fillMaxWidth(),
-                tone = ActionTone.Primary,
-                height = 72.dp,
-                enabled = ready && phase == SessionPhase.Idle,
-                textStyle = MaterialTheme.typography.titleMedium
-            )
+            // The pre-session home of the calibration verb. The first capture
+            // happens while the operator is still on 场景, not on 会话; hiding
+            // the key there made 「记录体位」 unreachable exactly when the
+            // preparation room asked for it.
+            if (phase == SessionPhase.Calibrating) {
+                CalibrationKey(
+                    view = calibration,
+                    onClick = actions.onRecalibrate,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 72.dp
+                )
+            } else {
+                ActionKey(
+                    label = when (phase) {
+                        SessionPhase.Entry -> "等待确认"
+                        else -> "启动训练"
+                    },
+                    onClick = actions.onEnterTraining,
+                    modifier = Modifier.fillMaxWidth(),
+                    tone = ActionTone.Primary,
+                    height = 72.dp,
+                    enabled = ready && phase == SessionPhase.Idle,
+                    textStyle = MaterialTheme.typography.titleMedium
+                )
+            }
             if (phase == SessionPhase.Entry) {
                 // The countdown already lives in the page headline; the cancel
                 // is owned once by the session strip above the page so this
