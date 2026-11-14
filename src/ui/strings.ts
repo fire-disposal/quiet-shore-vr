@@ -3,12 +3,10 @@ export interface Strings {
   checking: string;
   xrFailed: string;
 
-  recalibrate: string;
   sessionEnded: string;
   enterFailed: string;
   skippedCalibration: string;
   recalibrateNeedsSession: string;
-  close: string;
   modeIdle: string;
   modePreview: string;
   dwellHint: string;
@@ -26,12 +24,10 @@ export const ZH: Strings = {
   checking: '正在检测设备',
   xrFailed: '设备检测失败，请重试',
 
-  recalibrate: '重新校准',
   sessionEnded: '训练已结束',
   enterFailed: '进入失败，请再按一次',
   skippedCalibration: '已跳过记录',
   recalibrateNeedsSession: '请在体验中重新记录体位',
-  close: '关闭',
   modeIdle: '待机',
   modePreview: '预览',
   dwellHint: '保持注视，即可选择',
@@ -47,12 +43,10 @@ export const EN: Strings = {
   checking: 'Checking device…',
   xrFailed: 'Device check failed. Try again.',
 
-  recalibrate: 'Recalibrate',
   sessionEnded: 'Training ended',
   enterFailed: 'Could not start. Press again.',
   skippedCalibration: 'Recording skipped',
   recalibrateNeedsSession: 'Recalibrate during the session',
-  close: 'Close',
   modeIdle: 'Idle',
   modePreview: 'Preview',
   dwellHint: 'Keep looking to select',

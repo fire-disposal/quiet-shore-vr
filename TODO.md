@@ -22,15 +22,12 @@
 
 ## 结构清理
 
-- [ ] 页面删除无发送方的命令语法：`settings:eyeheight`、`sus:next|prev`、`preview`、`status`、`start`，并删对应测试。
-- [ ] 平板删除仅测试使用的访问器与单实现抽象：`ReconnectPlan`、`CommandQueue.pendingMoves/newestMove/pendingDiscrete`、`WriteTokens.written`。
-- [ ] 页面删除无人引用文案、`DevicePictogram` 空壳与 `optional()` 静默降级。
-- [ ] 让 `tests/**` 进入类型检查，先修 `tests/portal-link.test.ts` 的旧 state 夹具。
-- [ ] 抽出 JSON 信封 helper，消除头显 5 处手写 `{"t","d"}`；共享 prefs 读写只在重复继续增加时再抽象。
-- [ ] 拆分 `src/app/App.ts`：会话生命周期、命令执行、渲染管线。
-- [ ] 拆分 `PortalService.kt`：回环服务、WebSocket 事件、命令路由。
-- [ ] `BluetoothControl.kt` 与 `PortalService.kt` 状态机补单测：重连退避、`CONTROL_BUSY` 不重试、停止优先。
-- [ ] 文案来源统一：`src/ui/strings.ts` 与 Android 字符串的 key 映射。
+- [ ] 拆分 `src/app/App.ts`：会话生命周期、命令执行、渲染管线。先抽不依赖 DOM/WebXR 的纯状态，再动渲染。
+- [ ] 拆分 `PortalService.kt`：回环 HTTP、WebSocket 事件、命令路由。先移静态/诊断路由，保留锁序不变。
+- [ ] 补 BLE 状态机单测：重连退避、`CONTROL_BUSY` 不重试、停止优先。优先把退避与停止判定抽成纯策略。
+- [ ] 文案来源统一：`src/ui/strings.ts` 与 Android 字符串按 key 建立映射；新增文案先走同一张表。
+- [ ] `reconnectAddress` 保留：生产重连路径在用，删除会把“每次重连都回原设备”的回归约束埋回控制器。
+- [ ] 已完成的清理不再重开：无发送方语法只保留负向测试，`tests/**` 已纳入类型检查，JSON 信封已由 `JsonEnvelope` 收口。
 
 ## 志愿者与合规
 
