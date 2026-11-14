@@ -1,5 +1,4 @@
 import { isViewPresetId, type ViewPresetId } from '../core/xr/view-motion';
-import { SUS_ITEMS } from './sus';
 
 /**
  * The remote command grammar, as data.
@@ -23,11 +22,18 @@ export type RemoteCommand =
   | { kind: 'floatBreath'; on: boolean }
   | { kind: 'riseDuration'; ms: number }
   | { kind: 'gazeDwell'; on: boolean }
-  | { kind: 'susOpen' }
-  | { kind: 'susClose' }
-  | { kind: 'susShow'; index: number }
-  | { kind: 'susAnswer'; value: number }
-  | { kind: 'susVoice'; on: boolean }
+  /**
+   * Questionnaire verbs. Every one of them names the *loaded* instrument, not a
+   * specific one: a second questionnaire needs no new command, and the page —
+   * not this grammar — knows which answer values the loaded instrument accepts.
+   */
+  | { kind: 'questionnaireSelect'; id: string }
+  | { kind: 'questionnaireOpen' }
+  | { kind: 'questionnaireClose' }
+  | { kind: 'questionnaireReplay' }
+  | { kind: 'questionnaireShow'; index: number }
+  | { kind: 'questionnaireAnswer'; value: number }
+  | { kind: 'questionnaireVoice'; on: boolean }
   | { kind: 'calibrate' }
   | { kind: 'exit' }
   | { kind: 'audio'; state: 'on' | 'off' | 'toggle' }
@@ -47,6 +53,17 @@ export const POSTURE_MIX_ARG = /^(?:100|[1-9]?\d)$/;
 /** Operator-selectable ramp range, in milliseconds. */
 export const RISE_MS_MIN = 4000;
 export const RISE_MS_MAX = 20000;
+
+/** Question numbers `questionnaire:show:` accepts; the instrument's count bounds the real range. */
+export const QUESTION_MAX = 100;
+/** Answer values `questionnaire:answer:` accepts; the instrument's options bound the real set. */
+export const ANSWER_MIN = 1;
+export const ANSWER_MAX = 9;
+/**
+ * The id grammar of a published instrument, identical to the catalogue's and
+ * to Kotlin's `parseQuestionnaireSelect`: lowercase, starts with a letter.
+ */
+export const QUESTIONNAIRE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 
 /**
  * Parse one command. Returns `null` for blank input (nothing to report) and
@@ -107,28 +124,45 @@ export function parseRemoteCommand(raw: string): RemoteCommand | null {
   if (command === 'gaze:dwell:on' || command === 'gaze:dwell:off') {
     return { kind: 'gazeDwell', on: command.endsWith(':on') };
   }
-  if (command === 'sus:voice:on' || command === 'sus:voice:off') {
-    return { kind: 'susVoice', on: command.endsWith(':on') };
+  if (command === 'questionnaire:voice:on' || command === 'questionnaire:voice:off') {
+    return { kind: 'questionnaireVoice', on: command.endsWith(':on') };
   }
-  if (command === 'sus:open') {
-    return { kind: 'susOpen' };
+  if (command === 'questionnaire:open') {
+    return { kind: 'questionnaireOpen' };
   }
-  if (command === 'sus:close') {
-    return { kind: 'susClose' };
+  if (command === 'questionnaire:close') {
+    return { kind: 'questionnaireClose' };
   }
-  if (command.startsWith('sus:show:')) {
-    // 1..10, the shipped item count; the headset's allowlist uses the same range.
-    const index = Number(command.slice('sus:show:'.length));
-    return Number.isInteger(index) && index >= 1 && index <= SUS_ITEMS
-      ? { kind: 'susShow', index }
-      : { kind: 'invalid', message: 'SUS 题号无效' };
+  if (command === 'questionnaire:replay') {
+    return { kind: 'questionnaireReplay' };
   }
-  if (command.startsWith('sus:answer:')) {
-    // Exactly one digit: "sus:answer:01" is a malformed frame, not a 1.
-    const payload = command.slice('sus:answer:'.length);
-    return /^[1-5]$/.test(payload)
-      ? { kind: 'susAnswer', value: Number(payload) }
-      : { kind: 'invalid', message: 'SUS 分值无效' };
+  if (command.startsWith('questionnaire:select:')) {
+    const id = command.slice('questionnaire:select:'.length);
+    // The id is not checked against the registry here: the grammar is shared
+    // with the headset, which has no catalogue, and the page is what owns the
+    // published list. An unknown id is refused with a name the operator read.
+    return QUESTIONNAIRE_ID.test(id)
+      ? { kind: 'questionnaireSelect', id }
+      : { kind: 'invalid', message: '问卷编号无效' };
+  }
+  if (command.startsWith('questionnaire:show:')) {
+    // 1..100, the grammar's ceiling; the loaded instrument's own count is the
+    // real bound and the page refuses anything past it.
+    const index = Number(command.slice('questionnaire:show:'.length));
+    return Number.isInteger(index) && index >= 1 && index <= QUESTION_MAX
+      ? { kind: 'questionnaireShow', index }
+      : { kind: 'invalid', message: '题号无效' };
+  }
+  if (command.startsWith('questionnaire:answer:')) {
+    // Exactly one digit: "questionnaire:answer:01" is a malformed frame, not a 1.
+    const payload = command.slice('questionnaire:answer:'.length);
+    if (!/^[0-9]$/.test(payload)) {
+      return { kind: 'invalid', message: '选项值无效' };
+    }
+    const value = Number(payload);
+    return value >= ANSWER_MIN && value <= ANSWER_MAX
+      ? { kind: 'questionnaireAnswer', value }
+      : { kind: 'invalid', message: '选项值无效' };
   }
 
   switch (command) {

@@ -56,19 +56,80 @@ describe('remote command grammar', () => {
     expect(parseRemoteCommand('anim:duration:21000')?.kind).toBe('invalid');
   });
 
-  it('bounds the SUS channel', () => {
-    expect(parseRemoteCommand('sus:show:3')).toEqual({ kind: 'susShow', index: 3 });
-    expect(parseRemoteCommand('sus:answer:5')).toEqual({ kind: 'susAnswer', value: 5 });
-    expect(parseRemoteCommand('sus:answer:6')?.kind).toBe('invalid');
-    expect(parseRemoteCommand('sus:answer:0')?.kind).toBe('invalid');
-    // One digit, one question: padding and out-of-range indices are frames of
-    // the wrong shape, not values to coerce.
-    expect(parseRemoteCommand('sus:answer:01')?.kind).toBe('invalid');
-    expect(parseRemoteCommand('sus:show:0')?.kind).toBe('invalid');
-    expect(parseRemoteCommand('sus:show:11')?.kind).toBe('invalid');
+  it('names the loaded instrument, not a shipped one', () => {
+    // Every questionnaire verb is instrument-agnostic: the grammar bounds the
+    // argument, the page or the headset's catalogue bounds the real value.
+    expect(parseRemoteCommand('questionnaire:open')).toEqual({ kind: 'questionnaireOpen' });
+    expect(parseRemoteCommand('questionnaire:close')).toEqual({ kind: 'questionnaireClose' });
+    expect(parseRemoteCommand('questionnaire:replay')).toEqual({ kind: 'questionnaireReplay' });
+    expect(parseRemoteCommand('questionnaire:voice:on')).toEqual({
+      kind: 'questionnaireVoice',
+      on: true
+    });
+    expect(parseRemoteCommand('questionnaire:voice:off')).toEqual({
+      kind: 'questionnaireVoice',
+      on: false
+    });
+    // No verb names a specific instrument.
+    expect(parseRemoteCommand('sus:open')?.kind).toBe('unknown');
+    expect(parseRemoteCommand('sus:answer:2')?.kind).toBe('unknown');
+  });
+
+  it('accepts a question number the grammar can express', () => {
+    // 1..100 is the grammar's ceiling; a three-question instrument refuses the
+    // rest itself, because only the page knows its own length.
+    expect(parseRemoteCommand('questionnaire:show:1')).toEqual({
+      kind: 'questionnaireShow',
+      index: 1
+    });
+    expect(parseRemoteCommand('questionnaire:show:100')).toEqual({
+      kind: 'questionnaireShow',
+      index: 100
+    });
+    expect(parseRemoteCommand('questionnaire:show:0')?.kind).toBe('invalid');
+    expect(parseRemoteCommand('questionnaire:show:101')?.kind).toBe('invalid');
+    expect(parseRemoteCommand('questionnaire:show:x')?.kind).toBe('invalid');
+  });
+
+  it('accepts an answer value the grammar can express, one digit wide', () => {
+    expect(parseRemoteCommand('questionnaire:answer:1')).toEqual({
+      kind: 'questionnaireAnswer',
+      value: 1
+    });
+    expect(parseRemoteCommand('questionnaire:answer:9')).toEqual({
+      kind: 'questionnaireAnswer',
+      value: 9
+    });
+    // One digit: padding and zero are frames of the wrong shape, not values to
+    // coerce.
+    expect(parseRemoteCommand('questionnaire:answer:0')?.kind).toBe('invalid');
+    expect(parseRemoteCommand('questionnaire:answer:01')?.kind).toBe('invalid');
+    expect(parseRemoteCommand('questionnaire:answer:10')?.kind).toBe('invalid');
     // Paging is the headset's own prev/next: there is no tablet verb for it.
-    expect(parseRemoteCommand('sus:next')?.kind).toBe('unknown');
-    expect(parseRemoteCommand('sus:prev')?.kind).toBe('unknown');
+    expect(parseRemoteCommand('questionnaire:next')?.kind).toBe('unknown');
+    expect(parseRemoteCommand('questionnaire:prev')?.kind).toBe('unknown');
+  });
+
+  it('takes a selectable id and refuses anything the catalogue could not publish', () => {
+    expect(parseRemoteCommand('questionnaire:select:feedback')).toEqual({
+      kind: 'questionnaireSelect',
+      id: 'feedback'
+    });
+    expect(parseRemoteCommand('questionnaire:select:pain-3')?.kind).toBe('questionnaireSelect');
+    // The whole frame is lowercased before parsing, like every other command, so
+    // a shouted id is the same id rather than a rejection.
+    expect(parseRemoteCommand('questionnaire:select:SUS')).toEqual({
+      kind: 'questionnaireSelect',
+      id: 'sus'
+    });
+    for (const raw of [
+      'questionnaire:select:',
+      'questionnaire:select:two words',
+      'questionnaire:select:1abc',
+      `questionnaire:select:${'a'.repeat(33)}`
+    ]) {
+      expect(parseRemoteCommand(raw)?.kind, raw).toBe('invalid');
+    }
   });
 
   it('maps the discrete verbs', () => {

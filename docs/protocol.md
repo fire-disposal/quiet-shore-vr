@@ -59,9 +59,9 @@ UUID 前缀统一为 `7a1e0001-6f3c-4f9a-9d2b-2f6a1c`。
   - 运动：`float:level:0-100`、`float:breath:*`、`anim:duration:*`、`posture:rise|lower|stop`、`posture:mix:0-100`。
   - 视角：`view:anim:up|down|recenter`、`view:stop`。
   - 语音：播放、停止、序列、音量、duck、音色、字幕。
-  - 问卷：`sus:open|close|show|answer|voice`，只在问卷应用前台生效。
+  - 问卷：`questionnaire:select|open|close|replay|show|answer|voice`，只在问卷应用前台生效。
   - 应用与记录：`app:training|questionnaire`、`record:outcome:*`。
-- `settings:eyeheight`、`mode:*`、`float:profile:*`、`view:orient`、`sus:next|prev`、`program:*` 均不属于 QS2。
+- `settings:eyeheight`、`mode:*`、`float:profile:*`、`view:orient`、`program:*` 均不属于 QS2。
 
 ## 6 state 帧
 
@@ -99,18 +99,18 @@ UUID 前缀统一为 `7a1e0001-6f3c-4f9a-9d2b-2f6a1c`。
 - 最多 255 片，默认上限 4335 字节。
 - 缺片、乱序或超时整份丢弃。
 - 超限文档在产生副作用前拒绝；页面过大帧以 `1009` 关闭。
-- 只有当前控制者接收 JSON 文档。SUS 补发同样只发给控制者，并复用相同 envelope 与分帧。
+- 只有当前控制者接收 JSON 文档。问卷答卷补发同样只发给控制者，并复用相同 envelope 与分帧。
 
 文档结构为 `{"t":topic,"d":data,"id":optional}`。当前 topic：
 
-`sus`、`catalog`、`questionnaire`、`session`、`log`、`notice`、`flags`、`battery`。
+`questionnaire-result`、`questionnaire-state`、`catalog`、`session`、`log`、`notice`、`flags`、`battery`。题干目录不走此通道，两个 APK 在构建时内置同一份 `questionnaires.json`。
 
-`session`、`sus`、`log` 是可靠记录：
+`session`、`questionnaire-result`、`log` 是可靠记录：
 
 1. 页面本地 outbox 持久保存。
 2. 头显成功送入 JSON 通道后回 `{"type":"recordAck","id":...}`。
 3. 页面收到 ACK 才删除。
-4. 断链或刷新后重发；平板按会话结束时间、SUS 稳定键、事件 id 去重。
+4. 断链或刷新后重发；平板按会话结束时间、答卷稳定键、事件 id 去重。
 
 ## 9 WebSocket
 

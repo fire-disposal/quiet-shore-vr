@@ -56,7 +56,7 @@ export class SubtitleCard {
   private text: string | null = null;
 
   /**
-   * Same paper, hairline and type as the SUS card and the HUD: the theme's
+   * Same paper, hairline and type as the sheet and the HUD: the theme's
    * panel, border and sans. Accent is untouched here — a spoken line is never
    * "current" and never pressable.
    */
@@ -237,7 +237,7 @@ export class SubtitleCard {
     const { lines } = this.wrap(text);
 
     // A flat card, not a scrim: same paper as the rest of the spatial UI, so a
-    // spoken line never lands on a dark slab the SUS card does not have. The
+    // spoken line never lands on a dark slab the sheet does not have. The
     // fill is opaque — a translucent panel over bright scenery is unreadable
     // for exactly the patient this is for. One hairline, drawn inside the edge
     // so it cannot read as a doubled line.

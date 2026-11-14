@@ -1,5 +1,5 @@
 export type ReliableRecordMessage = Record<string, unknown> & {
-  type: 'session' | 'sus' | 'log';
+  type: 'session' | 'questionnaire-result' | 'log';
 };
 
 export interface ReliableRecord {
@@ -16,7 +16,7 @@ export interface ReliableRecordOutbox {
 const STORAGE_KEY = 'qs:record-outbox:v1';
 
 function isRecordType(value: unknown): value is ReliableRecordMessage['type'] {
-  return value === 'session' || value === 'sus' || value === 'log';
+  return value === 'session' || value === 'questionnaire-result' || value === 'log';
 }
 
 function readStored(storage: Storage | null): ReliableRecord[] {

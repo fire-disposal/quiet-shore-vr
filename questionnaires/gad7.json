@@ -1,0 +1,31 @@
+{
+  "id": "gad7",
+  "order": 20,
+  "name": {
+    "zh": "焦虑状态自评",
+    "en": "Generalized Anxiety Disorder 7"
+  },
+  "short": {
+    "zh": "七题，回顾过去两周",
+    "en": "Seven questions about the past two weeks"
+  },
+  "completionVoiceId": "v-thanks-1",
+  "scoring": {
+    "type": "gad7"
+  },
+  "options": [
+    { "value": 1, "label": { "zh": "完全不会", "en": "Not at all" } },
+    { "value": 2, "label": { "zh": "好几天", "en": "Several days" } },
+    { "value": 3, "label": { "zh": "一半以上的天数", "en": "More than half the days" } },
+    { "value": 4, "label": { "zh": "几乎每天", "en": "Nearly every day" } }
+  ],
+  "questions": [
+    { "id": "gad7-1", "text": { "zh": "过去两周，我感觉紧张、焦虑或急切。", "en": "过去两周，我感觉紧张、焦虑或急切。" }, "voiceId": "v-gad7-1" },
+    { "id": "gad7-2", "text": { "zh": "过去两周，我不能停止或控制担忧。", "en": "过去两周，我不能停止或控制担忧。" }, "voiceId": "v-gad7-2" },
+    { "id": "gad7-3", "text": { "zh": "过去两周，我对各种各样的事情担忧过多。", "en": "过去两周，我对各种各样的事情担忧过多。" }, "voiceId": "v-gad7-3" },
+    { "id": "gad7-4", "text": { "zh": "过去两周，我很难放松下来。", "en": "过去两周，我很难放松下来。" }, "voiceId": "v-gad7-4" },
+    { "id": "gad7-5", "text": { "zh": "过去两周，我由于不安而无法静坐。", "en": "过去两周，我由于不安而无法静坐。" }, "voiceId": "v-gad7-5" },
+    { "id": "gad7-6", "text": { "zh": "过去两周，我变得容易烦恼或急躁。", "en": "过去两周，我变得容易烦恼或急躁。" }, "voiceId": "v-gad7-6" },
+    { "id": "gad7-7", "text": { "zh": "过去两周，我感到似乎将有可怕的事情发生而害怕。", "en": "过去两周，我感到似乎将有可怕的事情发生而害怕。" }, "voiceId": "v-gad7-7" }
+  ]
+}

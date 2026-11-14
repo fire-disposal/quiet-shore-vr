@@ -9,6 +9,8 @@ export interface Strings {
   recalibrateNeedsSession: string;
   modeIdle: string;
   modePreview: string;
+  /** Landing line of the questionnaire face: no session, just the sheet. */
+  modeQuestionnaire: string;
   dwellHint: string;
   remoteUnknown: string;
   controlModeOn: string;
@@ -30,6 +32,7 @@ export const ZH: Strings = {
   recalibrateNeedsSession: '请在体验中重新记录体位',
   modeIdle: '待机',
   modePreview: '预览',
+  modeQuestionnaire: '问卷',
   dwellHint: '保持注视，即可选择',
   remoteUnknown: '未知蓝牙命令',
   controlModeOn: '平板控制中',
@@ -49,6 +52,7 @@ export const EN: Strings = {
   recalibrateNeedsSession: 'Recalibrate during the session',
   modeIdle: 'Idle',
   modePreview: 'Preview',
+  modeQuestionnaire: 'Questionnaire',
   dwellHint: 'Keep looking to select',
   remoteUnknown: 'Unknown Bluetooth command',
   controlModeOn: 'Tablet in control',

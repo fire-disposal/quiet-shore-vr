@@ -40,12 +40,13 @@ describe('scene catalogue', () => {
       // `0` is a real ceiling now: a room that does not move at all.
       expect(entry.comfort === null || entry.comfort >= 0).toBe(true);
     }
-    // One shipped room caps itself at zero — the preparation room declares no
-    // motion — and every other scene leaves the global maximum alone. The field
-    // has to survive the mapping because the tablet and the headset read it.
+    // Preparation and questionnaire are static; the other scenes inherit the
+    // global maximum. The zero cap survives the mapping to both APKs.
     expect(
       entries.every((entry) =>
-        entry.id === 'prep' ? entry.comfort === 0 : entry.comfort === null
+        entry.id === 'prep' || entry.id === 'survey'
+          ? entry.comfort === 0
+          : entry.comfort === null
       )
     ).toBe(true);
     // The preparation room is built in: the picker filters it, the page and

@@ -1,0 +1,35 @@
+{
+  "id": "sus",
+  "order": 10,
+  "name": {
+    "zh": "系统可用性量表",
+    "en": "System Usability Scale"
+  },
+  "short": {
+    "zh": "十题，使用感受",
+    "en": "Ten questions on usability"
+  },
+  "completionVoiceId": "v-thanks-1",
+  "scoring": {
+    "type": "sus"
+  },
+  "options": [
+    { "value": 1, "label": { "zh": "非常不同意", "en": "Strongly disagree" } },
+    { "value": 2, "label": { "zh": "不同意", "en": "Disagree" } },
+    { "value": 3, "label": { "zh": "一般", "en": "Neutral" } },
+    { "value": 4, "label": { "zh": "同意", "en": "Agree" } },
+    { "value": 5, "label": { "zh": "非常同意", "en": "Strongly agree" } }
+  ],
+  "questions": [
+    { "id": "sus-1", "text": { "zh": "我愿意经常使用这个系统。", "en": "我愿意经常使用这个系统。" }, "voiceId": "v-sus-1" },
+    { "id": "sus-2", "text": { "zh": "这个系统没有必要这么复杂。", "en": "这个系统没有必要这么复杂。" }, "voiceId": "v-sus-2" },
+    { "id": "sus-3", "text": { "zh": "我觉得这个系统容易使用。", "en": "我觉得这个系统容易使用。" }, "voiceId": "v-sus-3" },
+    { "id": "sus-4", "text": { "zh": "我需要技术人员的帮助才能用这个系统。", "en": "我需要技术人员的帮助才能用这个系统。" }, "voiceId": "v-sus-4" },
+    { "id": "sus-5", "text": { "zh": "这个系统的各项功能整合得很好。", "en": "这个系统的各项功能整合得很好。" }, "voiceId": "v-sus-5" },
+    { "id": "sus-6", "text": { "zh": "这个系统有太多不一致的地方。", "en": "这个系统有太多不一致的地方。" }, "voiceId": "v-sus-6" },
+    { "id": "sus-7", "text": { "zh": "我认为大多数人能很快学会使用这个系统。", "en": "我认为大多数人能很快学会使用这个系统。" }, "voiceId": "v-sus-7" },
+    { "id": "sus-8", "text": { "zh": "这个系统用起来很麻烦。", "en": "这个系统用起来很麻烦。" }, "voiceId": "v-sus-8" },
+    { "id": "sus-9", "text": { "zh": "使用这个系统时我很有信心。", "en": "使用这个系统时我很有信心。" }, "voiceId": "v-sus-9" },
+    { "id": "sus-10", "text": { "zh": "我需要先学习很多内容才能开始使用这个系统。", "en": "我需要先学习很多内容才能开始使用这个系统。" }, "voiceId": "v-sus-10" }
+  ]
+}

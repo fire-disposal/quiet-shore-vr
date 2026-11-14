@@ -1,92 +1,67 @@
 import * as THREE from 'three';
 import type { SceneSettings } from '../../core/scene/contract';
 import { defineScene } from '../shared/define-scene';
-import { Disposer } from '../shared/disposer';
-import { createPlainRoom } from '../shared/plain-room';
 import { AUTHORED_EYE_Y } from '../../core/anatomy';
+import { createDome } from '../shore/dome';
+import { createClouds } from '../shore/clouds';
+import { createWater } from '../shore/water';
+import { createShoreline } from '../shore/shoreline';
 
 /**
- * The questionnaire's own room.
- *
- * A face that asks a patient to rate their experience should not show them the
- * room the experience was about: the urinal, the lake and the ward all carry a
- * claim, and a claim in the background is an argument in a survey. This is the
- * quietest thing the renderer can draw — six planes, one soft ceiling wash, no
- * props, no signage, and **no ambience**: the questionnaire is the one face
- * with nothing playing, because a soundscape is an opinion too.
- *
- * It is `special`, so it never appears in the operator's scene picker; the app
- * face owns it and swaps it in when the pad selects 问卷.
+ * APP2's quiet lakeside, recovered from the v1 shore scene. The component
+ * files are byte-identical to that release. Motion and ambience are deliberately
+ * absent: the lake is a readable backdrop, not a second intervention.
  */
-
-const ROOM_W = 5;
-const ROOM_D = 5;
-const ROOM_H = 2.6;
-
-const WALL = 0xb9b6ae;
-const FLOOR = 0x9d9a92;
-const CEILING = 0xc6c3bb;
-const WASH = 0xf4f2ec;
+const FOG_COLOR = 0xe7d7bd;
+const SHORE_DROP_M = 0.26;
+const FOG_NEAR = 48;
+const FOG_FAR = 135;
 
 export const surveyScene = defineScene(
   {
     id: 'survey',
     special: true,
-    name: { zh: '问卷环境', en: 'Questionnaire Room' },
+    comfort: 0,
+    name: { zh: '湖边问卷', en: 'Lakeside Questionnaire' },
     tagline: {
-      zh: '安静的房间，没有陈设，也没有声音。',
-      en: 'A quiet room: no props, no sound.'
+      zh: 'v1 的清晨湖边，作为安静的问卷背景。',
+      en: 'The v1 dawn lake as a quiet questionnaire backdrop.'
     },
     description: {
-      zh: '问卷应用专用的空房间：六面素色墙、一块柔和的天光，没有陈设、没有标牌、没有环境声。用量表时不出现任何与训练内容有关的画面或声音。',
-      en: 'The questionnaire face’s own empty room: six plain surfaces and one soft ceiling wash, no props, no signage, no ambience. Nothing in it refers to the training content while a scale is being answered.'
+      zh: '问卷应用使用 v1 湖边场景的天空、云、水面和近岸木桩。没有环境声，没有水面自运动，题目与注视选项位于前景。',
+      en: 'The v1 sky, clouds, water and near-shore posts form the questionnaire backdrop. There is no ambience or scene motion.'
     }
-    // No `audio`: the questionnaire face is silent by design.
   },
-  // Read for a body on its back, like every other scene: the room is drawn
-  // around the lying eye so the first frame is already a plausible ceiling.
-  { standingEyeY: AUTHORED_EYE_Y, supine: 'mattress', viewer: 'supine' },
-  function ({ lyingEyeY: eyeY }) {
+  { standingEyeY: AUTHORED_EYE_Y, supine: 'water', viewer: 'supine' },
+  function () {
     const root = new THREE.Group();
-    root.name = 'survey-room';
+    root.name = 'survey-shore';
+    root.position.y = -SHORE_DROP_M;
 
-    const disposer = new Disposer();
-    // The quietest thing the renderer can draw: six surfaces and one wash of
-    // light, with the shell's interior-face convention in `createPlainRoom`.
-    const room = createPlainRoom({
-      width: ROOM_W,
-      depth: ROOM_D,
-      height: ROOM_H,
-      floorY: -eyeY,
-      wallColor: WALL,
-      floorColor: FLOOR,
-      ceilingColor: CEILING,
-      roughness: [0.92, 0.95, 1],
-      panel: { size: 2.2, insetM: 0.02, color: WASH },
-      disposer
-    });
-    root.add(room.root);
+    const dome = createDome();
+    const water = createWater();
+    const shoreline = createShoreline();
+    const clouds = createClouds();
 
-    const key = new THREE.DirectionalLight(0xffffff, 0.55);
-    key.position.set(0.4, 2.2, 0.6);
-    root.add(key);
-    const fill = new THREE.HemisphereLight(0xffffff, WALL, 0.85);
-    root.add(fill);
+    dome.mesh.name = 'survey-dome';
+    water.root.name = 'survey-water';
+    shoreline.root.name = 'survey-shoreline';
+    clouds.root.name = 'survey-clouds';
+    root.add(dome.mesh, water.root, shoreline.root, clouds.root);
 
     const settings: SceneSettings = {
-      background: new THREE.Color(WALL),
-      fog: null
+      background: new THREE.Color(FOG_COLOR),
+      fog: new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR)
     };
 
     return {
       root,
       settings,
-      // Nothing moves: no `update`, no `setMotion`, no `applyBuoyancy`.
-      // The app still owns the posture correction and the buoyancy envelope;
-      // this room simply has no opinion about either.
       dispose(): void {
-        root.remove(key, fill);
-        disposer.disposeAll();
+        clouds.dispose();
+        shoreline.dispose();
+        water.dispose();
+        dome.dispose();
         root.clear();
         root.removeFromParent();
       }

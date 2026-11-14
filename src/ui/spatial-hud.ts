@@ -114,7 +114,7 @@ export class SpatialHud {
 
     // A near-white fill, one hairline border and nothing else: a card with a
     // radius, a shadow or a gradient reads as furniture and costs head motion.
-    // Fill and rule come from the theme so this bar, the subtitle and the SUS
+    // Fill and rule come from the theme so this bar, the subtitle and the sheet
     // card are literally the same paper.
     ctx.beginPath();
     ctx.rect(PILL_PAD, PILL_PAD, width - PILL_PAD * 2, height - PILL_PAD * 2);

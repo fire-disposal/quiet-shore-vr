@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { canSwitchApp, shouldFileSusSheet } from '../src/app/app-switch';
+import { canSwitchApp, shouldFileQuestionnaireSheet } from '../src/app/app-switch';
 import { INITIAL_SESSION, isActive, reduceSession, type SessionEvent } from '../src/app/session';
 
-const TEN = 10;
-const empty = (): (number | null)[] => new Array<number | null>(TEN).fill(null);
+const empty = (length = 10): (number | null)[] =>
+  new Array<number | null>(length).fill(null);
 
 describe('app switch guard', () => {
   // The order the audit found: enter VR, the lifecycle reaches `calibrating`,
@@ -51,32 +51,47 @@ describe('app switch guard', () => {
   });
 });
 
-describe('SUS sheet filing', () => {
+describe('questionnaire sheet filing', () => {
   it('files nothing for an untouched sheet', () => {
-    expect(shouldFileSusSheet(empty(), false)).toBe(false);
+    expect(shouldFileQuestionnaireSheet(empty(), false)).toBe(false);
   });
 
   it('files a partial sheet when it closes', () => {
     const answers = empty();
     answers[0] = 4;
-    expect(shouldFileSusSheet(answers, false)).toBe(true);
+    expect(shouldFileQuestionnaireSheet(answers, false)).toBe(true);
   });
 
   it('never files the same sheet twice', () => {
-    // The sheet was filed by its last answer; closing it must not send a
-    // second copy of the same ten answers to the tablet.
-    const answers = new Array<number | null>(TEN).fill(5);
-    expect(shouldFileSusSheet(answers, false)).toBe(true);
-    expect(shouldFileSusSheet(answers, true)).toBe(false);
+    // The sheet was filed by its last answer; closing it must not send a second
+    // copy of the same answers to the tablet.
+    const answers = new Array<number | null>(10).fill(5);
+    expect(shouldFileQuestionnaireSheet(answers, false)).toBe(true);
+    expect(shouldFileQuestionnaireSheet(answers, true)).toBe(false);
   });
 
   it('files again only after a new sheet has been started', () => {
-    const filed = new Array<number | null>(TEN).fill(1);
+    const filed = new Array<number | null>(10).fill(1);
     // A new respondent: the answers are cleared and the filing flag with them.
     const fresh = empty();
-    expect(shouldFileSusSheet(filed, true)).toBe(false);
-    expect(shouldFileSusSheet(fresh, false)).toBe(false);
+    expect(shouldFileQuestionnaireSheet(filed, true)).toBe(false);
+    expect(shouldFileQuestionnaireSheet(fresh, false)).toBe(false);
     fresh[0] = 2;
-    expect(shouldFileSusSheet(fresh, false)).toBe(true);
+    expect(shouldFileQuestionnaireSheet(fresh, false)).toBe(true);
+  });
+
+  it('is length-agnostic: a three-question sheet files like a ten-question one', () => {
+    const short = empty(3);
+    short[2] = 1;
+    expect(shouldFileQuestionnaireSheet(short, false)).toBe(true);
+    expect(shouldFileQuestionnaireSheet(empty(3), false)).toBe(false);
+    // An instrument with no questions has nothing to file, answered or not.
+    expect(shouldFileQuestionnaireSheet([], false)).toBe(false);
+  });
+
+  it('treats option value 0 as an answer, because only null is unanswered', () => {
+    // The wire uses 0 for "unanswered", the sheet uses null. A bug that wrote 0
+    // into the sheet would otherwise file an empty one.
+    expect(shouldFileQuestionnaireSheet([0], false)).toBe(true);
   });
 });

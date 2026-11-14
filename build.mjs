@@ -3,7 +3,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { syncQuestionnaires, verifyVoiceAssets } from './scripts/questionnaire/lib.mjs';
 
 const serve = process.argv.includes('--serve');
 const standalone = process.argv.includes('--standalone');
@@ -13,6 +15,19 @@ const dist = path.join(root, 'dist');
 
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
+
+// One JSON source feeds the page compiled into the headset and the catalogue
+// packaged into the control APK. Bluetooth carries only commands and progress.
+syncQuestionnaires(root);
+const voiceLineCount = verifyVoiceAssets(root);
+const voiceCatalog = spawnSync('python3', ['scripts/voice/build.py', '--catalog'], {
+  cwd: root,
+  stdio: 'inherit'
+});
+if (voiceCatalog.status !== 0) {
+  throw new Error('voice catalog generation failed');
+}
+console.log(`questionnaire assets verified (${voiceLineCount} voice lines)`);
 
 const common = {
   bundle: true,

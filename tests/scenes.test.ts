@@ -51,7 +51,7 @@ describe('scene registry', () => {
       shore: { standing: 1.7, lying: 0.08, viewer: 'supine' },
       ward: { standing: 1.7, lying: 0.71, viewer: 'supine' },
       prep: { standing: 1.7, lying: 0.66, viewer: 'supine' },
-      survey: { standing: 1.7, lying: 0.66, viewer: 'supine' }
+      survey: { standing: 1.7, lying: 0.08, viewer: 'supine' }
     });
   });
 
@@ -136,16 +136,15 @@ describe('scene capabilities', () => {
   });
 
   it('declares a ceiling only where a scene needs one', () => {
-    // `comfort` stays on the contract for a scene that earns a lower ceiling.
-    // The preparation room is the one that does — it declares no motion at all —
-    // and every other scene leaves the global maximum alone (`null`).
+    // Preparation and questionnaire declare no scene motion; every formal
+    // training scene leaves the global maximum alone (`null`).
     const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfort ?? null]));
     expect(ceilings).toEqual({
       washroom: null,
       shore: null,
       ward: null,
       prep: 0,
-      survey: null
+      survey: 0
     });
   });
 

@@ -116,9 +116,19 @@ def short_label(text: str) -> str:
     return head if len(head) <= 12 else head[:11] + "…"
 
 
+def catalog_group(line: dict) -> str:
+    """The tablet-side group label.
+
+    The id and the clips stay the instrument's own, but the *group* is how the
+    tablet files the line: every questionnaire's items land in one group, so a
+    second instrument needs no new branch on the tablet.
+    """
+    return "问卷" if line.get("questionnaire") or line["id"].startswith("v-sus-") else line["group"]
+
+
 def write_catalog(lines: list[dict]) -> None:
     rows = "\n".join(
-        f'        Line("{line["id"]}", "{line["group"]}", "{line["text"]}"),'
+        f'        Line("{line["id"]}", "{catalog_group(line)}", "{line["text"]}"),'
         for line in lines
     )
     KOTLIN_CATALOG.write_text(
@@ -133,6 +143,8 @@ object VoiceCatalog {{
     data class Line(val id: String, val group: String, val text: String)
 
     val SEQUENCES: List<String> = listOf("start", "imagine", "relax", "close")
+    const val QUESTIONNAIRE_GROUP: String = "问卷"
+    const val THANKS_ID: String = "v-thanks-1"
 
     val LINES: List<Line> = listOf(
 {rows}

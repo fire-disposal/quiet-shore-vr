@@ -126,8 +126,8 @@ flowchart TB
 
 ## 内置房间 `survey`（问卷面专用）
 
-- 文件：`src/scenes/survey/index.ts`；`special: true`，不进入 `SceneCatalog` 的可见卡。
-- 画面：5 × 5 × 2.6 m 素色房间，六面 + 一块天光，无陈设、无标牌、无雾。
-- 运动：无 `update`、无 `setMotion`、无 `applyBuoyancy`——世界仍然可被俯仰修正与浮沉包络移动，但房间自己不主张任何运动。
+- 文件：`src/scenes/survey/index.ts`；`special: true`，id 仍是 `survey`，不进入 `SceneCatalog` 的可见卡。
+- 画面：**v1 湖边**。天穹、云、水面和近岸木桩四个组件直接复用 `src/scenes/shore/`，与 v1 发布版逐字节相同；雾 48–135 m，色 `#e7d7bd`。素材只作可读的背景，不是第二个干预。
+- 运动：无 `update`、无 `setMotion`、无 `applyBuoyancy`——云不漂、湖面不自涨落；世界仍可被俯仰修正与浮沉包络移动。
 - 声音：**不声明 `audio`**。问卷面是唯一没有环境声的产品面；页面在该面拒绝 `audio:*` 与 `audio:volume:`。
-- 预算：8 draw / 12 三角形。
+- 作答面：前景是一块传统空间面板（`SpatialSurface` 标题 + 正文 + `SpatialButton` 按键），由问卷数据驱动题号、题干与选项行，不是湖景的一部分。

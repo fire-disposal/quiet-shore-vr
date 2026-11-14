@@ -5,7 +5,7 @@
     "male": {
       "speaker": "zh_male_taocheng_uranus_bigtts",
       "label": "男声（最终片同款）",
-      "totalMs": 90266,
+      "totalMs": 112722,
       "files": [
         {
           "id": "v-wear-1",
@@ -152,15 +152,6 @@
           "textHash": "6bbb4967aa7c9e7a"
         },
         {
-          "id": "v-sus-10",
-          "group": "SUS",
-          "file": "male/v-sus-10.mp3",
-          "ms": 3161,
-          "bytes": 19532,
-          "sha256": "0555a8a8920144bc2ac2181c8393d406b3858bafa752ffe24a6a17dac62fb2d6",
-          "textHash": "212e3b620e84057a"
-        },
-        {
           "id": "v-sus-2",
           "group": "SUS",
           "file": "male/v-sus-2.mp3",
@@ -231,13 +222,85 @@
           "bytes": 14492,
           "sha256": "495ee0c48895a75ef9884db7f124a57de176551f3b817a6bf73190cb89349f9f",
           "textHash": "0fa3920d1514a82b"
+        },
+        {
+          "id": "v-sus-10",
+          "group": "SUS",
+          "file": "male/v-sus-10.mp3",
+          "ms": 3161,
+          "bytes": 19532,
+          "sha256": "0555a8a8920144bc2ac2181c8393d406b3858bafa752ffe24a6a17dac62fb2d6",
+          "textHash": "212e3b620e84057a"
+        },
+        {
+          "id": "v-gad7-1",
+          "group": "问卷",
+          "file": "male/v-gad7-1.mp3",
+          "ms": 3579,
+          "bytes": 22124,
+          "sha256": "364aaa06175a14294dda65f28788d7580427f655504538220798012992641998",
+          "textHash": "3a5cb66663782214"
+        },
+        {
+          "id": "v-gad7-2",
+          "group": "问卷",
+          "file": "male/v-gad7-2.mp3",
+          "ms": 3146,
+          "bytes": 19532,
+          "sha256": "d22c7e82ca8b8cafef546dd7a099f4a4e63eb5f576ef420c16a6fcceb5847c44",
+          "textHash": "192b51858b4a3a8b"
+        },
+        {
+          "id": "v-gad7-3",
+          "group": "问卷",
+          "file": "male/v-gad7-3.mp3",
+          "ms": 3343,
+          "bytes": 20684,
+          "sha256": "a92ecc4727f244fe0bf603f51183accc6fd55c47d9c20f1ef6770975cea51045",
+          "textHash": "7a312daa96d70b94"
+        },
+        {
+          "id": "v-gad7-4",
+          "group": "问卷",
+          "file": "male/v-gad7-4.mp3",
+          "ms": 2309,
+          "bytes": 14492,
+          "sha256": "f2ca241c5bce8063b348f6f7b1b8f3af6190b32215f84cc1b5a30b93cbf815a1",
+          "textHash": "ed63ab752315e412"
+        },
+        {
+          "id": "v-gad7-5",
+          "group": "问卷",
+          "file": "male/v-gad7-5.mp3",
+          "ms": 3158,
+          "bytes": 19532,
+          "sha256": "2a4bceedf1c20f5ed9b74e11740ae3cc52dfae8df001442402620b2d40d59a54",
+          "textHash": "1288796ad55bf6e5"
+        },
+        {
+          "id": "v-gad7-6",
+          "group": "问卷",
+          "file": "male/v-gad7-6.mp3",
+          "ms": 2925,
+          "bytes": 18092,
+          "sha256": "bf437dcb91a3dbb2e4a2329823e158943fe6b073f2ee79efaf8613fa17519fc1",
+          "textHash": "5f2426cfc2374e3b"
+        },
+        {
+          "id": "v-gad7-7",
+          "group": "问卷",
+          "file": "male/v-gad7-7.mp3",
+          "ms": 3996,
+          "bytes": 24572,
+          "sha256": "b970d16f0e464f2d993593dc8a8f39f86b5040c6707da8bcdb28bd02f961be4c",
+          "textHash": "ce756db9ba3a063e"
         }
       ]
     },
     "female": {
       "speaker": "zh_female_vv_uranus_bigtts",
       "label": "女声（豆包默认）",
-      "totalMs": 101757,
+      "totalMs": 126600,
       "files": [
         {
           "id": "v-wear-1",
@@ -384,15 +447,6 @@
           "textHash": "6bbb4967aa7c9e7a"
         },
         {
-          "id": "v-sus-10",
-          "group": "SUS",
-          "file": "female/v-sus-10.mp3",
-          "ms": 3772,
-          "bytes": 23276,
-          "sha256": "8e204f2365269a1b9ef0286174205d50dc96a51d18af3a5f698e9f6791afac2f",
-          "textHash": "212e3b620e84057a"
-        },
-        {
           "id": "v-sus-2",
           "group": "SUS",
           "file": "female/v-sus-2.mp3",
@@ -463,9 +517,81 @@
           "bytes": 15644,
           "sha256": "6a804df2615f39eb1794f72c90418d5d297eb85b56c9c25d7d06d11d4667d14b",
           "textHash": "0fa3920d1514a82b"
+        },
+        {
+          "id": "v-sus-10",
+          "group": "SUS",
+          "file": "female/v-sus-10.mp3",
+          "ms": 3772,
+          "bytes": 23276,
+          "sha256": "8e204f2365269a1b9ef0286174205d50dc96a51d18af3a5f698e9f6791afac2f",
+          "textHash": "212e3b620e84057a"
+        },
+        {
+          "id": "v-gad7-1",
+          "group": "问卷",
+          "file": "female/v-gad7-1.mp3",
+          "ms": 4203,
+          "bytes": 25868,
+          "sha256": "66ea0c495f0721a5bb163c1a8eaedab45b96e682e16ab346a047c457febbae0f",
+          "textHash": "3a5cb66663782214"
+        },
+        {
+          "id": "v-gad7-2",
+          "group": "问卷",
+          "file": "female/v-gad7-2.mp3",
+          "ms": 3344,
+          "bytes": 20684,
+          "sha256": "143314ed16784abadc10007fdfd4589ef3f7c832738819f98867ca175b83f57b",
+          "textHash": "192b51858b4a3a8b"
+        },
+        {
+          "id": "v-gad7-3",
+          "group": "问卷",
+          "file": "female/v-gad7-3.mp3",
+          "ms": 3590,
+          "bytes": 22124,
+          "sha256": "29b786722514da6cc18003d9283bbc0d7da365e9fc9445d5d43f4b2aadf2667a",
+          "textHash": "7a312daa96d70b94"
+        },
+        {
+          "id": "v-gad7-4",
+          "group": "问卷",
+          "file": "female/v-gad7-4.mp3",
+          "ms": 2934,
+          "bytes": 18236,
+          "sha256": "fe39120a771615dacded71d96b3352d1077ab04e0e6e9fcf9f88820bd5b633e6",
+          "textHash": "ed63ab752315e412"
+        },
+        {
+          "id": "v-gad7-5",
+          "group": "问卷",
+          "file": "female/v-gad7-5.mp3",
+          "ms": 3179,
+          "bytes": 19676,
+          "sha256": "d7c07696ecc241c8764b4330af3d4ae7454134c0aec0873ad0548f72e70a89b5",
+          "textHash": "1288796ad55bf6e5"
+        },
+        {
+          "id": "v-gad7-6",
+          "group": "问卷",
+          "file": "female/v-gad7-6.mp3",
+          "ms": 3157,
+          "bytes": 19532,
+          "sha256": "00f9aafe80abc595cc55c2567f57774b65898c3c5d4827a82a5d99bc300a40fb",
+          "textHash": "5f2426cfc2374e3b"
+        },
+        {
+          "id": "v-gad7-7",
+          "group": "问卷",
+          "file": "female/v-gad7-7.mp3",
+          "ms": 4436,
+          "bytes": 27164,
+          "sha256": "46e7a522227e175f721c14c805280c7480df5992f076bf2da8405379ee42f6fc",
+          "textHash": "ce756db9ba3a063e"
         }
       ]
     }
   },
-  "generatedAt": "2026-11-14T09:36:28+08:00"
+  "generatedAt": "2026-11-14T12:27:01+08:00"
 }

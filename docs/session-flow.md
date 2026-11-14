@@ -33,11 +33,11 @@
 
 ## 4 问卷面
 
-- 切到 `questionnaire` 时页面换成内置房间 `survey`（六面素色一块天光、无陈设、无环境声），切回时恢复技术员原来的场景。会话中拒绝切应用。
-- 题目由 `src/questionnaire/registry.ts` 单一来源经 JSON 通道下发，平板只渲染收到的题干与选项。
-- 患者注视选项作答，技术员也可代答（`sus:show:*` / `sus:answer:*`）。作答结果走 JSON 通道的 `sus` 文档，按稳定键去重后归档。
+- 切到 `questionnaire` 时页面换成内置房间 `survey`（id 不变；背景是 v1 湖边天穹、云、水面与近岸木桩，无环境声、无自身运动），切回时恢复技术员原来的场景。会话中拒绝切应用。
+- 题目由 `questionnaires/*.json` 在构建时生成同一份目录，分别编进头显页面和控制 APK，蓝牙不传题干全文。
+- 患者注视选项作答，技术员也可代答或重读（`questionnaire:show:*` / `questionnaire:answer:*` / `questionnaire:replay`）。实时进度走 `questionnaire-state`，答卷走可靠 `questionnaire-result` 文档，按稳定键去重后归档。
 
 ## 5 记录与出口
 
-- 训练会话摘要、问卷答卷、行为事件写同一份本机记录，用 `app` 字段区分，导出为一份 JSON，走系统分享。默认不上传，不做 OTA。
+- 训练会话、问卷答卷、体验与行为事件先写控制端本机记录和待传 outbox。控制端向固定 `https://205716.xyz/vrdata/` 单向上传，服务器按记录 ID 去重，ACK 后停止重发。仍可从系统分享导出本机 JSON，体验可导出 CSV。
 - 结束后页面回待机，技术员断开连接或取下头显，一次上机结束。

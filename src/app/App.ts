@@ -17,7 +17,10 @@ import { DEFAULT_SPATIAL_THEME } from '../core/spatial/theme';
 import { StartScreen } from '../ui/start-screen';
 import { SpatialHud } from '../ui/spatial-hud';
 import { SubtitleCard } from '../ui/subtitle-card';
-import { createSusPanel, type SusPanelApi } from '../ui/sus-panel';
+import {
+  createQuestionnairePanel,
+  type QuestionnairePanelApi
+} from '../ui/questionnaire-panel';
 import { createCalibrationOverlay, type CalibrationOverlayApi } from '../ui/calibration-overlay';
 import { createCalibrationRun, type CalibrationStatus } from './calibration-run';
 import { getStrings, type Strings } from '../ui/strings';
@@ -44,11 +47,18 @@ import {
   type SessionSummary
 } from './session-log';
 import { appLabel, isAppId, type AppId } from './apps';
-import { QUESTIONNAIRES, SUS } from '../questionnaire/registry';
+import { getQuestionnaire, DEFAULT_QUESTIONNAIRE } from '../questionnaire/registry';
+import type { Questionnaire } from '../questionnaire/contract';
 import { createWorldRuntime, type WorldRuntimeApi } from './world-runtime';
 import { planMotion, type MotionPlan } from './motion-plan';
 import { parseRemoteCommand } from './commands';
-import { buildSusPayload } from './sus';
+import {
+  buildQuestionnaireResult,
+  buildQuestionnaireState,
+  emptyAnswers,
+  questionLabel
+} from './questionnaire-payload';
+import { scoreSheet } from './scoring';
 import { RenderMonitor } from '../core/performance/render-monitor';
 import { PortalLink, stateFromSnapshot } from './portal-link';
 import { primeVoiceRoute } from '../audio/voice';
@@ -88,7 +98,7 @@ import {
   isLayoutCurrent,
   nextLayoutTicket
 } from './layout';
-import { canSwitchApp, shouldFileSusSheet } from './app-switch';
+import { canSwitchApp, shouldFileQuestionnaireSheet } from './app-switch';
 
 const MAX_DT = 0.25;
 /**
@@ -234,23 +244,36 @@ export class QuietShoreApp {
   private readonly visualUp = new THREE.Vector3();
   /** Scratch for the composed parent rotation (shell x base) of the content. */
   private readonly parentQuaternion = new THREE.Quaternion();
-  private susPanel: SusPanelApi | null = null;
-  /** SUS statements are read aloud unless the operator turns it off. */
-  private susVoice = true;
+  /** The sheet, built per instrument; null until the questionnaire face opens. */
+  private questionnairePanel: QuestionnairePanelApi | null = null;
+  /**
+   * The instrument the face is answering.
+   *
+   * Data, not a constant: the registry owns the wording, the question count and
+   * the option values, and everything below reads them from here rather than
+   * from a shipped ten-and-five.
+   */
+  private activeQuestionnaire: Questionnaire = DEFAULT_QUESTIONNAIRE;
+  /** Questions are read aloud unless the operator turns it off. */
+  private questionnaireVoice = true;
   private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
   /** Highest buoyancy the loaded scene allows, 0–1 (its own ceiling). */
   private sceneComfort = 1;
-  /** SUS answers live on the headset; the 28-byte state frame has no room. */
-  private readonly susAnswers: (number | null)[] = new Array(10).fill(null);
+  /**
+   * Answers live on the headset; the 28-byte state frame has no room. Length is
+   * the loaded instrument's question count, so it follows a selection change.
+   */
+  private questionnaireAnswers: (number | null)[] = emptyAnswers(DEFAULT_QUESTIONNAIRE);
   /**
    * This sheet has already been filed once. The answers stay for the rest of
-   * the questionnaire face (closing and reopening the panel continues them),
-   * but the next filing is a *different* sheet, so the boundary before it is a
-   * clean one instead of a second copy of the same ten answers.
+   * the questionnaire face, but the next filing is a *different* sheet, so the
+   * boundary before it is a clean one instead of a second copy of the same
+   * answers. Reopening after a filing starts a fresh sheet, not a resume of the
+   * filed array — see `openQuestionnaire`.
    */
-  private susFiled = false;
+  private questionnaireFiled = false;
   private readonly calibrationFrame = new THREE.Quaternion();
   private readonly identityQuaternion = new THREE.Quaternion();
   private session: XRSession | null = null;
@@ -269,7 +292,7 @@ export class QuietShoreApp {
   private elapsed = 0;
   private frames = 0;
   /**
-   * Frame-clock survey. The dwell fired at ~2 s while the SUS panel asked for
+   * Frame-clock survey. The dwell fired at ~2 s while the sheet asked for
    * 5 s, so the compositor timestamp and `performance.now()` may not tick at
    * the same rate. Sampling both per frame gives the ratio directly instead of
    * guessing it from a stopwatch.
@@ -476,9 +499,9 @@ export class QuietShoreApp {
         this.world.update(dt);
         this.handle?.controls.setMotion(this.computeSceneMotion());
         this.updateFloat(dt);
-        this.susPanel?.update(dt, now, this.headPose);
-        // The reticle doubles as the gaze cue while the SUS panel is open.
-        this.input.setReticleAlways(this.susPanel?.isOpen() ?? false);
+        this.questionnairePanel?.update(dt, now, this.headPose);
+        // The reticle doubles as the gaze cue while the sheet is open.
+        this.input.setReticleAlways(this.questionnairePanel?.isOpen() ?? false);
         this.updateMotionPlan();
         this.syncSubtitle();
         this.subtitleCard?.update(this.headPose, dt, now);
@@ -594,9 +617,9 @@ export class QuietShoreApp {
          * animation runs at that multiplier.
          */
         clock: () => ({ ...this.clockSurvey }),
-        /** Desktop check: where the SUS panel actually is, if it is open. */
-        sus: () => {
-          const panel = this.susPanel;
+        /** Desktop check: where the questionnaire sheet actually is, if open. */
+        sheet: () => {
+          const panel = this.questionnairePanel;
           const at = new THREE.Vector3();
           panel?.object.getWorldPosition(at);
           return {
@@ -656,6 +679,15 @@ export class QuietShoreApp {
     }
     void this.voice.load().then((ready) => {
       this.start.setHint(ready ? '语音已就绪' : `语音未加载：${this.voice.lastError()}`);
+      // A sheet may already be on screen: the question that appeared while the
+      // manifest was loading was never spoken (`speak` is silent then), so it is
+      // read once now rather than waiting for the patient to reach the next one.
+      if (ready && this.questionnairePanel?.isOpen()) {
+        void this.speakQuestion(
+          this.activeQuestionnaire,
+          this.questionnairePanel.page()
+        );
+      }
     });
     void this.detectXR();
   }
@@ -856,7 +888,14 @@ export class QuietShoreApp {
       this.input.setLayers(true, true);
       this.start.setStatus('');
 
-      if (this.config.skipCalibration) {
+      // The questionnaire face has no training session behind it: there is no
+      // posture to calibrate and nothing to record, so it enters straight into
+      // its own room with the sheet up. A cold start with `app=questionnaire`
+      // used to land on the training hold-still card, waiting for a capture
+      // that the operator had no reason to start.
+      if (this.activeApp === 'questionnaire') {
+        this.enterQuestionnaireFace();
+      } else if (this.config.skipCalibration) {
         if (this.handle) {
           this.handle.root.visible = true;
         }
@@ -975,97 +1014,212 @@ export class QuietShoreApp {
   }
 
   /**
+   * Open the questionnaire face inside a live XR session.
+   *
+   * The face owns its own room and its own content: the training scene, its
+   * ambience and its calibration card are all put aside, and what the patient
+   * sees is the survey room with the sheet in it. Everything the training path
+   * needs — calibration frame, comfort, buoyancy — stays untouched, so a later
+   * switch back to training still has the operator's scene and its state.
+   */
+  private enterQuestionnaireFace(): void {
+    const survey = getSceneDefinition('survey');
+    if (survey && survey.id !== this.sceneId) {
+      this.trainingSceneId = this.sceneId;
+      this.sceneId = survey.id;
+      this.loadScene();
+    }
+    if (this.handle) {
+      this.handle.root.visible = true;
+    }
+    this.awaitingCalibration = false;
+    this.calibrationOverlay?.hide();
+    // No `calibrated` dispatch: the lifecycle stays idle, which is what the
+    // sheet is allowed to run in and what `canSwitchApp` expects.
+    this.comfort?.reset();
+    this.input.setLayers(true, true);
+    this.resetQuestionnaireSheet();
+    this.openQuestionnaire();
+    this.start.setStatus(this.strings.modeQuestionnaire, 'ok');
+  }
+
+  /**
    * A new respondent starts a new sheet.
    *
    * Called when the questionnaire face is (re)entered: the previous patient's
    * answers must not be prefilled for this one, and the panel's own pager,
-   * draft and "already said this statement" state must not either — the cached
+   * draft and "already said this question" state must not either — the cached
    * panel kept all three, so a fresh patient saw the last one's sheet.
    */
-  private resetSusSheet(): void {
-    this.susAnswers.fill(null);
-    this.susFiled = false;
-    this.susPanel?.reset();
+  private resetQuestionnaireSheet(): void {
+    this.questionnaireAnswers = emptyAnswers(this.activeQuestionnaire);
+    this.questionnaireFiled = false;
+    this.questionnairePanel?.reset();
+    this.publishQuestionnaireState();
   }
 
   /**
-   * The panel's answers are filed: once the last one is recorded, and once when
+   * The sheet's answers are filed: once the last one is recorded, and once when
    * the sheet closes. Never twice for one sheet — a reopen after filing is a
    * new sheet, not a second copy of the same one in the tablet's record.
    */
-  private fileSusSheet(): void {
-    if (!shouldFileSusSheet(this.susAnswers, this.susFiled)) {
+  private fileQuestionnaireSheet(): void {
+    if (!shouldFileQuestionnaireSheet(this.questionnaireAnswers, this.questionnaireFiled)) {
       return;
     }
-    this.susFiled = true;
-    this.publishSus();
+    this.questionnaireFiled = true;
+    this.publishQuestionnaireResult();
   }
 
   /**
-   * Builds the SUS panel on first use and shows it.
+   * Loads one published instrument and starts a clean sheet for it.
    *
-   * The panel is answered by gaze (5 s per target) because a supine patient has
-   * no pointer; the operator can still answer from the tablet, and the gaze
-   * feature itself is switchable from the control side.
+   * Answers recorded for the previous instrument describe questions that are no
+   * longer on the card, so they are filed first (if they were not already) and
+   * then dropped: the sheet is per instrument, not per face.
    */
-  private openSus(): void {
-    if (!this.susPanel) {
-      this.susPanel = createSusPanel({
+  private selectQuestionnaire(id: string): void {
+    const next = getQuestionnaire(id);
+    if (!next) {
+      this.refuse(`未发布的问卷：${id}`);
+      return;
+    }
+    if (next.id === this.activeQuestionnaire.id && this.questionnairePanel) {
+      // Already loaded: selecting it again means "show me this one", not "throw
+      // away the answers I have".
+      this.openQuestionnaire();
+      return;
+    }
+    // Whatever was answered on the outgoing instrument is a record in its own
+    // right; a half sheet still says something about the questions that were
+    // answered, and dropping it here would silently lose that.
+    this.fileQuestionnaireSheet();
+    this.questionnairePanel?.dispose();
+    this.questionnairePanel = null;
+    this.activeQuestionnaire = next;
+    this.questionnaireAnswers = emptyAnswers(next);
+    this.questionnaireFiled = false;
+    if (this.activeApp === 'questionnaire') {
+      this.openQuestionnaire();
+      this.report(`问卷：${next.name.zh}`);
+    }
+    this.publishQuestionnaireState();
+  }
+
+  /**
+   * Builds the sheet for the loaded instrument on first use and shows it.
+   *
+   * The panel is answered by gaze (3 s per target) because a supine patient has
+   * no pointer; the operator can still answer from the tablet, and the gaze
+   * feature itself is switchable from the control side. Every piece of copy on
+   * it — the statement, the options, the question count — comes from the
+   * instrument, so a three-question sheet is the same code as a ten-question
+   * one.
+   */
+  private openQuestionnaire(): void {
+    const questionnaire = this.activeQuestionnaire;
+    // A panel is built for one instrument: its option row is positioned from
+    // the option count. A selection change therefore discards the old one
+    // rather than resizing buttons that can only be resized by rebuilding.
+    if (this.questionnairePanel?.questionnaire().id !== questionnaire.id) {
+      this.questionnairePanel?.dispose();
+      this.questionnairePanel = null;
+    }
+    // A sheet that was already handed to the tablet is finished. Reopening it
+    // is therefore the start of the *next* respondent's sheet, not a resume of
+    // the filed array: without this, closing and reopening a completed sheet
+    // showed the previous patient's ten answers with every option pre-chosen,
+    // and the next filing would have been a second copy of them.
+    //
+    // A sheet that is merely closed and unfinished is not reset: a patient who
+    // looked away mid-way continues where they stopped, which is what the
+    // tablet's `questionnaire:open` is for.
+    if (this.questionnaireFiled) {
+      this.questionnaireFiled = false;
+      this.questionnaireAnswers = emptyAnswers(questionnaire);
+      this.questionnairePanel?.reset();
+    }
+    if (!this.questionnairePanel) {
+      this.questionnairePanel = createQuestionnairePanel({
         scene: this.scene,
         theme: DEFAULT_SPATIAL_THEME,
         input: this.input,
+        questionnaire,
         onAnswer: (index, value) => {
-          this.susAnswers[index] = value;
-          this.report(`SUS ${index + 1} = ${value}`);
-          if (this.susAnswers.every((answer) => answer !== null)) {
-            this.report('SUS 已完成');
-            this.fileSusSheet();
+          this.questionnaireAnswers[index] = value;
+          const label = questionLabel(questionnaire, index);
+          this.report(`${label} = ${value}`);
+          this.publishQuestionnaireState();
+          const complete = this.questionnaireAnswers.every((answer) => answer !== null);
+          if (complete) {
+            this.report(`${questionnaire.name.zh} 已完成`);
+            this.fileQuestionnaireSheet();
           }
         },
         onShow: (index) => {
-          // Read the statement as it appears: a supine patient should not have
-          // to parse a card to know what was asked.
-          if (!this.susVoice) {
-            return;
-          }
-          void this.voice.play(`v-sus-${index + 1}`).then((played) => {
-            if (!played && this.voice.isReady()) {
-              this.start.setHint(`SUS 语音播放失败：${this.voice.lastError()}`);
-            }
-          });
+          // Read the question as it appears: a supine patient should not have
+          // to parse a card to know what was asked. The cue id is the
+          // instrument's own — nothing here builds a cue id by hand.
+          void this.speakQuestion(questionnaire, index);
+          this.publishQuestionnaireState();
         },
         onFinish: () => {
-          // The patient dwelled "完成": thank them, tell them they can take
-          // the headset off and to share feedback with the staff.
-          if (!this.susVoice) {
-            return;
-          }
-          void this.voice.play('v-thanks-1').then((played) => {
-            if (!played && this.voice.isReady()) {
-              this.start.setHint(`SUS 结束语播放失败：${this.voice.lastError()}`);
-            }
-          });
+          // The patient dwelled "完成": thank them, tell them they can take the
+          // headset off and to share feedback with the staff.
+          void this.speak(`v-${questionnaire.completionVoiceId}`, '结束语');
         },
         onClose: () => {
-
           // Give the layers back to whatever the session mode dictates.
           this.input.setLayers(!this.controlMode, this.session !== null && !this.controlMode);
-          const filled = this.susAnswers.filter((answer) => answer !== null).length;
+          const filled = this.questionnaireAnswers.filter((answer) => answer !== null).length;
+          const total = this.activeQuestionnaire.questions.length;
           // A half-finished sheet is still worth keeping: the tablet records it
           // as incomplete rather than losing what the patient did answer. A
           // sheet already filed is not sent again — reopening and closing it
           // must not hand the tablet a second copy of the same answers.
-          this.fileSusSheet();
-          this.start.setStatus(`SUS 已记录 ${filled}/${this.susAnswers.length}`, 'ok');
+          this.fileQuestionnaireSheet();
+          this.start.setStatus(`${this.activeQuestionnaire.name.zh} 已记录 ${filled}/${total}`, 'ok');
+          this.publishQuestionnaireState();
         }
       });
-      this.susPanel.setDwellEnabled(this.gazeDwellEnabled);
+      this.questionnairePanel.setDwellEnabled(this.gazeDwellEnabled);
     }
-    // The panel is the one spatial UI the patient may use by gaze, so it has
-    // to be focusable even while the tablet holds control: the UI layer used to
-    // be off for the whole session, which made dwell unreachable in practice.
+    // The sheet is the one spatial UI the patient may use by gaze, so it has to
+    // be focusable even while the tablet holds control: the UI layer used to be
+    // off for the whole session, which made dwell unreachable in practice.
     this.input.setLayers(true, false);
-    this.susPanel.open();
+    this.questionnairePanel.open();
+    this.publishQuestionnaireState();
+  }
+
+  /**
+   * Says one question aloud, if the operator has voice on and the cues loaded.
+   *
+   * The cue id comes from the instrument. A clip that fails to sound is a lost
+   * instruction, not a cosmetic problem: it is reported where the operator is
+   * looking, with the player's own reason.
+   */
+  private async speakQuestion(questionnaire: Questionnaire, index: number): Promise<void> {
+    const question = questionnaire.questions[index];
+    if (!question) {
+      return;
+    }
+    await this.speak(`v-${question.voiceId}`, `第 ${index + 1} 题语音`);
+  }
+
+  private async speak(voiceId: string, what: string): Promise<void> {
+    if (!this.questionnaireVoice) {
+      return;
+    }
+    if (!this.voice.isReady()) {
+      // The manifest may still be loading: the app re-reads the current
+      // question once it lands (see `run`), so this is not yet a failure.
+      return;
+    }
+    const played = await this.voice.play(voiceId);
+    if (!played) {
+      this.start.setStatus(`${what}播放失败：${this.voice.lastError()}`, 'error');
+    }
   }
 
   /**
@@ -1620,8 +1774,8 @@ export class QuietShoreApp {
     this.resetLinkGuard();
     this.world.hold(false);
     // A panel is session furniture: leaving the world at rest closes it, or a
-    // stopped session would keep a SUS card floating in front of the patient.
-    this.susPanel?.close();
+    // stopped session would keep a sheet floating in front of the patient.
+    this.questionnairePanel?.close();
     this.viewMotion.reset();
     this.world.clearBase();
     this.comfort?.reset();
@@ -1680,12 +1834,16 @@ export class QuietShoreApp {
   }
 
   /**
-   * Hand one SUS sheet to the tablet. The state frame is fixed at 28 bytes, so
-   * this rides the page's JSON socket and the headset app forwards it on its
-   * own characteristic; the tablet scores and persists it.
+   * Hand one filed sheet to the tablet.
+   *
+   * The state frame is fixed at 28 bytes, so this rides the page's JSON socket
+   * and the headset app forwards it on its own characteristic; the tablet
+   * archives it. It goes on the reliable outbox because a sheet is a record: a
+   * socket close straight after the send must not lose a respondent's session.
    */
-  private publishSus(): void {
-    const payload = buildSusPayload(this.susAnswers, {
+  private publishQuestionnaireResult(): void {
+    const questionnaire = this.activeQuestionnaire;
+    const payload = buildQuestionnaireResult(questionnaire, this.questionnaireAnswers, {
       scene: this.sceneId,
       sessionSec:
         this.sessionStartedAt > 0
@@ -1693,11 +1851,39 @@ export class QuietShoreApp {
           : 0,
       now: Date.now(),
       app: 'questionnaire',
-      questionnaireId: SUS.id,
-      questionnaireName: SUS.name.zh
+      score: scoreSheet(questionnaire, this.questionnaireAnswers)
     });
-    console.info(`[sus] ${JSON.stringify(payload.answers)}`);
-    this.link.sendSus(payload);
+    console.info(`[questionnaire] ${questionnaire.id} ${JSON.stringify(payload.answers)}`);
+    this.link.sendQuestionnaireResult(payload);
+  }
+
+  /**
+   * The sheet's live state, for the control side.
+   *
+   * Not a record and not persisted anywhere: it answers "which instrument,
+   * which question, what has been answered so far", which the patient changes
+   * by gaze and the tablet cannot infer from its own presses. It therefore
+   * bypasses the outbox — a stale replay after a reconnect would be worse than
+   * no update.
+   */
+  private publishQuestionnaireState(): void {
+    const panel = this.questionnairePanel;
+    const questionnaire = this.activeQuestionnaire;
+    const total = questionnaire.questions.length;
+    const page = panel ? panel.page() : 0;
+    const phase = panel ? panel.phase() : 'questions';
+    this.link.sendQuestionnaireState(
+      buildQuestionnaireState(questionnaire, {
+        open: panel?.isOpen() ?? false,
+        // The finish/thanks pages are past the last question; the wire's index
+        // stays on the last one so the tablet never points at a slot that does
+        // not exist.
+        page: phase === 'questions' ? page : Math.max(0, total - 1),
+        answers: this.questionnaireAnswers,
+        gazeDwell: this.gazeDwellEnabled,
+        voice: this.questionnaireVoice
+      })
+    );
   }
 
   /**
@@ -1753,12 +1939,12 @@ export class QuietShoreApp {
       // Re-entering the face is a new respondent: the previous sheet — its
       // answers, its page and the panel's cached draft — belongs to them, not
       // to the person about to answer.
-      this.resetSusSheet();
+      this.resetQuestionnaireSheet();
       // The sheet is the face's content, not a modal it has to summon.
-      this.openSus();
+      this.openQuestionnaire();
     } else {
-      this.susPanel?.close();
-      this.resetSusSheet();
+      this.questionnairePanel?.close();
+      this.resetQuestionnaireSheet();
       const back = getSceneDefinition(this.trainingSceneId);
       if (back && back.id !== this.sceneId) {
         this.sceneId = back.id;
@@ -1846,47 +2032,88 @@ export class QuietShoreApp {
         this.world.setDuration(command.ms);
         this.report(`起身时长 ${(command.ms / 1000).toFixed(0)} 秒`, 'ok');
         return;
-      // The scale belongs to the questionnaire face, never to training: a
-      // sheet opened under 训练 would file a usability record against a session
-      // that never showed one.
-      case 'susVoice':
-        if (this.activeApp !== 'questionnaire') {
-          this.refuse('量表属于问卷应用');
-          return;
-        }
-        this.susVoice = command.on;
-        this.report(`SUS 语音${command.on ? '开' : '关'}`);
-        return;
       case 'gazeDwell':
         if (this.activeApp !== 'questionnaire') {
           this.refuse('目视选择属于问卷应用');
           return;
         }
         this.gazeDwellEnabled = command.on;
-        this.susPanel?.setDwellEnabled(command.on);
+        this.questionnairePanel?.setDwellEnabled(command.on);
         this.report(command.on ? '目视选择已开启' : '目视选择已关闭', 'ok');
+        // The tablet draws the switch from the page, so the page says so.
+        this.publishQuestionnaireState();
         return;
-      case 'susOpen':
-      case 'susShow':
-      case 'susAnswer':
-      case 'susClose':
+      // The sheet belongs to the questionnaire face, never to training: a
+      // questionnaire opened under 训练 would file a record against a session
+      // that never showed one.
+      case 'questionnaireVoice':
         if (this.activeApp !== 'questionnaire') {
-          this.refuse('量表属于问卷应用');
+          this.refuse('问卷属于问卷应用');
+          return;
+        }
+        this.questionnaireVoice = command.on;
+        this.report(`问卷语音${command.on ? '开' : '关'}`);
+        // Turning voice on is also "say this one": the operator flipped it
+        // because the patient needs to hear the question they are on.
+        if (command.on) {
+          void this.speakQuestion(
+            this.activeQuestionnaire,
+            this.questionnairePanel?.page() ?? 0
+          );
+        }
+        this.publishQuestionnaireState();
+        return;
+      case 'questionnaireSelect':
+        this.selectQuestionnaire(command.id);
+        return;
+      case 'questionnaireOpen':
+      case 'questionnaireClose':
+      case 'questionnaireReplay':
+      case 'questionnaireShow':
+      case 'questionnaireAnswer':
+        if (this.activeApp !== 'questionnaire') {
+          this.refuse('问卷属于问卷应用');
           return;
         }
         switch (command.kind) {
-          case 'susOpen':
-            this.openSus();
+          case 'questionnaireOpen':
+            this.openQuestionnaire();
             return;
-          case 'susShow':
-            this.openSus();
-            this.susPanel?.show(command.index - 1);
+          case 'questionnaireReplay':
+            // Reading the question again is a request aimed at whatever is on
+            // the card; with no card, it opens one on the current question.
+            if (this.questionnairePanel?.isOpen()) {
+              this.questionnairePanel.replay();
+            } else {
+              this.openQuestionnaire();
+            }
             return;
-          case 'susAnswer':
-            this.susPanel?.answer(command.value);
+          case 'questionnaireShow':
+            // 1-based on the wire, 0-based in the panel. The instrument's own
+            // count is the bound: the grammar allows 1..100, the sheet may be
+            // three questions long.
+            if (command.index > this.activeQuestionnaire.questions.length) {
+              this.refuse(
+                `${this.activeQuestionnaire.name.zh}共 ${this.activeQuestionnaire.questions.length} 题`
+              );
+              return;
+            }
+            this.openQuestionnaire();
+            this.questionnairePanel?.show(command.index - 1);
+            this.publishQuestionnaireState();
+            return;
+          case 'questionnaireAnswer':
+            // The value is one of the instrument's options, or nothing
+            // happens: a four-option sheet has no answer 5.
+            if (!this.activeQuestionnaire.options.some((option) => option.value === command.value)) {
+              this.refuse(`${this.activeQuestionnaire.name.zh}没有选项 ${command.value}`);
+              return;
+            }
+            this.openQuestionnaire();
+            this.questionnairePanel?.answer(command.value);
             return;
           default:
-            this.susPanel?.close();
+            this.questionnairePanel?.close();
             return;
         }
       case 'calibrate':
@@ -1986,22 +2213,12 @@ export class QuietShoreApp {
       // Every connection gets the catalogue: the tablet may have been open
       // before this page loaded, and a stale list is worse than none.
       this.link.sendCatalog(catalogEntries());
-      this.link.sendQuestionnaire(
-        QUESTIONNAIRES.map((questionnaire) => ({
-          id: questionnaire.id,
-          name: questionnaire.name,
-          short: questionnaire.short,
-          questions: questionnaire.questions.map((question) => ({
-            id: question.id,
-            text: question.text,
-            voiceId: question.voiceId
-          })),
-          options: questionnaire.options.map((option) => ({
-            value: option.value,
-            label: option.label
-          }))
-        }))
-      );
+      // The questionnaire catalogue itself never crosses the link: both APKs
+      // are built from the same generated data file, so the tablet already
+      // holds every instrument, its wording and its options. What does cross is
+      // the sheet's live state, so the control side knows which question the
+      // patient is on and what the gaze has answered.
+      this.publishQuestionnaireState();
     }
     // The entry screen carries the link state: without it a dead socket looks
     // exactly like a silent headset.

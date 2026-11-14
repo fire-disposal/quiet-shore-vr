@@ -358,8 +358,26 @@ export class PortalLink {
     this.send({ type: 'catalog', data: { scenes } });
   }
 
-  sendSus(data: unknown): void {
-    this.sendReliable({ type: 'sus', data });
+  /**
+   * One fielded sheet, on the reliable outbox.
+   *
+   * A sheet is a record: it is what the tablet archives, and a sheet lost to a
+   * socket close would lose a respondent's session. So it carries an id, waits
+   * for the headset's ack, and is replayed on reconnect — the same path a
+   * session summary takes.
+   */
+  sendQuestionnaireResult(data: unknown): void {
+    this.sendReliable({ type: 'questionnaire-result', data });
+  }
+
+  /**
+   * The live state of the sheet: which instrument, which question, the answers
+   * so far. Deliberately *not* on the outbox — it is a view of the present, and
+   * replaying a stale one after a reconnect would overwrite the truth with an
+   * older copy of it. The next change (or the reconnect itself) republishes.
+   */
+  sendQuestionnaireState(data: unknown): void {
+    this.send({ type: 'questionnaire-state', data });
   }
 
   /**
@@ -375,13 +393,6 @@ export class PortalLink {
   }
 
 
-  /**
-   * The questionnaire catalogue, pushed once per connection like the scenes.
-   * One registry on the page feeds the headset card and the tablet's list.
-   */
-  sendQuestionnaire(questionnaires: readonly unknown[]): void {
-    this.send({ type: 'questionnaire', data: { questionnaires } });
-  }
 
   /**
    * One finished training session for the tablet's shared record store. The

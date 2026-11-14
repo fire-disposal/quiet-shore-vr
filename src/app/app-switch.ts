@@ -1,4 +1,4 @@
-import type { SusAnswers } from '../ui/sus-panel';
+import type { QuestionnaireAnswers } from '../ui/questionnaire-panel';
 import type { SessionPhase } from './session';
 
 /**
@@ -20,10 +20,16 @@ export function canSwitchApp(phase: SessionPhase, capturePending: boolean): bool
  *
  * Filing is once per sheet: the last answer files it, and closing files a
  * partial one, but a sheet that was already handed over must not be handed
- * over again — the tablet would hold two copies of the same ten answers for
- * one respondent.
+ * over again — the tablet would hold two copies of the same answers for one
+ * respondent.
+ *
+ * Length-agnostic: a three-question instrument files exactly like a ten-question
+ * one, and an empty sheet never files at all.
  */
-export function shouldFileSusSheet(answers: SusAnswers, filed: boolean): boolean {
+export function shouldFileQuestionnaireSheet(
+  answers: QuestionnaireAnswers,
+  filed: boolean
+): boolean {
   if (filed) {
     return false;
   }

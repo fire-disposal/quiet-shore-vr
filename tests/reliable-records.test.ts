@@ -36,7 +36,7 @@ describe('reliable record outbox', () => {
       null,
       { id: '', message: { type: 'log' } },
       { id: 'bad-type', message: { type: 'notice' } },
-      { id: 'valid', message: { type: 'sus', data: { filled: 1 } } },
+      { id: 'valid', message: { type: 'questionnaire-result', data: { filled: 1 } } },
       { id: 'valid', message: { type: 'log' } }
     ]));
     const outbox = createReliableRecordOutbox(storage, () => 'next');

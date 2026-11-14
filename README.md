@@ -17,9 +17,12 @@ npm ci
 npm run check        # 源码类型检查
 npm run check:tests  # 测试夹具类型检查
 npm test             # vitest
-npm run build        # 输出 dist/（含 catalog.json、voice/）
+npm run build        # 输出 dist/（含 catalog.json、questionnaires.json、voice/）
 npm run standalone   # 单文件离线页
+npm run questionnaire:voice  # 从 JSON 生成双端目录，补齐双音色语音
+npm run questionnaire:check # 检查生成物、题干、manifest 与音频哈希
 npm run android      # 构建配对的两个 APK
+npm run content:apk  # 内容生成、语音补齐、APK 构建一次完成
 ```
 
 真机调试：`adb reverse tcp:8130 tcp:8130`，在头显内打开 `http://localhost:8130`。
@@ -37,12 +40,14 @@ npm run android      # 构建配对的两个 APK
 | `android/protocol` | 双端共用的 QS2 契约（`ControlProtocol`） |
 | `android/headset` `android/control` | 头显服务、平板应用 |
 | `scripts` `tests` `site` `docs` | 工具脚本、单测、落地页、文档 |
+| `questionnaires` | SUS 与 GAD-7 的唯一 JSON 题目来源 |
+| `server` | 只写 HTTPS 接收器、口令保护的读取管理页与服务器端 SQLite 部署文件 |
 
 ## 会话
 
 技术员启动，患者按一次头显按钮进入 WebXR，落在内置准备间 `prep`（无陈设、无声音、无运动）。准备间不做时间等待，技术员记录体位后即可选择正式场景。此后由技术员手动选场景、调体位与强度、说停就停。没有分段、没有自动推进、没有计划时长。
 
-会话中可热切换场景（`scene:<id>`），校准帧与视线偏移保留。场景只有三个：`washroom` 洁净立便间（默认）、`shore` 仰望湖面、`ward` 病房，外加问卷面自己的空房间 `survey` 与准备间 `prep`，后两者不作为场景卡出现。
+会话中可热切换场景（`scene:<id>`），校准帧与视线偏移保留。场景只有三个：`washroom` 洁净立便间（默认）、`shore` 仰望湖面、`ward` 病房，外加问卷面自己的 `survey`（背景是 v1 湖边，没有环境声）与准备间 `prep`，后两者不作为场景卡出现。
 
 ## 关键边界
 
@@ -51,7 +56,7 @@ npm run android      # 构建配对的两个 APK
 - 认证：回环 HTTP 与 BLE 均无应用层密码，设计为受控环境下一台头显对一台平板。
 - 协议：`QS2` generation，state schema `1`，28 字节，不向后兼容；没有 QS1 旧客户端，也没有已部署的旧包。头显与平板必须同批升级。
 - 断链：平板断开即急停，头显冻结；5 秒内重连可继续，超时退出到首页。
-- 记录：训练会话、问卷答卷与行为事件写同一份本机 JSON；APP1 体验记录在「体验」页单独保存并导出 CSV，默认不上传，不做 OTA。
+- 记录：训练会话、问卷答卷与行为事件写本机 JSON 和待传 outbox，控制端自动上传到固定 `https://205716.xyz/vrdata/`，服务器按记录 id 去重，ACK 后才删除本地副本；APP1 体验记录也可在「体验」页导出 CSV。服务器另有口令保护的读取页 `/vrdata/admin/`，可筛选并按当前筛选导出 CSV；未配置口令时该页与全部读取接口回 404，实现细节见 [server/README.md](server/README.md)。
 - 签名：当前 APK 为 debug 签名，生产化前需建持久化 Release Keystore。
 
 ## 文档
@@ -59,6 +64,7 @@ npm run android      # 构建配对的两个 APK
 - [docs/core.md](docs/core.md) — 范围、场景接口、功能与验收（权威口径）
 - [docs/protocol.md](docs/protocol.md) — QS2 协议：GATT、命令、state 帧、JSON 通道、入口监督
 - [docs/session-flow.md](docs/session-flow.md) — 一次会话从准备间到场景再到问卷的流程
+- [docs/questionnaire.md](docs/questionnaire.md) — APP2 多问卷 JSON、双 APK 静态目录、语音与作答框架
 - [docs/app1-pilot.md](docs/app1-pilot.md) — 健康成人 APP1 早期体验预实验规程
 - [docs/scenes.md](docs/scenes.md) — 三场景的边界、画面、用途与选择规则
 - [docs/animation.md](docs/animation.md) — 漂浮、起身、俯仰修正的分层与帧规则
