@@ -47,6 +47,10 @@ object ControlProtocol {
 
     /** The body's standing eye height, metres; the operator may change it. */
     const val EYE_HEIGHT_DEFAULT: Float = 1.7f
+    /** Standing eye height, centimetres: `height:<120-190>`. */
+    const val EYE_HEIGHT_PREFIX: String = "height:"
+    const val EYE_HEIGHT_CM_MIN: Int = 120
+    const val EYE_HEIGHT_CM_MAX: Int = 190
 
     /** First-claim control. The VR grants control to exactly one connected pad. */
     const val CLAIM: String = "CLAIM"
@@ -182,6 +186,7 @@ object ControlProtocol {
         "float:level:0-100", "float:breath:on|off",
         "scene:<id>",
         "app:training|questionnaire",
+        "height:$EYE_HEIGHT_CM_MIN-$EYE_HEIGHT_CM_MAX",
         "gaze:dwell:on|off",
         "anim:duration:$RAMP_MS_MIN-$RAMP_MS_MAX", "posture:rise", "posture:lower", "posture:stop",
         "posture:mix:0-100",
@@ -468,6 +473,9 @@ object ControlProtocol {
                 normalized.removePrefix(SCENE_PREFIX) in sceneIds) ||
             (normalized.startsWith(APP_PREFIX) &&
                 normalized.removePrefix(APP_PREFIX) in APP_IDS) ||
+            (normalized.startsWith(EYE_HEIGHT_PREFIX) &&
+                normalized.removePrefix(EYE_HEIGHT_PREFIX).toIntOrNull() in
+                EYE_HEIGHT_CM_MIN..EYE_HEIGHT_CM_MAX) ||
             (normalized.startsWith(GAZE_DWELL) && normalized in GAZE_DWELL_VALUES) ||
             (normalized.startsWith(ANIM_DURATION) &&
                 normalized.removePrefix(ANIM_DURATION).toIntOrNull() in RAMP_MS_MIN..RAMP_MS_MAX) ||

@@ -92,6 +92,8 @@ export interface WorldRuntimeApi {
   ): boolean;
   /** Drop the calibration and the mix; the world is unrotated again. */
   clearBase(): void;
+  /** Adopt a new standing eye height without reloading the scene. */
+  setStandingEyeY(next: number): boolean;
   /** Advance the ramp (or the comfort posture) and re-apply the frame. */
   update(dt: number): void;
   /**
@@ -400,6 +402,26 @@ export function createWorldRuntime(deps: WorldRuntimeDeps): WorldRuntimeApi {
     },
     calibrate,
     clearBase,
+    setStandingEyeY: (next) => {
+      if (!Number.isFinite(next)) {
+        return false;
+      }
+      const meters = Math.min(2.4, Math.max(1.0, next));
+      if (meters === standingEyeY) {
+        return true;
+      }
+      standingEyeY = meters;
+      if (!moving && !sliderDriven) {
+        // A static frame has no ramp to carry the change: adopt the new eye
+        // now. During a rise or a slider drag the existing follower takes it.
+        standingFrom = meters;
+        standingNow = meters;
+        standingTrack.value = meters;
+        standingTrack.velocity = 0;
+        apply();
+      }
+      return true;
+    },
     update,
     hold: (frozen) => {
       held = frozen;

@@ -19,14 +19,27 @@ class RemoteMergeTest {
         voiceId: Int = -1,
         scene: String = "shore",
         viewAnim: ViewAnim = ViewAnim.IDLE,
-        elapsedSec: Int = 0
+        elapsedSec: Int = 0,
+        mix: Float = 0f
     ) = ControlState(
         session = session,
         voiceId = voiceId,
         scene = scene,
         viewAnim = viewAnim,
-        elapsedSec = elapsedSec
+        elapsedSec = elapsedSec,
+        mix = mix
     )
+
+    @Test
+    fun `the posture percent follows the state frame's mix`() {
+        val merged = mergeRemoteFrame(
+            ControlUiState(mix = 0f),
+            frame(session = true, mix = 0.42f),
+            0L,
+            1_000L
+        )
+        assertEquals(0.42f, merged.mix, 0.0001f)
+    }
 
     @Test
     fun `the panel follows the headset's scene, voice and player`() {

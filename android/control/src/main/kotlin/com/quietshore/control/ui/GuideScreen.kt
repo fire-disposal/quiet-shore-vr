@@ -54,20 +54,12 @@ import com.quietshore.control.ui.theme.QuietPalette
 import com.quietshore.control.ui.theme.QuietSpace
 
 /**
- * The operator's guide: what this app is, the six steps that make a session,
- * the eight states the screen can be in, and what to try when it breaks.
+ * The operator's guide: five steps that make a session, and what to do when
+ * it breaks. Plain sentences, no state table, no protocol jargon.
  *
- * Read once on first shift, then used as a lookup: the reader arrives with a
- * problem ("the stop did not take", "it is stuck on 等待按压") and wants the
- * line for that row, not the whole page. So the page is four bands, each a
- * table-like list divided by hairlines, and the 状态 band's left column uses the
- * same words the command bar and the session band already print. No card stack,
- * no illustration, no second colour: a 4 dp ice bar marks the positioning
- * sentence and nothing else is filled.
- *
- * The layout splits in two columns on a 10" landscape tablet: steps on the
- * left, states and faults on the right, each scrolling on its own so a reader
- * looking up a fault never loses the step they were on.
+ * Read on first shift, then used as a quick lookup. The wide layout puts the
+ * flow on the left and troubleshooting + records on the right, so neither half
+ * of a ten-inch tablet is paper.
  */
 
 // ---------------------------------------------------------------------------
@@ -110,45 +102,28 @@ private fun mark(source: String): List<Keyword> {
 }
 
 /**
- * The six steps. Each is a verb, one line of action, and at most one note:
+ * The five steps. Each is a verb, one line of action, and at most one note:
  * a guide read mid-shift is a lookup, and two lines is what fits in one
  * glance without moving the eyes off the patient.
  */
 private class Step(val number: Int, val title: String, val hint: String, val action: String, val note: String?)
 
 private val STEPS: List<Step> = listOf(
-    Step(1, "连接头显", "搜索 → 连接 → 接管",
-        "点«搜索头显»，等«已连接»", "被占用：对方点«断开»"),
-    Step(2, "启动", "进准备间",
-        "点«启动训练»，患者按一次右侧按钮进入画面", "‹20 秒›未进入将重开页面"),
-    Step(3, "标定", "准备间里做",
-        "技术员点«记录起始体位»，患者保持不动", "未标定时场景不可选"),
-    Step(4, "选场景", "标定以后",
-        "在«01 场景»选卡，再按«进入正式场景»", "会话中可换场"),
-    Step(5, "调整", "强度、语音、体位",
-        "起身前选时长，再按‹起身›；语音与水声在«音频»", "体位偏了点«重新校准»"),
-    Step(6, "结束", "记录本次结果",
-        "点«结束»，等淡出", "取下头显记下本次结果")
-)
-
-/** One row of the state table: the left column is the word the screen prints. */
-private class StateRow(
-    val state: String,
-    val sees: String,
-    val does: String,
-    val stopping: Boolean = false
-)
-
-/** Cells stay under 14 characters: three columns, one glance, no re-reading. */
-private val STATES: List<StateRow> = listOf(
-    StateRow("待机", "«未开始»", "选场景，点«启动训练»"),
-    StateRow("等待进入", "«等待进入»", "患者按一次右侧按钮"),
-    StateRow("校准", "«校准中»", "请患者保持不动"),
-    StateRow("训练中", "«训练中»", "按需调强度与语音"),
-    StateRow("正在结束", "«正在结束»", "等淡出"),
-    StateRow("已结束", "计时停止", "记录本次结果，或再启动"),
-    StateRow("连接受限", "«连接受限»", "让头显回到前台"),
-    StateRow("已断开", "«头显已断开»", "点«重新连接»")
+    Step(1, "连接头显", "先让平板找到它",
+        "点«搜索头显»，选中这台头显，再点«连接»。",
+        "若显示被占用，先在另一台平板点«断开连接»。"),
+    Step(2, "让患者进入", "平板发起，患者按一下",
+        "点«进入场景»，请患者按一次头显右侧按钮。",
+        "‹20 秒›没进入，页面会自动重开。"),
+    Step(3, "确认校准", "进入后自动开始",
+        "患者保持不动，等校准卡片走完。",
+        "没有出卡片或没有成功，点«重新校准»。"),
+    Step(4, "选场景并调整", "校准完成后才能选",
+        "点场景卡，再点«进入场景»；用漂浮、语音和体位滑条微调。",
+        "训练中换场：重新选卡，再点«切换场景»。"),
+    Step(5, "结束", "先停会话，再摘头显",
+        "点«退出场景»，等画面淡出。",
+        "本次时长和问卷结果都留在平板里。")
 )
 
 /** Five failures that stop a shift. Symptom → action, one line each. */
@@ -160,14 +135,11 @@ private class FaultRow(
 
 /** Every action under 24 characters: what to do, not why it happened. */
 private val FAULTS: List<FaultRow> = listOf(
-    FaultRow("头显未连接", "打开头显应用，点«搜索头显»"),
-    FaultRow("页面未打开", "点«启动训练»重开"),
-    FaultRow("等待确认超时", "患者再按右侧按钮"),
-    // Two different failures: one is the patient, one is the link. Merging
-    // them into one row used to send the operator to the wrong one.
-    FaultRow("患者不适", "按«结束会话»，再摘头显", ActionTone.Primary),
-    FaultRow("连接中断", "摘头显，再重新连接"),
-    FaultRow("电量偏低", "‹20%› 以下，先充电")
+    FaultRow("头显没连上", "打开头显里的静岸应用，点«搜索头显»。"),
+    FaultRow("一直等进入", "请患者再按一次右侧按钮；20 秒后页面会自动重开。"),
+    FaultRow("患者不舒服", "先点«退出场景»，再摘头显。", ActionTone.Primary),
+    FaultRow("蓝牙断了", "‹5 秒›内点«重新连接»；超时回首页重进。"),
+    FaultRow("电量低于 20%", "先充电，再做训练。")
 )
 
 // ---------------------------------------------------------------------------
@@ -182,46 +154,41 @@ private val FAULTS: List<FaultRow> = listOf(
 @Composable
 private fun QuestionnaireGuide() {
     Text(
-        text = "作答与归档",
-        style = MaterialTheme.typography.displaySmall,
+        text = "问卷怎么做",
+        style = MaterialTheme.typography.headlineLarge,
         color = QuietPalette.TextPrimary,
         modifier = Modifier.semantics { heading() }
     )
     Spacer(Modifier.height(12.dp))
     Text(
-        text = "场景化问卷作答器是独立的应用面：排尿引导记录与问卷记录同库，用应用字段区分；题目从问卷配置加载。",
+        text = "先让患者进入画面，再显示问卷；答完自动保存。",
         style = MaterialTheme.typography.bodyLarge,
         color = QuietPalette.TextSecondary
     )
-    Spacer(Modifier.height(32.dp))
+    Spacer(Modifier.height(28.dp))
     Rule()
-    Spacer(Modifier.height(24.dp))
-    Text("施测", style = MaterialTheme.typography.titleLarge, color = QuietPalette.TextPrimary)
-    Spacer(Modifier.height(12.dp))
-    for (line in listOf(
-        "1 确认顶栏是「场景化问卷作答器」；会话进行中不能切换应用。",
-        "2 让患者戴上头显，打开问卷；题目与选项出现在视野里（问卷面有自己的空房间，没有环境声）。",
-        "3 患者目视选项停住即作答；看不准的题由技术员在平板上代答。",
-        "4 答完最后一题即记录；提前关闭只保存已完成部分。"
-    )) {
-        Text(
-            text = line,
-            style = MaterialTheme.typography.bodyLarge,
-            color = QuietPalette.TextPrimary
-        )
-        Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(20.dp))
+    for ((index, line) in listOf(
+        "右上角切到«02 场景化问卷作答器»。",
+        "点«启动问卷»，请患者按一次头显右侧按钮。患者没进入前不会出题。",
+        "患者进入后，点«显示问卷»；需要哪题就点那一题的«显示»。患者注视选项停住即作答。",
+        "答完最后一题自动保存；提前关闭只保存已完成部分。"
+    ).withIndex()) {
+        Row(Modifier.padding(vertical = 8.dp)) {
+            NumberText(
+                text = (index + 1).toString().padStart(2, '0'),
+                style = MaterialTheme.typography.titleMedium.tabularFigures(),
+                color = QuietPalette.TextSecondary,
+                modifier = Modifier.width(48.dp)
+            )
+            KeyLine(
+                line,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (index != 3) Rule(Modifier.padding(start = 48.dp))
     }
-    Spacer(Modifier.height(24.dp))
-    Rule()
-    Spacer(Modifier.height(24.dp))
-    Text("记录", style = MaterialTheme.typography.titleLarge, color = QuietPalette.TextPrimary)
-    Spacer(Modifier.height(12.dp))
-    Text(
-        text = "按次查看，含完成时间；可按问卷与时间筛选后导出。记录只在本机，"
-            + "导出走系统分享，不自动上传。",
-        style = MaterialTheme.typography.bodyLarge,
-        color = QuietPalette.TextSecondary
-    )
 }
 
 @Composable
@@ -267,22 +234,41 @@ fun GuideScreen(
             // the page is a single scroll with three titled landmarks rather
             // than two columns racing each other.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 1152.dp).padding(horizontal = 16.dp)) {
-                    Spacer(Modifier.height(40.dp))
+                Column(Modifier.widthIn(max = 1360.dp).padding(horizontal = 16.dp)) {
+                    Spacer(Modifier.height(24.dp))
                     if (app == "questionnaire") {
                         QuestionnaireGuide()
+                        Spacer(Modifier.height(44.dp))
+                        RecordsBand(onExport = onExport)
                     } else {
-                        Positioning()
-                        Spacer(Modifier.height(44.dp))
-                        StepsBand()
-                        Spacer(Modifier.height(44.dp))
-                        StatesBand()
-                        Spacer(Modifier.height(44.dp))
-                        FaultsBand()
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val wide = maxWidth >= 820.dp
+                            if (wide) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(48.dp)
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        StepsBand()
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        FaultsBand()
+                                        Spacer(Modifier.height(36.dp))
+                                        RecordsBand(onExport = onExport)
+                                    }
+                                }
+                            } else {
+                                Column {
+                                    StepsBand()
+                                    Spacer(Modifier.height(36.dp))
+                                    FaultsBand()
+                                    Spacer(Modifier.height(36.dp))
+                                    RecordsBand(onExport = onExport)
+                                }
+                            }
+                        }
                     }
-                    Spacer(Modifier.height(44.dp))
-                    RecordsBand(onExport = onExport)
-                    Spacer(Modifier.height(48.dp))
+                    Spacer(Modifier.height(40.dp))
                 }
             }
         }
@@ -421,27 +407,6 @@ private fun GuideBar(onBack: () -> Unit, title: String) {
 // Bands
 // ---------------------------------------------------------------------------
 
-/** One sentence of positioning: what this page is, ≤ 20 characters. */
-private const val POSITIONING = "床边操作与故障处置"
-
-@Composable
-private fun Positioning() {
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            text = POSITIONING,
-            style = MaterialTheme.typography.headlineLarge,
-            color = QuietPalette.Ink,
-            modifier = Modifier.semantics { heading() }
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "六步流程、八种状态、六类故障",
-            style = MaterialTheme.typography.bodyLarge,
-            color = QuietPalette.InkSecondary
-        )
-    }
-}
-
 @Composable
 private fun StepsBand() {
     Section("主流程") {
@@ -573,87 +538,8 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
 }
 
 @Composable
-private fun StateHeader() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 10.dp)
-    ) {
-        Text(
-            text = "状态",
-            style = MaterialTheme.typography.bodySmall,
-            color = QuietPalette.InkSecondary,
-            modifier = Modifier.width(STATE_COLUMN)
-        )
-        Text(
-            text = "屏幕显示",
-            style = MaterialTheme.typography.bodySmall,
-            color = QuietPalette.InkSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(16.dp))
-        Text(
-            text = "下一步",
-            style = MaterialTheme.typography.bodySmall,
-            color = QuietPalette.InkSecondary,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-/** Left column width: the longest word the bar prints (「等待患者确认」 excluded). */
-private val STATE_COLUMN: Dp = 128.dp
-
-@Composable
-private fun StateRowView(row: StateRow) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = row.state,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = if (row.stopping) FontWeight.Normal else FontWeight.Medium,
-            color = if (row.stopping) QuietPalette.Danger else QuietPalette.Ink,
-            modifier = Modifier.width(STATE_COLUMN)
-        )
-        KeyLine(
-            row.sees,
-            style = MaterialTheme.typography.bodyMedium,
-            base = QuietPalette.InkSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(16.dp))
-        KeyLine(
-            row.does,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-/**
- * The lookup table. Its own landmark, its own air above it: a reader who is
- * mid-session arrives here directly and must not have to walk past the six
- * steps to find it.
- */
-@Composable
-private fun StatesBand() {
-    Section("状态与处置") {
-        StateHeader()
-        Rule()
-        for (row in STATES) {
-            StateRowView(row)
-            Rule()
-        }
-    }
-}
-
-@Composable
 private fun FaultsBand() {
-    Section("故障处置") {
+    Section("遇到问题") {
         for ((index, fault) in FAULTS.withIndex()) {
             FaultRowView(fault)
             if (index != FAULTS.lastIndex) {

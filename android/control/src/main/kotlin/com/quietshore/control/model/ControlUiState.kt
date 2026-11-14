@@ -121,6 +121,10 @@ data class ControlUiState(
     val calibrationPending: Boolean = false,
     /** Face picked while the link was down; sent once the page reports again. */
     val pendingApp: String? = null,
+    /** Standing eye height, centimetres; next launch applies it. */
+    val eyeHeightCm: Int = 170,
+    /** Height set while the link was down. */
+    val pendingEyeHeightCm: Int? = null,
     /** Operator switch for reading the loaded question aloud; on by default. */
     val questionnaireVoice: Boolean = true,
     /** Operator switch for the headset subtitle card; on by default. */

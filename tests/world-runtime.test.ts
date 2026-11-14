@@ -336,6 +336,17 @@ describe('world runtime', () => {
     expect(h.runtime.state().mix).toBe(1);
   });
 
+  it('adopts a new standing eye without reloading the scene', () => {
+    const h = harness();
+    h.runtime.setScene({ lyingEyeY: 0.66, standingEyeY: 1.7, restMix: 1 });
+    h.runtime.calibrate(SUPINE, POSITION);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.7, 6);
+
+    expect(h.runtime.setStandingEyeY(1.83)).toBe(true);
+    expect(h.runtime.state().eyeY).toBeCloseTo(1.83, 6);
+    expect(h.lastOffset()).toBeCloseTo(-1.83, 6);
+  });
+
   it('clearing the base drops the calibration and the mix', () => {
     const h = harness();
     h.runtime.setScene({ lyingEyeY: 1.7, standingEyeY: 1.7 });

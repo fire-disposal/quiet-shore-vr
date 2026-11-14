@@ -134,6 +134,7 @@ fun ControlApp(viewModel: ControlViewModel) {
             onSceneApply = viewModel::applyScene,
             onAnimDuration = viewModel::setAnimDuration,
             onPostureMix = viewModel::setPostureMix,
+            onEyeHeight = viewModel::setEyeHeight,
             onGazeDwellChange = viewModel::setGazeDwell,
             onQuestionnaireVoiceChange = viewModel::setQuestionnaireVoice,
             onSubtitlesChange = viewModel::setSubtitles,

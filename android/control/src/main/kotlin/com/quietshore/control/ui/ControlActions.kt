@@ -37,11 +37,12 @@ data class ControlActions(
     val onSceneApply: () -> Unit,
     /** Sit-up ramp length in milliseconds (4000..20000). */
     val onAnimDuration: (Int) -> Unit,
-    /**
-     * Correction slider target, whole percent. Sending it is the manual
+    /** Correction slider target, whole percent. Sending it is the manual
      * override: the page freezes whatever the correction was doing.
      */
     val onPostureMix: (Int) -> Unit,
+    /** Standing eye height, centimetres; the headset applies it next launch. */
+    val onEyeHeight: (Int) -> Unit,
     /** Gaze dwell selection (questionnaire answers and spatial targets). Default on. */
     val onGazeDwellChange: (Boolean) -> Unit,
     /** Auto read-out of the question as it appears. Default on. */

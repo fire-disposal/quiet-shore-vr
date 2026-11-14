@@ -1199,7 +1199,8 @@ class PortalService : Service() {
         command == "enter" ||
             command == "exit" ||
             command.startsWith(ControlProtocol.SCENE_PREFIX) ||
-            command.startsWith(ControlProtocol.APP_PREFIX)
+            command.startsWith(ControlProtocol.APP_PREFIX) ||
+            command.startsWith(ControlProtocol.EYE_HEIGHT_PREFIX)
 
     /** Safety commands survive a short page-silence window instead of dropping. */
     private fun isAlwaysQueueable(command: String): Boolean {
@@ -1237,6 +1238,26 @@ class PortalService : Service() {
                 if (!PortalActions.enter(this)) {
                     return false
                 }
+            }
+            command.startsWith(ControlProtocol.EYE_HEIGHT_PREFIX) -> {
+                val cm = command.removePrefix(ControlProtocol.EYE_HEIGHT_PREFIX)
+                    .toIntOrNull()
+                    ?.takeIf { it in ControlProtocol.EYE_HEIGHT_CM_MIN..ControlProtocol.EYE_HEIGHT_CM_MAX }
+                if (cm != null) {
+                    val meters = cm / 100f
+                    if (HeadsetSettings.saveEyeHeight(this, meters)) {
+                        // The next launch reads PortalSession, not prefs: update
+                        // that snapshot now so changing height and pressing
+                        // 启动 cannot race the write.
+                        PortalSession.set(
+                            HeadsetSettings.read(this).toLaunchOptions(),
+                            PageCatalog.idSet(this)
+                        )
+                        publishFlags(lastState, null)
+                        Log.i(TAG, "eye height persisted: $cm cm")
+                    }
+                }
+                queued = true
             }
             command.startsWith(ControlProtocol.APP_PREFIX) -> {
                 // The face is a launch input, so choosing it with no page open
@@ -1558,6 +1579,12 @@ class PortalService : Service() {
             put("scene", state.scene)
             put("session", state.session)
             put("calibrating", state.calibrating)
+            // The tablet's standing eye-height setting, not the applied eye
+            // height in the state frame. Unit: centimetres.
+            put(
+                "eyeHeightRequested",
+                Math.round(HeadsetSettings.read(this@PortalService).eyeHeight * 100f)
+            )
             put("rampMs", lastRampMs)
             put("moving", state.moving)
             // The tablet reads the headset's own battery from here: it talks

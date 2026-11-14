@@ -146,6 +146,7 @@ fun ConsolePreview(
         onSceneApply = noop,
         onAnimDuration = {},
         onPostureMix = {},
+        onEyeHeight = {},
         onGazeDwellChange = {},
         onQuestionnaireVoiceChange = {},
         onSubtitlesChange = {},

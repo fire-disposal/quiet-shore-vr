@@ -21,7 +21,7 @@ object OperatorCopy {
     // The action lives in the retry banner, which stays on screen while this
     // event is gone: repeating it here would be the same sentence twice.
     const val LINK_RETRYING = "头显未回应。"
-    const val PAGE_NOT_OPEN = "训练页未打开。再点“启动训练”。"
+    const val PAGE_NOT_OPEN = "训练页未打开。再点“进入场景”。"
     const val NOT_CONNECTED = "头显未连接。返回配对页重连。"
     const val NOT_ACKED = "头显未确认。切回前台后重按。"
     const val QUEUE_FULL = "操作过快。等一秒再按。"
@@ -61,7 +61,7 @@ object OperatorCopy {
         raw.startsWith("头显正被另一台平板") -> CONTROL_TAKEN
         raw.startsWith("控制连接已失效") || raw.startsWith("蓝牙心跳超时") ||
             raw.startsWith("未获得控制权") -> CONTROL_LOST
-        raw.startsWith("头显已释放控制权") -> "头显已交回自己的入口页。点“启动训练”可以再接管。"
+        raw.startsWith("头显已释放控制权") -> "头显已交回自己的入口页。点“进入场景”可以再接管。"
         raw.startsWith("未搜索到任何蓝牙设备") -> "没有搜到任何设备。打开定位服务后再搜索。"
         raw.startsWith("请先开启定位服务") -> "部分平板没有定位服务就搜不到头显。打开定位服务再搜索。"
         raw.startsWith("缺少蓝牙") -> "缺少“附近设备”权限。开启后再搜索。"

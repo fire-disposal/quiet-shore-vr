@@ -84,6 +84,18 @@ internal data class HeadsetSettings(
                 .apply()
         }
 
+        /** The tablet's standing eye height; next launch picks it up. */
+        fun saveEyeHeight(context: Context, meters: Float): Boolean {
+            if (!isValidEyeHeight(meters)) {
+                return false
+            }
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putFloat(KEY_EYE_HEIGHT, meters)
+                .apply()
+            return true
+        }
+
         /**
          * The operator's scene pick. Only the scene-command path writes this
          * key; unknown ids are refused rather than stored.

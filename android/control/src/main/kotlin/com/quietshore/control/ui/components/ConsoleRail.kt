@@ -47,7 +47,6 @@ import com.quietshore.control.ui.theme.QuietSpace
  */
 enum class ConsoleSection(val label: String, val latin: String) {
     Session("会话", "SESSION"),
-    Scene("场景", "SCENE"),
     Audio("音频", "AUDIO"),
     /**
      * The operator's observation sheet: filled in once the headset is off.

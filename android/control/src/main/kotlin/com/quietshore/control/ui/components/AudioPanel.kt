@@ -1,7 +1,6 @@
 package com.quietshore.control.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -72,7 +71,7 @@ fun AudioPanel(
     }
 
     Column(modifier.fillMaxWidth()) {
-        Band(
+        AudioSection(
             title = "正在播放",
             trailing = {
                 Text(
@@ -82,7 +81,7 @@ fun AudioPanel(
                 )
             }
         ) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
                 val line = state.voiceLine
                 Text(
                     text = line?.text ?: "未播放",
@@ -94,10 +93,10 @@ fun AudioPanel(
                         text = line.group,
                         style = MaterialTheme.typography.labelSmall,
                         color = QuietPalette.TextSecondary,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -106,45 +105,79 @@ fun AudioPanel(
                         label = "停止",
                         onClick = actions.onVoiceStop,
                         modifier = Modifier.weight(1f),
+                        height = 40.dp,
                         enabled = connected
                     )
                     Key(
                         label = "上一句",
                         onClick = { previousLine?.let { actions.onVoicePlay(it.id) } },
                         modifier = Modifier.weight(1f),
+                        height = 40.dp,
                         enabled = connected && previousLine != null
                     )
                     Key(
                         label = "下一句",
                         onClick = { nextLine?.let { actions.onVoicePlay(it.id) } },
                         modifier = Modifier.weight(1f),
+                        height = 40.dp,
                         kind = KeyKind.Fill,
                         enabled = connected && nextLine != null
                     )
                 }
-                Text(
-                    text = nextLine?.let { "下一句：${it.group}" } ?: "已是最后一句",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = QuietPalette.TextSecondary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = nextLine?.let { "下一句：${it.group}" } ?: "已是最后一句",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Key(
+                        label = if (state.subtitles) "字幕开" else "字幕关",
+                        onClick = { actions.onSubtitlesChange(!state.subtitles) },
+                        kind = if (state.subtitles) KeyKind.Outline else KeyKind.Quiet,
+                        height = 36.dp,
+                        minWidth = 76.dp,
+                        enabled = connected
+                    )
+                }
             }
         }
 
-        Band(title = "播放设置") {
+        AudioSection(title = "音量") {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
-                SwitchRow(
-                    title = "字幕",
-                    checked = state.subtitles,
-                    onCheckedChange = actions.onSubtitlesChange,
-                    enabled = connected,
-                    note = "在患者画面下方显示，播完消失。"
-                )
-            }
-        }
-
-        Band(title = "音量") {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "播报声音",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = QuietPalette.TextSecondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Key(
+                        label = "女声",
+                        onClick = { actions.onVoiceSet("female") },
+                        kind = if (state.voiceSet != "male") KeyKind.Fill else KeyKind.Outline,
+                        height = 36.dp,
+                        minWidth = 64.dp,
+                        enabled = connected
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Key(
+                        label = "男声",
+                        onClick = { actions.onVoiceSet("male") },
+                        kind = if (state.voiceSet == "male") KeyKind.Fill else KeyKind.Outline,
+                        height = 36.dp,
+                        minWidth = 64.dp,
+                        enabled = connected
+                    )
+                }
                 ValueSlider(
                     label = "语音",
                     value = state.voiceVolume,
@@ -164,13 +197,12 @@ fun AudioPanel(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .defaultMinSize(minHeight = TouchTarget)
-                        .padding(vertical = 4.dp),
+                        .defaultMinSize(minHeight = 36.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = if (state.control.audioMuted) "水声已关闭" else "水声开启",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = QuietPalette.TextPrimary,
                         modifier = Modifier.weight(1f)
                     )
@@ -178,7 +210,8 @@ fun AudioPanel(
                         label = if (state.control.audioMuted) "开启水声" else "关闭水声",
                         onClick = actions.onToggleAudio,
                         enabled = connected,
-                        minWidth = TouchTarget + 32.dp
+                        height = 36.dp,
+                        minWidth = 104.dp
                     )
                 }
             }
@@ -186,7 +219,7 @@ fun AudioPanel(
 
         // Guidance lines are played by hand; questionnaire items are not in
         // this list.
-        Band(
+        AudioSection(
             title = "语音提示",
             trailing = {
                 Text(
@@ -196,19 +229,19 @@ fun AudioPanel(
                 )
             }
         ) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                 for ((group, lines) in guidance.groupBy { it.group }) {
                     val open = group in expanded
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = TouchTarget)
+                            .defaultMinSize(minHeight = 40.dp)
                             .clickable(
                                 role = Role.Button
                             ) {
                                 expanded = if (open) expanded - group else expanded + group
                             }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -236,8 +269,8 @@ fun AudioPanel(
                                         enabled = connected,
                                         role = Role.Button
                                     ) { actions.onVoicePlay(line.id) }
-                                    .padding(vertical = 12.dp),
-                                maxLines = 3,
+                                    .padding(vertical = 6.dp),
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -245,6 +278,33 @@ fun AudioPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AudioSection(
+    title: String,
+    trailing: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = QuietPalette.TextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            trailing?.invoke()
+        }
+        Rule()
+        content()
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -281,6 +341,7 @@ private fun ValueSlider(
             onValueChange = { onChange(it.toInt()) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
             enabled = enabled,
+            modifier = Modifier.height(40.dp),
             colors = SliderDefaults.colors(
                 thumbColor = QuietPalette.TextPrimary,
                 activeTrackColor = QuietPalette.Ice,

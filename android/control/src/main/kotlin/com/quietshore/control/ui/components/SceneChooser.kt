@@ -101,7 +101,7 @@ fun SceneCardView(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = if (showBlurb) 92.dp else 72.dp)
+            .defaultMinSize(minHeight = if (showBlurb) 78.dp else 58.dp)
             .background(QuietPalette.Board)
             .then(
                 if (current) {
@@ -118,7 +118,7 @@ fun SceneCardView(
             )
             .padding(
                 horizontal = if (showBlurb) 16.dp else 10.dp,
-                vertical = if (showBlurb) 18.dp else 16.dp
+                vertical = if (showBlurb) 10.dp else 8.dp
             ),
         verticalArrangement = if (stretch) Arrangement.Top else Arrangement.Center
     ) {
@@ -129,7 +129,7 @@ fun SceneCardView(
                 Box(
                     Modifier
                         .width(4.dp)
-                        .height(if (showBlurb) 44.dp else 24.dp)
+                        .height(if (showBlurb) 32.dp else 20.dp)
                         .background(QuietPalette.Ice)
                 )
                 Spacer(Modifier.width(12.dp))

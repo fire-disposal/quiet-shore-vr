@@ -50,6 +50,16 @@ class CommandGrammarTest {
     }
 
     @Test
+    fun `standing eye height accepts only the headset's comfort band`() {
+        assertTrue(ControlProtocol.isAllowedCommand("height:170"))
+        assertTrue(ControlProtocol.isAllowedCommand("HEIGHT:120"))
+        assertTrue(ControlProtocol.isAllowedCommand("height:190"))
+        assertFalse(ControlProtocol.isAllowedCommand("height:119"))
+        assertFalse(ControlProtocol.isAllowedCommand("height:191"))
+        assertFalse(ControlProtocol.isAllowedCommand("height:1.70"))
+    }
+
+    @Test
     fun `view presets are named, never parameterised`() {
         for (name in ControlProtocol.VIEW_ANIM_NAMES) {
             assertEquals(name, ControlProtocol.parseViewAnim("view:anim:$name"))

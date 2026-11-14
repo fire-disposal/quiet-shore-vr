@@ -33,6 +33,9 @@ fun mergeRemoteFrame(
     }
     return current.copy(
         control = frame,
+        // The one posture scalar is in the state frame, not the flags document:
+        // the bar's fill and its percent label both read this copy.
+        mix = frame.mix.coerceIn(0f, 1f),
         // While a session runs the headset is authoritative for the mode too,
         // so a rejected command cannot leave the panel showing something that
         // is not happening. Before a session the operator's choice stands.

@@ -36,7 +36,6 @@ import {
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
 import { lyingEyeY, restMixOf } from '../core/anatomy';
 import { degrees, metres } from '../core/units';
-import { worldUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import {
   annotateOutcome,
@@ -240,10 +239,6 @@ export class QuietShoreApp {
   private readonly floating: FloatingApi;
   /** Base pose: calibration frame, sit-up path and the placement that goes with them. */
   private readonly world: WorldRuntimeApi;
-  /** Scratch for the visual-up axis and the frame plan; per-frame, no allocation. */
-  private readonly visualUp = new THREE.Vector3();
-  /** Scratch for the composed parent rotation (shell x base) of the content. */
-  private readonly parentQuaternion = new THREE.Quaternion();
   /** The sheet, built per instrument; null until the questionnaire face opens. */
   private questionnairePanel: QuestionnairePanelApi | null = null;
   /**
@@ -372,24 +367,11 @@ export class QuietShoreApp {
     // not capturing or rising may heave.
     this.floating = createFloating({
       host: this.host,
-      handle: () => this.handle,
       gate: () => ({
         active: isActive(this.lifecycle) && this.linkGuard.phase === 'online',
         capturePending: this.capturePending,
         rising: this.world.isRising()
       }),
-      // The heave is world-vertical. Undo **every** parent rotation (view
-      // shell × calibrated frame) so content-local +Y maps back to world +Y;
-      // the head pose is deliberately absent, or looking around would steer
-      // the buoyancy with the gaze.
-      axis: (out) => {
-        const shell = this.shell;
-        if (!shell) {
-          return out.set(0, 1, 0);
-        }
-        this.parentQuaternion.copy(shell.group.quaternion).multiply(shell.base.quaternion);
-        return worldUpInContent(this.parentQuaternion, out);
-      },
       amount: this.config.floatAmount,
       // The scene declares how much of the frame's buoyancy it wants as a
       // heave; the app no longer keys on an id.
@@ -1953,6 +1935,15 @@ export class QuietShoreApp {
     }
     if (raw.startsWith('app:')) {
       this.applyAppCommand(raw.slice('app:'.length));
+      return;
+    }
+    const height = /^height:(\d+)$/i.exec(raw);
+    if (height) {
+      const meters = Math.min(1.9, Math.max(1.2, Number(height[1]) / 100));
+      if (Number.isFinite(meters) && this.world.setStandingEyeY(meters)) {
+        this.config.eyeHeight = meters;
+        this.start.setStatus(`站立眼高 ${Math.round(meters * 100)} cm`, 'ok');
+      }
       return;
     }
     const command = parseRemoteCommand(raw);

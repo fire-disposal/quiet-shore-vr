@@ -3,11 +3,9 @@ import * as THREE from 'three';
 import { createFloating } from '../src/app/floating';
 import type { BuoyancyGate } from '../src/core/xr/buoyancy-frame';
 import { FLOAT_AMPLITUDE_M } from '../src/core/xr/float';
-import type { SceneHandle } from '../src/core/scene/contract';
 
 function harness(options: {
   gate?: Partial<BuoyancyGate>;
-  axis?: THREE.Vector3 | null;
   amount?: number;
 } = {}) {
   const content = new THREE.Group();
@@ -21,8 +19,7 @@ function harness(options: {
     ...options.gate
   } satisfies BuoyancyGate;
   // One mechanism: every scene moves its content and every scene keeps a
-  // backdrop still. The handle no longer has a say in how.
-  const handle = { controls: { setMotion: () => {} } } as unknown as SceneHandle;
+  // backdrop still. The content's own +Y carries the compensation.
   const floating = createFloating({
     host: {
       setFloorOffset: (y) => {
@@ -36,9 +33,7 @@ function harness(options: {
         applied.push({ x, y, z });
       }
     },
-    handle: () => handle,
     gate: () => gate,
-    axis: (out) => out.copy(options.axis ?? new THREE.Vector3(0, 1, 0)),
     amount: options.amount,
     breath: true
   });
@@ -97,12 +92,8 @@ describe('buoyancy envelope', () => {
 });
 
 describe('perceptible heave', () => {
-  it('heaves as one vector along the visual up, never double-counted', () => {
-    // A tilted frame (the operator looked up): the content must move exactly
-    // offsetM along the axis. Adding the full offset to Y as well made the
-    // displacement 19% too long and pointed it the wrong way.
-    const axis = new THREE.Vector3(0.6, 0.8, 0).normalize();
-    const h = harness({ amount: 1, axis });
+  it('heaves along the compensated content vertical, never double-counted', () => {
+    const h = harness({ amount: 1 });
     h.run(9);
     const state = h.floating.getState();
     expect(Math.abs(state.offsetM)).toBeGreaterThan(0.001);
@@ -112,8 +103,9 @@ describe('perceptible heave', () => {
       h.content.position.y - state.baseOffset,
       h.content.position.z
     );
-    const expected = axis.clone().multiplyScalar(state.offsetM);
-    expect(moved.distanceTo(expected)).toBeLessThan(1e-6);
+    expect(moved.x).toBeCloseTo(0, 8);
+    expect(moved.y).toBeCloseTo(state.offsetM, 8);
+    expect(moved.z).toBeCloseTo(0, 8);
   });
   it('keeps the backdrop still while the content heaves', () => {
     const h = harness({ amount: 1 });
@@ -180,13 +172,15 @@ describe('content offset ownership', () => {
     expect(h.content.position.y).toBeCloseTo(-1.7 + offsetM, 6);
   });
 
-  it('moves the art along the visual up, not only along Y', () => {
-    const h = harness({ amount: 1, axis: null });
+  it('moves the art only along content Y', () => {
+    const h = harness({ amount: 1 });
     h.floating.setBaseOffset(-1.7);
     h.run(2);
     const { offsetM } = h.floating.getState();
     expect(offsetM).not.toBe(0);
+    expect(h.content.position.x).toBeCloseTo(0, 8);
     expect(h.content.position.y).toBeCloseTo(-1.7 + offsetM, 6);
+    expect(h.content.position.z).toBeCloseTo(0, 8);
   });
 
   it('gives the backdrop the frame offset and the content the heave', () => {

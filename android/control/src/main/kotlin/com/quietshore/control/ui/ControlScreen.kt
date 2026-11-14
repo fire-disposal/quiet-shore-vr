@@ -46,6 +46,7 @@ import com.quietshore.control.model.SessionPhase
 import com.quietshore.control.model.UiEvent
 import com.quietshore.control.model.outcomePanelVisible
 import com.quietshore.control.model.sessionPhaseOf
+import com.quietshore.control.ui.components.EyeHeightField
 import com.quietshore.control.ui.components.ActionTone
 import com.quietshore.control.ui.components.ActionKey
 import com.quietshore.control.ui.components.ActionColumnWidth
@@ -95,14 +96,13 @@ import com.quietshore.control.ui.theme.QuietSpace
  * The console, as four destinations under one app bar.
  *
  * The bar is the only thing that never moves: state, the two charges, the
- * menu and the stop. Everything else is one of five pages, chosen by what the
+ * menu and the stop. Everything else is one of four pages, chosen by what the
  * operator is doing rather than by what fits on a screen:
  *
  * ```text
  *   会话  the patient's picture, the figures, the dials — plus the live
- *         controls (scene, strength, voice, posture) and the end.
- *   场景  the preparation bench: scene, rise length, posture, start.
- *   音频  the full cue panel: sequences, single cues, volume, water, tone.
+ *         controls (scene, strength, voice, posture) and one lifecycle key.
+ *   音频  the full cue panel: single cues, volume, water, voice set.
  *   体验  the operator's observation sheet, filled in after the headset is
  *         off; records list under the form, CSV out of it.
  *   说明  the manual, as a page.
@@ -136,7 +136,7 @@ fun ControlScreen(
     )
     var chosen by rememberSaveable { mutableStateOf<ConsoleSection?>(null) }
     // Default by phase, but never yank the operator off a page they picked.
-    val section = chosen ?: if (phase.inSession) ConsoleSection.Session else ConsoleSection.Scene
+    val section = chosen ?: ConsoleSection.Session
 
     val bottomInset = WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding()
     BoxWithConstraints(
@@ -227,19 +227,9 @@ fun ControlScreen(
                                 .then(pagePadding)
                                 .padding(bottom = 12.dp)
                         ) {
-                            val back = if (phase.inSession) {
-                                ConsoleSection.Session
-                            } else {
-                                ConsoleSection.Scene
-                            }
+                            val back = ConsoleSection.Session
                             when (section) {
                                 ConsoleSection.Session -> SessionPage(
-                                    state = state,
-                                    actions = actions,
-                                    phase = phase,
-                                    wide = wide
-                                )
-                                ConsoleSection.Scene -> ScenePage(
                                     state = state,
                                     actions = actions,
                                     phase = phase,
@@ -253,12 +243,13 @@ fun ControlScreen(
                                     withChrome = false,
                                     onExport = actions.onExportRecords
                                 )
-                                ConsoleSection.Audio -> PanelPage(
-                                    title = "音频",
-                                    note = "提示语与水声，都在这一页",
-                                    onBack = { chosen = back }
+                                ConsoleSection.Audio -> Column(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState())
                                 ) {
                                     AudioPanel(state = state, actions = actions)
+                                    Spacer(Modifier.height(QuietSpace.Page))
                                 }
                                 ConsoleSection.Experience -> PanelPage(
                                     title = "体验",
@@ -541,6 +532,17 @@ private fun SessionMain(
     phase: SessionPhase,
     modifier: Modifier = Modifier
 ) {
+    val entered = phase == SessionPhase.Calibrating ||
+        phase == SessionPhase.Running ||
+        phase == SessionPhase.Stopping
+    if (!entered) {
+        SessionStages(
+            state = state,
+            phase = phase,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
     // The picture is two thirds of the column, not all of it. At full height it
     // crowded the strip underneath — the numbers and the instrument sat in a
     // band that looked tacked on — and the third it keeps free is what makes the
@@ -566,6 +568,55 @@ private fun SessionMain(
             SessionHeave(state = state, actions = actions, phase = phase)
             Spacer(Modifier.height(8.dp))
             SessionAudio(state = state, actions = actions)
+        }
+    }
+}
+
+/** One position before the patient is inside XR: four stages, no prose. */
+@Composable
+private fun SessionStages(
+    state: ControlUiState,
+    phase: SessionPhase,
+    modifier: Modifier = Modifier
+) {
+    val ready = state.phase == BlePhase.READY
+    val calibration = calibrationView(phase, ready, state.calibrationPending)
+    val live = phase == SessionPhase.Running || phase == SessionPhase.Stopping
+    Panel(modifier) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "进入流程",
+                style = MaterialTheme.typography.titleMedium,
+                color = QuietPalette.Ink
+            )
+            Spacer(Modifier.height(24.dp))
+            StepLine("连接头显", if (ready) "已连接" else "未连接", ready)
+            Spacer(Modifier.height(22.dp))
+            StepLine(
+                "进入场景",
+                when (phase) {
+                    SessionPhase.Entry -> "进入中"
+                    SessionPhase.Calibrating, SessionPhase.Running,
+                    SessionPhase.Stopping -> "已进入"
+                    else -> "未开始"
+                },
+                phase != SessionPhase.Idle && phase != SessionPhase.Ended
+            )
+            Spacer(Modifier.height(22.dp))
+            StepLine("记录起始体位", calibration.stepValue, calibration.stepDone)
+            Spacer(Modifier.height(22.dp))
+            StepLine(
+                "进入正式场景",
+                when {
+                    live && !state.inSpecialScene -> "已进入"
+                    phase == SessionPhase.Running -> "已校准"
+                    else -> "未开始"
+                },
+                live && !state.inSpecialScene
+            )
         }
     }
 }
@@ -691,7 +742,9 @@ private fun SessionHeave(
                 label = if (state.breath) "禁用" else "启用",
                 onClick = { actions.onBreathChange(!state.breath) },
                 kind = if (state.breath) KeyKind.Outline else KeyKind.Selected,
-                enabled = enabled && percent > 0,
+                // A preference for the next scene: it stays pressable while
+                // this room has no heave, instead of looking broken.
+                enabled = ready && phase.acceptsChanges,
                 height = TouchTarget,
                 minWidth = 84.dp
             )
@@ -811,14 +864,15 @@ private fun SessionColumn(
                             label = if (state.inSpecialScene) "进入场景" else "切换场景",
                             onClick = actions.onSceneApply,
                             kind = KeyKind.Fill,
-                            enabled = ready && phase.acceptsChanges && state.sceneIntentDiverges,
+                            enabled = ready && phase.inSession &&
+                                phase.acceptsChanges && state.sceneIntentDiverges,
                             height = 40.dp,
                             minWidth = 96.dp
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    val cards = state.selectableScenes +
-                        if (phase.inSession) listOf(PREPARATION_CARD) else emptyList()
+                    val cards = (state.selectableScenes + PREPARATION_CARD)
+                        .distinctBy { it.id }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (row in cards.chunked(2)) {
                             Row(
@@ -827,17 +881,15 @@ private fun SessionColumn(
                             ) {
                                 for (scene in row) {
                                     val prep = scene.id == PREPARATION_SCENE
+                                    val chosen = state.sceneIntent
+                                        .ifEmpty { state.control.scene } == scene.id
                                     SceneCardView(
                                         scene = scene,
-                                        current = if (prep) {
-                                            state.prepScenePending ||
-                                                state.control.scene == PREPARATION_SCENE
-                                        } else {
-                                            scene.id == state.sceneIntent
-                                                .ifEmpty { state.control.scene }
-                                        },
+                                        current = chosen,
                                         enabled = if (prep) {
-                                            ready && phase.acceptsChanges && state.canReturnToPrep
+                                            ready && phase.inSession &&
+                                                phase.acceptsChanges &&
+                                                state.canReturnToPrep
                                         } else {
                                             ready && phase.acceptsChanges
                                         },
@@ -848,7 +900,7 @@ private fun SessionColumn(
                                         },
                                         modifier = Modifier
                                             .weight(1f)
-                                            .heightIn(min = 84.dp),
+                                            .heightIn(min = 60.dp),
                                         showBlurb = false
                                     )
                                 }
@@ -857,6 +909,35 @@ private fun SessionColumn(
                                 }
                             }
                         }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "站立眼高",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = QuietPalette.InkSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        EyeHeightField(
+                            valueCm = state.eyeHeightCm,
+                            onCommit = actions.onEyeHeight
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "cm",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = QuietPalette.InkSecondary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (state.pendingEyeHeightCm != null) "连接后生效" else "即时生效",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = QuietPalette.InkSecondary,
+                            maxLines = 1
+                        )
                     }
                 }
             }
@@ -982,32 +1063,46 @@ private fun SessionColumn(
             }
         }
         Spacer(Modifier.height(10.dp))
-        // The foot of the column is the session's verbs, and they are present on
-        // the *page* rather than only in the bar: during a session the operator
-        // must never have to find another tab to stop the patient.
-        if (phase.awaitingPress) {
-            // Nothing has been entered, so this is not a stop: the launch is
-            // withdrawn before the patient moves.
-            ActionKey(
-                label = "取消启动",
-                subLabel = "患者尚未进入",
-                onClick = actions.onCancelLaunch,
-                modifier = Modifier.fillMaxWidth(),
-                tone = ActionTone.Secondary,
-                enabled = true,
-                height = 64.dp
-            )
-        } else if (phase.inSession) {
-            EndKey(
-                enabled = ready && phase != SessionPhase.Stopping,
-                label = when (phase) {
-                    SessionPhase.Stopping -> "正在结束"
-                    else -> "结束会话"
-                },
-                onClick = actions.onEnd,
-                modifier = Modifier.fillMaxWidth()
-            )
+        // One key, the whole session lifecycle. It is the largest control on
+        // the page because it is the only decision that changes the patient's
+        // state; the guide, the scene cards and the posture controls all stay
+        // secondary to it.
+        val verbLabel = when (phase) {
+            SessionPhase.Idle, SessionPhase.Ended -> "进入场景"
+            SessionPhase.Entry -> "进入中"
+            SessionPhase.Calibrating, SessionPhase.Running -> "退出场景"
+            SessionPhase.Stopping -> "正在退出"
         }
+        val verbSub = when (phase) {
+            SessionPhase.Idle, SessionPhase.Ended -> "启动头显页面"
+            SessionPhase.Entry -> "等待患者按一次头显按钮"
+            SessionPhase.Calibrating, SessionPhase.Running -> "立即停止并结束"
+            SessionPhase.Stopping -> null
+        }
+        val verbTone = when (phase) {
+            SessionPhase.Idle, SessionPhase.Ended -> ActionTone.Primary
+            SessionPhase.Entry, SessionPhase.Stopping -> ActionTone.Quiet
+            SessionPhase.Calibrating, SessionPhase.Running -> ActionTone.Danger
+        }
+        val verbAction: () -> Unit = when (phase) {
+            SessionPhase.Idle, SessionPhase.Ended -> actions.onEnterTraining
+            SessionPhase.Entry -> actions.onCancelLaunch
+            SessionPhase.Calibrating, SessionPhase.Running -> actions.onEnd
+            SessionPhase.Stopping -> actions.onEnd
+        }
+        ActionKey(
+            label = verbLabel,
+            subLabel = verbSub,
+            onClick = verbAction,
+            modifier = Modifier.fillMaxWidth(),
+            tone = verbTone,
+            enabled = when (phase) {
+                SessionPhase.Entry, SessionPhase.Stopping -> false
+                else -> ready
+            },
+            height = 72.dp,
+            textStyle = MaterialTheme.typography.titleMedium
+        )
     }
 }
 
@@ -1191,7 +1286,8 @@ private fun StandbySteps(
     state: ControlUiState,
     actions: ControlActions,
     phase: SessionPhase,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showAction: Boolean = true
 ) {
     val ready = state.phase == BlePhase.READY
     val live = phase == SessionPhase.Running || phase == SessionPhase.Stopping
@@ -1216,12 +1312,12 @@ private fun StandbySteps(
             StepLine("连接头显", if (ready) "已连接" else "未连接", ready)
             Spacer(Modifier.height(12.dp))
             StepLine(
-                "启动训练",
+                "进入场景",
                 when (phase) {
                     SessionPhase.Entry -> "等待患者进入"
-                    SessionPhase.Calibrating -> "准备间，记录中"
-                    SessionPhase.Running -> "已在准备间"
-                    else -> "未启动"
+                    SessionPhase.Calibrating -> "记录中"
+                    SessionPhase.Running -> "已进入"
+                    else -> "未开始"
                 },
                 phase != SessionPhase.Idle
             )
@@ -1241,55 +1337,66 @@ private fun StandbySteps(
                 },
                 live && !state.inSpecialScene
             )
-            // The chain sits at the top, the one key at the foot. That key is
-            // polymorphic by phase so the page never grows a second status bar
-            // or a second cancel/calibration control.
-            Spacer(Modifier.weight(1f))
-            val verbLabel = when (phase) {
-                SessionPhase.Entry -> "取消启动"
-                SessionPhase.Calibrating ->
-                    if (state.calibrationPending) "已提交…" else "记录中…"
-                SessionPhase.Running -> "结束会话"
-                SessionPhase.Stopping -> "正在结束"
-                SessionPhase.Idle, SessionPhase.Ended -> "启动训练"
+            // The chain sits at the top; when this panel owns the page it also
+            // carries the one polymorphic key. On the session page the big key
+            // already lives at the bottom of the right column, so it is hidden.
+            if (showAction) {
+                Spacer(Modifier.weight(1f))
+                val verbLabel = when (phase) {
+                    SessionPhase.Entry -> "取消启动"
+                    SessionPhase.Calibrating ->
+                        if (state.calibrationPending) "已提交…" else "记录中…"
+                    SessionPhase.Running -> "结束会话"
+                    SessionPhase.Stopping -> "正在结束"
+                    SessionPhase.Idle, SessionPhase.Ended -> "启动训练"
+                }
+                val verbSubLabel = when (phase) {
+                    SessionPhase.Entry -> "患者尚未进入"
+                    SessionPhase.Calibrating -> "保持不动"
+                    SessionPhase.Running -> "冻结并结束"
+                    SessionPhase.Stopping -> null
+                    SessionPhase.Idle, SessionPhase.Ended -> null
+                }
+                val verbTone = when (phase) {
+                    SessionPhase.Entry -> ActionTone.Secondary
+                    SessionPhase.Running -> ActionTone.Danger
+                    SessionPhase.Stopping -> ActionTone.Quiet
+                    SessionPhase.Idle, SessionPhase.Calibrating,
+                    SessionPhase.Ended -> ActionTone.Primary
+                }
+                val verbEnabled = when (phase) {
+                    SessionPhase.Entry -> ready
+                    SessionPhase.Calibrating -> false
+                    SessionPhase.Running -> ready
+                    SessionPhase.Stopping -> false
+                    SessionPhase.Idle, SessionPhase.Ended -> ready
+                }
+                val verbAction: () -> Unit = when (phase) {
+                    SessionPhase.Entry -> actions.onCancelLaunch
+                    SessionPhase.Calibrating -> actions.onRecalibrate
+                    SessionPhase.Running -> actions.onEnd
+                    SessionPhase.Stopping -> actions.onEnd
+                    SessionPhase.Idle, SessionPhase.Ended -> actions.onEnterTraining
+                }
+                ActionKey(
+                    label = verbLabel,
+                    subLabel = verbSubLabel,
+                    onClick = verbAction,
+                    modifier = Modifier.fillMaxWidth(),
+                    tone = verbTone,
+                    height = 72.dp,
+                    enabled = verbEnabled,
+                    textStyle = MaterialTheme.typography.titleMedium
+                )
             }
-            val verbSubLabel = when (phase) {
-                SessionPhase.Entry -> "患者尚未进入"
-                SessionPhase.Calibrating -> "保持不动"
-                SessionPhase.Running -> "冻结并结束"
-                SessionPhase.Stopping -> null
-                SessionPhase.Idle, SessionPhase.Ended -> null
+            Spacer(Modifier.height(8.dp))
+            if (!showAction) {
+                Text(
+                    text = "点右下角「进入场景」，再请患者按一次头显按钮。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QuietPalette.InkSecondary
+                )
             }
-            val verbTone = when (phase) {
-                SessionPhase.Entry -> ActionTone.Secondary
-                SessionPhase.Running -> ActionTone.Danger
-                SessionPhase.Stopping -> ActionTone.Quiet
-                SessionPhase.Idle, SessionPhase.Calibrating, SessionPhase.Ended -> ActionTone.Primary
-            }
-            val verbEnabled = when (phase) {
-                SessionPhase.Entry -> ready
-                SessionPhase.Calibrating -> false
-                SessionPhase.Running -> ready
-                SessionPhase.Stopping -> false
-                SessionPhase.Idle, SessionPhase.Ended -> ready
-            }
-            val verbAction: () -> Unit = when (phase) {
-                SessionPhase.Entry -> actions.onCancelLaunch
-                SessionPhase.Calibrating -> actions.onRecalibrate
-                SessionPhase.Running -> actions.onEnd
-                SessionPhase.Stopping -> actions.onEnd
-                SessionPhase.Idle, SessionPhase.Ended -> actions.onEnterTraining
-            }
-            ActionKey(
-                label = verbLabel,
-                subLabel = verbSubLabel,
-                onClick = verbAction,
-                modifier = Modifier.fillMaxWidth(),
-                tone = verbTone,
-                height = 72.dp,
-                enabled = verbEnabled,
-                textStyle = MaterialTheme.typography.titleMedium
-            )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = calibration.hint,

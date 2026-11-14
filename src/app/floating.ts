@@ -6,7 +6,6 @@ import {
   floatOffsetAt
 } from '../core/xr/float';
 import { buoyancyAllowed, type BuoyancyGate } from '../core/xr/buoyancy-frame';
-import type { SceneHandle } from '../core/scene/contract';
 
 /**
  * Owner of everything buoyancy: the technician's choice, the eased envelope,
@@ -39,10 +38,7 @@ export interface FloatingDeps {
     /** Content-space offset for the whole art. */
     setContentPosition(x: number, y: number, z: number): void;
   };
-  handle(): SceneHandle | null;
   gate(): BuoyancyGate;
-  /** World up in content space; the heave follows this fixed axis. */
-  axis(out: THREE.Vector3): THREE.Vector3;
 }
 
 export interface FloatingState {
@@ -81,8 +77,7 @@ export interface FloatingApi {
 export function createFloating(
   deps: FloatingDeps & { amount?: number; breath?: boolean }
 ): FloatingApi {
-  const { host, handle, gate, axis } = deps;
-  const up = new THREE.Vector3(0, 1, 0);
+  const { host, gate } = deps;
 
   let amount = clampAmount(deps.amount ?? 1);
 
@@ -100,20 +95,14 @@ export function createFloating(
   }
 
   function apply(): void {
-    axis(up);
     // The weather never moves: the backdrop takes the floor offset and stays
     // put, whatever the scene is. There is one buoyancy implementation for
     // every scene, and a scene's only say in it is which nodes are sky.
     host.setBackdropOffset(baseOffset);
-    // The frame owns the base Y; the heave is one vector along world up, so
-    // the whole scene rises and falls vertically no matter where the patient
-    // looks. The Y component must be scaled by the axis too — adding the full
-    // offset to Y and the rest to X/Z made a tilted frame heave 19% too far.
-    host.setContentPosition(
-      up.x * offsetM,
-      baseOffset + up.y * offsetM,
-      up.z * offsetM
-    );
+    // Content +Y is the scene's vertical after calibration and the posture
+    // correction have been applied. Writing the heave here inherits both, so
+    // it is "up" in the world the patient sees, and no head pose enters it.
+    host.setContentPosition(0, baseOffset + offsetM, 0);
   }
 
   function update(dt: number): void {

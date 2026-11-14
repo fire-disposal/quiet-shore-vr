@@ -578,6 +578,28 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.QUESTIONNAIRE_CLOSE)
     }
 
+    /**
+     * Standing eye height, centimetres. It is a launch input: the headset
+     * persists it and the next page launch applies it, so a running scene is
+     * never re-composed under the patient.
+     */
+    fun setEyeHeight(centimetres: Int) {
+        val cm = centimetres.coerceIn(
+            ControlProtocol.EYE_HEIGHT_CM_MIN,
+            ControlProtocol.EYE_HEIGHT_CM_MAX
+        )
+        val ready = _uiState.value.phase == BlePhase.READY
+        _uiState.update {
+            it.copy(
+                eyeHeightCm = cm,
+                pendingEyeHeightCm = if (ready) null else cm
+            )
+        }
+        if (ready) {
+            sendCommand(ControlProtocol.EYE_HEIGHT_PREFIX + cm)
+        }
+    }
+
     fun recalibrate() {
         val state = _uiState.value
         if (state.calibrationPending || state.control.calibrating) {
@@ -1215,6 +1237,12 @@ class ControlViewModel(application: Application) :
                 battery = if (settled) state.battery else null
             )
         }
+        if (phase == BlePhase.READY) {
+            val pending = _uiState.value.pendingEyeHeightCm
+            if (pending != null && sendCommand(ControlProtocol.EYE_HEIGHT_PREFIX + pending)) {
+                _uiState.update { it.copy(pendingEyeHeightCm = null) }
+            }
+        }
     }
 
     override fun onReconnecting(attempt: Int, max: Int) {
@@ -1442,10 +1470,19 @@ class ControlViewModel(application: Application) :
             ?: currentApp
         val pendingApp = previous.pendingApp
         val settlesPending = pendingApp != null && reportedApp == pendingApp
+        val pendingHeight = previous.pendingEyeHeightCm
+        val reportedHeight = json.optInt("eyeHeightRequested", pendingHeight ?: previous.eyeHeightCm)
+            .coerceIn(
+                com.quietshore.control.protocol.ControlProtocol.EYE_HEIGHT_CM_MIN,
+                com.quietshore.control.protocol.ControlProtocol.EYE_HEIGHT_CM_MAX
+            )
+        val settlesHeight = pendingHeight != null && reportedHeight == pendingHeight
         _uiState.update { current ->
             current.copy(
                 app = pendingApp ?: reportedApp,
                 pendingApp = if (settlesPending) null else pendingApp,
+                eyeHeightCm = pendingHeight ?: reportedHeight,
+                pendingEyeHeightCm = if (settlesHeight) null else pendingHeight,
                 calibrationPending = false,
                 rampMs = json.optInt("rampMs", current.rampMs).coerceIn(0, 60_000),
                 mix = json.optDouble("mix", current.mix.toDouble()).toFloat().coerceIn(0f, 1f),
