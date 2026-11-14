@@ -12,9 +12,9 @@ import org.json.JSONObject
  * `{t, d, id?}`.
  *
  * The failure this pins: the headset used to hand-build each envelope inline,
- * so the SUS relay spliced an already-serialised sheet while the other four
- * types re-serialised a parsed object. Both must produce the same document, and
- * the SUS splice must not touch the page's bytes or key order.
+ * so the questionnaire relay spliced an already-serialised sheet while the
+ * other types re-serialised a parsed object. Both must produce the same
+ * document, and the splice must not touch the page's bytes or key order.
  */
 class JsonEnvelopeTest {
 
@@ -22,7 +22,10 @@ class JsonEnvelopeTest {
     fun `an already-serialised body is spliced verbatim`() {
         // Key order is the page's, not ours: only the three envelope bytes are added.
         val sheet = "{\"b\":2,\"a\":1}"
-        assertEquals("{\"t\":\"sus\",\"d\":{\"b\":2,\"a\":1}}", JsonEnvelope.document("sus", sheet))
+        assertEquals(
+            "{\"t\":\"questionnaire-result\",\"d\":{\"b\":2,\"a\":1}}",
+            JsonEnvelope.document("questionnaire-result", sheet)
+        )
     }
 
     @Test
@@ -84,7 +87,7 @@ class JsonEnvelopeTest {
     @Test
     fun `an empty type or body is refused at construction`() {
         assertThrows(IllegalArgumentException::class.java) { JsonEnvelope.document("", "{}") }
-        assertThrows(IllegalArgumentException::class.java) { JsonEnvelope.document("sus", " ") }
+        assertThrows(IllegalArgumentException::class.java) { JsonEnvelope.document("questionnaire-result", " ") }
     }
 
     @Test
@@ -92,7 +95,7 @@ class JsonEnvelopeTest {
         // The relay refuses what it cannot chunk; the wrapper must not be the
         // reason a sheet that fit on the page no longer fits on the tablet.
         val sheet = "{\"answers\":[" + (1..100).joinToString(",") { "\"q$it\":${it % 5 + 1}" } + "]}"
-        val document = JsonEnvelope.document("sus", sheet)
+        val document = JsonEnvelope.document("questionnaire-result", sheet)
         assertTrue(
             ControlProtocol.fitsJsonChannel(document.toByteArray(Charsets.UTF_8).size),
             "a ${document.length} B envelope must fit the json channel"

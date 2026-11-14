@@ -10,9 +10,9 @@ import java.util.Locale
  * This is the sheet the bedside actually fills in: how the float felt, whether
  * the world stayed put, how real the room looked, how the body lined up with
  * it, and whether the patient wants to do it again. It is deliberately *not* a
- * questionnaire instrument: the SUS is answered by the patient by gaze, this is
- * answered by the technician who watched the session, and the two never share a
- * store.
+ * questionnaire instrument: an instrument is answered by the patient by gaze,
+ * this is answered by the technician who watched the session, and the two never
+ * share a store.
  *
  * The three facts nobody types are captured when the operator opens the form
  * ([at], [scene], [sessionSec]) so the row is self-describing in the CSV: a

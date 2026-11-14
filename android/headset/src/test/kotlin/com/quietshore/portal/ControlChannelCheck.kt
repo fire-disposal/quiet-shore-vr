@@ -445,17 +445,20 @@ private fun jsonSizeChecks() {
 }
 
 /**
- * SUS replay on subscribe (M4).
+ * Questionnaire-sheet replay on subscribe (M4).
  *
  * A tablet that subscribes after the sheet was published used to get the raw
- * JSON document — no `{"t":"sus","d":…}` envelope, no `[id][index][total]`
- * header, no controller check. The replay must be byte-identical to the live
- * document and must reassemble through the same assembler.
+ * JSON document — no `{"t":"questionnaire-result","d":…}` envelope, no
+ * `[id][index][total]` header, no controller check. The replay must be
+ * byte-identical to the live document and must reassemble through the same
+ * assembler.
  */
-private fun susReplayChecks() {
+private fun questionnaireReplayChecks() {
+    // Two instruments' worth of slots: the relay must not care how long a sheet
+    // is, only that it is a document the channel can carry.
     val sheet = "{\"answers\":[{" + (1..10).joinToString(",") { "\"q$it\":${it % 5 + 1}" } + "]}"
     // The producer's own envelope call: the live publish and the replay share it.
-    val document = JsonEnvelope.document("sus", sheet)
+    val document = JsonEnvelope.document(ControlProtocol.TOPIC_QUESTIONNAIRE_RESULT, sheet)
 
     // Live path and replay path are the same document, so the tablet's
     // assembler produces the same bytes either way.
@@ -474,8 +477,14 @@ private fun susReplayChecks() {
 
     // The envelope is what makes it a channel document rather than a bare
     // record, and the body is spliced verbatim — no re-encoding of the sheet.
-    check("the doc states its topic", document.startsWith("{\"t\":\"sus\",\"d\":"))
-    check("the sheet survives the envelope byte for byte", document == "{\"t\":\"sus\",\"d\":$sheet}")
+    check(
+        "the doc states its topic",
+        document.startsWith("{\"t\":\"${ControlProtocol.TOPIC_QUESTIONNAIRE_RESULT}\",\"d\":")
+    )
+    check(
+        "the sheet survives the envelope byte for byte",
+        document == "{\"t\":\"${ControlProtocol.TOPIC_QUESTIONNAIRE_RESULT}\",\"d\":$sheet}"
+    )
 }
 
 /**
@@ -743,7 +752,16 @@ private fun protocolGrammarChecks() {
     check("hello needs no ack", !ControlProtocol.requiresSequencedAck(ControlProtocol.helloCommand()))
 
     checkEquals("view anim capability", ControlProtocol.CAP_VIEW_ANIM, ControlProtocol.capabilityFor("view:anim:up"))
-    checkEquals("sus capability", ControlProtocol.CAP_SUS, ControlProtocol.capabilityFor("sus:show:3"))
+    checkEquals(
+        "questionnaire capability",
+        ControlProtocol.CAP_QUESTIONNAIRE,
+        ControlProtocol.capabilityFor("questionnaire:show:3")
+    )
+    checkEquals(
+        "selection rides the same capability",
+        ControlProtocol.CAP_QUESTIONNAIRE,
+        ControlProtocol.capabilityFor("questionnaire:select:sus")
+    )
     checkEquals("always-available command", 0, ControlProtocol.capabilityFor("stop"))
     checkEquals(
         "capability names",
@@ -764,7 +782,7 @@ internal fun runControlChannelChecks(): Int {
     handshakeChecks()
     queueChecks()
     jsonSizeChecks()
-    susReplayChecks()
+    questionnaireReplayChecks()
     mtuPolicyChecks()
     codecChecks()
     protocolGrammarChecks()

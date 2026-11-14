@@ -155,7 +155,8 @@ internal class CommandQueue(private val discreteCapacity: Int = DEFAULT_CAPACITY
          *
          * These are motion: posture travel and view animations, which would
          * move the patient again right after the freeze. Anything else (audio,
-         * scene state, SUS, ping) is not motion and is left alone, so a stop
+         * scene state, a questionnaire command, ping) is not motion and is left
+         * alone, so a stop
          * never silently swallows an unrelated operator action.
          */
         val SUPERSEDED_BY_STOP: Set<String> =

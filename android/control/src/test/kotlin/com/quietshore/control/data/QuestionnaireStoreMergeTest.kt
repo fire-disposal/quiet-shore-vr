@@ -1,6 +1,6 @@
 package com.quietshore.control.data
 
-import com.quietshore.control.protocol.SusResult
+import com.quietshore.control.protocol.QuestionnaireResult
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -9,41 +9,44 @@ import org.junit.jupiter.api.Test
 /**
  * M7: a re-sent sheet is one record.
  *
- * The protocol requires the headset to replay its last SUS frame whenever a
- * controller subscribes, so after a reconnect the same sheet arrives again.
+ * The protocol requires the headset to replay its last questionnaire sheet
+ * whenever a controller subscribes, so after a reconnect the same sheet arrives
+ * again.
  * It must not double the history, the ledger event, or push real records out
  * of the 50-sheet window.
  */
-class SusStoreMergeTest {
+class QuestionnaireStoreMergeTest {
 
     private fun sheet(
         completedAt: Long = 1_700_000_000_000L,
         answers: List<Int> = List(10) { 4 },
         sessionSec: Int = 900,
         scene: String = "shore",
-        questionnaireId: String = "sus"
-    ) = SusResult(
+        questionnaireId: String = "sus",
+        score: Int? = null
+    ) = QuestionnaireResult(
         answers = answers,
-        filled = answers.count { it in 1..5 },
-        complete = answers.all { it in 1..5 },
+        score = score,
+        filled = answers.count { it > 0 },
+        complete = answers.isNotEmpty() && answers.all { it > 0 },
         scene = scene,
         sessionSec = sessionSec,
         completedAt = completedAt,
         questionnaireId = questionnaireId
     )
 
-    private fun recorded(outcome: SusStore.Appended): List<SusResult> {
-        assertTrue(outcome is SusStore.Appended.Recorded, "expected a new record")
-        return (outcome as SusStore.Appended.Recorded).history
+    private fun recorded(outcome: QuestionnaireStore.Appended): List<QuestionnaireResult> {
+        assertTrue(outcome is QuestionnaireStore.Appended.Recorded, "expected a new record")
+        return (outcome as QuestionnaireStore.Appended.Recorded).history
     }
 
     @Test
     fun `a replayed sheet is not appended twice`() {
-        val first = recorded(mergeSusHistory(emptyList(), sheet()))
+        val first = recorded(mergeQuestionnaireHistory(emptyList(), sheet()))
 
-        val replay = mergeSusHistory(first, sheet())
+        val replay = mergeQuestionnaireHistory(first, sheet())
 
-        assertTrue(replay is SusStore.Appended.Duplicate)
+        assertTrue(replay is QuestionnaireStore.Appended.Duplicate)
         assertEquals(1, replay.history.size)
         // The duplicate path must hand back the stored history, not an empty
         // list: the caller republishes it into the UI.
@@ -52,9 +55,9 @@ class SusStoreMergeTest {
 
     @Test
     fun `repeated replays stay at one record`() {
-        var history = recorded(mergeSusHistory(emptyList(), sheet()))
+        var history = recorded(mergeQuestionnaireHistory(emptyList(), sheet()))
         repeat(3) {
-            history = mergeSusHistory(history, sheet()).history
+            history = mergeQuestionnaireHistory(history, sheet()).history
         }
         assertEquals(1, history.size)
     }
@@ -64,8 +67,8 @@ class SusStoreMergeTest {
         val morning = sheet(completedAt = 1_700_000_000_000L)
         val evening = sheet(completedAt = 1_700_010_000_000L)
 
-        var history = recorded(mergeSusHistory(emptyList(), morning))
-        history = recorded(mergeSusHistory(history, evening))
+        var history = recorded(mergeQuestionnaireHistory(emptyList(), morning))
+        history = recorded(mergeQuestionnaireHistory(history, evening))
 
         assertEquals(listOf(morning, evening), history)
     }
@@ -74,8 +77,8 @@ class SusStoreMergeTest {
     fun `the same answers from a new session are a new record`() {
         // Identical answers must not collapse two real sessions: only the
         // filing facts identify a sheet.
-        var history = recorded(mergeSusHistory(emptyList(), sheet(sessionSec = 600)))
-        history = recorded(mergeSusHistory(history, sheet(sessionSec = 1_200)))
+        var history = recorded(mergeQuestionnaireHistory(emptyList(), sheet(sessionSec = 600)))
+        history = recorded(mergeQuestionnaireHistory(history, sheet(sessionSec = 1_200)))
 
         assertEquals(2, history.size)
     }
@@ -86,13 +89,44 @@ class SusStoreMergeTest {
         val first = sheet(completedAt = 1_000L)
         val second = sheet(completedAt = 2_000L)
 
-        var history = recorded(mergeSusHistory(emptyList(), first, keep))
-        history = recorded(mergeSusHistory(history, second, keep))
+        var history = recorded(mergeQuestionnaireHistory(emptyList(), first, keep))
+        history = recorded(mergeQuestionnaireHistory(history, second, keep))
         // The audit symptom: the replay of `second` used to append a third copy
         // and the window then dropped the genuine `first` record.
-        val replay = mergeSusHistory(history, second, keep)
+        val replay = mergeQuestionnaireHistory(history, second, keep)
 
         assertEquals(listOf(first, second), replay.history)
+    }
+
+    @Test
+    fun `sheets of any length are filed side by side`() {
+        // Two instruments with different question counts: nothing here assumes
+        // ten slots, and the store keeps both.
+        val ten = sheet(completedAt = 1_000L)
+        val three = sheet(
+            completedAt = 2_000L,
+            answers = List(3) { it + 1 },
+            questionnaireId = "pain-3"
+        )
+
+        var history = recorded(mergeQuestionnaireHistory(emptyList(), ten))
+        history = recorded(mergeQuestionnaireHistory(history, three))
+
+        assertEquals(listOf(ten, three), history)
+        assertEquals(10, history[0].answers.size)
+        assertEquals(3, history[1].answers.size)
+    }
+
+    @Test
+    fun `a score is stored as given, and none stays none`() {
+        val scored = sheet(score = 72)
+        val unscored = sheet(completedAt = 2_000L, questionnaireId = "pain-3", score = null)
+
+        var history = recorded(mergeQuestionnaireHistory(emptyList(), scored))
+        history = recorded(mergeQuestionnaireHistory(history, unscored))
+
+        assertEquals(72, history[0].score)
+        assertEquals(null, history[1].score)
     }
 
     @Test
@@ -115,12 +149,12 @@ class SusStoreMergeTest {
             sheet(completedAt = 0L, answers = List(10) { 2 }).key
         )
 
-        val first = recorded(mergeSusHistory(emptyList(), untimed))
-        assertTrue(mergeSusHistory(first, sheet(completedAt = 0L)) is SusStore.Appended.Duplicate)
+        val first = recorded(mergeQuestionnaireHistory(emptyList(), untimed))
+        assertTrue(mergeQuestionnaireHistory(first, sheet(completedAt = 0L)) is QuestionnaireStore.Appended.Duplicate)
         assertEquals(
             2,
             recorded(
-                mergeSusHistory(first, sheet(completedAt = 0L, answers = List(10) { 2 }))
+                mergeQuestionnaireHistory(first, sheet(completedAt = 0L, answers = List(10) { 2 }))
             ).size
         )
     }

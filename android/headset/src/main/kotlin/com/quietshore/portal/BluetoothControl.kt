@@ -89,7 +89,7 @@ internal class BluetoothControl(
         const val SEQ_MEMO_DEPTH = 32
 
         /** Log tags for the two callers of [publishDocument]. */
-        const val SUS = "sus"
+        const val QUESTIONNAIRE = "questionnaire-result"
         const val TOPIC_OTHER = "json"
     }
 
@@ -138,7 +138,7 @@ internal class BluetoothControl(
     private var statusCharacteristic: BluetoothGattCharacteristic? = null
     private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
     private var stateCharacteristic: BluetoothGattCharacteristic? = null
-    private var susCharacteristic: BluetoothGattCharacteristic? = null
+    private var jsonCharacteristic: BluetoothGattCharacteristic? = null
 
     /**
      * Chunk size for the JSON channel on the **current controller's** link.
@@ -162,12 +162,12 @@ internal class BluetoothControl(
     private var lastState: ControlState = ControlState()
 
     /**
-     * Last SUS sheet **document**, in the envelope the normal path sends
-     * (`{"t":"sus","d":{…}}`), so a tablet that subscribes late gets the same
-     * bytes a live publish would have produced: same envelope, same chunking,
-     * same controller-only delivery.
+     * Last questionnaire sheet **document**, in the envelope the normal path
+     * sends (`{"t":"questionnaire-result","d":{…}}`), so a tablet that
+     * subscribes late gets the same bytes a live publish would have produced:
+     * same envelope, same chunking, same controller-only delivery.
      */
-    private var lastSusDocument: String = ""
+    private var lastQuestionnaireDocument: String = ""
 
     private var started = false
 
@@ -331,22 +331,22 @@ internal class BluetoothControl(
                 ControlProtocol.stateUuid,
                 encodeStateFrame(lastState)
             )
-            // Completed SUS sheets: UTF-8 JSON, notify-only, one per sheet. The
-            // state frame is fixed by the wire contract, so a record needs its
+            // Questionnaire documents: UTF-8 JSON, notify-only, chunked. The
+            // state frame is fixed by the wire contract, so records need their
             // own characteristic rather than a wider state payload.
-            val sus = notifyCharacteristic(ControlProtocol.susUuid, ByteArray(0))
+            val jsonChannel = notifyCharacteristic(ControlProtocol.jsonUuid, ByteArray(0))
 
             commandCharacteristic = command
             statusCharacteristic = status
             telemetryCharacteristic = telemetry
             stateCharacteristic = state
-            susCharacteristic = sus
+            jsonCharacteristic = jsonChannel
 
             service.addCharacteristic(command)
             service.addCharacteristic(status)
             service.addCharacteristic(telemetry)
             service.addCharacteristic(state)
-            service.addCharacteristic(sus)
+            service.addCharacteristic(jsonChannel)
             if (!server.addService(service)) {
                 teardownGatt()
                 setState("gatt-add-service-failed")
@@ -465,7 +465,7 @@ internal class BluetoothControl(
         statusCharacteristic = null
         telemetryCharacteristic = null
         stateCharacteristic = null
-        susCharacteristic = null
+        jsonCharacteristic = null
         connected.clear()
         // A new link starts un-negotiated: keeping the last controller's MTU
         // would let the first notification after a restart overshoot the ATT
@@ -510,17 +510,17 @@ internal class BluetoothControl(
     }
 
     /**
-     * Forwards one SUS sheet as a JSON-channel document.
+     * Forwards one filed questionnaire sheet as a JSON-channel document.
      *
      * The sheet is wrapped in the channel's envelope *once*, here, and that
      * string is what both the live publish and the late-subscriber replay send.
      */
-    fun publishSus(json: String): Boolean {
+    fun publishQuestionnaireResult(json: String): Boolean {
         // The page's own keys and order, untouched: re-serialising here would
         // rewrite every record just to add three bytes of envelope.
-        val document = JsonEnvelope.document("sus", json)
-        lastSusDocument = document
-        return publishDocument(document, SUS)
+        val document = JsonEnvelope.document(ControlProtocol.TOPIC_QUESTIONNAIRE_RESULT, json)
+        lastQuestionnaireDocument = document
+        return publishDocument(document, QUESTIONNAIRE)
     }
 
     /**
@@ -548,25 +548,25 @@ internal class BluetoothControl(
         val id = jsonChunkId
         jsonChunkId = (jsonChunkId + 1) and 0xFF
         for (chunk in ControlProtocol.encodeJsonChunks(payload, perChunk, id)) {
-            notifyValue(susCharacteristic, chunk)
+            notifyValue(jsonCharacteristic, chunk)
         }
         return true
     }
 
     /**
-     * Replays the last SUS sheet to a tablet that has just subscribed.
+     * Replays the last questionnaire sheet to a tablet that has just subscribed.
      *
      * The CCCD write is the only "ready" signal there is, so this is the one
      * chance to hand over the record the tablet missed. It goes through the
      * normal document path — envelope, chunk headers, current MTU — and only to
      * the controller: a non-controller tablet never sees a patient's answers.
      */
-    private fun replaySus(device: BluetoothDevice) {
-        val document = lastSusDocument
+    private fun replayQuestionnaireResult(device: BluetoothDevice) {
+        val document = lastQuestionnaireDocument
         if (document.isEmpty() || !isController(device)) {
             return
         }
-        publishDocument(document, SUS)
+        publishDocument(document, QUESTIONNAIRE)
     }
 
     fun publishState(state: ControlState) {
@@ -1044,11 +1044,11 @@ internal class BluetoothControl(
             // A tablet that just subscribed gets the sheet it missed while it
             // was away; the CCCD write is the only "ready" signal we get.
             val subscribed = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            if (subscribed && descriptor.characteristic.uuid == ControlProtocol.susUuid) {
+            if (subscribed && descriptor.characteristic.uuid == ControlProtocol.jsonUuid) {
                 // Same envelope, same chunk headers, same MTU and the same
                 // controller check as a live publish: the old path sent the raw
                 // JSON document, unframed and to any subscriber.
-                replaySus(device)
+                replayQuestionnaireResult(device)
             }
         }
     }

@@ -34,7 +34,7 @@ class JsonChannelTest {
     @Test
     fun `documents interleave by chunk id`() {
         val first = "{\"t\":\"flags\",\"session\":true}".toByteArray()
-        val second = "{\"t\":\"sus\",\"filled\":10}".toByteArray()
+        val second = "{\"t\":\"questionnaire-result\",\"filled\":10}".toByteArray()
         val a = ControlProtocol.encodeJsonChunks(first, 8, id = 1)
         val b = ControlProtocol.encodeJsonChunks(second, 8, id = 2)
         val assembler = JsonAssembler()

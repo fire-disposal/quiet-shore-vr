@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "questionnaires": [
+    {
+      "id": "sus",
+      "name": {
+        "zh": "系统可用性量表",
+        "en": "System Usability Scale"
+      },
+      "short": {
+        "zh": "十题，使用感受",
+        "en": "Ten questions on usability"
+      },
+      "completionVoiceId": "v-thanks-1",
+      "scoring": {
+        "type": "sus"
+      },
+      "questions": [
+        {
+          "id": "sus-1",
+          "text": {
+            "zh": "我愿意经常使用这个系统。",
+            "en": "我愿意经常使用这个系统。"
+          },
+          "voiceId": "v-sus-1"
+        },
+        {
+          "id": "sus-2",
+          "text": {
+            "zh": "这个系统没有必要这么复杂。",
+            "en": "这个系统没有必要这么复杂。"
+          },
+          "voiceId": "v-sus-2"
+        },
+        {
+          "id": "sus-3",
+          "text": {
+            "zh": "我觉得这个系统容易使用。",
+            "en": "我觉得这个系统容易使用。"
+          },
+          "voiceId": "v-sus-3"
+        },
+        {
+          "id": "sus-4",
+          "text": {
+            "zh": "我需要技术人员的帮助才能用这个系统。",
+            "en": "我需要技术人员的帮助才能用这个系统。"
+          },
+          "voiceId": "v-sus-4"
+        },
+        {
+          "id": "sus-5",
+          "text": {
+            "zh": "这个系统的各项功能整合得很好。",
+            "en": "这个系统的各项功能整合得很好。"
+          },
+          "voiceId": "v-sus-5"
+        },
+        {
+          "id": "sus-6",
+          "text": {
+            "zh": "这个系统有太多不一致的地方。",
+            "en": "这个系统有太多不一致的地方。"
+          },
+          "voiceId": "v-sus-6"
+        },
+        {
+          "id": "sus-7",
+          "text": {
+            "zh": "我认为大多数人能很快学会使用这个系统。",
+            "en": "我认为大多数人能很快学会使用这个系统。"
+          },
+          "voiceId": "v-sus-7"
+        },
+        {
+          "id": "sus-8",
+          "text": {
+            "zh": "这个系统用起来很麻烦。",
+            "en": "这个系统用起来很麻烦。"
+          },
+          "voiceId": "v-sus-8"
+        },
+        {
+          "id": "sus-9",
+          "text": {
+            "zh": "使用这个系统时我很有信心。",
+            "en": "使用这个系统时我很有信心。"
+          },
+          "voiceId": "v-sus-9"
+        },
+        {
+          "id": "sus-10",
+          "text": {
+            "zh": "我需要先学习很多内容才能开始使用这个系统。",
+            "en": "我需要先学习很多内容才能开始使用这个系统。"
+          },
+          "voiceId": "v-sus-10"
+        }
+      ],
+      "options": [
+        {
+          "value": 1,
+          "label": {
+            "zh": "非常不同意",
+            "en": "Strongly disagree"
+          }
+        },
+        {
+          "value": 2,
+          "label": {
+            "zh": "不同意",
+            "en": "Disagree"
+          }
+        },
+        {
+          "value": 3,
+          "label": {
+            "zh": "一般",
+            "en": "Neutral"
+          }
+        },
+        {
+          "value": 4,
+          "label": {
+            "zh": "同意",
+            "en": "Agree"
+          }
+        },
+        {
+          "value": 5,
+          "label": {
+            "zh": "非常同意",
+            "en": "Strongly agree"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gad7",
+      "name": {
+        "zh": "焦虑状态自评",
+        "en": "Generalized Anxiety Disorder 7"
+      },
+      "short": {
+        "zh": "七题，回顾过去两周",
+        "en": "Seven questions about the past two weeks"
+      },
+      "completionVoiceId": "v-thanks-1",
+      "scoring": {
+        "type": "gad7"
+      },
+      "questions": [
+        {
+          "id": "gad7-1",
+          "text": {
+            "zh": "过去两周，我感觉紧张、焦虑或急切。",
+            "en": "过去两周，我感觉紧张、焦虑或急切。"
+          },
+          "voiceId": "v-gad7-1"
+        },
+        {
+          "id": "gad7-2",
+          "text": {
+            "zh": "过去两周，我不能停止或控制担忧。",
+            "en": "过去两周，我不能停止或控制担忧。"
+          },
+          "voiceId": "v-gad7-2"
+        },
+        {
+          "id": "gad7-3",
+          "text": {
+            "zh": "过去两周，我对各种各样的事情担忧过多。",
+            "en": "过去两周，我对各种各样的事情担忧过多。"
+          },
+          "voiceId": "v-gad7-3"
+        },
+        {
+          "id": "gad7-4",
+          "text": {
+            "zh": "过去两周，我很难放松下来。",
+            "en": "过去两周，我很难放松下来。"
+          },
+          "voiceId": "v-gad7-4"
+        },
+        {
+          "id": "gad7-5",
+          "text": {
+            "zh": "过去两周，我由于不安而无法静坐。",
+            "en": "过去两周，我由于不安而无法静坐。"
+          },
+          "voiceId": "v-gad7-5"
+        },
+        {
+          "id": "gad7-6",
+          "text": {
+            "zh": "过去两周，我变得容易烦恼或急躁。",
+            "en": "过去两周，我变得容易烦恼或急躁。"
+          },
+          "voiceId": "v-gad7-6"
+        },
+        {
+          "id": "gad7-7",
+          "text": {
+            "zh": "过去两周，我感到似乎将有可怕的事情发生而害怕。",
+            "en": "过去两周，我感到似乎将有可怕的事情发生而害怕。"
+          },
+          "voiceId": "v-gad7-7"
+        }
+      ],
+      "options": [
+        {
+          "value": 1,
+          "label": {
+            "zh": "完全不会",
+            "en": "Not at all"
+          }
+        },
+        {
+          "value": 2,
+          "label": {
+            "zh": "好几天",
+            "en": "Several days"
+          }
+        },
+        {
+          "value": 3,
+          "label": {
+            "zh": "一半以上的天数",
+            "en": "More than half the days"
+          }
+        },
+        {
+          "value": 4,
+          "label": {
+            "zh": "几乎每天",
+            "en": "Nearly every day"
+          }
+        }
+      ]
+    }
+  ]
+}

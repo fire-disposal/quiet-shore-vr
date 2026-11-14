@@ -86,7 +86,7 @@ data class ControlUiState(
      * frame that confirms it, and they differ for good if the headset refuses
      * the switch. Both are shown when they disagree, because a technician
      * whose bench says one scene and whose mirror shows another is looking at
-     * a captured-SUS-grade data error, not a cosmetic one.
+     * a filed-record-grade data error, not a cosmetic one.
      */
     val sceneIntent: String = "",
     /** Last headset the operator connected to; null until one is stored. */
@@ -117,14 +117,14 @@ data class ControlUiState(
     val mix: Float = 0f,
     /** Operator switch for gaze dwell; on by default. */
     val gazeDwell: Boolean = true,
-    /** Operator switch for reading the SUS statement aloud; on by default. */
-    val susVoice: Boolean = true,
+    /** Operator switch for reading the loaded question aloud; on by default. */
+    val questionnaireVoice: Boolean = true,
     /** Operator switch for the headset subtitle card; on by default. */
     val subtitles: Boolean = true,
     /** Mirror camera: the patient's view (default) or the room overview. */
     val mirrorMode: MirrorMode = MirrorMode.PATIENT,
-    /** True while the SUS scale is open in the headset. */
-    val susOpen: Boolean = false,
+    /** True while the questionnaire sheet is open in the headset. */
+    val questionnaireOpen: Boolean = false,
     /** Milliseconds since the headset reported a running session. */
     val sessionElapsedMs: Long = 0L,
     /**
@@ -160,11 +160,19 @@ data class ControlUiState(
     /** Index of the cue the headset reports as speaking, or -1. */
     val voiceId: Int = -1,
     /** 1-based question currently shown on the headset, 0 = none. */
-    val susIndex: Int = 0,
-    /** Answers recorded from the tablet, 1..5, 0 = unanswered. */
-    val susAnswers: List<Int> = List(10) { 0 },
+    val questionnaireIndex: Int = 0,
+    /**
+     * Answers recorded from the tablet, positional, 0 = unanswered.
+     *
+     * Length is the loaded instrument's question count, so it is empty before a
+     * catalogue arrives and follows the instrument when the operator selects
+     * another one. The values themselves are that instrument's option values;
+     * nothing here assumes 1..5.
+     */
+    val questionnaireAnswers: List<Int> = emptyList(),
     /** Every sheet the headset has filed, newest last. Persisted on the tablet. */
-    val susHistory: List<com.quietshore.control.protocol.SusResult> = emptyList(),
+    val questionnaireHistory: List<com.quietshore.control.protocol.QuestionnaireResult> =
+        emptyList(),
     val scanAttempted: Boolean = false,
     /** Launch requested, waiting for the patient to enter the XR view. */
     val startPending: Boolean = false,
@@ -196,17 +204,24 @@ data class ControlUiState(
     /** Product face the headset reports; the top bar displays this value. */
     val app: String = "training",
 
-    /** Questionnaire catalogue announced by the page. */
+    /**
+     * The questionnaire registry, read once from this APK's own assets.
+     *
+     * It is a build input (`dist/questionnaires.json`, compiled into both
+     * applications), never a network document: no question wording crosses
+     * BLE. Empty means the asset was missing or damaged, and the sheet draws
+     * its empty state rather than inventing questions.
+     */
     val questionnaires: List<
         com.quietshore.control.protocol.QuestionnaireCatalogDocument.Questionnaire
         > = emptyList(),
 
-    /** Instrument the sheet currently shows; defaults to the first announced. */
-    val questionnaireId: String = "sus",
+    /** Instrument the sheet currently shows; empty until one is announced. */
+    val questionnaireId: String = "",
 
     /** Record filters: null = all questionnaires, 0 = all time. */
-    val susFilterQuestionnaire: String? = null,
-    val susFilterDays: Int = 0,
+    val questionnaireFilter: String? = null,
+    val questionnaireFilterDays: Int = 0,
 
     /**
      * The 体验 sheet the operator is filling in, if any.
@@ -221,7 +236,8 @@ data class ControlUiState(
     /**
      * Filed 体验 records, newest last. Persisted on the tablet.
      *
-     * It rides the state (like [susHistory]) so the list under the form updates
+     * It rides the state (like [questionnaireHistory]) so the list under the form
+     * updates
      * in the same frame the record is filed — the point of the form is seeing
      * the row appear.
      */
@@ -229,10 +245,18 @@ data class ControlUiState(
 ) {
     val showControls: Boolean get() = controlGranted || sessionActive
 
-    /** The announced instrument the sheet is showing, if any. */
+    /**
+     * The announced instrument the sheet is showing, if any.
+     *
+     * Null means "no catalogue yet": the sheet then shows a loading state and
+     * never a locally invented question list.
+     */
     val questionnaire: com.quietshore.control.protocol.QuestionnaireCatalogDocument.Questionnaire?
         get() = questionnaires.firstOrNull { it.id == questionnaireId }
             ?: questionnaires.firstOrNull()
+
+    /** True when the apparatus cannot draw a sheet at all yet. */
+    val questionnaireMissing: Boolean get() = questionnaire == null
 
     /** Cards the operator may choose; the built-in preparation room is not one. */
     val selectableScenes: List<SceneCatalog.Scene>

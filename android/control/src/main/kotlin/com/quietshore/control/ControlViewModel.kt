@@ -21,13 +21,17 @@ import com.quietshore.control.model.ScannedHeadset
 import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.protocol.ControlProtocol
 import com.quietshore.control.protocol.SceneCatalogDocument
-import com.quietshore.control.data.SusStore
+import com.quietshore.control.data.QuestionnaireStore
 import com.quietshore.control.data.ExperienceCsv
 import com.quietshore.control.data.ExperienceStore
+import com.quietshore.control.data.telemetry.TelemetryRecorder
 import com.quietshore.control.model.ExperienceDraft
 import com.quietshore.control.ui.ExperienceField
 import com.quietshore.control.protocol.ControlState
-import com.quietshore.control.protocol.SusResult
+import com.quietshore.control.protocol.QuestionnaireResult
+import com.quietshore.control.protocol.QuestionnaireCatalogAsset
+import com.quietshore.control.protocol.QuestionnaireCatalogDocument
+import com.quietshore.control.protocol.QuestionnaireResultCodec
 import org.json.JSONException
 import org.json.JSONObject
 import com.quietshore.control.protocol.TelemetryPose
@@ -57,16 +61,44 @@ class ControlViewModel(application: Application) :
     private val preferences =
         application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    private val susStore = SusStore(application)
+    private val questionnaireStore = QuestionnaireStore(application)
     private val experienceStore = ExperienceStore(application)
     private val trainingStore = com.quietshore.control.data.TrainingStore(application)
     private val eventLog = com.quietshore.control.data.EventLog(application)
 
+    /**
+     * The one-way upload path.
+     *
+     * Every write below that already persisted a local record also hands that
+     * same record here, which writes it to the durable outbox before asking for
+     * an upload. The order matters: a record that is only in memory when the
+     * tablet loses its link is a record the server will never see.
+     */
+    private val telemetry = TelemetryRecorder(application)
+
+    /**
+     * The questionnaire registry, read from this APK's own assets.
+     *
+     * The build compiles the same file into both applications, so the tablet
+     * renders exactly the registry the page runs and no question wording ever
+     * crosses BLE. A missing asset leaves the list empty and the sheet shows
+     * its empty state — there is no second copy of any instrument in Kotlin.
+     */
+    private val questionnaireCatalog: List<QuestionnaireCatalogDocument.Questionnaire> =
+        QuestionnaireCatalogAsset.load { name ->
+            application.assets.open(name).bufferedReader().use { it.readText() }
+        }
+
     private val _uiState = MutableStateFlow(
         ControlUiState(
             lastDeviceAddress = preferences.getString(LAST_DEVICE_KEY, null),
-            susHistory = susStore.load(),
-            experienceHistory = experienceStore.load()
+            questionnaireHistory = questionnaireStore.load(),
+            experienceHistory = experienceStore.load(),
+            questionnaires = questionnaireCatalog,
+            questionnaireId = questionnaireCatalog.firstOrNull()?.id ?: "",
+            questionnaireAnswers = List(questionnaireCatalog.firstOrNull()?.questions?.size ?: 0) {
+                0
+            }
         )
     )
     val uiState: StateFlow<ControlUiState> = _uiState.asStateFlow()
@@ -84,6 +116,31 @@ class ControlViewModel(application: Application) :
 
     private fun notice(text: String) {
         _events.tryEmit(UiEvent.Notice(text))
+    }
+
+    /**
+     * Persists one behaviour event and hands the same record to the uploader.
+     *
+     * The event log returns the object it actually wrote (null for a replay), so
+     * the upload id is derived from the stored stamp rather than a second
+     * `System.currentTimeMillis()` that would make the same event two records.
+     */
+    private fun logEvent(app: String, kind: String, detail: JSONObject? = null) {
+        val stored = eventLog.append(app, kind, detail)
+        telemetry.recordEvent(stored)
+    }
+
+    init {
+        // A cold start is both a scheduling point and the backfill point: work
+        // installed here is what survives the next power cycle, and the local
+        // history from before this uploader existed reaches the server exactly
+        // once (the outbox drops anything already acknowledged).
+        telemetry.start(
+            questionnaires = _uiState.value.questionnaireHistory,
+            training = trainingStore.load(),
+            experiences = _uiState.value.experienceHistory,
+            events = eventLog.load()
+        )
     }
 
     private fun error(text: String) {
@@ -264,6 +321,32 @@ class ControlViewModel(application: Application) :
             delay(ENTER_PENDING_MS)
             _uiState.update { it.copy(startPending = false) }
         }
+    }
+
+    /**
+     * Launch the questionnaire face.
+     *
+     * A questionnaire launch is not a session: there is no posture to record
+     * and no calibration capture, so the page opens straight onto its sheet.
+     * The face is persisted *before* the launch command, because the headset
+     * reads the persisted face to decide how to boot the page — and it can boot
+     * it with no page (and no link) up yet, which is why this works below
+     * READY.
+     */
+    fun enterQuestionnaire() {
+        val state = _uiState.value
+        if (state.app != "questionnaire") {
+            // Select the face locally first: the headset's flags echo follows,
+            // and the launch below reads the persisted face.
+            _uiState.update { it.copy(app = "questionnaire") }
+        }
+        if (state.phase != BlePhase.READY) {
+            error("头显未连接，无法启动")
+            return
+        }
+        sendCommand(ControlProtocol.APP_PREFIX + "questionnaire")
+        sendCommand(ControlProtocol.ENTER)
+        notice("已请求启动问卷")
     }
 
     /**
@@ -460,14 +543,14 @@ class ControlViewModel(application: Application) :
         sendCommand(ControlProtocol.POSTURE_MIX + percent.coerceIn(0, 100))
     }
 
-    fun openSus() {
-        _uiState.update { it.copy(susOpen = true) }
-        sendCommand("sus:open")
+    fun openQuestionnaire() {
+        _uiState.update { it.copy(questionnaireOpen = true) }
+        sendCommand(ControlProtocol.QUESTIONNAIRE_OPEN)
     }
 
-    fun closeSus() {
-        _uiState.update { it.copy(susOpen = false) }
-        sendCommand("sus:close")
+    fun closeQuestionnaire() {
+        _uiState.update { it.copy(questionnaireOpen = false) }
+        sendCommand(ControlProtocol.QUESTIONNAIRE_CLOSE)
     }
 
     fun recalibrate() {
@@ -493,14 +576,12 @@ class ControlViewModel(application: Application) :
     }
 
     // ── Voice cues ─────────────────────────────────────────────────────────
-    // Guidance lines are played by hand; SUS statements are scheduled by the
-    // panel itself. Microphone never opens: this is playback only.
+    // Guidance lines are played by hand. This list is the training face's own
+    // cue catalogue — the questions of a questionnaire are not in it, and the
+    // sheet schedules those itself. Microphone never opens: playback only.
 
     fun playVoice(id: String) {
-        val line = VoiceCatalog.line(id) ?: return
-        // The panel reads its own statements as they appear; a manual tap there
-        // would talk over the automatic schedule.
-        if (line.group == "SUS") {
+        if (VoiceCatalog.line(id) == null) {
             return
         }
         sendCommand(ControlProtocol.VOICE_PREFIX + "play:" + id)
@@ -519,7 +600,6 @@ class ControlViewModel(application: Application) :
     }
 
 
-    // ── SUS ────────────────────────────────────────────────────────────────
     /**
      * Mirror camera mode. Purely local: the mirror is a WebView on this tablet,
      * so no link traffic is involved.
@@ -539,19 +619,73 @@ class ControlViewModel(application: Application) :
         )
     }
 
+    // ── Questionnaires ─────────────────────────────────────────────────────
+    // One instrument at a time, named by the catalogue the page announced.
+    // Nothing below assumes how many questions it has or what its answers mean.
+
     /**
-     * The headset reads each statement as it appears; this is the operator's
+     * The headset reads each question as it appears; this is the operator's
      * switch for that. The default on both sides is on.
      */
-    fun setSusVoice(enabled: Boolean) {
-        _uiState.update { it.copy(susVoice = enabled) }
-        sendCommand(if (enabled) "sus:voice:on" else "sus:voice:off")
+    fun setQuestionnaireVoice(enabled: Boolean) {
+        _uiState.update { it.copy(questionnaireVoice = enabled) }
+        sendCommand(
+            if (enabled) {
+                ControlProtocol.QUESTIONNAIRE_VOICE_ON
+            } else {
+                ControlProtocol.QUESTIONNAIRE_VOICE_OFF
+            }
+        )
     }
 
-    fun susShow(index: Int) {
-        val n = index.coerceIn(1, 10)
-        _uiState.update { it.copy(susIndex = n) }
-        sendCommand("sus:show:$n")
+    /**
+     * Bring question [index] (1-based) up on the headset.
+     *
+     * Bounded by the loaded instrument, not by a constant: a questionnaire with
+     * three questions has no question four.
+     */
+    fun questionnaireShow(index: Int) {
+        val count = _uiState.value.questionnaire?.questions?.size ?: 0
+        if (count == 0) {
+            return
+        }
+        val n = index.coerceIn(1, count)
+        _uiState.update { it.copy(questionnaireIndex = n) }
+        sendCommand(ControlProtocol.QUESTIONNAIRE_SHOW + n)
+    }
+
+    /**
+     * Read the current question again without moving on.
+     *
+     * Replaying is not answering: the index and the answers stay exactly where
+     * they are, so a patient who missed a sentence hears it again instead of
+     * losing the item.
+     */
+    fun questionnaireReplay() {
+        if (_uiState.value.questionnaireIndex < 1) {
+            return
+        }
+        sendCommand(ControlProtocol.QUESTIONNAIRE_REPLAY)
+    }
+
+    /**
+     * Load one instrument from the announced catalogue.
+     *
+     * Local answering state is reset: answers recorded against another
+     * instrument's questions would be filed under the wrong ones. The page is
+     * told which instrument to show; it answers with its own echo.
+     */
+    fun selectQuestionnaire(id: String) {
+        val state = _uiState.value
+        val target = state.questionnaires.firstOrNull { it.id == id } ?: return
+        _uiState.update {
+            it.copy(
+                questionnaireId = target.id,
+                questionnaireIndex = 0,
+                questionnaireAnswers = List(target.questions.size) { 0 }
+            )
+        }
+        sendCommand(ControlProtocol.QUESTIONNAIRE_SELECT + target.id)
     }
 
     /**
@@ -619,50 +753,55 @@ class ControlViewModel(application: Application) :
         if (state.outcome.isEmpty) state.outcome else OutcomeState()
 
 
-    fun susAnswer(value: Int) {
-        val v = value.coerceIn(1, 5)
-        val index = _uiState.value.susIndex
-        if (index < 1) {
+    /**
+     * The operator's answer for the question on screen.
+     *
+     * [value] must be one of the loaded instrument's own option values: five
+     * is an answer only for an instrument that has an option 5. The page
+     * validates the same rule; refusing it here keeps a wrong frame off the
+     * link in the first place.
+     */
+    fun questionnaireAnswer(value: Int) {
+        val state = _uiState.value
+        val instrument = state.questionnaire ?: return
+        val index = state.questionnaireIndex
+        if (index < 1 || !instrument.accepts(value)) {
             return
         }
-        _uiState.update { state ->
-            val answers = state.susAnswers.toMutableList()
-            answers[index - 1] = v
-            state.copy(susAnswers = answers)
+        _uiState.update {
+            val answers = it.questionnaireAnswers.toMutableList()
+            // The catalogue may have shrunk under a stale index.
+            if (index > answers.size) {
+                return@update it
+            }
+            answers[index - 1] = value
+            it.copy(questionnaireAnswers = answers)
         }
-        sendCommand("sus:answer:$v")
+        sendCommand(ControlProtocol.QUESTIONNAIRE_ANSWER + value)
         // The page advances after each answer; mirror that here.
-        if (index < 10) {
-            _uiState.update { it.copy(susIndex = index + 1) }
+        if (index < instrument.questions.size) {
+            _uiState.update { it.copy(questionnaireIndex = index + 1) }
         }
     }
 
-    fun cycleSusFilterQuestionnaire() {
+    /**
+     * Cycle the archive's instrument filter: all, then every instrument that
+     * actually has a filed record, in filing order.
+     */
+    fun cycleQuestionnaireFilter() {
         val state = _uiState.value
-        val ids = listOfNotNull(null) + state.susHistory.map { it.questionnaireId }.distinct()
-        val current = state.susFilterQuestionnaire
+        val ids = listOfNotNull(null) +
+            state.questionnaireHistory.map { it.questionnaireId }.distinct()
+        val current = state.questionnaireFilter
         val next = ids[(ids.indexOf(current).coerceAtLeast(0) + 1) % ids.size]
-        _uiState.update { it.copy(susFilterQuestionnaire = next) }
+        _uiState.update { it.copy(questionnaireFilter = next) }
     }
 
-    fun cycleSusFilterDays() {
+    fun cycleQuestionnaireFilterDays() {
         val days = listOf(0, 7, 30)
-        val current = _uiState.value.susFilterDays
+        val current = _uiState.value.questionnaireFilterDays
         val next = days[(days.indexOf(current).coerceAtLeast(0) + 1) % days.size]
-        _uiState.update { it.copy(susFilterDays = next) }
-    }
-
-    private fun filteredSus(state: ControlUiState): List<SusResult> {
-        val cutoff = if (state.susFilterDays <= 0) {
-            Long.MIN_VALUE
-        } else {
-            System.currentTimeMillis() - state.susFilterDays * 24L * 3600L * 1000L
-        }
-        return state.susHistory.filter { record ->
-            (state.susFilterQuestionnaire == null ||
-                record.questionnaireId == state.susFilterQuestionnaire) &&
-                record.completedAt >= cutoff
-        }
+        _uiState.update { it.copy(questionnaireFilterDays = next) }
     }
 
     /**
@@ -686,7 +825,7 @@ class ControlViewModel(application: Application) :
         if (recordId.isNotEmpty()) {
             detail.put("id", recordId)
         }
-        eventLog.append(app, "page.$kind", detail)
+        logEvent(app, "page.$kind", detail)
         // The one behaviour event that changes tablet state instead of merely
         // being logged: the page confirming it filed the bedside answer.
         if (kind == OutcomeReceipt.LOG_KIND) {
@@ -705,14 +844,14 @@ class ControlViewModel(application: Application) :
      */
     fun exportRecords(filterDays: Int = 0, questionnaireId: String? = null) {
         val state = _uiState.value
-        val days = if (filterDays <= 0) state.susFilterDays else filterDays
-        val instrument = questionnaireId ?: state.susFilterQuestionnaire
+        val days = if (filterDays <= 0) state.questionnaireFilterDays else filterDays
+        val instrument = questionnaireId ?: state.questionnaireFilter
         val cutoff = if (days <= 0) {
             Long.MIN_VALUE
         } else {
             System.currentTimeMillis() - days * 24L * 3600L * 1000L
         }
-        val sheets = state.susHistory.filter { record ->
+        val sheets = state.questionnaireHistory.filter { record ->
             (instrument == null || record.questionnaireId == instrument) &&
                 record.completedAt >= cutoff
         }
@@ -866,6 +1005,9 @@ class ControlViewModel(application: Application) :
         val draft = _uiState.value.experienceDraft ?: return
         val record = draft.toRecord()
         val next = experienceStore.append(record)
+        // The outbox is written before the UI is republished, so the row the
+        // operator sees and the row that will be uploaded are the same record.
+        telemetry.recordExperience(record)
         _uiState.update { it.copy(experienceDraft = null, experienceHistory = next) }
         notice("已记录 ${record.participantLabel} 的体验")
     }
@@ -1000,7 +1142,7 @@ class ControlViewModel(application: Application) :
         }
         // One event per accepted command, in the face it was pressed in: this
         // is the seam the split record stores cannot see on their own.
-        eventLog.append(
+        logEvent(
             _uiState.value.app,
             "command",
             org.json.JSONObject().put("c", normalized)
@@ -1030,7 +1172,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onReconnecting(attempt: Int, max: Int) {
-        eventLog.append("system", "link.reconnecting", org.json.JSONObject().put("attempt", attempt))
+        logEvent("system", "link.reconnecting", org.json.JSONObject().put("attempt", attempt))
         _uiState.update {
             it.copy(
                 reconnectAttempt = attempt,
@@ -1040,7 +1182,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlGranted() {
-        eventLog.append("system", "link.ready")
+        logEvent("system", "link.ready")
         _uiState.update {
             it.copy(
                 controlGranted = true,
@@ -1062,7 +1204,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onControlLost(reason: String) {
-        eventLog.append("system", "link.lost", org.json.JSONObject().put("reason", reason))
+        logEvent("system", "link.lost", org.json.JSONObject().put("reason", reason))
         _uiState.update {
             it.copy(
                 controlGranted = false,
@@ -1073,7 +1215,7 @@ class ControlViewModel(application: Application) :
     }
 
     override fun onDisconnected() {
-        eventLog.append("system", "link.disconnected")
+        logEvent("system", "link.disconnected")
         lastPoseAt = 0L
         _uiState.update {
             it.copy(
@@ -1091,19 +1233,31 @@ class ControlViewModel(application: Application) :
     }
 
     /**
-     * One SUS sheet from the headset. The tablet is where it survives: append
-     * to the persisted history and mirror the answers into the live sheet so
-     * the operator sees what the patient just filed.
+     * One document from the headset's JSON channel. Two topics belong to the
+     * questionnaire world: the page's live state, and one filed sheet per
+     * completion. There is no catalogue topic — the registry is an asset in this
+     * APK. The tablet is where a sheet survives: it appends it to the persisted
+     * history and mirrors the answers into the live sheet so the operator sees
+     * what the patient just filed.
      */
     override fun onJson(topic: String, data: String) {
         when (topic) {
-            "sus" -> handleSus(data)
+            ControlProtocol.TOPIC_QUESTIONNAIRE_RESULT -> handleQuestionnaireResult(data)
+            ControlProtocol.TOPIC_QUESTIONNAIRE_STATE -> applyQuestionnaireState(data)
+            // A refusal from the page, in the page's own words: it is the only
+            // end that knows why a command did not take effect, and the
+            // operator is the one holding the tablet.
+            "notice" -> handlePageNotice(data)
             "catalog" -> handleCatalog(data)
-            "questionnaire" -> handleQuestionnaires(data)
             "session" -> {
                 if (trainingStore.append(data)) {
-                    eventLog.append("training", "session.recorded", org.json.JSONObject(data))
+                    logEvent("training", "session.recorded", org.json.JSONObject(data))
                 }
+                // Filed regardless of `append`'s verdict: a re-sent summary
+                // carries a refreshed outcome at the same stamp, and the outbox
+                // collapses it on the same stable id.
+                runCatching { JSONObject(data) }
+                    .onSuccess { telemetry.recordTraining(it) }
             }
             "log" -> handlePageEvent(data)
             "flags" -> applyFlags(data)
@@ -1130,13 +1284,74 @@ class ControlViewModel(application: Application) :
         _uiState.update { it.copy(scenes = scenes) }
     }
 
-    private fun handleQuestionnaires(data: String) {
-        val list = com.quietshore.control.protocol.QuestionnaireCatalogDocument.parse(data) ?: return
+    /**
+     * The page's live view of the questionnaire: which instrument is loaded,
+     * whether the sheet is open, the current item, the answers so far and the
+     * two switches.
+     *
+     * This is the UI's truth, not an echo of the local presses. The tablet draws
+     * what the page says because the patient can advance an item by gaze — the
+     * page is the only end that sees that — and because a refused command must
+     * visibly not have happened. Nothing here is persisted: a reload publishes
+     * a fresh one.
+     */
+    private fun applyQuestionnaireState(data: String) {
+        val json = try {
+            JSONObject(data)
+        } catch (error: JSONException) {
+            Log.w(TAG, "questionnaire state rejected: ${error.message}")
+            return
+        }
+        val answersArray = json.optJSONArray("answers")
+        val answers: List<Int>? = if (answersArray == null) {
+            null
+        } else {
+            buildList<Int> {
+                for (index in 0 until answersArray.length()) {
+                    add(answersArray.optInt(index, 0).coerceAtLeast(0))
+                }
+            }
+        }
         _uiState.update { current ->
-            val id = current.questionnaireId.takeIf { currentId ->
-                list.any { it.id == currentId }
-            } ?: list.first().id
-            current.copy(questionnaires = list, questionnaireId = id)
+            val reportedId = json.optString("questionnaireId").trim()
+            // An id the catalogue does not hold is not something the sheet can
+            // render: keep the loaded one and let the page settle.
+            val id = reportedId.takeIf { candidate ->
+                candidate.isNotEmpty() && current.questionnaires.any { it.id == candidate }
+            } ?: current.questionnaireId
+            val count = current.questionnaires.firstOrNull { it.id == id }?.questions?.size ?: 0
+            current.copy(
+                questionnaireId = id,
+                questionnaireOpen = json.optBoolean("open", current.questionnaireOpen),
+                // 1-based on the wire; 0 means "no item on screen".
+                questionnaireIndex = json.optInt("index", current.questionnaireIndex)
+                    .coerceIn(0, if (count > 0) count else ControlProtocol.QUESTION_MAX),
+                questionnaireAnswers = answers ?: current.questionnaireAnswers,
+                gazeDwell = json.optBoolean("gazeDwell", current.gazeDwell),
+                questionnaireVoice = json.optBoolean("voice", current.questionnaireVoice)
+            )
+        }
+    }
+
+    /**
+     * The page refused something and said why. Its wording is the operator's,
+     * so it is shown as an error rather than turned into a generic line.
+     */
+    private fun handlePageNotice(data: String) {
+        val json = try {
+            JSONObject(data)
+        } catch (error: JSONException) {
+            return
+        }
+        val text = json.optString("text").trim()
+        if (text.isEmpty()) {
+            return
+        }
+        logEvent(_uiState.value.app, "page.notice", json)
+        if (json.optString("tone") == "error") {
+            error(text)
+        } else {
+            notice(text)
         }
     }
 
@@ -1201,48 +1416,78 @@ class ControlViewModel(application: Application) :
         }
     }
 
-    private fun handleSus(json: String) {
+    private fun handleQuestionnaireResult(json: String) {
         val result = try {
-            decodeSus(json)
+            QuestionnaireResultCodec.decode(JSONObject(json))
         } catch (error: Exception) {
-            Log.w(TAG, "SUS payload rejected: ${error.message}")
+            Log.w(TAG, "questionnaire payload rejected: ${error.message}")
             null
         } ?: return
         // The headset re-sends its last sheet on every subscribe, so most calls
         // here are replays. Only a genuinely new record may write the ledger
         // event, show the recorded notice, or replace the local answers.
-        val history = when (val appended = susStore.append(result)) {
-            is SusStore.Appended.Duplicate -> {
-                Log.i(TAG, "SUS replay ignored: ${result.key}")
+        val history = when (val appended = questionnaireStore.append(result)) {
+            is QuestionnaireStore.Appended.Duplicate -> {
+                Log.i(TAG, "questionnaire replay ignored: ${result.key}")
                 appended.history
             }
-            is SusStore.Appended.Recorded -> {
-                eventLog.append(
+            is QuestionnaireStore.Appended.Recorded -> {
+                // Queued before the ledger event: the sheet itself is the
+                // observation, and it must be on disk even if everything after
+                // this line fails.
+                telemetry.recordQuestionnaire(result)
+                logEvent(
                     "questionnaire",
                     "sheet.recorded",
                     org.json.JSONObject()
                         .put("questionnaireId", result.questionnaireId)
                         .put("complete", result.complete)
                         .put("filled", result.filled)
+                        .put("answers", result.answers.size)
                         .put("score", result.score ?: org.json.JSONObject.NULL)
                 )
-                notice(
-                    result.score?.let { "SUS 已记录：$it 分" } ?: "SUS 已记录 ${result.filled}/10"
-                )
+                notice(resultNotice(result))
                 appended.history
             }
         }
         _uiState.update { current ->
+            // Mirror the sheet into the live slots only when it belongs to the
+            // instrument on screen: another instrument's answers are not this
+            // one's, even if the arrays happen to fit.
+            val sameInstrument = result.questionnaireId == current.questionnaireId ||
+                result.questionnaireId.isEmpty()
             current.copy(
-                susHistory = history,
-                susAnswers = if (result.answers.size == 10) result.answers else current.susAnswers
+                questionnaireHistory = history,
+                // A filed sheet is the record of what was answered, so the live
+                // slots follow it: the operator sees the sheet the patient just
+                // closed.
+                // The sheet is the authority for those slots, so its own array
+                // is used as-is: it is as long as the instrument's questions.
+                questionnaireAnswers = if (sameInstrument) {
+                    result.answers
+                } else {
+                    current.questionnaireAnswers
+                }
             )
         }
     }
 
-    private fun decodeSus(json: String): SusResult =
-        com.quietshore.control.protocol.SusResultCodec.decode(JSONObject(json))
-            ?: throw IllegalArgumentException("answers missing")
+    /**
+     * What the operator is told when a sheet is filed.
+     *
+     * The score is the page's number, quoted as given; an unscored instrument
+     * gets the answer count instead — never a `/10`, which was true of exactly
+     * one instrument.
+     */
+    private fun resultNotice(result: QuestionnaireResult): String {
+        val name = result.questionnaireName.ifEmpty { result.questionnaireId }
+        val score = result.score
+        return if (score != null) {
+            "$name 已记录：$score 分"
+        } else {
+            "$name 已记录 ${result.filled}/${result.answers.size}"
+        }
+    }
 
     override fun onControlState(state: ControlState) {
         lastStateAt = SystemClock.elapsedRealtime()

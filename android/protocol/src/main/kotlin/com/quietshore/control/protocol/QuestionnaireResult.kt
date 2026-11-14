@@ -1,19 +1,25 @@
 package com.quietshore.control.protocol
 
-import kotlin.math.roundToInt
-
 /**
- * One SUS sheet as carried on [ControlProtocol.susUuid].
+ * One filed questionnaire sheet, as carried on [ControlProtocol.jsonUuid].
  *
- * The page sends raw answers (0 = unanswered) plus the facts needed to file the
- * record. Scoring lives in the wire module so every reader agrees on the
- * transform: `score = SUM(odd: a - 1, even: 5 - a) * 2.5`, 0..100, only for a
- * full sheet.
+ * The page owns every questionnaire: its questions, its option values and the
+ * meaning of an answer. It also owns scoring — a sheet arrives with the score
+ * already computed (or with `null` when the instrument publishes none, or the
+ * sheet is not complete). Nothing here knows what SUS is, how many questions an
+ * instrument has, or what a given answer value means.
+ *
+ * [answers] is positional and length-agnostic: slot *i* belongs to question
+ * *i* of the instrument named by [questionnaireId]. An unanswered slot is 0,
+ * because JSON `null` would make a Kotlin decoder branch on a type it cannot
+ * see in a BLE notification.
  */
-data class SusResult(
-    /** Ten slots in statement order; 0 means the patient never answered it. */
+data class QuestionnaireResult(
+    /** One slot per question, in instrument order; 0 means unanswered. */
     val answers: List<Int>,
+    /** How many slots hold an answer; the page's own count. */
     val filled: Int,
+    /** The page says every question was answered. */
     val complete: Boolean,
     val scene: String,
     val sessionSec: Int,
@@ -22,13 +28,16 @@ data class SusResult(
     /** Product face that produced the record; the ledger's app field. */
     val app: String = "questionnaire",
     /** Instrument id from the page's registry. */
-    val questionnaireId: String = "sus",
+    val questionnaireId: String = "",
     /** Human-readable instrument name at the time it was filed. */
-    val questionnaireName: String = ""
+    val questionnaireName: String = "",
+    /**
+     * The instrument's own score, computed by the page. Null when the
+     * instrument publishes no scoring, or when the sheet is incomplete: the
+     * tablet files what it is given and never derives one.
+     */
+    val score: Int? = null
 ) {
-    /** Standard SUS score, or null while any item is unanswered. */
-    val score: Int? get() = if (complete) susScore(answers) else null
-
     /**
      * Stable identity of one filed sheet.
      *
@@ -64,25 +73,10 @@ data class SusResult(
             return (head + answers.joinToString(",") + complete.toString())
                 .joinToString(KEY_SEPARATOR)
         }
+
+    /** The unanswered count the archive prints when there is no score. */
+    val remaining: Int get() = (answers.size - filled).coerceAtLeast(0)
 }
 
-/** Standard SUS transform; null unless all ten items hold 1..5. */
-fun susScore(answers: List<Int>): Int? {
-    if (answers.size != SUS_ITEMS) {
-        return null
-    }
-    var total = 0
-    for (index in 0 until SUS_ITEMS) {
-        val answer = answers[index]
-        if (answer !in 1..5) {
-            return null
-        }
-        total += if (index % 2 == 0) answer - 1 else 5 - answer
-    }
-    return (total * 2.5f).roundToInt()
-}
-
-const val SUS_ITEMS: Int = 10
-
-/** Field separator of [SusResult.key]; a unit separator cannot occur in an id. */
+/** Field separator of [QuestionnaireResult.key]; a unit separator cannot occur in an id. */
 internal const val KEY_SEPARATOR: String = "\u001F"

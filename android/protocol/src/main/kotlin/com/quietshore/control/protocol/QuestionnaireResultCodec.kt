@@ -8,15 +8,17 @@ import org.json.JSONObject
  *
  * Storage and the BLE decoder share this codec so a record written by one build
  * is readable by the next, and a corrupted file is dropped one entry at a time
- * instead of taking the history down. Missing fields from older builds get the
- * documented defaults.
+ * instead of taking the history down. A missing [QuestionnaireResult.score] is
+ * encoded as JSON null and decoded back to null — "no score" is a value, not an
+ * absent field.
  */
-object SusResultCodec {
+object QuestionnaireResultCodec {
 
-    fun encode(result: SusResult): JSONObject = JSONObject()
+    fun encode(result: QuestionnaireResult): JSONObject = JSONObject()
         .put("answers", JSONArray(result.answers))
         .put("filled", result.filled)
         .put("complete", result.complete)
+        .put("score", result.score ?: JSONObject.NULL)
         .put("scene", result.scene)
         .put("sessionSec", result.sessionSec)
         .put("completedAt", result.completedAt)
@@ -25,7 +27,7 @@ object SusResultCodec {
         .put("questionnaireName", result.questionnaireName)
 
     /** A non-array body is "no history"; one bad entry is skipped. */
-    fun decodeList(raw: String?): List<SusResult> {
+    fun decodeList(raw: String?): List<QuestionnaireResult> {
         if (raw.isNullOrBlank()) {
             return emptyList()
         }
@@ -41,7 +43,7 @@ object SusResultCodec {
         }
     }
 
-    fun encodeList(list: List<SusResult>): String {
+    fun encodeList(list: List<QuestionnaireResult>): String {
         val array = JSONArray()
         for (result in list) {
             array.put(encode(result))
@@ -50,7 +52,7 @@ object SusResultCodec {
     }
 
     /** Null when the object has no usable answer array. */
-    fun decode(json: JSONObject): SusResult? {
+    fun decode(json: JSONObject): QuestionnaireResult? {
         val answersArray = json.optJSONArray("answers") ?: return null
         val answers = buildList {
             for (index in 0 until answersArray.length()) {
@@ -60,16 +62,19 @@ object SusResultCodec {
         if (answers.isEmpty()) {
             return null
         }
-        return SusResult(
+        return QuestionnaireResult(
             answers = answers,
-            filled = json.optInt("filled", answers.count { it in 1..5 }),
+            filled = json.optInt("filled", answers.count { it > 0 }),
             complete = json.optBoolean("complete", false),
             scene = json.optString("scene", ""),
             sessionSec = json.optInt("sessionSec", 0),
             completedAt = json.optLong("completedAt", 0L),
             app = json.optString("app", "questionnaire"),
-            questionnaireId = json.optString("questionnaireId", "sus"),
-            questionnaireName = json.optString("questionnaireName", "")
+            questionnaireId = json.optString("questionnaireId", ""),
+            questionnaireName = json.optString("questionnaireName", ""),
+            // optInt returns 0 for null, so the field is read by type: only a
+            // real number is a score.
+            score = json.opt("score") as? Int
         )
     }
 }

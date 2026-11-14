@@ -306,9 +306,9 @@ class CommandQueueTest {
         val queue = CommandQueue()
         queue.enqueue("audio:on")
         queue.enqueue(ControlProtocol.SCENE_PREFIX + "ward")
-        queue.enqueue("sus:open")
+        queue.enqueue(ControlProtocol.QUESTIONNAIRE_OPEN)
         assertEquals(
-            listOf("audio:on", "scene:ward", "sus:open"),
+            listOf("audio:on", "scene:ward", ControlProtocol.QUESTIONNAIRE_OPEN),
             drain(queue)
         )
     }

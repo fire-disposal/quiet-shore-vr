@@ -13,13 +13,13 @@ import org.json.JSONObject
  * emitted as `t`, then `d`, then `id`.
  *
  * Two producers exist and both go through here:
- * - the page's own records, already serialised (SUS sheets), where
+ * - the page's own records, already serialised (questionnaire sheets), where
  *   re-serialising would rewrite every answer just to add three bytes;
  * - documents the headset itself synthesises from an already-typed payload
- *   (`catalog`, `session`, `questionnaire`, `log`).
+ *   (`catalog`, `session`, `questionnaire-result`, `questionnaire-state`, `log`).
  */
 object JsonEnvelope {
-    /** Envelope key holding the document type, e.g. `sus`. */
+    /** Envelope key holding the document type, e.g. `questionnaire-result`. */
     const val TYPE: String = "t"
 
     /** Envelope key holding the document body. */

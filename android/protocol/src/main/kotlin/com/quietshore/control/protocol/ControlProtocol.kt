@@ -21,12 +21,12 @@ object ControlProtocol {
     val stateUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000005")
 
     /**
-     * The JSON channel, headset → tablet: every event-driven document (SUS
-     * sheets, session/flag changes, settings echo) rides here, split into
-     * `[id][index][total]` chunks so nothing depends on the ATT MTU or on a
-     * fixed-width frame.
+     * The JSON channel, headset → tablet: every event-driven document
+     * (questionnaire sheets and catalogues, session/flag changes, settings
+     * echo) rides here, split into `[id][index][total]` chunks so nothing
+     * depends on the ATT MTU or on a fixed-width frame.
      */
-    val susUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000006")
+    val jsonUuid: UUID = UUID.fromString("7a1e0001-6f3c-4f9a-9d2b-2f6a1c000006")
 
     /** Chunk header of the JSON channel: id, index, total — one byte each. */
     const val chunkHeaderBytes: Int = 3
@@ -59,9 +59,55 @@ object ControlProtocol {
     /** Host-level commands are executed by the headset service, not the page. */
     const val ENTER: String = "enter"
 
-    /** Operator answers the current SUS item when the patient cannot. */
-    const val SUS_SHOW: String = "sus:show:"
-    const val SUS_ANSWER: String = "sus:answer:"
+    /**
+     * Questionnaire control, one instrument at a time.
+     *
+     * Every verb names the *loaded* instrument rather than a specific one, so a
+     * second questionnaire needs no new command:
+     * - `questionnaire:select:<id>` loads an instrument from the announced catalogue;
+     * - `questionnaire:open` / `questionnaire:close` show or hide the sheet;
+     * - `questionnaire:replay` re-reads the current item without advancing;
+     * - `questionnaire:show:<1-100>` brings item *n* up;
+     * - `questionnaire:answer:<1-9>` records the operator's answer for it;
+     * - `questionnaire:voice:on|off` turns the automatic read-out on or off.
+     *
+     * The *page* owns which of the answer values 1..9 this instrument actually
+     * accepts; the grammar only bounds the argument.
+     */
+    const val QUESTIONNAIRE_PREFIX: String = "questionnaire:"
+    const val QUESTIONNAIRE_SHOW: String = "questionnaire:show:"
+    const val QUESTIONNAIRE_ANSWER: String = "questionnaire:answer:"
+    const val QUESTIONNAIRE_SELECT: String = "questionnaire:select:"
+    const val QUESTIONNAIRE_OPEN: String = "questionnaire:open"
+    const val QUESTIONNAIRE_CLOSE: String = "questionnaire:close"
+    const val QUESTIONNAIRE_REPLAY: String = "questionnaire:replay"
+    const val QUESTIONNAIRE_VOICE_ON: String = "questionnaire:voice:on"
+    const val QUESTIONNAIRE_VOICE_OFF: String = "questionnaire:voice:off"
+
+    /** Question numbers the grammar accepts; the catalogue bounds the real count. */
+    const val QUESTION_MAX: Int = 100
+    /** Answer values the grammar accepts; the instrument's options bound the real set. */
+    const val ANSWER_MIN: Int = 1
+    const val ANSWER_MAX: Int = 9
+
+    /**
+     * JSON-channel topics.
+     *
+     * There is deliberately no catalogue topic: the questionnaire registry is a
+     * build input compiled into both APKs (`dist/questionnaires.json`), so no
+     * question wording ever crosses BLE. What does cross is a small state frame
+     * and a small record, both of which name the instrument by id only.
+     */
+    const val TOPIC_QUESTIONNAIRE_RESULT: String = "questionnaire-result"
+    /**
+     * Live questionnaire state, published by the page on open/close/item/answer/
+     * switch/selection. Not persisted anywhere: it is the current picture, and a
+     * page reload simply publishes a fresh one.
+     *
+     * `{questionnaireId, open, index, answers, gazeDwell, voice}` with a 1-based
+     * `index` (0 = nothing on screen) and 0 for an unanswered slot.
+     */
+    const val TOPIC_QUESTIONNAIRE_STATE: String = "questionnaire-state"
 
     /** Ambience level: `audio:volume:<0-100>` (0 = the bed is silent, not off). */
     const val AUDIO_VOLUME: String = "audio:volume:"
@@ -139,8 +185,10 @@ object ControlProtocol {
         "gaze:dwell:on|off",
         "anim:duration:$RAMP_MS_MIN-$RAMP_MS_MAX", "posture:rise", "posture:lower", "posture:stop",
         "posture:mix:0-100",
-        "sus:open", "sus:close",
-        "sus:show:1-10", "sus:answer:1-5", "sus:voice:on|off",
+        "questionnaire:select:<id>", "questionnaire:open", "questionnaire:close",
+        "questionnaire:replay",
+        "questionnaire:show:1-100", "questionnaire:answer:1-9",
+        "questionnaire:voice:on|off",
         "view:anim:up|down|recenter", "view:stop",
         "voice:play:<id>", "voice:seq:start|imagine|relax|close", "voice:stop",
         "voice:volume:0-100", "voice:mix:duck:0-18",
@@ -163,10 +211,12 @@ object ControlProtocol {
     const val CAP_POSTURE: Int = 1 shl 2
     /** Continuous buoyancy: amount and breath. */
     const val CAP_MOTION: Int = 1 shl 3
-    const val CAP_SUS: Int = 1 shl 4
+    /** Questionnaires: sheet open/close, item navigation and operator answers. */
+    const val CAP_QUESTIONNAIRE: Int = 1 shl 4
     const val CAP_GAZE_DWELL: Int = 1 shl 5
     const val CAPABILITIES_MASK: Int =
-        CAP_VIEW_ANIM or CAP_SCENE or CAP_POSTURE or CAP_MOTION or CAP_SUS or CAP_GAZE_DWELL
+        CAP_VIEW_ANIM or CAP_SCENE or CAP_POSTURE or CAP_MOTION or CAP_QUESTIONNAIRE or
+            CAP_GAZE_DWELL
 
     /**
      * QS2 protocol identity. The tablet sends `HELLO QS2 1` after CONTROL_OK
@@ -280,7 +330,7 @@ object ControlProtocol {
             normalized.startsWith(GAZE_DWELL) -> CAP_GAZE_DWELL
             normalized.startsWith(ANIM_DURATION) -> CAP_POSTURE
             normalized.startsWith("posture:") -> CAP_POSTURE
-            normalized.startsWith("sus:") -> CAP_SUS
+            normalized.startsWith(QUESTIONNAIRE_PREFIX) -> CAP_QUESTIONNAIRE
             else -> 0
         }
     }
@@ -292,7 +342,7 @@ object ControlProtocol {
         if (mask and CAP_SCENE != 0) names.add("scene")
         if (mask and CAP_POSTURE != 0) names.add("posture")
         if (mask and CAP_MOTION != 0) names.add("motion")
-        if (mask and CAP_SUS != 0) names.add("sus")
+        if (mask and CAP_QUESTIONNAIRE != 0) names.add("questionnaire")
         if (mask and CAP_GAZE_DWELL != 0) names.add("gazeDwell")
         return names
     }
@@ -315,28 +365,61 @@ object ControlProtocol {
         return normalized.takeIf { it.isNotEmpty() && it.length <= 200 && !it.contains('\n') }
     }
 
-    /** Parses `sus:show:<1..10>`; the page clamps to the item list afterwards. */
-    fun parseSusShow(command: String): Int? {
-        if (!command.startsWith(SUS_SHOW)) {
+    /**
+     * Parses `questionnaire:show:<1..100>`.
+     *
+     * The range is the grammar's, not an instrument's: how many questions the
+     * loaded questionnaire has is the page's business, and it clamps to its own
+     * list. A number this grammar refuses is a frame the tablet should never
+     * have sent.
+     */
+    fun parseQuestionnaireShow(command: String): Int? {
+        if (!command.startsWith(QUESTIONNAIRE_SHOW)) {
             return null
         }
-        val raw = command.substring(SUS_SHOW.length)
+        val raw = command.substring(QUESTIONNAIRE_SHOW.length)
         val value = raw.toIntOrNull() ?: return null
-        return value.takeIf { it in 1..SUS_ITEMS }
+        return value.takeIf { it in 1..QUESTION_MAX }
     }
 
-    /** Parses `sus:answer:<1-5>`; anything else is rejected whole. */
-    fun parseSusAnswer(command: String): Int? {
-        if (!command.startsWith(SUS_ANSWER)) {
+    /**
+     * Parses `questionnaire:answer:<1-9>`, one digit, no leading zero.
+     *
+     * Which of those values the loaded instrument accepts is the page's
+     * question, not this one's: an out-of-range answer for *this* instrument is
+     * a valid frame carrying an invalid choice.
+     */
+    fun parseQuestionnaireAnswer(command: String): Int? {
+        if (!command.startsWith(QUESTIONNAIRE_ANSWER)) {
             return null
         }
-        val raw = command.substring(SUS_ANSWER.length)
+        val raw = command.substring(QUESTIONNAIRE_ANSWER.length)
         if (raw.length != 1) {
             return null
         }
         val value = raw.toIntOrNull() ?: return null
-        return value.takeIf { it in 1..5 }
+        return value.takeIf { it in ANSWER_MIN..ANSWER_MAX }
     }
+
+    /**
+     * Parses `questionnaire:select:<id>`; the id grammar is the catalogue's,
+     * so an id the page could never have published is rejected here.
+     *
+     * The id is compared **before** [normalize] lowercases anything: catalogue
+     * ids are lowercase by construction, so an upper-case one is a command the
+     * tablet should never have sent rather than a second spelling of a real id.
+     * Every caller that validates a selection goes through here.
+     */
+    fun parseQuestionnaireSelect(command: String): String? {
+        val raw = command.trim()
+        if (!raw.startsWith(QUESTIONNAIRE_SELECT)) {
+            return null
+        }
+        val id = raw.substring(QUESTIONNAIRE_SELECT.length)
+        return id.takeIf { QUESTIONNAIRE_ID.matches(it) }
+    }
+
+    private val QUESTIONNAIRE_ID = Regex("^[a-z][a-z0-9-]{0,31}$")
 
     /**
      * Parses `view:anim:<name>`; the name must be exactly one of
@@ -393,12 +476,15 @@ object ControlProtocol {
             normalized == POSTURE_RISE ||
             normalized == POSTURE_LOWER ||
             normalized == POSTURE_STOP ||
-            normalized == "sus:open" ||
-            parseSusShow(normalized) != null ||
-            normalized == "sus:close" ||
-            parseSusAnswer(normalized) != null ||
-            normalized == "sus:voice:on" ||
-            normalized == "sus:voice:off" ||
+            normalized == QUESTIONNAIRE_OPEN ||
+            normalized == QUESTIONNAIRE_CLOSE ||
+            normalized == QUESTIONNAIRE_REPLAY ||
+            parseQuestionnaireShow(normalized) != null ||
+            parseQuestionnaireAnswer(normalized) != null ||
+            // Read from the un-lowercased command: an id is case-sensitive.
+            parseQuestionnaireSelect(command) != null ||
+            normalized == QUESTIONNAIRE_VOICE_ON ||
+            normalized == QUESTIONNAIRE_VOICE_OFF ||
             normalized == VIEW_STOP ||
             parseViewAnim(normalized) != null ||
             parseVoice(normalized) != null

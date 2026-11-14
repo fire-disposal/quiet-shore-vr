@@ -40,7 +40,9 @@ object OperatorCopy {
         raw.startsWith("已请求启动") -> "请患者按一次头显按钮进入画面。"
         raw.startsWith("头显已接收") -> "头显已接收指令。"
         raw == "已释放控制" -> "已断开接管。"
-        raw.startsWith("SUS 已记录") -> raw
+        // A record, and a refusal from the page, are both already phrased for
+        // the operator: the instrument name and the page's own reason.
+        raw.contains("已记录") -> raw
         raw.startsWith("已打开导出分享") -> "已打开分享。"
         raw.startsWith("连接中断，正在重连") -> raw
         // An event nobody has phrased yet must not put its raw text on the

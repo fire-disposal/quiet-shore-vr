@@ -79,7 +79,7 @@ import com.quietshore.control.ui.components.SceneIndex
 import com.quietshore.control.ui.components.SectionHead
 import com.quietshore.control.ui.components.Stepper
 import com.quietshore.control.ui.components.StepLine
-import com.quietshore.control.ui.components.SusSheet
+import com.quietshore.control.ui.components.QuestionnaireSheet
 import com.quietshore.control.ui.components.SwitchRow
 import com.quietshore.control.ui.components.TouchTarget
 import com.quietshore.control.ui.components.AudioPanel
@@ -107,7 +107,7 @@ import com.quietshore.control.ui.theme.QuietSpace
  *         off; records list under the form, CSV out of it.
  *   说明  the manual, as a page.
  *
- * The questionnaire (SUS) is its own application face; it is not a training
+ * The questionnaire face is its own application; it is not a training
  * destination. The 体验 sheet is the operator's, not the patient's, so it is
  * not offered there either.
  * ```
@@ -408,7 +408,7 @@ private fun QuestionnaireApp(
                         )
                         Rule()
                         Spacer(Modifier.height(12.dp))
-                        SusSheet(
+                        QuestionnaireSheet(
                             state = state,
                             actions = actions,
                             showArchive = false
@@ -421,7 +421,7 @@ private fun QuestionnaireApp(
                         )
                         Rule()
                         Spacer(Modifier.height(12.dp))
-                        SusSheet(
+                        QuestionnaireSheet(
                             state = state,
                             actions = actions,
                             showAnswer = false

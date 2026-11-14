@@ -95,8 +95,8 @@ fun ConsolePreview(
             val now = System.currentTimeMillis()
             val answers = listOf(4, 2, 5, 1, 4, 2, 5, 2, 4, 1)
             base.copy(
-                susHistory = listOf(
-                    com.quietshore.control.protocol.SusResult(
+                questionnaireHistory = listOf(
+                    com.quietshore.control.protocol.QuestionnaireResult(
                         answers = answers,
                         filled = 10,
                         complete = true,
@@ -104,22 +104,26 @@ fun ConsolePreview(
                         sessionSec = 312,
                         completedAt = now - 2L * 24 * 3600 * 1000,
                         questionnaireId = "sus",
-                        questionnaireName = "系统可用性量表"
+                        questionnaireName = "系统可用性量表",
+                        score = 72
                     ),
-                    com.quietshore.control.protocol.SusResult(
-                        answers = answers.map { 5 },
-                        filled = 10,
+                    // A second, differently shaped instrument in the fixture:
+                    // three questions, two options, no score. It is here so the
+                    // archive is exercised against more than one shape.
+                    com.quietshore.control.protocol.QuestionnaireResult(
+                        answers = listOf(2, 1, 2),
+                        filled = 3,
                         complete = true,
                         scene = "ward",
                         sessionSec = 240,
                         completedAt = now - 40L * 24 * 3600 * 1000,
-                        questionnaireId = "sus",
-                        questionnaireName = "系统可用性量表"
+                        questionnaireId = "pain-3",
+                        questionnaireName = "疼痛三点"
                     )
                 )
             )
         }
-        .let { base -> if (filterDays == null) base else base.copy(susFilterDays = filterDays) }
+        .let { base -> if (filterDays == null) base else base.copy(questionnaireFilterDays = filterDays) }
         .let { base ->
             if (sessionAgeSec == null) base
             else base.copy(sessionElapsedMs = sessionAgeSec.toLong() * 1000L)
@@ -143,12 +147,13 @@ fun ConsolePreview(
         onAnimDuration = {},
         onPostureMix = {},
         onGazeDwellChange = {},
-        onSusVoiceChange = {},
+        onQuestionnaireVoiceChange = {},
         onSubtitlesChange = {},
         onMirrorModeChange = {},
-        onSusOpen = noop,
-        onSusClose = noop,
+        onQuestionnaireOpen = noop,
+        onQuestionnaireClose = noop,
         onEnterTraining = noop,
+        onEnterQuestionnaire = noop,
         onCancelLaunch = noop,
         onEnd = noop,
         onRecalibrate = noop,
@@ -171,11 +176,13 @@ fun ConsolePreview(
         onAudioVolume = {},
         onVoiceDuck = {},
         onVoiceSet = {},
-        onSusShow = {},
-        onSusAnswer = {},
+        onQuestionnaireShow = {},
+        onQuestionnaireAnswer = {},
+        onQuestionnaireSelect = {},
+        onQuestionnaireReplay = noop,
         onExportRecords = noop,
-        onSusFilterQuestionnaire = noop,
-        onSusFilterDays = noop,
+        onQuestionnaireFilter = noop,
+        onQuestionnaireFilterDays = noop,
         onOutcome = { _, _ -> },
         onExperienceOpen = noop,
         onExperienceCancel = noop,

@@ -53,13 +53,13 @@ fun AudioPanel(
     // a claim on the world, so it does not need the control grant.
     val connected = state.phase == BlePhase.READY
     // Every guidance group starts open: a sentence the operator has to expand
-    // first is a sentence they will not use mid-session. SUS is excluded — its
-    // statements are read by the panel as they appear, so tapping one here
-    // would talk over the schedule.
-    // SUS and its closing thanks belong to the questionnaire app; the training
-    // panel keeps only what a training session actually speaks.
+    // first is a sentence they will not use mid-session. Questionnaire items
+    // are excluded — the sheet reads them as they appear, so tapping one here
+    // would talk over that schedule — and so is the closing thanks, which
+    // belongs to the questionnaire app. The training panel keeps only what a
+    // training session actually speaks.
     val guidance = VoiceCatalog.LINES.filter {
-        it.group != "SUS" && it.id != "v-thanks-1"
+        it.group != VoiceCatalog.QUESTIONNAIRE_GROUP && it.id != VoiceCatalog.THANKS_ID
     }
     var expanded by remember { mutableStateOf(guidance.map { it.group }.toSet()) }
 
@@ -184,7 +184,8 @@ fun AudioPanel(
             }
         }
 
-        // Guidance lines are played by hand; SUS is not in this list.
+        // Guidance lines are played by hand; questionnaire items are not in
+        // this list.
         Band(
             title = "语音提示",
             trailing = {

@@ -42,15 +42,24 @@ data class ControlActions(
      * override: the page freezes whatever the correction was doing.
      */
     val onPostureMix: (Int) -> Unit,
-    /** Gaze dwell selection (SUS answers and spatial targets). Default on. */
+    /** Gaze dwell selection (questionnaire answers and spatial targets). Default on. */
     val onGazeDwellChange: (Boolean) -> Unit,
-    val onSusVoiceChange: (Boolean) -> Unit,
+    /** Auto read-out of the question as it appears. Default on. */
+    val onQuestionnaireVoiceChange: (Boolean) -> Unit,
     val onSubtitlesChange: (Boolean) -> Unit,
     val onMirrorModeChange: (MirrorMode) -> Unit,
-    /** Opens the SUS scale in the headset; it is answered by gaze. */
-    val onSusOpen: () -> Unit,
-    val onSusClose: () -> Unit,
+    /** Opens the questionnaire sheet in the headset; it is answered by gaze. */
+    val onQuestionnaireOpen: () -> Unit,
+    val onQuestionnaireClose: () -> Unit,
     val onEnterTraining: () -> Unit,
+    /**
+     * Launches the questionnaire face on the headset.
+     *
+     * Separate from [onEnterTraining] because it is a separate launch: the
+     * questionnaire has no posture to record, so its launch skips the
+     * preparation room and the calibration capture entirely.
+     */
+    val onEnterQuestionnaire: () -> Unit,
     /**
      * Withdraws a launch the patient has not opened yet. Local + the page's
      * own `exit`; never a session stop and never a link drop.
@@ -76,7 +85,7 @@ data class ControlActions(
     val onLeave: () -> Unit,
     /** Opens the voice panel; the quick row's 语音 key is a door, not a player. */
     val onVoiceOpen: () -> Unit,
-    /** Plays one guidance cue; SUS statements are scheduled by the panel. */
+    /** Plays one guidance cue; questionnaire items are scheduled by the sheet. */
     val onVoicePlay: (String) -> Unit,
     /** start | imagine | relax | close */
     val onVoiceSequence: (String) -> Unit,
@@ -88,14 +97,18 @@ data class ControlActions(
     /** How far the scene bed is pulled down while a cue speaks, in dB. */
     val onVoiceDuck: (Int) -> Unit,
     val onVoiceSet: (String) -> Unit,
-    /** SUS: show question [index] (1-based) on the headset. */
-    val onSusShow: (Int) -> Unit,
-    /** SUS: record the operator's answer for the current question. */
-    val onSusAnswer: (Int) -> Unit,
+    /** Show question [index] (1-based) on the headset. */
+    val onQuestionnaireShow: (Int) -> Unit,
+    /** Record the operator's answer, one of the instrument's option values. */
+    val onQuestionnaireAnswer: (Int) -> Unit,
+    /** Load an instrument from the announced catalogue; resets local answers. */
+    val onQuestionnaireSelect: (String) -> Unit,
+    /** Re-read the current question aloud without advancing. */
+    val onQuestionnaireReplay: () -> Unit,
     /** Share every local record — sheets, sessions, behaviour — as one JSON. */
     val onExportRecords: () -> Unit,
-    val onSusFilterQuestionnaire: () -> Unit,
-    val onSusFilterDays: () -> Unit,
+    val onQuestionnaireFilter: () -> Unit,
+    val onQuestionnaireFilterDays: () -> Unit,
     /** Bedside answer: "attempt" | "success", yes/no. */
     val onOutcome: (String, Boolean) -> Unit,
 

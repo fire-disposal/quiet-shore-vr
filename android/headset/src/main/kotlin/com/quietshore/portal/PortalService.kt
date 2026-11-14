@@ -775,16 +775,16 @@ class PortalService : Service() {
             "state" -> data?.let(::applyState)
             "telemetry" -> data?.let(::applyTelemetry)
             "ack" -> data?.optInt("seq", -1)?.takeIf { it >= 0 }?.let(::ackCommands)
-            // Completed SUS sheets ride the JSON channel: the state frame is
-            // a fixed size and has no room for a record.
-            "sus" -> data?.let { sheet ->
-                if (bluetooth?.publishSus(sheet.toString()) == true) {
+            // A filed questionnaire sheet rides the JSON channel: the state
+            // frame is a fixed size and has no room for a record.
+            ControlProtocol.TOPIC_QUESTIONNAIRE_RESULT -> data?.let { sheet ->
+                if (bluetooth?.publishQuestionnaireResult(sheet.toString()) == true) {
                     acknowledgeRecord(sink, envelope.id)
                 }
             }
             // The scene catalogue: the page owns it, both apps render it. It
-            // rides the same JSON channel as SUS, so adding a scene costs no
-            // protocol version.
+            // rides the same JSON channel as the questionnaire documents, so
+            // adding a scene costs no protocol version.
             "catalog" -> data?.let { scenes ->
                 // The local copy feeds command validation and the home card
                 // before the page next connects; the relay feeds the tablet.
@@ -804,10 +804,15 @@ class PortalService : Service() {
                     acknowledgeRecord(sink, envelope.id)
                 }
             }
-            // Questionnaire catalogue: one source on the page, rendered by the
-            // tablet's answer sheet and record list.
-            "questionnaire" -> data?.let { sheets ->
-                bluetooth?.publishJson(JsonEnvelope.document("questionnaire", sheets))
+            // There is no questionnaire-catalogue topic on purpose: the
+            // registry is a build input compiled into both APKs, so the tablet
+            // already holds it and no question wording crosses this channel.
+            // Live questionnaire state: which instrument is loaded, whether the
+            // sheet is open, the current item and the answers so far. Not
+            // durable — the tablet renders it as the UI's truth and stores
+            // nothing, so a page reload simply publishes a fresh one.
+            "questionnaire-state" -> data?.let { state ->
+                bluetooth?.publishJson(JsonEnvelope.document("questionnaire-state", state))
             }
             // A behaviour event the page witnessed: a calibration capture, a
             // scene change, the patient's own stop. The tablet appends it to
@@ -1170,11 +1175,20 @@ class PortalService : Service() {
     private val VOICE_MANIFEST = "manifest.json"
     private val VOICE_LINES = "lines.json"
 
-    /** Commands the service can satisfy without a page (launch, prefs, media). */
+    /**
+     * Commands the service can satisfy without a page (launch, prefs, media).
+     *
+     * `app:*` belongs here: the tablet must be able to choose the face *before*
+     * the page exists, because the choice is what the next launch boots. While
+     * the page is online it also receives the command and corrects the record
+     * with its own echo, so the persisted value and the running page cannot
+     * disagree for longer than one frame.
+     */
     private fun isHostCommand(command: String): Boolean =
         command == "enter" ||
             command == "exit" ||
-            command.startsWith(ControlProtocol.SCENE_PREFIX)
+            command.startsWith(ControlProtocol.SCENE_PREFIX) ||
+            command.startsWith(ControlProtocol.APP_PREFIX)
 
     private fun dispatchControl(raw: String): Boolean {
         val command = ControlProtocol.normalize(raw) ?: return false
@@ -1195,12 +1209,32 @@ class PortalService : Service() {
         var queued = false
         var broadcastStatus = true
         when {
-            // SUS lives in the page now: only the WebXR surface can offer gaze
-            // selection, so these commands are forwarded instead of handled here.
+            // The questionnaire lives in the page too: only the WebXR surface
+            // can offer gaze selection, so its commands are forwarded rather
+            // than handled here.
             command == "enter" -> {
                 if (!PortalActions.enter(this)) {
                     return false
                 }
+            }
+            command.startsWith(ControlProtocol.APP_PREFIX) -> {
+                // The face is a launch input, so choosing it with no page open
+                // is still a real decision: persist it before the page that
+                // would echo it exists. An online page gets the command below
+                // and re-reports the face it actually switched to.
+                val app = command.removePrefix(ControlProtocol.APP_PREFIX)
+                if (app in ControlProtocol.APP_IDS) {
+                    HeadsetSettings.saveApp(this, app)
+                    pageApp = app
+                    PortalStatus.updateApp(app)
+                    try {
+                        sendBroadcast(Intent(PortalStatus.ACTION_STATUS).setPackage(packageName))
+                    } catch (ignored: RuntimeException) {
+                        // No visible activity.
+                    }
+                    Log.i(TAG, "app persisted: $app")
+                }
+                queued = true
             }
             command == "status" -> Unit
             command.startsWith(ControlProtocol.SCENE_PREFIX) -> {

@@ -44,11 +44,20 @@ class EventLog(context: Context) {
         }
     }
 
-    fun append(app: String, kind: String, detail: JSONObject? = null): List<JSONObject> {
+    /**
+     * Appends one event.
+     *
+     * @return the record exactly as it was stored, or null when the event was a
+     * replay of the page's own `d.id` and nothing was written. The caller needs
+     * the stored object — not the arguments — because the uploader derives the
+     * event's identity from the `at` stamped here; rebuilding it from live state
+     * would give the same event a second id.
+     */
+    fun append(app: String, kind: String, detail: JSONObject? = null): JSONObject? {
         val existing = load()
         val recordId = detail?.optString("id")?.takeIf { it.isNotEmpty() }
         if (recordId != null && existing.any { it.optJSONObject("d")?.optString("id") == recordId }) {
-            return existing
+            return null
         }
         val record = JSONObject().apply {
             put("at", System.currentTimeMillis())
@@ -58,9 +67,8 @@ class EventLog(context: Context) {
                 put("d", detail)
             }
         }
-        val next = (existing + record).takeLast(MAX_EVENTS)
-        write(next)
-        return next
+        write((existing + record).takeLast(MAX_EVENTS))
+        return record
     }
 
     private fun write(list: List<JSONObject>) {

@@ -84,8 +84,8 @@ class QuietShoreBleManager(
             statusCharacteristic = service.getCharacteristic(ControlProtocol.statusUuid)
             telemetryCharacteristic = service.getCharacteristic(ControlProtocol.telemetryUuid)
             stateCharacteristic = service.getCharacteristic(ControlProtocol.stateUuid)
-            jsonCharacteristic = service.getCharacteristic(ControlProtocol.susUuid)
-            // SUS is optional: a headset that predates the characteristic keeps
+            jsonCharacteristic = service.getCharacteristic(ControlProtocol.jsonUuid)
+            // The JSON channel is optional: a headset that predates it keeps
             // working, it simply never reports a sheet.
             return commandCharacteristic != null &&
                 statusCharacteristic != null &&

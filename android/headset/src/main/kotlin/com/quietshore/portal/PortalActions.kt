@@ -49,6 +49,9 @@ internal object PortalActions {
      */
     const val EXTRA_PREVIEW = "preview"
 
+    /** The product face whose launch needs no preparation room or calibration. */
+    private const val APP_QUESTIONNAIRE = "questionnaire"
+
     /** 唯一已验证的 WebXR 入口：预装 Firefox Reality 10（Gecko 78）。 */
     private const val FIREFOX_PACKAGE = "org.mozilla.vrbrowser"
     private const val FIREFOX_ACTIVITY = "org.mozilla.vrbrowser.VRBrowserActivity"
@@ -123,14 +126,27 @@ internal object PortalActions {
         lastEnterAt = now
         val settings = HeadsetSettings.read(app)
         val base = PortalSession.snapshot().copy(app = settings.app)
-        // Every launch opens in the built-in preparation room. The operator
-        // records the posture there and then switches to a real scene; the
-        // last pick is remembered for the console card, not for the launch.
+        /*
+         * A training launch opens in the built-in preparation room: the
+         * operator records the posture there and then switches to a real scene.
+         * The last pick is remembered for the console card, not for the launch.
+         *
+         * The questionnaire face is not a session and has no posture to record,
+         * so it opens straight onto its sheet: no preparation room, no
+         * calibration capture, nothing for the patient to press twice.
+         */
+        val questionnaire = settings.app == APP_QUESTIONNAIRE
         val launch = if (skipCalibrationOverride == null) {
             base
         } else {
             base.copy(skipCalibration = skipCalibrationOverride)
-        }.copy(scene = ControlProtocol.DEFAULT_SCENE)
+        }.let { params ->
+            if (questionnaire) {
+                params.copy(scene = ControlProtocol.DEFAULT_SCENE, skipCalibration = true)
+            } else {
+                params.copy(scene = ControlProtocol.DEFAULT_SCENE)
+            }
+        }
         PortalSession.set(launch, PageCatalog.idSet(app))
         startServer(context)
         val url = buildUrl(retry)

@@ -3,8 +3,9 @@ package com.quietshore.control.protocol
 /**
  * Reassembles the JSON channel's `[id][index][total][payload]` chunks.
  *
- * Several documents may interleave on the one characteristic (a SUS sheet
- * arriving while a flags update streams), so partials are keyed by chunk id.
+ * Several documents may interleave on the one characteristic (a questionnaire
+ * sheet arriving while a flags update streams), so partials are keyed by chunk
+ * id.
  * A missing or reordered chunk drops that document instead of splicing a
  * corrupt payload; the sender always re-publishes state on change, so nothing
  * is lost for good.
