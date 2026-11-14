@@ -37,9 +37,6 @@ internal object PortalActions {
 
     const val ACTION_ENTER = "com.quietshore.portal.ENTER"
     const val ACTION_ALLAPPS = "com.quietshore.portal.ALLAPPS"
-    const val ACTION_SUS = "com.quietshore.portal.SUS"
-    const val EXTRA_SUS_DELTA = "susDelta"
-    const val EXTRA_SUS_ANSWER = "susAnswer"
 
     /** Launch parameters accepted by the activity, receiver and deep link. */
     const val EXTRA_SKIP_CALIBRATION = "skipCalibration"
@@ -232,46 +229,6 @@ internal object PortalActions {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         launch(app, intent, "未找到默认桌面")
-    }
-
-    fun openSus(context: Context) {
-        showPortalPage(context, "sus")
-    }
-
-    fun closeSus(context: Context) {
-        showPortalPage(context, "settings")
-    }
-
-    fun susPage(context: Context, delta: Int) {
-        val app = applicationContext(context)
-        try {
-            app.sendBroadcast(
-                Intent(ACTION_SUS).setPackage(app.packageName).putExtra(EXTRA_SUS_DELTA, delta)
-            )
-        } catch (ignored: RuntimeException) {
-            // No visible console; the next open will start at the first question.
-        }
-    }
-
-    /**
-     * Operator answers the current SUS item. Uses an explicit activity intent
-     * instead of the SUS broadcast so it also works while the console is
-     * paused behind Firefox.
-     */
-    fun susAnswer(context: Context, value: Int) {
-        if (value !in 1..5) {
-            return
-        }
-        val intent = Intent(context, PortalActivity::class.java).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
-            putExtra(EXTRA_PAGE, "sus")
-            putExtra(EXTRA_SUS_ANSWER, value)
-        }
-        launch(applicationContext(context), intent, "无法打开 SUS 页面")
     }
 
     private fun showPortalPage(context: Context, page: String) {

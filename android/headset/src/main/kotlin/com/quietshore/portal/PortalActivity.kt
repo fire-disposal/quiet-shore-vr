@@ -13,10 +13,6 @@ import android.graphics.drawable.RippleDrawable
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
-import android.text.Spannable
-import android.text.SpannableString
-import android.text.style.RelativeSizeSpan
-import android.text.style.StyleSpan
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -39,8 +35,7 @@ class PortalActivity : Activity() {
     private enum class Page(val label: String, val description: String) {
         HOME("静岸", "等待平板接管"),
         SETTINGS("设置", "启动偏好与连接"),
-        HELP("帮助", "进入方式与平板控制"),
-        SUS("SUS 量表", "共 10 题，每题 1–5 分")
+        HELP("帮助", "进入方式与平板控制")
     }
 
     private companion object {
@@ -63,38 +58,13 @@ class PortalActivity : Activity() {
 
         const val NUMBER_FEATURES = "tnum"
 
-        val SUS_OPTION_LABELS = listOf(
-            "非常不同意",
-            "不同意",
-            "一般",
-            "同意",
-            "非常同意"
-        )
-
-        val SUS_STATEMENTS = listOf(
-            "我愿意经常使用这个系统。",
-            "我觉得这个系统过于复杂。",
-            "我觉得这个系统容易使用。",
-            "我需要技术人员的帮助才能使用这个系统。",
-            "我觉得系统里的各项功能整合得很好。",
-            "我觉得系统存在太多不一致的地方。",
-            "我认为大多数人能很快学会使用这个系统。",
-            "我觉得这个系统使用起来很笨拙。",
-            "我对使用这个系统很有信心。",
-            "我需要先学习很多内容才能开始使用这个系统。"
-        )
-
         val SCENE_TINT = 0xFF6F8B7A.toInt()
     }
 
     private lateinit var content: FrameLayout
     private lateinit var titleText: TextView
     private lateinit var subtitleText: TextView
-    private lateinit var pageCount: TextView
-    private lateinit var prevPage: TextView
-    private lateinit var nextPage: TextView
     private var currentPage = Page.HOME
-    private var internalIndex = 0
     private var settings = HeadsetSettings()
     private var homeStatusCard: View? = null
     private var homeStatusMac: TextView? = null
@@ -112,25 +82,6 @@ class PortalActivity : Activity() {
     private var batteryCharging = false
     private var receiverRegistered = false
     private var firefoxWarningShown = false
-    private val susAnswers = IntArray(10)
-    private var susScoreText: TextView? = null
-    private var susButtons: Array<TextView> = emptyArray()
-
-    private val susReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val delta = intent?.getIntExtra(PortalActions.EXTRA_SUS_DELTA, 0) ?: 0
-            if (delta == 0) return
-            if (currentPage != Page.SUS) {
-                showPage(Page.SUS)
-                return
-            }
-            val next = (internalIndex + delta).coerceIn(0, SUS_STATEMENTS.size - 1)
-            if (next != internalIndex) {
-                internalIndex = next
-                renderPage()
-            }
-        }
-    }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -166,10 +117,6 @@ class PortalActivity : Activity() {
         }
         setContentView(buildShell())
         showPage(pageFromIntent(intent) ?: Page.HOME)
-        val answer = intent?.getIntExtra(PortalActions.EXTRA_SUS_ANSWER, 0) ?: 0
-        if (answer in 1..5) {
-            applySusAnswer(answer)
-        }
         window.decorView.post { warnIfFirefoxMissing() }
     }
 
@@ -198,26 +145,10 @@ class PortalActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val answer = intent?.getIntExtra(PortalActions.EXTRA_SUS_ANSWER, 0) ?: 0
-        if (answer in 1..5) {
-            applySusAnswer(answer)
-        } else {
-            pageFromIntent(intent)?.let { showPage(it) }
-        }
-    }
-
-    /** Operator answer for the currently shown SUS item. */
-    private fun applySusAnswer(value: Int) {
-        if (currentPage != Page.SUS) {
-            showPage(Page.SUS)
-        }
-        val index = internalIndex.coerceIn(0, SUS_STATEMENTS.size - 1)
-        susAnswers[index] = value
-        renderPage()
+        pageFromIntent(intent)?.let { showPage(it) }
     }
 
     private fun pageFromIntent(intent: Intent?): Page? = when (intent?.getStringExtra(PortalActions.EXTRA_PAGE)) {
-        "sus" -> Page.SUS
         "settings" -> Page.SETTINGS
         "home" -> Page.HOME
         else -> null
@@ -229,14 +160,11 @@ class PortalActivity : Activity() {
         refreshStatus()
         if (!receiverRegistered) {
             val filter = IntentFilter(PortalStatus.ACTION_STATUS)
-            filter.addAction(PortalActions.ACTION_SUS)
             val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(susReceiver, IntentFilter(PortalActions.ACTION_SUS), Context.RECEIVER_NOT_EXPORTED)
                 registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
                 registerReceiver(batteryReceiver, batteryFilter, Context.RECEIVER_NOT_EXPORTED)
             } else {
-                registerReceiver(susReceiver, IntentFilter(PortalActions.ACTION_SUS))
                 registerReceiver(statusReceiver, filter)
                 registerReceiver(batteryReceiver, batteryFilter)
             }
@@ -247,7 +175,6 @@ class PortalActivity : Activity() {
 
     override fun onPause() {
         if (receiverRegistered) {
-            unregisterReceiver(susReceiver)
             unregisterReceiver(statusReceiver)
             unregisterReceiver(batteryReceiver)
             receiverRegistered = false
@@ -278,15 +205,6 @@ class PortalActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             1f
         ))
-        prevPage = pageButton("‹") { moveInternalPage(-1) }
-        pageCount = label("1 / 1", 13f, MUTED, Typeface.NORMAL).apply {
-            gravity = Gravity.CENTER
-            numbers()
-        }
-        nextPage = pageButton("›") { moveInternalPage(1) }
-        header.addView(prevPage, LinearLayout.LayoutParams(dp(40), dp(40)))
-        header.addView(pageCount, LinearLayout.LayoutParams(dp(58), dp(40)))
-        header.addView(nextPage, LinearLayout.LayoutParams(dp(40), dp(40)))
         val settingsButton = label("设置", 15f, TEXT, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
             background = framed(SURFACE, HAIRLINE)
@@ -329,15 +247,6 @@ class PortalActivity : Activity() {
         return root
     }
 
-    private fun pageButton(text: String, onClick: () -> Unit): TextView =
-        label(text, 26f, TEXT, Typeface.NORMAL).apply {
-            gravity = Gravity.CENTER
-            isClickable = true
-            isFocusable = true
-            background = framed(SURFACE, HAIRLINE)
-            setOnClickListener { onClick() }
-        }
-
     private fun showExitDialog() {
         val legacy = PortalActions.legacySystemLabel(this)
         val labels = ArrayList<String>()
@@ -360,23 +269,8 @@ class PortalActivity : Activity() {
             .show()
     }
 
-    private fun moveInternalPage(delta: Int) {
-        val count = internalPageCount(currentPage)
-        val next = (internalIndex + delta).coerceIn(0, count - 1)
-        if (next != internalIndex) {
-            internalIndex = next
-            renderPage()
-        }
-    }
-
-    private fun internalPageCount(page: Page): Int = when (page) {
-        Page.SUS -> SUS_STATEMENTS.size
-        else -> 1
-    }
-
     private fun showPage(page: Page) {
         currentPage = page
-        internalIndex = 0
         renderPage()
     }
 
@@ -395,7 +289,6 @@ class PortalActivity : Activity() {
             Page.HOME -> buildHomePage()
             Page.SETTINGS -> buildSettingsPage()
             Page.HELP -> buildHelpPage()
-            Page.SUS -> buildSusPage()
         }
         content.removeAllViews()
         content.addView(body, FrameLayout.LayoutParams(
@@ -407,19 +300,6 @@ class PortalActivity : Activity() {
         renderBattery()
         titleText.text = page.label
         subtitleText.text = page.description
-        val count = internalPageCount(page)
-        val showPager = count > 1
-        val pagerVisibility = if (showPager) View.VISIBLE else View.GONE
-        prevPage.visibility = pagerVisibility
-        pageCount.visibility = pagerVisibility
-        nextPage.visibility = pagerVisibility
-        pageCount.text = "${internalIndex + 1} / $count"
-        val atStart = internalIndex == 0
-        val atEnd = internalIndex == count - 1
-        prevPage.alpha = if (atStart) 0.3f else 1f
-        prevPage.isEnabled = !atStart
-        nextPage.alpha = if (atEnd) 0.3f else 1f
-        nextPage.isEnabled = !atEnd
     }
 
     private fun buildHomePage(): View {
@@ -577,9 +457,6 @@ class PortalActivity : Activity() {
 
         val system = sectionCard()
         system.addView(sectionLabel("系统"))
-        system.addView(actionButton("SUS 量表", false) {
-            showPage(Page.SUS)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
         system.addView(actionButton("全部应用", false) {
             PortalActions.allApps(this)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
@@ -644,109 +521,6 @@ class PortalActivity : Activity() {
                 setPadding(0, dp(5), 0, 0)
             })
         }
-
-    private fun buildSusPage(): View {
-        val page = pageColumn()
-        val index = internalIndex.coerceIn(0, SUS_STATEMENTS.size - 1)
-        page.addView(
-            label("第 ${index + 1} / ${SUS_STATEMENTS.size} 题", 13f, MUTED, Typeface.BOLD).apply {
-                setPadding(0, 0, 0, dp(8))
-            }
-        )
-        val card = sectionCard()
-        card.addView(
-            label(SUS_STATEMENTS[index], 25f, TEXT, Typeface.NORMAL).apply {
-                setPadding(0, dp(8), 0, dp(16))
-            }
-        )
-        val scale = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val buttons = arrayOfNulls<TextView>(5)
-        for (value in 1..5) {
-            val selected = susAnswers[index] == value
-            val button = label(value.toString(), 17f, if (selected) ACCENT_INK else MUTED, Typeface.NORMAL).apply {
-                gravity = Gravity.CENTER
-                minHeight = dp(56)
-                isClickable = true
-                isFocusable = true
-                background = if (selected) rounded(ACCENT) else framed(SURFACE, HAIRLINE)
-                val content = SpannableString("$value\n${SUS_OPTION_LABELS[value - 1]}")
-                content.setSpan(
-                    RelativeSizeSpan(0.62f),
-                    2,
-                    content.length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                content.setSpan(
-                    StyleSpan(Typeface.BOLD),
-                    0,
-                    1,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                text = content
-                setLineSpacing(dp(2).toFloat(), 1f)
-                setOnClickListener { setSusAnswer(index, value) }
-            }
-            buttons[value - 1] = button
-            scale.addView(button, LinearLayout.LayoutParams(0, dp(60), 1f).apply {
-                if (value > 1) marginStart = dp(6)
-            })
-        }
-        susButtons = buttons.map { it!! }.toTypedArray()
-        card.addView(scale)
-        page.addView(card)
-        susScoreText = label(
-            if (susAnswers.all { it > 0 }) susScoreText?.text?.toString() ?: "尚未答完 10 题"
-            else "已答 ${susAnswers.count { it > 0 }} / ${SUS_STATEMENTS.size}",
-            15f,
-            if (susAnswers.all { it > 0 }) OK else MUTED,
-            Typeface.NORMAL
-        ).apply {
-            setPadding(0, dp(10), 0, 0)
-            numbers()
-        }
-        page.addView(susScoreText)
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val previous = actionButton("上一题", false) { moveInternalPage(-1) }
-        previous.isEnabled = index > 0
-        previous.alpha = if (index > 0) 1f else 0.4f
-        row.addView(previous, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(5) })
-        val next = actionButton(if (index == SUS_STATEMENTS.size - 1) "完成" else "下一题", false) {
-            if (index < SUS_STATEMENTS.size - 1) moveInternalPage(1)
-        }
-        next.isEnabled = index < SUS_STATEMENTS.size - 1
-        next.alpha = if (index < SUS_STATEMENTS.size - 1) 1f else 0.4f
-        row.addView(next, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(5) })
-        page.addView(row, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(10) })
-        return page
-    }
-
-    private fun setSusAnswer(index: Int, value: Int) {
-        susAnswers[index] = value
-        for (i in susButtons.indices) {
-            val selected = i + 1 == value
-            susButtons[i].setTextColor(if (selected) ACCENT_INK else MUTED)
-            susButtons[i].background = if (selected) {
-                rounded(ACCENT)
-            } else {
-                framed(SURFACE, HAIRLINE)
-            }
-        }
-        if (susAnswers.all { it > 0 }) {
-            var total = 0
-            for (i in susAnswers.indices) {
-                total += if (i % 2 == 0) susAnswers[i] - 1 else 5 - susAnswers[i]
-            }
-            val score = total * 2.5f
-            susScoreText?.text = "SUS 得分  ${"%.1f".format(score)} / 100"
-            susScoreText?.setTextColor(OK)
-        } else {
-            susScoreText?.text = "已答 ${susAnswers.count { it > 0 }} / ${SUS_STATEMENTS.size}"
-            susScoreText?.setTextColor(MUTED)
-        }
-    }
 
     /**
      * The one page meant to be read by the patient before the headset goes on.
