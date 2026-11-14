@@ -11,7 +11,9 @@ import { aroundPivot, clearTransform, writeBase } from './frame';
  * ```text
  * q0          = qYaw · qCorrection          (XR convention, YXZ)
  * qYaw        heading only: the room's front is put on the patient's heading
- * qCorrection pitch/roll: what makes a supine patient see the front wall
+ * qCorrection pitch only: what makes a supine patient see the front wall.
+ * Roll is left to the headset: mirroring a head tilt into the world would tilt
+ * the horizon, which is exactly the motion the frame exists to remove.
  * ```
  *
  * The frame applies `qYaw · slerp(identity, qCorrection, mix)`, so one scalar
@@ -57,6 +59,7 @@ export function createComfort(options: {
   const qTotal = new THREE.Quaternion();
   const identity = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3(1, 0, 0);
   const euler = new THREE.Euler(0, 0, 0, 'YXZ');
   const basePosition = new THREE.Vector3();
   let mix = 0;
@@ -81,10 +84,12 @@ export function createComfort(options: {
     const q = pose.transform.orientation;
     p0.set(p.x, p.y, p.z);
     q0.set(q.x, q.y, q.z, q.w).normalize();
-    // YXZ decomposition: its y is the heading, the rest is the correction.
+    // YXZ decomposition: y is the heading, x is the posture pitch. Roll is
+    // deliberately not part of the world correction: the operator asks the
+    // room to stand up, not to mirror a head tilted on the pillow.
     euler.setFromQuaternion(q0, 'YXZ');
     qYaw.setFromAxisAngle(up, euler.y);
-    qCorrection.copy(qYaw).invert().multiply(q0);
+    qCorrection.setFromAxisAngle(right, euler.x);
     calibrated = true;
     mix = 0;
     apply();

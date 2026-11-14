@@ -25,8 +25,8 @@ offsetY   = -eyeY(mix)
 - `mix = 1`：站立视角，立姿场景的静息姿态。
 - 旋转与眼高使用同一条 smootherstep 曲线，首末速为零。
 
-校准记录头部朝向，拆成 yaw 与 pitch/roll 修正。世界应用
-`qYaw * slerp(identity, qCorrection, mix)`，统一绕校准时的眼点旋转。
+校准记录头部朝向，拆成 yaw 与 pitch 修正。世界应用
+`qYaw * slerp(identity, Rx(pitch), mix)`，统一绕校准时的眼点旋转；roll 不写入世界。
 
 ## 2 进入与起身
 

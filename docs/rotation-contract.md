@@ -14,7 +14,7 @@
 | 层 | 写入者 | 内容 |
 | --- | --- | --- |
 | world-shell | `world-shell` | 视角旋转，绕眼点 |
-| base | `comfort` | 校准 yaw 与 pitch/roll 修正的 `mix` |
+| base | `comfort` | 校准 yaw 与 pitch 修正的 `mix`；roll 不进入世界 |
 | content | `SceneHost` | 眼高偏移与漂浮位移 |
 
 - 相机姿态只读，不参与世界层写入。
@@ -26,12 +26,13 @@
 校准 quaternion 按 `YXZ` 分解：
 
 ```text
-q0 = qYaw * qCorrection
-qTotal = qYaw * slerp(identity, qCorrection, mix)
+q0 = qYaw * Rx(pitch) * Rz(roll)
+qTotal = qYaw * slerp(identity, Rx(pitch), mix)
 ```
 
+- 世界补偿只取 `yaw` 与 `pitch`，`roll` 留给头显自身，绝不写进世界层。
 - `mix = 0` 保留真实天花板。
-- `mix = 1` 面向站立视角。
+- `mix = 1` 面向站立视角，地平线保持水平。
 - 世界绕校准时的头部位置旋转，眼点保持不动。
 
 ## 4 视角通道

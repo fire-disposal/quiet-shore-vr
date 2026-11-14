@@ -49,11 +49,17 @@ describe('comfort frame', () => {
     expect(Math.abs(euler.x)).toBeLessThan(1e-3);
   });
 
-  it('at mix 1 the frame equals the captured orientation', () => {
+  it('at mix 1 applies heading and pitch, never the captured roll', () => {
     const head = new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.1, 0.4, 0.08, 'YXZ'));
     const { comfort, group } = build(head);
     comfort.setCorrectionMix(1);
-    expect(group.quaternion.angleTo(head)).toBeLessThan(1e-4);
+    const euler = new THREE.Euler().setFromQuaternion(head, 'YXZ');
+    const expected = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(euler.x, euler.y, 0, 'YXZ')
+    );
+    expect(group.quaternion.angleTo(expected)).toBeLessThan(1e-4);
+    const applied = new THREE.Euler().setFromQuaternion(group.quaternion, 'YXZ');
+    expect(Math.abs(applied.z)).toBeLessThan(1e-6);
   });
 
   it('the uncorrected frame is heading only, whatever the capture pose', () => {
@@ -67,12 +73,30 @@ describe('comfort frame', () => {
     expect(a.group.quaternion.angleTo(b.group.quaternion)).toBeLessThan(1e-6);
     expect(a.group.position.distanceTo(b.group.position)).toBeLessThan(1e-6);
 
-    // And the correction each capture would rise by is its own posture, so the
-    // corrected frame is exactly where the head was — no declared pitch.
+    // And the correction each capture would rise by is its own posture pitch,
+    // so the corrected frame is yaw × pitch with no captured roll.
     a.comfort.setCorrectionMix(1);
     b.comfort.setCorrectionMix(1);
-    expect(a.group.quaternion.angleTo(upright)).toBeLessThan(1e-4);
-    expect(b.group.quaternion.angleTo(supine)).toBeLessThan(1e-4);
+    const uprightEuler = new THREE.Euler().setFromQuaternion(upright, 'YXZ');
+    const supineEuler = new THREE.Euler().setFromQuaternion(supine, 'YXZ');
+    const uprightExpected = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(uprightEuler.x, uprightEuler.y, 0, 'YXZ')
+    );
+    const supineExpected = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(supineEuler.x, supineEuler.y, 0, 'YXZ')
+    );
+    expect(a.group.quaternion.angleTo(uprightExpected)).toBeLessThan(1e-4);
+    expect(b.group.quaternion.angleTo(supineExpected)).toBeLessThan(1e-4);
+  });
+
+  it('never rolls the world, even when the captured head is rolled', () => {
+    const head = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-Math.PI / 2, 0.3, 0.18, 'YXZ')
+    );
+    const { comfort, group } = build(head);
+    comfort.setCorrectionMix(1);
+    const applied = new THREE.Euler().setFromQuaternion(group.quaternion, 'YXZ');
+    expect(Math.abs(applied.z)).toBeLessThan(1e-6);
   });
 
   it('a half mix is halfway around the correction, never past it', () => {
