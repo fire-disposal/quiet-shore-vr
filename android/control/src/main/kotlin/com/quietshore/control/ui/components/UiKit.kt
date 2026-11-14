@@ -282,7 +282,7 @@ fun Key(
                     color = labelColor,
                     textAlign = TextAlign.Center,
                     // Two lines before ellipsis: at 1.3× the longest verb on the
-                    // console ("断开连接 = 急停") needs the second one, and a key
+                    // console (「断开连接」) needs the second one, and a key
                     // that wraps is still a key while one that ends in "…" is a
                     // guess.
                     maxLines = 2,
