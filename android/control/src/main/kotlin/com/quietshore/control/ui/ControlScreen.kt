@@ -620,10 +620,11 @@ private fun SessionMain(
             // than as the session's own instrument.
             SessionReadout(state = state)
             Spacer(Modifier.weight(1f))
-            // The third of the column the picture gives back holds the two
-            // sounds the operator actually rides mid-session. Voice sets, duck
-            // depth and the cue ladders stay on the 音频 page: they are setup,
-            // not steering.
+            // The two continuous controls the operator rides mid-session sit
+            // together at the foot of the picture: heave above water, one row
+            // each, same height. Voice sets and cue ladders stay on 音频.
+            SessionHeave(state = state, actions = actions, phase = phase)
+            Spacer(Modifier.height(8.dp))
             SessionAudio(state = state, actions = actions)
         }
     }
@@ -694,6 +695,66 @@ private fun SessionReadout(state: ControlUiState) {
     }
 }
 
+/** Height of the two continuous rows under the picture: heave and water. */
+private val SessionControlHeight = 60.dp
+
+/**
+ * The heave, one row over the water row.
+ *
+ * Same shape as [SessionAudio]: label, slider, value, switch. Same 60 dp
+ * height and same switch width, so the pair reads as one instrument.
+ */
+@Composable
+private fun SessionHeave(
+    state: ControlUiState,
+    actions: ControlActions,
+    phase: SessionPhase,
+    modifier: Modifier = Modifier
+) {
+    val ready = state.phase == BlePhase.READY
+    val percent = state.floatPercent.coerceIn(0, 100)
+    val capped = state.caps.floatCap <= 0
+    val enabled = ready && phase.acceptsChanges && !capped
+    Panel(modifier.fillMaxWidth().height(SessionControlHeight)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "起伏",
+                style = MaterialTheme.typography.labelMedium,
+                color = QuietPalette.InkSecondary
+            )
+            Spacer(Modifier.width(10.dp))
+            HeaveBar(
+                percent = percent,
+                cap = state.caps.floatCap.coerceIn(0, 100),
+                enabled = enabled,
+                onPercent = actions.onFloatAmount,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = if (capped) "—" else "$percent",
+                style = MaterialTheme.typography.bodySmall.tabularFigures(),
+                color = if (capped) QuietPalette.Disabled else QuietPalette.InkSecondary,
+                modifier = Modifier.width(34.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Key(
+                label = if (state.breath) "禁用" else "启用",
+                onClick = { actions.onBreathChange(!state.breath) },
+                kind = if (state.breath) KeyKind.Outline else KeyKind.Selected,
+                enabled = enabled && percent > 0,
+                height = TouchTarget,
+                minWidth = 84.dp
+            )
+        }
+    }
+}
+
 /**
  * The scene bed, one card: a switch and a level.
  *
@@ -710,39 +771,41 @@ private fun SessionAudio(
 ) {
     val ready = state.phase == BlePhase.READY
     val muted = state.control.audioMuted
-    Panel(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "水声",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = QuietPalette.InkSecondary
-                )
-                Spacer(Modifier.width(10.dp))
-                LevelBar(
-                    percent = state.waterVolume,
-                    enabled = ready && !muted,
-                    onChange = actions.onAudioVolume,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = if (muted) "关" else "${state.waterVolume}",
-                    style = MaterialTheme.typography.bodySmall.tabularFigures(),
-                    color = if (muted) QuietPalette.Disabled else QuietPalette.InkSecondary,
-                    modifier = Modifier.width(34.dp)
-                )
-                // The key names the action, the number names the state: a bare
-                // 关 beside a full bar read as "the water is off".
-                Key(
-                    label = if (muted) "恢复" else "静音",
-                    onClick = actions.onToggleAudio,
-                    kind = if (muted) KeyKind.Selected else KeyKind.Outline,
-                    enabled = ready,
-                    height = TouchTarget,
-                    minWidth = 72.dp
-                )
-            }
+    Panel(modifier.fillMaxWidth().height(SessionControlHeight)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "水声",
+                style = MaterialTheme.typography.labelMedium,
+                color = QuietPalette.InkSecondary
+            )
+            Spacer(Modifier.width(10.dp))
+            LevelBar(
+                percent = state.waterVolume,
+                enabled = ready && !muted,
+                onChange = actions.onAudioVolume,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = if (muted) "关" else "${state.waterVolume}",
+                style = MaterialTheme.typography.bodySmall.tabularFigures(),
+                color = if (muted) QuietPalette.Disabled else QuietPalette.InkSecondary,
+                modifier = Modifier.width(34.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Key(
+                label = if (muted) "恢复" else "静音",
+                onClick = actions.onToggleAudio,
+                kind = if (muted) KeyKind.Selected else KeyKind.Outline,
+                enabled = ready,
+                height = TouchTarget,
+                minWidth = 84.dp
+            )
         }
     }
 }
@@ -764,7 +827,6 @@ private fun SessionColumn(
     modifier: Modifier = Modifier
 ) {
     val ready = state.phase == BlePhase.READY
-    val percent = state.floatPercent.coerceIn(0, 100)
     val calibration = calibrationView(phase, ready)
     // The one posture number, as the operator reads it: a whole percent.
     val mixPercent = (state.mix.coerceIn(0f, 1f) * 100f).roundToInt()
@@ -863,54 +925,8 @@ private fun SessionColumn(
                 }
             }
 
-            // The scene lives on its own page (the rail's 场景). It used to have
-            // a second home here as three cards and an apply key, which is two
-            // ways to do one thing — and mid-session the block pushed the body
-            // controls down for a decision the operator usually is not making.
-            Panel(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "起伏",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = QuietPalette.InkSecondary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = when {
-                                state.caps.floatCap == 0 -> "本场景无起伏"
-                                percent == 0 -> "已关闭"
-                                else -> "$percent%"
-                            },
-                            style = MaterialTheme.typography.bodySmall.tabularFigures(),
-                            color = QuietPalette.InkSecondary
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        // A switch, not a second level: with the level at 0 the
-                        // wave is off, and breathing is the character of a wave
-                        // that is running.
-                        Key(
-                            label = "呼吸",
-                            subLabel = if (state.breath) "开" else "关",
-                            onClick = { actions.onBreathChange(!state.breath) },
-                            kind = if (state.breath) KeyKind.Selected else KeyKind.Outline,
-                            enabled = ready && phase.acceptsChanges &&
-                                percent > 0 && state.caps.floatCap > 0,
-                            height = 48.dp,
-                            minWidth = 84.dp,
-                            textStyle = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    HeaveBar(
-                        percent = percent,
-                        cap = state.caps.floatCap.coerceIn(0, 100),
-                        enabled = ready && phase.acceptsChanges && state.caps.floatCap > 0,
-                        onPercent = actions.onFloatAmount
-                    )
-                }
-            }
-
+            // The heave moved to the left column, above water: two continuous
+            // controls together, and the right column left for scene and body.
             Panel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -953,17 +969,6 @@ private fun SessionColumn(
                         )
                     }
                     Spacer(Modifier.height(10.dp))
-                    // A disabled key that says nothing sends the operator
-                    // hunting for a fault. The page already knows why: it is
-                    // the same `blocked` reason it gates its own commands on.
-                    if (state.caps.blocked.isNotEmpty()) {
-                        Text(
-                            text = state.caps.blocked,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = QuietPalette.InkSecondary,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
                     // One value, both directions: the rise and the lie-back are
                     // the same motion run backwards, so they share one length.
                     Row(verticalAlignment = Alignment.CenterVertically) {
