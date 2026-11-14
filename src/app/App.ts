@@ -36,7 +36,7 @@ import {
 import { createVoicePlayer, SEQUENCES, type SequenceName } from '../audio/voice';
 import { lyingEyeY, restMixOf } from '../core/anatomy';
 import { degrees, metres } from '../core/units';
-import { visualUpInContent } from '../core/xr/world-frame';
+import { worldUpInContent } from '../core/xr/world-frame';
 import { createFloating, type FloatingApi } from './floating';
 import {
   annotateOutcome,
@@ -378,17 +378,17 @@ export class QuietShoreApp {
         capturePending: this.capturePending,
         rising: this.world.isRising()
       }),
-      // The axis must undo **every** parent rotation, not just the base: the
-      // shell's view pitch sits on top of the base, so with the operator's
-      // up-gaze at 30 degrees a heave computed from the base alone would tilt
-      // 30 degrees in the patient's view. Compose shell x base, invert once.
+      // The heave is world-vertical. Undo **every** parent rotation (view
+      // shell × calibrated frame) so content-local +Y maps back to world +Y;
+      // the head pose is deliberately absent, or looking around would steer
+      // the buoyancy with the gaze.
       axis: (out) => {
         const shell = this.shell;
         if (!shell) {
           return out.set(0, 1, 0);
         }
         this.parentQuaternion.copy(shell.group.quaternion).multiply(shell.base.quaternion);
-        return visualUpInContent(this.headPose.quaternion, this.parentQuaternion, out);
+        return worldUpInContent(this.parentQuaternion, out);
       },
       amount: this.config.floatAmount,
       // The scene declares how much of the frame's buoyancy it wants as a

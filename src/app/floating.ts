@@ -41,7 +41,7 @@ export interface FloatingDeps {
   };
   handle(): SceneHandle | null;
   gate(): BuoyancyGate;
-  /** Visual up in content space; the heave runs along it, whatever the frame. */
+  /** World up in content space; the heave follows this fixed axis. */
   axis(out: THREE.Vector3): THREE.Vector3;
 }
 
@@ -105,9 +105,9 @@ export function createFloating(
     // put, whatever the scene is. There is one buoyancy implementation for
     // every scene, and a scene's only say in it is which nodes are sky.
     host.setBackdropOffset(baseOffset);
-    // The frame owns the base Y; the heave is one vector along the visual up,
-    // so a supine frame lifts the world in view instead of pushing it along the
-    // gaze. The Y component must be scaled by the axis too — adding the full
+    // The frame owns the base Y; the heave is one vector along world up, so
+    // the whole scene rises and falls vertically no matter where the patient
+    // looks. The Y component must be scaled by the axis too — adding the full
     // offset to Y and the rest to X/Z made a tilted frame heave 19% too far.
     host.setContentPosition(
       up.x * offsetM,

@@ -22,7 +22,7 @@
  *    itself is the strongest cue we can give (Vection Res. 2020, Sci Rep 11:1022).
  *  - An unstable subjective vertical triggers disorientation and space motion
  *    sickness (NASA Neurolab). The horizon therefore **never tilts**: there is
- *    no sway channel at all, and the world only translates along the visual up.
+ *    no sway channel at all, and the world only translates along world up.
  *
  * Amplitudes doubled on 2026-10-24 field request ("浮动大一倍"). The near-field
  * speed budget doubles with them, pending volunteer re-calibration — see

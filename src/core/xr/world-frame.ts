@@ -1,33 +1,30 @@
 import * as THREE from 'three';
 
 /**
- * The patient's visual up, in content space.
+ * The world's vertical axis, expressed in content space.
  *
- * This is the only function left from the old frame planner: the frame itself
- * is one formula in `app/world-runtime` (`eyeY(mix)` → `content.y = -eyeY`),
- * and the mode/two-frame selection it used to describe is gone.
- *
- * A heave written along the scene's +Y only reads as up and down while that
- * frame poses the world; undoing the parent rotation once gives the same head
- * direction in every frame.
+ * The content sits under the view shell and the calibrated comfort frame, so a
+ * translation written in content coordinates is rotated by both parents. Undo
+ * those rotations once to get the vector that comes out as world Y after the
+ * frame is applied. The patient's head is deliberately not part of this
+ * calculation: buoyancy is a heave of the world, not a translation along the
+ * gaze, so looking up or turning away must not steer it.
  */
 
 /** Scratch for the per-frame axis; the render loop is single-threaded. */
 const AXIS_QUATERNION = new THREE.Quaternion();
 
 /**
- * The patient's visual up, expressed in content space.
+ * World up, expressed in the content's parent coordinates.
  *
- * The buoyancy axis: a heave written along the scene's +Y only reads as up and
- * down while the calibrated frame poses the world. Undo the base rotation and
- * the same head direction works in every frame, including the supine one where
- * it points along the scene's depth.
+ * `parent` is the full rotation above the content (view shell × comfort
+ * frame). The returned vector is a unit vector in content space; applying the
+ * parent's rotation to it recovers `(0, 1, 0)` in world space.
  */
-export function visualUpInContent(
-  head: THREE.Quaternion,
-  base: THREE.Quaternion,
+export function worldUpInContent(
+  parent: THREE.Quaternion,
   out: THREE.Vector3
 ): THREE.Vector3 {
-  AXIS_QUATERNION.copy(base).invert().multiply(head);
+  AXIS_QUATERNION.copy(parent).invert();
   return out.set(0, 1, 0).applyQuaternion(AXIS_QUATERNION);
 }
