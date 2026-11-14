@@ -30,25 +30,14 @@ describe('scene catalogue', () => {
     expect(survey?.audio).toBeUndefined();
   });
 
-  it('carries the copy and the cap both consumers render', () => {
+  it('carries the copy both consumers render', () => {
     for (const entry of entries) {
       expect(entry.id).toMatch(/^[a-z][a-z0-9-]*$/);
       expect(entry.name.zh.trim()).not.toBe('');
       expect(entry.name.en.trim()).not.toBe('');
       expect(entry.tagline.zh.trim()).not.toBe('');
       expect(entry.tagline.en.trim()).not.toBe('');
-      // `0` is a real ceiling now: a room that does not move at all.
-      expect(entry.comfort === null || entry.comfort >= 0).toBe(true);
     }
-    // Preparation and questionnaire are static; the other scenes inherit the
-    // global maximum. The zero cap survives the mapping to both APKs.
-    expect(
-      entries.every((entry) =>
-        entry.id === 'prep' || entry.id === 'survey'
-          ? entry.comfort === 0
-          : entry.comfort === null
-      )
-    ).toBe(true);
     // The preparation room is built in: the picker filters it, the page and
     // the headset still need its name.
     // Two built-in rooms the operator never picks: the preparation space and

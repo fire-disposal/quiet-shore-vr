@@ -21,7 +21,6 @@ export const surveyScene = defineScene(
   {
     id: 'survey',
     special: true,
-    comfort: 0,
     name: { zh: '湖边问卷', en: 'Lakeside Questionnaire' },
     tagline: {
       zh: 'v1 的清晨湖边，作为安静的问卷背景。',

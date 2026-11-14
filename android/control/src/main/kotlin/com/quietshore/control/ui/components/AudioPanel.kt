@@ -222,11 +222,19 @@ fun AudioPanel(
         AudioSection(
             title = "语音提示",
             trailing = {
-                Text(
-                    text = "${guidance.size} 句",
-                    style = MaterialTheme.typography.labelLarge.tabularFigures(),
-                    color = QuietPalette.TextSecondary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "点击即可播放",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = QuietPalette.TextSecondary
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "${guidance.size} 句",
+                        style = MaterialTheme.typography.labelLarge.tabularFigures(),
+                        color = QuietPalette.TextSecondary
+                    )
+                }
             }
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {

@@ -709,8 +709,7 @@ private fun SessionHeave(
 ) {
     val ready = state.phase == BlePhase.READY
     val percent = state.floatPercent.coerceIn(0, 100)
-    val capped = state.caps.floatCap <= 0
-    val enabled = ready && phase.acceptsChanges && !capped
+    val enabled = ready && phase.acceptsChanges
     Panel(modifier.fillMaxWidth().height(SessionControlHeight)) {
         Row(
             modifier = Modifier
@@ -726,16 +725,16 @@ private fun SessionHeave(
             Spacer(Modifier.width(10.dp))
             HeaveBar(
                 percent = percent,
-                cap = state.caps.floatCap.coerceIn(0, 100),
+                cap = 100,
                 enabled = enabled,
                 onPercent = actions.onFloatAmount,
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                text = if (capped) "—" else "$percent",
+                text = "$percent",
                 style = MaterialTheme.typography.bodySmall.tabularFigures(),
-                color = if (capped) QuietPalette.Disabled else QuietPalette.InkSecondary,
+                color = QuietPalette.InkSecondary,
                 modifier = Modifier.width(34.dp)
             )
             Spacer(Modifier.width(10.dp))
@@ -745,7 +744,7 @@ private fun SessionHeave(
                 kind = if (state.breath) KeyKind.Outline else KeyKind.Selected,
                 // A preference for the next scene: it stays pressable while
                 // this room has no heave, instead of looking broken.
-                enabled = ready && phase.acceptsChanges,
+                enabled = enabled,
                 height = TouchTarget,
                 minWidth = 84.dp
             )

@@ -214,7 +214,22 @@ async def run(args: argparse.Namespace) -> int:
             await client.__aenter__()
         for index, line in enumerate(lines, start=1):
             path = out_dir / f"{line['id']}.mp3"
-            reused = path.is_file() and not args.force
+            # A clip is reusable only when the text that produced it is still
+            # the same. File existence alone silently kept the old sentence
+            # after a copy change and rewrote only the manifest hash.
+            previous_hash = next(
+                (
+                    entry.get("textHash")
+                    for entry in manifest["voices"].get(name, {}).get("files", [])
+                    if entry.get("id") == line["id"]
+                ),
+                None,
+            )
+            reused = (
+                path.is_file()
+                and not args.force
+                and previous_hash == text_hash(line["text"])
+            )
             if not reused:
                 if args.dry_run:
                     print(f"would synthesize {name}/{line['id']}")

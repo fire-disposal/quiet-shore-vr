@@ -57,8 +57,8 @@ export interface FloatingState {
 export interface FloatingApi {
   /** Advance one frame; the only writer of the heave. */
   update(dt: number): void;
-  /** Clamped to 0–1 and to the scene's own ceiling. */
-  setAmount(amount: number, sceneCap?: number): number;
+  /** Clamped to 0–1; the intensity is global, with no scene ceiling. */
+  setAmount(amount: number): number;
   /**
    * The breathing switch: the slow swell of the heave and the millimetre
    * wobble on top. Off keeps the same envelope and period as a plain sine, so
@@ -133,11 +133,8 @@ export function createFloating(
     breathTarget = on ? 1 : 0;
   }
 
-  function setAmount(next: number, sceneCap = 1): number {
+  function setAmount(next: number): number {
     amount = clampAmount(next);
-    if (amount > sceneCap) {
-      amount = sceneCap;
-    }
     return amount;
   }
 

@@ -34,10 +34,6 @@ export const prepScene = defineScene(
     id: 'prep',
     // Built-in: the first surface of a session, never a card in the picker.
     special: true,
-    // No motion, as the room's own description says — and declared, so the page
-    // refuses a level here and the tablet's control is disabled instead of the
-    // heave merely being switched off by the code that enters it.
-    comfort: 0,
     name: { zh: '准备间', en: 'Preparation Room' },
     tagline: {
       zh: '空旷的灰色空间，先熟悉一下头显。',

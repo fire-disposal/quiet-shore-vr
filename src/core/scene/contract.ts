@@ -71,22 +71,6 @@ export interface SceneSummary {
 
 export interface SceneDefinition extends SceneSummary {
   /**
-   * Highest buoyancy level this scene stays comfortable at (1..3).
-   *
-   * The light well is pure vertical optic flow — the strongest self-motion cue
-   * of the three and the one most likely to make someone queasy — so it caps
-   * lower than the room or the lake. Absent means "the global maximum".
-   */
-  comfort?: number;
-  /**
-   * How much of the frame's buoyancy this scene wants as a full heave, 0..1.
-   *
-   * The lake's whole point is that the body drifts with the water; a tiled
-   * room or the shaft would sway like a boat and read as broken. This used to
-   * be `sceneId === 'shore'` inside the app — which meant every new scene had
-   * to edit the app to say what it already knew about itself.
-   */
-  /**
    * Where the eye is for this scene: the height its art was authored from, and
    * what the patient's back rests on. The lying height is **derived** by
    * `core/anatomy.ts`, never written here, so the world's rest offset and the

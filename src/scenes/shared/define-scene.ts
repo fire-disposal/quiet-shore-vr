@@ -50,7 +50,7 @@ export interface AuthoredEye {
  * handed to the builder — never re-typed inside a scene.
  */
 export function defineScene(
-  summary: SceneSummary & { comfort?: number },
+  summary: SceneSummary,
   posture: ScenePosture,
   build: (eye: AuthoredEye) => SceneBuild
 ): SceneDefinition {
@@ -58,7 +58,6 @@ export function defineScene(
     ...summary,
     posture,
     special: summary.special === true,
-    comfort: summary.comfort,
     build(): SceneHandle {
       const parts = build({ lyingEyeY: lyingEyeY(posture) });
       const stats = measureObject(parts.root);

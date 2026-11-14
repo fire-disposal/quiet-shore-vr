@@ -70,14 +70,7 @@ fun ConsolePreview(
             } else {
                 base.copy(
                     sceneIntent = "",
-                    control = base.control.copy(scene = current),
-                    // The preparation room declares no motion: the page sends a
-                    // zero ceiling, so the fixture does too.
-                    caps = if (current == "prep") {
-                        base.caps.copy(float = false, floatCap = 0)
-                    } else {
-                        base.caps
-                    }
+                    control = base.control.copy(scene = current)
                 )
             }
         }

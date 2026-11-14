@@ -144,15 +144,6 @@ describe('technician choice', () => {
     expect(h.floating.setAmount(0.47)).toBeCloseTo(0.47, 6);
   });
 
-  it('honours a scene ceiling', () => {
-    const h = harness();
-    expect(h.floating.setAmount(1, 0.6)).toBeCloseTo(0.6, 6);
-    expect(h.floating.setAmount(1, 0.3)).toBeCloseTo(0.3, 6);
-    expect(h.floating.setAmount(0, 0.3)).toBe(0);
-    // A generous scene cap never raises the global maximum.
-    expect(h.floating.setAmount(1, 9)).toBe(1);
-  });
-
   it('scales the envelope with the amount', () => {
     const low = harness({ amount: 1 / 3 });
     const high = harness({ amount: 1 });

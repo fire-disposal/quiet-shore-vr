@@ -237,6 +237,12 @@ export class QuietShoreApp {
   private previewFlow: number | null = null;
   /** Buoyancy: level, profile, envelope and the content offset it rides on. */
   private readonly floating: FloatingApi;
+  /**
+   * The operator's intensity even when the current room has a zero ceiling.
+   * A preparation room does not heave, but the choice must survive the next
+   * scene switch instead of being clamped to 0 and forgotten.
+   */
+  private desiredFloat = 1;
   /** Base pose: calibration frame, sit-up path and the placement that goes with them. */
   private readonly world: WorldRuntimeApi;
   /** The sheet, built per instrument; null until the questionnaire face opens. */
@@ -254,8 +260,6 @@ export class QuietShoreApp {
   private calibrationOverlay: CalibrationOverlayApi | null = null;
   /** Operator switch for gaze dwell; on by default per product decision. */
   private gazeDwellEnabled = true;
-  /** Highest buoyancy the loaded scene allows, 0–1 (its own ceiling). */
-  private sceneComfort = 1;
   /**
    * Answers live on the headset; the 28-byte state frame has no room. Length is
    * the loaded instrument's question count, so it follows a selection change.
@@ -376,6 +380,7 @@ export class QuietShoreApp {
       // The scene declares how much of the frame's buoyancy it wants as a
       // heave; the app no longer keys on an id.
     });
+    this.desiredFloat = this.floating.getAmount();
     // The base pose owner sits on top of buoyancy: it decides which frame poses
     // the world and hands the frame's offset to the buoyancy module.
     this.world = createWorldRuntime({
@@ -724,7 +729,6 @@ export class QuietShoreApp {
     // by `core/anatomy.ts`, the standing height is the operator's setting (the
     // art's own number is the fallback), and `world.apply()` — driven by mix —
     // interpolates between them.
-    this.sceneComfort = definition.comfort ?? 1;
     this.sceneLyingEyeY = lyingEyeY(definition.posture);
     this.sceneRestMix = restMixOf(definition.posture);
     this.world.setScene({
@@ -1396,7 +1400,7 @@ export class QuietShoreApp {
   }
 
   private switchSceneLive(definition: SceneDefinition): void {
-    const previousLevel = this.floating.getAmount();
+    const previousLevel = this.desiredFloat;
     const previousRestMix = this.sceneRestMix;
     // Read before the host takes the new scene: this is the "were we in prep"
     // fact the scheduled rise is gated on.
@@ -1415,15 +1419,17 @@ export class QuietShoreApp {
     // The intensity readback shows the zero, so nothing is hidden.
     if (definition.id === PREP_SCENE_ID) {
       this.voice.stop();
-      this.floating.setAmount(0, this.floatCap());
+      this.floating.setAmount(0);
     }
     this.handle = this.host.load(definition, { keepPrevious: true });
     this.sceneId = definition.id;
     this.segmentStartedAt = performance.now();
     this.applySceneDefinition(definition);
-    // A scene with a lower comfort ceiling must not inherit a higher level; the
-    // envelope eases down by itself, so the heave never steps.
-    this.floating.setAmount(previousLevel, this.sceneComfort);
+    // The intensity is global: every scene uses the same 0–100 setting. The
+    // preparation room has no motion, so it keeps the choice for the next
+    // formal scene instead of clamping it away.
+    const applied = this.floating.setAmount(previousLevel);
+    this.desiredFloat = applied;
     if (this.sceneRestMix !== previousRestMix) {
       // The correction ramps, so the heave's axis is about to travel with it:
       // zero the motion it would otherwise carry across the turn.
@@ -1983,17 +1989,10 @@ export class QuietShoreApp {
         this.link.sendStateNow();
         return;
       case 'floatLevel': {
-        const cap = this.floatCap();
         const asked = command.percent / 100;
-        const applied = this.floating.setAmount(asked, cap);
-        this.start.setStatus(
-          applied === asked
-            ? `起伏 ${Math.round(applied * 100)}%`
-            : cap <= 0
-              ? '本场景无起伏'
-              : `本段最高 ${Math.round(cap * 100)}%`,
-          'ok'
-        );
+        this.desiredFloat = asked;
+        const applied = this.floating.setAmount(asked);
+        this.start.setStatus(`起伏 ${Math.round(applied * 100)}%`, 'ok');
         this.link.sendStateNow();
         return;
       }
@@ -2158,9 +2157,8 @@ export class QuietShoreApp {
         // progress bar both derive from it, so they cannot disagree.
         correctionMix: world.mix,
         correctionMoving: world.moving,
-        // The loaded scene's buoyancy ceiling travels with the state so the
-        // tablet's stepper clamps to the same number the page enforces.
-        floatCap: this.floatCap()
+        // Intensity is global; no scene supplies a ceiling.
+        floatCap: 1
       },
       this.plan ?? undefined
     );
@@ -2600,11 +2598,6 @@ export class QuietShoreApp {
     this.segmentPeakUpGazeDeg = Math.max(this.segmentPeakUpGazeDeg, Math.abs(upGazeDeg));
   }
 
-  /** Buoyancy ceiling declared by the manually selected scene. */
-  private floatCap(): number {
-    return this.sceneComfort;
-  }
-
   /** Close the current scene dwell at [now]; a manual scene change opens another. */
   private closeSegment(now: number): void {
     if (this.segmentStartedAt <= 0) {
@@ -2675,7 +2668,7 @@ export class QuietShoreApp {
       upGazeTargetDeg: degrees(this.viewMotion.getTargetUpGazeDeg()),
       viewAnim: this.viewMotion.getStateName(),
       floorOffset: metres(this.host.floor),
-      floatAmount: motion.amount,
+      floatAmount: this.desiredFloat,
       floatBreath: motion.breath,
       // Applied motion, not the requested level: the mirror adds these verbatim.
       floatMm: motion.offsetM * 1000,
@@ -2694,7 +2687,7 @@ export class QuietShoreApp {
         float: false,
         view: false,
         blocked: '未开始会话',
-        floatCap: this.floatCap()
+        floatCap: 1
       }
     });
     return snapshot;

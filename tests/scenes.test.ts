@@ -135,19 +135,6 @@ describe('scene capabilities', () => {
     }
   });
 
-  it('declares a ceiling only where a scene needs one', () => {
-    // Preparation and questionnaire declare no scene motion; every formal
-    // training scene leaves the global maximum alone (`null`).
-    const ceilings = Object.fromEntries(SCENES.map((scene) => [scene.id, scene.comfort ?? null]));
-    expect(ceilings).toEqual({
-      washroom: null,
-      shore: null,
-      ward: null,
-      prep: 0,
-      survey: 0
-    });
-  });
-
   it('leaves the buoyancy to the app and declares only what is sky', () => {
     const washroom = build('washroom').handle;
     const shore = build('shore').handle;
