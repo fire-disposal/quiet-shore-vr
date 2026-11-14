@@ -59,6 +59,9 @@ val CommandBarHeight = 72.dp
 /** One charge field's width: label, state word and value within one glance. */
 private val ChargFieldWidth = 268.dp
 
+/** The 1024 dp tablet cannot fit two full fields beside the selectors. */
+private val CompactChargFieldWidth = 150.dp
+
 /** Where the stop sits on the bar's second line, and how wide it is. */
 val StopWidth = 168.dp
 
@@ -95,6 +98,11 @@ fun CommandBar(
 ) {
     val connected = state.phase == BlePhase.READY
     val pad = com.quietshore.control.ui.rememberPadBattery()
+    // GOT-W29 is 1024 dp wide in landscape. Two 268 dp charge fields plus the
+    // app selector and disconnect key overflow that row, which used to clip
+    // the tablet battery after its label.
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 1100
+    val chargeWidth = if (compact) CompactChargFieldWidth else ChargFieldWidth
 
     Column(
         modifier = modifier
@@ -156,21 +164,23 @@ fun CommandBar(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(horizontal = if (compact) 12.dp else 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BatteryField(
                     label = "头显",
                     level = state.battery?.level,
                     charging = state.battery?.charging ?: false,
-                    modifier = Modifier.width(ChargFieldWidth)
+                    compact = compact,
+                    modifier = Modifier.width(chargeWidth)
                 )
                 BatteryField(
                     label = "平板",
                     level = pad?.level,
                     charging = pad?.charging ?: false,
-                    modifier = Modifier.width(ChargFieldWidth)
+                    compact = compact,
+                    modifier = Modifier.width(chargeWidth)
                 )
             }
 

@@ -96,7 +96,8 @@ fun BatteryField(
     label: String,
     level: Int?,
     charging: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val known = level != null && level in 0..100
     val fraction = if (known) level!!.coerceIn(0, 100) / 100f else 0f
@@ -130,15 +131,17 @@ fun BatteryField(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "$PREFIX$label" + "电量",
+                text = if (compact) "$PREFIX$label" else "$PREFIX$label" + "电量",
                 style = wordStyle,
                 color = if (known) QuietPalette.Ink else QuietPalette.InkSecondary,
                 maxLines = 1
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(if (compact) 6.dp else 10.dp))
             // One state word, before the value: after it, the value column
-            // would move whenever a device started charging.
-            if (known) {
+            // would move whenever a device started charging. The compact field
+            // keeps the number and drops the word; the tinted fill still shows
+            // that charge is present.
+            if (known && !compact) {
                 when {
                     charging && level!! >= 100 -> ChargeTag("已充满")
                     charging -> ChargeTag("充电中")

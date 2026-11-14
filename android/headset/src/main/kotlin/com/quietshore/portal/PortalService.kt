@@ -311,6 +311,11 @@ class PortalService : Service() {
                         publishControlMessage()
                     }
                     publishStatus()
+                    // Pairing is enough: the battery and capability block must
+                    // not wait for a page or a training session to echo state.
+                    if (changed && active) {
+                        publishFlags(lastState, null)
+                    }
                 }
 
                 override fun onStateChanged(state: String) {
@@ -1069,6 +1074,10 @@ class PortalService : Service() {
         if (changed) {
             Log.i(TAG, "battery ${next.level}% charging=${next.charging}")
             publishBattery(next)
+            // The tablet reads headset charge from flags, not from the page's
+            // WebSocket. Without this it kept the pre-pairing "---" until some
+            // unrelated state or scene packet happened to refresh the bar.
+            publishFlags(lastState, null)
         }
     }
 

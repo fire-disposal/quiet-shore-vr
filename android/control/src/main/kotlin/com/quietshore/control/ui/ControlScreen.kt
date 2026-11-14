@@ -1228,18 +1228,6 @@ private fun StartBlock(
             // two identical ice blocks would be two primaries on one page.
             if (phase == SessionPhase.Entry) {
                 LoadingDots(color = QuietPalette.Ink)
-                Spacer(Modifier.width(16.dp))
-                // The launch wait is up to twenty seconds of a page that cannot
-                // otherwise be backed out of. This is not a stop: nothing has
-                // been entered yet, so it only withdraws the request.
-                Key(
-                    label = "取消启动",
-                    onClick = actions.onCancelLaunch,
-                    kind = KeyKind.Outline,
-                    enabled = true,
-                    height = TouchTarget,
-                    minWidth = 96.dp
-                )
             }
         }
         Rule()
@@ -1322,19 +1310,10 @@ private fun StandbySteps(
                 textStyle = MaterialTheme.typography.titleMedium
             )
             if (phase == SessionPhase.Entry) {
-                // The countdown already lives in the page headline; repeating it
-                // under the key made the same sentence appear twice on one screen.
-                Spacer(Modifier.height(8.dp))
-                // The wait is the operator's to call off: the patient has not
-                // pressed yet, so nothing about this is a session decision.
-                ActionKey(
-                    label = "取消启动",
-                    onClick = actions.onCancelLaunch,
-                    modifier = Modifier.fillMaxWidth(),
-                    tone = ActionTone.Secondary,
-                    height = TouchTarget,
-                    textStyle = MaterialTheme.typography.titleSmall
-                )
+                // The countdown already lives in the page headline; the cancel
+                // is owned once by the session strip above the page so this
+                // board cannot grow a second copy of the same decision.
+                Spacer(Modifier.height(4.dp))
             }
             Spacer(Modifier.height(8.dp))
             Text(
