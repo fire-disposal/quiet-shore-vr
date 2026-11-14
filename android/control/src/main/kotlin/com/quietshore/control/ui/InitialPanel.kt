@@ -119,28 +119,39 @@ fun InitialPanel(
                 )
             }
         } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            ) {
-                Row(Modifier.fillMaxWidth()) {
-                    InitialRail(current = tab, onSelect = { tab = it })
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(start = QuietSpace.Section, top = 24.dp, end = 24.dp)
-                    ) {
-                        TabBody(tab)
-                    }
-                }
-                DeviceList(
-                    state = state,
-                    scanning = scanning,
-                    onScan = onScan,
-                    onStopScan = onStopScan,
-                    onConnect = onConnect,
-                    modifier = Modifier.fillMaxWidth().padding(24.dp)
+            // The rail is fixed chrome and already scrollable. Measuring it
+            // inside another full-page vertical scroll handed it an infinite
+            // height and crashed Compose on the first tablet layout. Keep the
+            // outer axis on the content column only.
+            Row(Modifier.fillMaxSize()) {
+                InitialRail(
+                    current = tab,
+                    onSelect = { tab = it },
+                    modifier = Modifier.fillMaxHeight()
                 )
-                Spacer(Modifier.height(QuietSpace.Page))
+                RailRule()
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(
+                            start = QuietSpace.Section,
+                            top = 24.dp,
+                            end = 24.dp
+                        )
+                ) {
+                    TabBody(tab)
+                    DeviceList(
+                        state = state,
+                        scanning = scanning,
+                        onScan = onScan,
+                        onStopScan = onStopScan,
+                        onConnect = onConnect,
+                        modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
+                    )
+                    Spacer(Modifier.height(QuietSpace.Page))
+                }
             }
         }
     }
