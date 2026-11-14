@@ -114,9 +114,7 @@ fun SceneCardView(
             .clickable(
                 enabled = enabled,
                 role = Role.RadioButton,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = { onSelect(scene.id) }
+                                                onClick = { onSelect(scene.id) }
             )
             .padding(
                 horizontal = if (showBlurb) 16.dp else 10.dp,

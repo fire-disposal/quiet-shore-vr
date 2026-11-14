@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -211,6 +212,13 @@ fun Key(
      */
     subLabel: String? = null
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressOverlay by animateColorAsState(
+        targetValue = if (enabled && pressed) Color.Black.copy(alpha = 0.10f) else Color.Transparent,
+        animationSpec = tween(70),
+        label = "key-press"
+    )
     val fill by animateColorAsState(
         targetValue = when {
             !enabled -> Color.Transparent
@@ -245,12 +253,13 @@ fun Key(
             .heightIn(min = height)
             .clip(KeyShape)
             .background(fill)
+            .background(pressOverlay)
             .then(if (border != null) Modifier.border(border, KeyShape) else Modifier)
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
                 indication = null,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 onClick = onClick
             )
             // Vertical padding is the room the second line and the system's

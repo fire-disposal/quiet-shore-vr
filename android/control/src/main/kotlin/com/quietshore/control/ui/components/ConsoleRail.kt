@@ -116,9 +116,7 @@ internal fun RailTab(label: String, selected: Boolean, onClick: () -> Unit) {
             .fillMaxWidth()
             .heightIn(min = 60.dp)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Tab,
+                                                role = Role.Tab,
                 onClick = onClick
             )
             .semantics { this.selected = selected }

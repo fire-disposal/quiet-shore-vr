@@ -216,9 +216,7 @@ fun CommandBar(
                     )
                     .clickable(
                         enabled = connected,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
+                                                                        role = Role.Button,
                         onClick = onDisconnect
                     )
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -265,9 +263,7 @@ private fun AppSelector(app: String, enabled: Boolean, onSelect: (String) -> Uni
                 )
                 .clickable(
                     enabled = enabled,
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    role = Role.Button,
+                                                            role = Role.Button,
                     onClick = { open = true }
                 )
                 .padding(horizontal = 10.dp),
@@ -441,9 +437,7 @@ fun BarWordKey(
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onClick
+                                                onClick = onClick
             )
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center

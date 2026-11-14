@@ -204,9 +204,7 @@ fun AudioPanel(
                             .fillMaxWidth()
                             .defaultMinSize(minHeight = TouchTarget)
                             .clickable(
-                                role = Role.Button,
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
+                                role = Role.Button
                             ) {
                                 expanded = if (open) expanded - group else expanded + group
                             }
@@ -236,9 +234,7 @@ fun AudioPanel(
                                     .fillMaxWidth()
                                     .clickable(
                                         enabled = connected,
-                                        role = Role.Button,
-                                        indication = null,
-                                        interactionSource = remember { MutableInteractionSource() }
+                                        role = Role.Button
                                     ) { actions.onVoicePlay(line.id) }
                                     .padding(vertical = 12.dp),
                                 maxLines = 3,

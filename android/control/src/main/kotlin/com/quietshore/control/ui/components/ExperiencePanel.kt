@@ -282,9 +282,7 @@ private fun RatingKey(
                 }
             )
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
+                                                onClick = onClick
             ),
         contentAlignment = Alignment.Center
     ) {
@@ -566,9 +564,7 @@ private fun ExperienceRow(
         Modifier
             .fillMaxWidth()
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onToggle
+                                                onClick = onToggle
             )
             .padding(vertical = 10.dp)
     ) {

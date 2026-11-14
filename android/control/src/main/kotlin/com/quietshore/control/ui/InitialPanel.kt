@@ -195,9 +195,7 @@ private fun RailItem(tab: EntryTab, selected: Boolean, onClick: () -> Unit) {
             .clip(shape)
             .background(if (selected) QuietPalette.Ice else QuietPalette.Board)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Tab,
+                                                role = Role.Tab,
                 onClick = onClick
             )
             .semantics { this.selected = selected }
@@ -427,9 +425,7 @@ private fun BarKey(label: String, onClick: () -> Unit, primary: Boolean) {
                 }
             )
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
+                                                role = Role.Button,
                 onClick = onClick
             )
             .padding(horizontal = 18.dp),
