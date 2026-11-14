@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,22 +56,42 @@ fun PostureMixBar(
     modifier: Modifier = Modifier
 ) {
     var dragging by remember { mutableStateOf(false) }
+    var targetActive by remember { mutableStateOf(false) }
     var local by remember { mutableFloatStateOf(0f) }
-    val shown = if (dragging) local else applied.coerceIn(0f, 1f)
+    val shown = if (dragging || targetActive) local else applied.coerceIn(0f, 1f)
     val percent = (applied.coerceIn(0f, 1f) * 100f).roundToInt()
+    val targetPercent = (shown.coerceIn(0f, 1f) * 100f).roundToInt()
+
+    // A release does not snap the handle back to the page's readback. The page
+    // follows under a ramp, so the handle stays on the operator's target and
+    // only lets go once the applied value has caught up.
+    LaunchedEffect(applied, targetActive, dragging) {
+        if (!dragging && targetActive && kotlin.math.abs(applied - local) < 0.01f) {
+            targetActive = false
+        }
+    }
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            dragging = false
+            targetActive = false
+        }
+    }
 
     Box(
         modifier
             .fillMaxWidth()
             .height(52.dp)
             .alpha(if (enabled) 1f else 0.35f)
-            .semantics { contentDescription = "体位补偿 $percent%" }
+            .semantics {
+                contentDescription = "体位补偿已应用 $percent%，目标 $targetPercent%"
+            }
             // Tap to place, drag to sweep. Two detectors, one bar: a tap that
             // never leaves the slop would otherwise do nothing at all.
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 detectTapGestures { offset ->
                     local = (offset.x / size.width).coerceIn(0f, 1f)
+                    targetActive = true
                     onTarget((local * 100f).roundToInt())
                 }
             }
@@ -79,6 +100,7 @@ fun PostureMixBar(
                 detectDragGestures(
                     onDragStart = { offset ->
                         dragging = true
+                        targetActive = true
                         local = (offset.x / size.width).coerceIn(0f, 1f)
                         onTarget((local * 100f).roundToInt())
                     },
@@ -99,10 +121,11 @@ fun PostureMixBar(
                     end = Offset(size.width, midY),
                     strokeWidth = 1.5.dp.toPx()
                 )
+                val appliedX = (size.width * applied.coerceIn(0f, 1f))
                 drawLine(
                     color = QuietPalette.Ice,
                     start = Offset(0f, midY),
-                    end = Offset(headX, midY),
+                    end = Offset(appliedX, midY),
                     strokeWidth = 5.dp.toPx()
                 )
                 drawRect(

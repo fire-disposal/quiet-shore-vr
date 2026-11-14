@@ -1439,33 +1439,42 @@ private fun LinkBanners(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = QuietSpace.Page, vertical = 12.dp)
+            // Match the session-verb band below: full-width board surface,
+            // inner page gutter. The old inset-only banner floated between the
+            // command bar and the rail and read as a third, misaligned layer.
+            .background(QuietPalette.Board)
     ) {
-        if (reconnecting) {
-            BannerRow(
-                title = "连接中断",
-                body = "第 ${state.reconnectAttempt.coerceAtLeast(1)}/" +
-                    "${state.reconnectMax.coerceAtLeast(1)} 次重连。保持头显开机。",
-                loading = true,
-                actionLabel = "返回配对",
-                onAction = actions.onLeave
-            )
-        } else if (offline) {
-            BannerRow(
-                title = "头显已断开",
-                body = "打开头显应用，再点“重新连接”。",
-                actionLabel = "重新连接",
-                onAction = actions.onReconnect,
-                secondaryLabel = "返回配对",
-                onSecondary = actions.onLeave
-            )
-        } else if (event != null) {
-            // One alert slot. Stacking the event under a link banner produced
-            // two competing levels and pushed the page down twice.
-            NoticeRow(
-                text = OperatorCopy.operatorText(event),
-                danger = event is UiEvent.Error
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = QuietSpace.Page, vertical = 8.dp)
+        ) {
+            if (reconnecting) {
+                BannerRow(
+                    title = "连接中断",
+                    body = "第 ${state.reconnectAttempt.coerceAtLeast(1)}/" +
+                        "${state.reconnectMax.coerceAtLeast(1)} 次重连。保持头显开机。",
+                    loading = true,
+                    actionLabel = "返回配对",
+                    onAction = actions.onLeave
+                )
+            } else if (offline) {
+                BannerRow(
+                    title = "头显已断开",
+                    body = "打开头显应用，再点“重新连接”。",
+                    actionLabel = "重新连接",
+                    onAction = actions.onReconnect,
+                    secondaryLabel = "返回配对",
+                    onSecondary = actions.onLeave
+                )
+            } else if (event != null) {
+                // One alert slot. Stacking the event under a link banner produced
+                // two competing levels and pushed the page down twice.
+                NoticeRow(
+                    text = OperatorCopy.operatorText(event),
+                    danger = event is UiEvent.Error
+                )
+            }
         }
     }
 }

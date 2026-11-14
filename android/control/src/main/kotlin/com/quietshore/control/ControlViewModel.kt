@@ -294,17 +294,11 @@ class ControlViewModel(application: Application) :
             sendCommand(ControlProtocol.ENTER)
             return
         }
-        // Whatever is on screen must be what boots: the operator's visible
-        // choice is re-sent right before the launch, because a selection made
-        // before the link existed was never transmitted. The headset treats a
-        // repeat as a no-op (same value → no write, no revision bump).
+        // No scene command here: a launch always opens in the preparation
+        // room, and the page refuses scene changes before WebXR entry. Sending
+        // one anyway produced a red “请先进入 VR” banner on every launch and
+        // hid the real state (waiting for the patient's press).
         val state = _uiState.value
-        if (!state.control.session) {
-            // Resend the operator's choice, not the last frame's echo: after a
-            // refused switch the two disagree, and the bench is what boots.
-            val wanted = state.sceneIntent.ifEmpty { state.control.scene }
-            sendCommand(ControlProtocol.SCENE_PREFIX + wanted)
-        }
         _uiState.update {
             it.copy(
                 startPending = true,
