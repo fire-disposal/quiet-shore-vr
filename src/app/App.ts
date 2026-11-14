@@ -282,9 +282,6 @@ export class QuietShoreApp {
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion()
   };
-  /** Patient pressed; waiting for the technician to start the capture. */
-  private awaitingCalibration = false;
-
   private showPerf: boolean;
   /** Scene bed (water sound) default: on, at half the authored loudness. */
   private sceneBedOn = true;
@@ -910,13 +907,11 @@ export class QuietShoreApp {
         this.dispatch({ type: 'calibrated' });
         this.start.setStatus(this.strings.skippedCalibration, 'ok');
       } else {
-        // Calibration is the technician's decision: the card asks the patient
-        // to hold still and waits for `calibrate` from the tablet. There is no
-        // patient-side fallback any more — the patient does nothing once they
-        // are in, and `beginCalibration` refuses to run without a live
-        // presenting session, so a stray press cannot start a capture.
-        this.awaitingCalibration = true;
-        this.startCalibrationOverlay();
+        // v1 behaviour, restored: the first calm posture is recorded as soon
+        // as the patient lands in the preparation room. The technician can
+        // still recalibrate at any time; this only removes the mandatory wait
+        // for a button that was not even rendered on the scene page.
+        this.beginCalibration();
       }
       this.updateHud(performance.now());
     } catch (error) {
@@ -1045,7 +1040,6 @@ export class QuietShoreApp {
     if (this.handle) {
       this.handle.root.visible = true;
     }
-    this.awaitingCalibration = false;
     this.calibrationOverlay?.hide();
     // No `calibrated` dispatch: the lifecycle stays idle, which is what the
     // sheet is allowed to run in and what `canSwitchApp` expects.
@@ -1493,38 +1487,6 @@ export class QuietShoreApp {
   }
 
   /**
-   * Records the heading the patient is holding right now and makes it the
-   * neutral (standing) world frame. There is no stability window and no
-   * countdown: the technician aims the patient, the session starts, the first
-   * frame's head orientation is the reference.
-   */
-  /**
-   * Put the hold-still card up and wait.
-   *
-   * The capture itself does not start here: the operator starts it. The card
-   * says what the patient must do and nothing else — no countdown, because
-   * there is no timer running yet.
-   */
-  private startCalibrationOverlay(): void {
-    // Same card as the capture uses, but with no progress bar: nothing is
-    // being measured yet, the operator has not started it.
-    this.world.hold(true);
-    this.world.clearBase();
-    this.viewMotion.reset();
-    this.input.setLayers(false, false);
-    this.calibrationOverlay ??= createCalibrationOverlay({
-      scene: this.scene,
-      theme: DEFAULT_SPATIAL_THEME
-    });
-    this.calibrationOverlay.show();
-    this.calibrationOverlay.setProgress(null);
-    this.calibrationOverlay.setHint('等待技术员开始记录');
-    // The card waits outside the lifecycle machine: `calibrating` means "the
-    // capture is running", and it is not running yet.
-    this.link.sendStateNow();
-  }
-
-  /**
    * Start the capture. Guarded: a capture is only ever started inside a live
    * presenting session, so a stale command — the tablet's `calibrate` arriving
    * after the headset left XR, or one queued behind a link loss — cannot open a
@@ -1532,11 +1494,9 @@ export class QuietShoreApp {
    */
   private beginCalibration(skipSettle = false): void {
     if (!this.session || !this.xr.isPresenting) {
-      this.awaitingCalibration = false;
       this.refuse('不在 VR 会话中，无法记录体位');
       return;
     }
-    this.awaitingCalibration = false;
     if (!this.handle) {
       return;
     }
@@ -1781,7 +1741,6 @@ export class QuietShoreApp {
     // The "waiting for the technician" card is a session state, and it used to
     // survive a stop: the next session opened with the tablet's first
     // `calibrate` taking the `beginCalibration` branch of a stale wait.
-    this.awaitingCalibration = false;
     this.resetLinkGuard();
     this.world.hold(false);
     // A panel is session furniture: leaving the world at rest closes it, or a
@@ -2140,11 +2099,7 @@ export class QuietShoreApp {
           this.refuse('正在记录体位，请保持不动');
           return;
         }
-        if (this.awaitingCalibration) {
-          this.beginCalibration();
-        } else {
-          this.recalibrate();
-        }
+        this.recalibrate();
         return;
       case 'exit':
         this.exitAll();
@@ -2308,7 +2263,6 @@ export class QuietShoreApp {
       this.capturePending = false;
       this.calibrationOverlay?.hide();
       this.world.hold(false);
-      this.awaitingCalibration = false;
     }
   }
 
