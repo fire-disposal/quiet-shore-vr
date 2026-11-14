@@ -2127,6 +2127,13 @@ export class QuietShoreApp {
             return;
         }
       case 'calibrate':
+        // Repeated taps while the capture is averaging used to restart the
+        // window, so the operator saw a card that never completed. The capture
+        // is authoritative until it lands or times out.
+        if (this.capturePending) {
+          this.refuse('正在记录体位，请保持不动');
+          return;
+        }
         if (this.awaitingCalibration) {
           this.beginCalibration();
         } else {
@@ -2191,6 +2198,7 @@ export class QuietShoreApp {
         session: this.session !== null,
         presenting: this.xr.isPresenting,
         capturing: this.capturePending,
+        calibrated: world.ready,
         // The scalar that poses the world: the tablet's buttons and its
         // progress bar both derive from it, so they cannot disagree.
         correctionMix: world.mix,

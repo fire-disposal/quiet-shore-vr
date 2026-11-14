@@ -916,7 +916,7 @@ private fun SessionColumn(
                                         },
                                         modifier = Modifier
                                             .weight(1f)
-                                            .heightIn(min = 112.dp),
+                                            .heightIn(min = 84.dp),
                                         showBlurb = false
                                     )
                                 }
@@ -1036,6 +1036,14 @@ private fun SessionColumn(
                             modifier = Modifier.weight(1f),
                             enabled = ready && state.caps.stop && phase.acceptsChanges,
                             height = 64.dp
+                        )
+                    }
+                    if (state.caps.blocked.isNotEmpty()) {
+                        Text(
+                            text = state.caps.blocked,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = QuietPalette.InkSecondary,
+                            modifier = Modifier.padding(top = 6.dp)
                         )
                     }
                 }
@@ -1166,8 +1174,8 @@ private fun ScenePage(
                     onSelect = actions.onSceneSelect,
                     playing = state.control.scene,
                     scenes = state.selectableScenes,
-                    fillHeight = true,
-                    modifier = Modifier.weight(1f)
+                    fillHeight = false,
+                    modifier = Modifier.fillMaxWidth()
                 )
             } else {
                 // Nothing can be entered yet, so the scenes are an agenda, not

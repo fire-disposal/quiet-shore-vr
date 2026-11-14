@@ -7,6 +7,7 @@ function input(overrides: Partial<MotionPlanInput> = {}): MotionPlanInput {
     floatCap: 1,
     presenting: true,
     capturing: false,
+    calibrated: true,
     correctionMix: 0,
     correctionMoving: false,
     ...overrides
@@ -42,7 +43,8 @@ describe('motion plan', () => {
     for (const [overrides, reason] of [
       [{ session: false }, '未开始会话'],
       [{ presenting: false }, '头显不在场景中'],
-      [{ capturing: true }, '校准中']
+      [{ capturing: true }, '校准中'],
+      [{ calibrated: false }, '体位未记录']
     ] as const) {
       const caps = planCapabilities(input(overrides));
       expect(caps).toEqual({

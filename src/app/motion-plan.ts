@@ -47,6 +47,8 @@ export interface MotionPlanInput {
   presenting: boolean;
   /** A calibration capture owns the world. */
   capturing: boolean;
+  /** A valid calibration frame exists; posture commands can act. */
+  calibrated: boolean;
   /**
    * Applied correction, 0..1 — the same scalar that rotates the world and
    * lifts the eye. Never a measurement derived from a transform: the number
@@ -74,14 +76,17 @@ const CORRECTION_EPSILON_MIX = 0.01;
  */
 export function planCapabilities(input: MotionPlanInput): MotionCapabilities {
   const mix = clamp01(input.correctionMix);
-  const live = input.session && input.presenting && !input.capturing;
+  const calibrated = input.calibrated;
+  const live = input.session && input.presenting && !input.capturing && calibrated;
   const blocked = !input.session
     ? '未开始会话'
     : !input.presenting
       ? '头显不在场景中'
       : input.capturing
         ? '校准中'
-        : '';
+        : !calibrated
+          ? '体位未记录'
+          : '';
   if (!live) {
     return {
       rise: false,
