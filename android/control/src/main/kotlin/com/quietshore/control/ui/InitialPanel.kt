@@ -76,7 +76,11 @@ fun InitialPanel(
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val wide = maxWidth >= 1040.dp
+        // The control pages switch at 1000 dp; a 1024 dp landscape tablet was
+        // falling into the initial page's single-column branch while every page
+        // after connecting used the wide split. 960 dp keeps the rail, content
+        // and device list in one row on the actual GOT-W29 panel.
+        val wide = maxWidth >= 960.dp
         val scanning = state.phase == BlePhase.SCANNING
         var tab by remember { mutableStateOf(EntryTab.Connect) }
 
