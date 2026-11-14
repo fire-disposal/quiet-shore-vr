@@ -1500,6 +1500,7 @@ export class QuietShoreApp {
       return;
     }
     if (!this.handle) {
+      this.start.setStatus('场景尚未加载，无法显示校准卡片', 'error');
       return;
     }
     // The capture owns the world frame until it lands, and nothing else may
