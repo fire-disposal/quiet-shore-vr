@@ -523,6 +523,13 @@ class ControlViewModel(application: Application) :
             notice("先结束会话，再切换应用")
             return
         }
+        if (_uiState.value.phase != BlePhase.READY) {
+            // Offline prep: the tablet can enter the face's page now. The
+            // command is queued and sent when the page reports back, because
+            // there is no radio to carry it yet.
+            _uiState.update { it.copy(app = id, pendingApp = id) }
+            return
+        }
         sendCommand(ControlProtocol.APP_PREFIX + id)
     }
 
@@ -1428,13 +1435,17 @@ class ControlViewModel(application: Application) :
                 charging = it.optBoolean("charging", false)
             )
         }?.takeIf { it.level in 0..100 }
-        val currentApp = _uiState.value.app
+        val previous = _uiState.value
+        val currentApp = previous.app
         val reportedApp = json.optString("app", currentApp)
             .takeIf { it in AppCatalog.IDS }
             ?: currentApp
+        val pendingApp = previous.pendingApp
+        val settlesPending = pendingApp != null && reportedApp == pendingApp
         _uiState.update { current ->
             current.copy(
-                app = reportedApp,
+                app = pendingApp ?: reportedApp,
+                pendingApp = if (settlesPending) null else pendingApp,
                 calibrationPending = false,
                 rampMs = json.optInt("rampMs", current.rampMs).coerceIn(0, 60_000),
                 mix = json.optDouble("mix", current.mix.toDouble()).toFloat().coerceIn(0f, 1f),
@@ -1453,6 +1464,12 @@ class ControlViewModel(application: Application) :
                     moving = json.optBoolean("moving", current.control.moving)
                 )
             )
+        }
+        if (pendingApp != null && !settlesPending) {
+            val state = _uiState.value
+            if (state.phase == BlePhase.READY && !state.control.session) {
+                sendCommand(ControlProtocol.APP_PREFIX + pendingApp)
+            }
         }
     }
 

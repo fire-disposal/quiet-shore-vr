@@ -186,7 +186,7 @@ fun CommandBar(
 
             AppSelector(
                 app = state.app,
-                enabled = connected && !state.control.session,
+                enabled = !state.control.session,
                 onSelect = onAppSelect
             )
 

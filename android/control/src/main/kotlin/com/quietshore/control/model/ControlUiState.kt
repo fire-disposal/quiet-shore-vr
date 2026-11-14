@@ -119,6 +119,8 @@ data class ControlUiState(
     val gazeDwell: Boolean = true,
     /** A manual calibration command was sent and no state frame has answered yet. */
     val calibrationPending: Boolean = false,
+    /** Face picked while the link was down; sent once the page reports again. */
+    val pendingApp: String? = null,
     /** Operator switch for reading the loaded question aloud; on by default. */
     val questionnaireVoice: Boolean = true,
     /** Operator switch for the headset subtitle card; on by default. */
