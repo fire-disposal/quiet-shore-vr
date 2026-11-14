@@ -877,34 +877,45 @@ private fun SessionColumn(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (scene in state.selectableScenes) {
-                            SceneCardView(
-                                scene = scene,
-                                current = scene.id == state.sceneIntent.ifEmpty { state.control.scene },
-                                enabled = ready && phase.acceptsChanges,
-                                onSelect = actions.onSceneSelect,
-                                // Taller than the kit floor: this is the block
-                                // the hand reaches for mid-session, and the
-                                // preparation room now sits in the same row.
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 96.dp),
-                                showBlurb = false
-                            )
-                        }
-                        if (phase.inSession) {
-                            SceneCardView(
-                                scene = PREPARATION_CARD,
-                                current = state.prepScenePending ||
-                                    state.control.scene == PREPARATION_SCENE,
-                                enabled = ready && phase.acceptsChanges && state.canReturnToPrep,
-                                onSelect = { actions.onScenePrep() },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 96.dp),
-                                showBlurb = false
-                            )
+                    val cards = state.selectableScenes +
+                        if (phase.inSession) listOf(PREPARATION_CARD) else emptyList()
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (row in cards.chunked(2)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                for (scene in row) {
+                                    val prep = scene.id == PREPARATION_SCENE
+                                    SceneCardView(
+                                        scene = scene,
+                                        current = if (prep) {
+                                            state.prepScenePending ||
+                                                state.control.scene == PREPARATION_SCENE
+                                        } else {
+                                            scene.id == state.sceneIntent
+                                                .ifEmpty { state.control.scene }
+                                        },
+                                        enabled = if (prep) {
+                                            ready && phase.acceptsChanges && state.canReturnToPrep
+                                        } else {
+                                            ready && phase.acceptsChanges
+                                        },
+                                        onSelect = if (prep) {
+                                            { actions.onScenePrep() }
+                                        } else {
+                                            actions.onSceneSelect
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 112.dp),
+                                        showBlurb = false
+                                    )
+                                }
+                                if (row.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
                         }
                     }
                 }
