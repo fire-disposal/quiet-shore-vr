@@ -1459,9 +1459,9 @@ private fun LinkBanners(
                 secondaryLabel = "返回配对",
                 onSecondary = actions.onLeave
             )
-        }
-        if (event != null) {
-            Spacer(Modifier.height(8.dp))
+        } else if (event != null) {
+            // One alert slot. Stacking the event under a link banner produced
+            // two competing levels and pushed the page down twice.
             NoticeRow(
                 text = OperatorCopy.operatorText(event),
                 danger = event is UiEvent.Error
