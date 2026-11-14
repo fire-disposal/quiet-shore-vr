@@ -16,6 +16,7 @@ import com.quietshore.control.model.MotionCaps
 import com.quietshore.control.model.SceneCatalog
 import com.quietshore.control.protocol.ControlState
 import com.quietshore.control.protocol.SceneCatalogDocument
+import com.quietshore.control.protocol.QuestionnaireCatalogDocument
 import com.quietshore.control.protocol.TelemetryPose
 import com.quietshore.control.ui.theme.QuietPalette
 
@@ -32,6 +33,7 @@ enum class ConsoleFixture { Idle, Entry, Calibrating, Running, Stopping }
 @Composable
 fun ConsolePreview(
     fixture: ConsoleFixture,
+    questionnairesJson: String? = null,
     batteryLevel: Int? = null,
     /** `--ez mirror true` opens the mirror cover on launch, for design review. */
     withMirror: Boolean = false,
@@ -81,6 +83,19 @@ fun ConsolePreview(
             if (scenes.isNullOrEmpty()) base else base.copy(scenes = scenes)
         }
         .let { base -> if (app.isNullOrBlank()) base else base.copy(app = app) }
+        .let { base ->
+            val questionnaires = questionnairesJson
+                ?.let(QuestionnaireCatalogDocument::parse)
+                .orEmpty()
+            if (questionnaires.isEmpty()) {
+                base
+            } else {
+                base.copy(
+                    questionnaires = questionnaires,
+                    questionnaireId = base.questionnaireId.ifEmpty { questionnaires.first().id }
+                )
+            }
+        }
         .let { base ->
             if (!seedRecords) {
                 return@let base

@@ -9,6 +9,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import com.quietshore.control.ui.ControlApp
 import com.quietshore.control.ui.ConsoleFixture
 import com.quietshore.control.ui.ConsolePreview
@@ -49,8 +51,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (fixture != null) {
+                    val context = LocalContext.current
+                    val questionnairesJson = remember {
+                        runCatching {
+                            context.assets.open("questionnaires.json")
+                                .bufferedReader()
+                                .use { it.readText() }
+                        }.getOrNull()
+                    }
                     ConsolePreview(
                         fixture = fixture,
+                        questionnairesJson = questionnairesJson,
                         batteryLevel = intent.getIntExtra("battery", -1)
                             .takeIf { it in 0..100 },
                         withMirror = intent.getBooleanExtra("mirror", false),
