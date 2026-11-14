@@ -39,14 +39,19 @@ data class CalibrationView(
  * the first record, during a run it repeats it. The room is available at once;
  * no orientation countdown gates the key.
  */
-fun calibrationView(phase: SessionPhase, ready: Boolean): CalibrationView {
+fun calibrationView(
+    phase: SessionPhase,
+    ready: Boolean,
+    requested: Boolean = false
+): CalibrationView {
     val capturing = phase == SessionPhase.Calibrating
     return CalibrationView(
         keyLabel = when {
-            capturing -> "记录体位"
+            requested -> "已提交…"
+            capturing -> "记录中…"
             else -> "重新校准"
         },
-        keyEnabled = ready && (capturing || phase == SessionPhase.Running),
+        keyEnabled = ready && phase == SessionPhase.Running && !requested,
         stepValue = when {
             capturing -> "可记录"
             phase == SessionPhase.Running -> "已记录"

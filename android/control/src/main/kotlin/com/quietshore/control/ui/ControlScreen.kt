@@ -771,7 +771,7 @@ private fun SessionColumn(
     modifier: Modifier = Modifier
 ) {
     val ready = state.phase == BlePhase.READY
-    val calibration = calibrationView(phase, ready)
+    val calibration = calibrationView(phase, ready, state.calibrationPending)
     // The one posture number, as the operator reads it: a whole percent.
     val mixPercent = (state.mix.coerceIn(0f, 1f) * 100f).roundToInt()
     val mixEnabled = ready && phase.acceptsChanges && (state.caps.rise || state.caps.lie)
@@ -1048,7 +1048,7 @@ private fun ScenePage(
     // The list unlocks only inside XR after the posture is recorded; before
     // that the preparation room is the whole app surface.
     val scenesEnabled = ready && phase == SessionPhase.Running
-    val calibration = calibrationView(phase, ready)
+    val calibration = calibrationView(phase, ready, state.calibrationPending)
     val selectedName = state.selectableScenes
         .firstOrNull { it.id == state.sceneIntent }
         ?.name
@@ -1147,7 +1147,7 @@ private fun StartBlock(
     phase: SessionPhase
 ) {
     val ready = state.phase == BlePhase.READY
-    val calibration = calibrationView(phase, ready)
+    val calibration = calibrationView(phase, ready, state.calibrationPending)
     // A status line, not another board: the page already has one white work
     // surface on the right, and this line is where the whole page begins.
     Column(Modifier.fillMaxWidth()) {
@@ -1195,7 +1195,7 @@ private fun StandbySteps(
 ) {
     val ready = state.phase == BlePhase.READY
     val live = phase == SessionPhase.Running || phase == SessionPhase.Stopping
-    val calibration = calibrationView(phase, ready)
+    val calibration = calibrationView(phase, ready, state.calibrationPending)
     Panel(modifier) {
         Column(Modifier.fillMaxSize().padding(QuietSpace.Panel)) {
             Text(
@@ -1247,7 +1247,8 @@ private fun StandbySteps(
             Spacer(Modifier.weight(1f))
             val verbLabel = when (phase) {
                 SessionPhase.Entry -> "取消启动"
-                SessionPhase.Calibrating -> "记录体位"
+                SessionPhase.Calibrating ->
+                    if (state.calibrationPending) "已提交…" else "记录中…"
                 SessionPhase.Running -> "结束会话"
                 SessionPhase.Stopping -> "正在结束"
                 SessionPhase.Idle, SessionPhase.Ended -> "启动训练"
@@ -1267,7 +1268,7 @@ private fun StandbySteps(
             }
             val verbEnabled = when (phase) {
                 SessionPhase.Entry -> ready
-                SessionPhase.Calibrating -> ready
+                SessionPhase.Calibrating -> false
                 SessionPhase.Running -> ready
                 SessionPhase.Stopping -> false
                 SessionPhase.Idle, SessionPhase.Ended -> ready

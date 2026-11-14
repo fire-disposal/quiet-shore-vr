@@ -117,6 +117,8 @@ data class ControlUiState(
     val mix: Float = 0f,
     /** Operator switch for gaze dwell; on by default. */
     val gazeDwell: Boolean = true,
+    /** A manual calibration command was sent and no state frame has answered yet. */
+    val calibrationPending: Boolean = false,
     /** Operator switch for reading the loaded question aloud; on by default. */
     val questionnaireVoice: Boolean = true,
     /** Operator switch for the headset subtitle card; on by default. */

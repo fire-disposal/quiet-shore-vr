@@ -167,6 +167,7 @@ class ControlViewModel(application: Application) :
     /** Monotonic start of the running session; 0 when no session is running. */
     private var sessionStartedAt = 0L
     private var enterPendingJob: Job? = null
+    private var calibrationPendingJob: Job? = null
 
     init {
         refreshBluetoothState()
@@ -571,7 +572,19 @@ class ControlViewModel(application: Application) :
     }
 
     fun recalibrate() {
-        sendCommand("calibrate")
+        val state = _uiState.value
+        if (state.calibrationPending || state.control.calibrating) {
+            return
+        }
+        if (!sendCommand("calibrate")) {
+            return
+        }
+        _uiState.update { it.copy(calibrationPending = true) }
+        calibrationPendingJob?.cancel()
+        calibrationPendingJob = viewModelScope.launch {
+            delay(5_000)
+            _uiState.update { if (it.calibrationPending) it.copy(calibrationPending = false) else it }
+        }
     }
 
     /** Posture branch: only meaningful while the session runs in posture mode. */
@@ -1422,6 +1435,7 @@ class ControlViewModel(application: Application) :
         _uiState.update { current ->
             current.copy(
                 app = reportedApp,
+                calibrationPending = false,
                 rampMs = json.optInt("rampMs", current.rampMs).coerceIn(0, 60_000),
                 mix = json.optDouble("mix", current.mix.toDouble()).toFloat().coerceIn(0f, 1f),
                 breath = json.optBoolean("breath", current.breath),
