@@ -39,7 +39,6 @@
 ## 分发
 
 - [ ] 稳定 release keystore 与证书指纹。
-- [ ] release workflow 生成 `update.json`。
 - [ ] 自更新方案重写。
 
 ## 规则

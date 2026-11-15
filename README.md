@@ -39,7 +39,7 @@ npm run content:apk  # 内容生成、语音补齐、APK 构建一次完成
 | `src/audio` `src/mirror` `src/ui` `src/questionnaire` | 环境声与语音、患者视角镜像、界面、问卷题库 |
 | `android/protocol` | 双端共用的 QS2 契约（`ControlProtocol`） |
 | `android/headset` `android/control` | 头显服务、平板应用 |
-| `scripts` `tests` `site` `docs` | 工具脚本、单测、落地页、文档 |
+| `scripts` `tests` `docs` | 工具脚本、单测、文档 |
 | `questionnaires` | SUS 与 GAD-7 的唯一 JSON 题目来源 |
 | `server` | 只写 HTTPS 接收器、口令保护的读取管理页与服务器端 SQLite 部署文件 |
 
