@@ -27,7 +27,7 @@ npm run content:apk  # 内容生成、语音补齐、APK 构建一次完成
 
 真机调试：`adb reverse tcp:8130 tcp:8130`，在头显内打开 `http://localhost:8130`。
 
-前置：Node 20+、JDK 17+、Android SDK 36。设备为 PICO G2 4K（Android 8.1 / Snapdragon 835），仅 3DoF。
+前置：Node 22+、JDK 17+、Android SDK 36。设备为 PICO G2 4K（Android 8.1 / Snapdragon 835），仅 3DoF。
 
 ## 目录
 
